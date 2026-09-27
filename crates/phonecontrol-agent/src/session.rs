@@ -1,14 +1,19 @@
 //! Scrcpy session manager + ADB input injection + local H264 video pumps.
 //!
-//! - When `PHONECONTROL_VIDEO_SOURCE=testpattern` (or `auto` without scrcpy): pump
-//!   synthetic Annex-B H264 on the video hub (`streaming` / backend `testpattern`).
-//! - When `scrcpy` exists and source allows it: start/stop headless scrcpy process.
-//!   Real scrcpy→WS frame forwarder is still TBD; stream state reflects the process.
+//! - When `PHONECONTROL_VIDEO_SOURCE=testpattern` (or `auto` without scrcpy-server+ADB):
+//!   pump synthetic Annex-B H264 (`backend: testpattern`).
+//! - When scrcpy-server + ADB are ready and source is `auto|scrcpy`: start standalone
+//!   scrcpy-server with `raw_stream=true`, demux Annex-B AUs into the video hub
+//!   (`backend: scrcpy`).
 //! - Inject v1: `adb shell input tap` / `keyevent` when ADB is available; otherwise stub.
 
+use crate::scrcpy_video::{
+    cleanup_forward, scrcpy_server_jar, scrcpy_video_ready, start_scrcpy_raw_capture,
+};
 use crate::video::{
-    h264_status_for_session, should_use_testpattern, start_testpattern_pump, VideoHub,
-    VideoPump, VideoSourceKind, TESTPATTERN_CODEC_STRING, TESTPATTERN_HEIGHT, TESTPATTERN_WIDTH,
+    h264_status_for_session, should_use_testpattern, start_scrcpy_fixture_pump,
+    start_testpattern_pump, VideoHub, VideoPump, VideoSourceKind, TESTPATTERN_CODEC_STRING,
+    TESTPATTERN_HEIGHT, TESTPATTERN_WIDTH,
 };
 use phonecontrol_protocol::{
     adb_keyevent_args, adb_tap_args, nav_keycode, InjectMode, InjectStatus, MappedTap,
@@ -30,14 +35,18 @@ pub struct InjectResult {
 
 struct LiveSession {
     info: SessionStatus,
+    /// scrcpy-server `adb shell` child (raw stream path).
     child: Option<Child>,
     video: Option<VideoPump>,
+    /// Local TCP port used for `adb forward` (removed on stop).
+    forward_port: Option<u16>,
 }
 
 pub struct SessionManager {
     sessions: RwLock<HashMap<String, LiveSession>>,
     adb_path: Option<PathBuf>,
     scrcpy_path: Option<PathBuf>,
+    scrcpy_server: Option<PathBuf>,
     inject_mode: InjectMode,
     video_hub: Arc<VideoHub>,
     video_source: VideoSourceKind,
@@ -49,17 +58,32 @@ impl SessionManager {
         scrcpy_path: Option<PathBuf>,
         video_hub: Arc<VideoHub>,
     ) -> Arc<Self> {
+        Self::new_with_source(adb_path, scrcpy_path, video_hub, VideoSourceKind::from_env())
+    }
+
+    pub fn new_with_source(
+        adb_path: Option<PathBuf>,
+        scrcpy_path: Option<PathBuf>,
+        video_hub: Arc<VideoHub>,
+        video_source: VideoSourceKind,
+    ) -> Arc<Self> {
         let inject_mode = if adb_path.is_some() {
             InjectMode::Adb
         } else {
             InjectMode::Stub
         };
-        let video_source = VideoSourceKind::from_env();
-        info!(?video_source, "video source configured");
+        let scrcpy_server = scrcpy_server_jar(scrcpy_path.as_deref());
+        info!(
+            ?video_source,
+            scrcpy_bin = scrcpy_path.as_ref().map(|p| p.display().to_string()),
+            scrcpy_server = scrcpy_server.as_ref().map(|p| p.display().to_string()),
+            "video source configured"
+        );
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
             adb_path,
             scrcpy_path,
+            scrcpy_server,
             inject_mode,
             video_hub,
             video_source,
@@ -70,6 +94,7 @@ impl SessionManager {
         self.video_hub.clone()
     }
 
+    #[allow(dead_code)]
     pub fn video_source(&self) -> VideoSourceKind {
         self.video_source
     }
@@ -79,17 +104,22 @@ impl SessionManager {
     }
 
     pub fn scrcpy_availability(&self) -> ScrcpyAvailability {
-        if self.scrcpy_path.is_some() {
+        if self.scrcpy_path.is_some() || self.scrcpy_server.is_some() {
             ScrcpyAvailability::Available
         } else {
             ScrcpyAvailability::Missing
         }
     }
 
+    fn scrcpy_ready(&self) -> bool {
+        scrcpy_video_ready(self.adb_path.as_deref(), self.scrcpy_server.as_deref())
+    }
+
     pub fn backend_label(&self) -> &'static str {
-        if should_use_testpattern(self.video_source, self.scrcpy_path.is_some()) {
+        if should_use_testpattern(self.video_source, self.scrcpy_ready()) {
             "testpattern"
-        } else if self.scrcpy_path.is_some() {
+        } else if self.scrcpy_ready() || self.scrcpy_server.is_some() || self.scrcpy_path.is_some()
+        {
             "scrcpy"
         } else {
             "stub"
@@ -102,8 +132,12 @@ impl SessionManager {
                 "video source off — set PHONECONTROL_VIDEO_SOURCE=testpattern to enable synthetic H264"
                     .into()
             }
+            VideoSourceKind::Scrcpy => {
+                "scrcpy video requested but ADB or scrcpy-server missing — set ADB_PATH + SCRCPY_SERVER_PATH (or install scrcpy)"
+                    .into()
+            }
             _ => {
-                "no video backend — set PHONECONTROL_VIDEO_SOURCE=testpattern or install scrcpy"
+                "no video backend — set PHONECONTROL_VIDEO_SOURCE=testpattern or install scrcpy-server + ADB"
                     .into()
             }
         }
@@ -117,8 +151,8 @@ impl SessionManager {
         let backend = self.backend_label();
         let note = if backend == "testpattern" {
             "session registered — call start (or open video WS) for synthetic H264".into()
-        } else if self.scrcpy_path.is_some() {
-            "session registered — call start to launch headless scrcpy".into()
+        } else if self.scrcpy_ready() {
+            "session registered — call start to launch scrcpy-server raw H264".into()
         } else {
             self.stub_note()
         };
@@ -134,6 +168,7 @@ impl SessionManager {
                 info: info.clone(),
                 child: None,
                 video: None,
+                forward_port: None,
             },
         );
         info
@@ -206,7 +241,7 @@ impl SessionManager {
         VideoStatusFrame::from_session(session)
     }
 
-    /// Start video for `serial`: testpattern pump and/or headless scrcpy.
+    /// Start video for `serial`: testpattern pump and/or scrcpy-server raw stream.
     pub async fn start(&self, serial: &str) -> SessionStatus {
         let _ = self.ensure_session(serial).await;
 
@@ -224,8 +259,7 @@ impl SessionManager {
 
         self.stop_producers(serial).await;
 
-        let use_pattern =
-            should_use_testpattern(self.video_source, self.scrcpy_path.is_some());
+        let use_pattern = should_use_testpattern(self.video_source, self.scrcpy_ready());
 
         if use_pattern {
             return self.start_testpattern(serial).await;
@@ -237,43 +271,47 @@ impl SessionManager {
                 .await;
         }
 
-        let Some(scrcpy) = self.scrcpy_path.clone() else {
-            // auto/scrcpy requested but binary missing — honest idle, unless caller
-            // forced testpattern (handled above).
+        // Forced scrcpy without hardware: optional fixture mock for CI.
+        if !self.scrcpy_ready() {
+            if env_truthy("PHONECONTROL_SCRCPY_FIXTURE") {
+                return self.start_scrcpy_fixture(serial).await;
+            }
             return self
                 .set_status(serial, StreamState::Idle, self.stub_note())
                 .await;
-        };
+        }
+
+        self.start_scrcpy(serial).await
+    }
+
+    async fn start_scrcpy(&self, serial: &str) -> SessionStatus {
+        let adb = self.adb_path.clone().expect("scrcpy_ready checked adb");
+        let server = self
+            .scrcpy_server
+            .clone()
+            .expect("scrcpy_ready checked server");
 
         self.set_status(
             serial,
             StreamState::Starting,
-            format!("starting headless scrcpy ({})", scrcpy.display()),
+            format!(
+                "starting scrcpy-server raw H264 ({})",
+                server.display()
+            ),
         )
         .await;
 
-        let mut cmd = Command::new(&scrcpy);
-        cmd.args([
-            "-s",
-            serial,
-            "--no-playback",
-            "--no-window",
-            "--no-audio",
-            "--no-clipboard-autosync",
-        ]);
-        if let Ok(extra) = std::env::var("SCRCPY_EXTRA_ARGS") {
-            for arg in extra.split_whitespace() {
-                cmd.arg(arg);
-            }
-        }
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-
-        match cmd.spawn() {
-            Ok(child) => {
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        match start_scrcpy_raw_capture(
+            self.video_hub.clone(),
+            adb,
+            server,
+            self.scrcpy_path.clone(),
+            serial.to_string(),
+        )
+        .await
+        {
+            Ok(capture) => {
+                let (pump, server_child, port) = capture.into_parts();
                 let mut guard = self.sessions.write().await;
                 let live = guard.entry(serial.to_string()).or_insert_with(|| LiveSession {
                     info: SessionStatus {
@@ -284,50 +322,61 @@ impl SessionManager {
                     },
                     child: None,
                     video: None,
+                    forward_port: None,
                 });
-                live.child = Some(child);
-                let exited = if let Some(ref mut c) = live.child {
-                    match c.try_wait() {
-                        Ok(Some(status)) => Some(status),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
-                if let Some(status) = exited {
-                    live.child = None;
-                    live.info.stream = StreamState::Error;
-                    live.info.note = format!(
-                        "scrcpy exited immediately ({status}) — check device auth / scrcpy version"
-                    );
-                    live.info.backend = "scrcpy".into();
-                    warn!(serial, %status, "scrcpy exited on start");
-                    let info = live.info.clone();
-                    drop(guard);
-                    self.publish_video_status(&info).await;
-                    return info;
-                }
+                live.video = Some(pump);
+                live.child = Some(server_child);
+                live.forward_port = Some(port);
                 live.info.stream = StreamState::Streaming;
                 live.info.note =
-                    "scrcpy process running (headless); raw H264 socket→WS pump not wired — use PHONECONTROL_VIDEO_SOURCE=testpattern for synthetic frames"
-                        .into();
+                    "scrcpy-server raw_stream=true → Annex-B AUs on video WS".into();
                 live.info.backend = "scrcpy".into();
-                info!(serial, "scrcpy session streaming (process up, frames not forwarded)");
+                info!(serial, "scrcpy session streaming (real H264 pipe)");
                 let info = live.info.clone();
                 drop(guard);
                 self.publish_video_status(&info).await;
                 info
             }
             Err(e) => {
-                warn!(serial, error = %e, "failed to spawn scrcpy");
+                warn!(serial, error = %e, "scrcpy raw capture failed");
                 self.set_status(
                     serial,
                     StreamState::Error,
-                    format!("failed to spawn scrcpy: {e}"),
+                    format!("scrcpy raw H264 failed: {e}"),
                 )
                 .await
             }
         }
+    }
+
+    async fn start_scrcpy_fixture(&self, serial: &str) -> SessionStatus {
+        self.set_status(
+            serial,
+            StreamState::Starting,
+            "starting scrcpy fixture mock (PHONECONTROL_SCRCPY_FIXTURE)".into(),
+        )
+        .await;
+        let pump = start_scrcpy_fixture_pump(self.video_hub.clone(), serial.to_string()).await;
+        let mut guard = self.sessions.write().await;
+        let live = guard.entry(serial.to_string()).or_insert_with(|| LiveSession {
+            info: SessionStatus {
+                serial: serial.to_string(),
+                stream: StreamState::Idle,
+                note: String::new(),
+                backend: "scrcpy".into(),
+            },
+            child: None,
+            video: None,
+            forward_port: None,
+        });
+        live.video = Some(pump);
+        live.info.stream = StreamState::Streaming;
+        live.info.note = "scrcpy fixture mock → WS annex-B (no USB device)".into();
+        live.info.backend = "scrcpy".into();
+        let info = live.info.clone();
+        drop(guard);
+        self.publish_video_status(&info).await;
+        info
     }
 
     async fn start_testpattern(&self, serial: &str) -> SessionStatus {
@@ -355,6 +404,7 @@ impl SessionManager {
                     },
                     child: None,
                     video: None,
+                    forward_port: None,
                 });
                 live.video = Some(pump);
                 live.info.stream = StreamState::Streaming;
@@ -380,9 +430,9 @@ impl SessionManager {
 
     pub async fn stop(&self, serial: &str) -> SessionStatus {
         self.stop_producers(serial).await;
-        let note = if should_use_testpattern(self.video_source, self.scrcpy_path.is_some()) {
+        let note = if should_use_testpattern(self.video_source, self.scrcpy_ready()) {
             "session stopped (testpattern idle)".into()
-        } else if self.scrcpy_path.is_some() {
+        } else if self.scrcpy_ready() || self.scrcpy_path.is_some() {
             "session stopped".into()
         } else {
             self.stub_note()
@@ -396,20 +446,27 @@ impl SessionManager {
     }
 
     async fn stop_producers(&self, serial: &str) {
-        let (child, video) = {
+        let (child, video, forward_port) = {
             let mut guard = self.sessions.write().await;
             if let Some(live) = guard.get_mut(serial) {
-                (live.child.take(), live.video.take())
+                (
+                    live.child.take(),
+                    live.video.take(),
+                    live.forward_port.take(),
+                )
             } else {
-                (None, None)
+                (None, None, None)
             }
         };
+        if let Some(video) = video {
+            video.stop().await;
+        }
         if let Some(mut child) = child {
             let _ = child.kill().await;
             let _ = child.wait().await;
         }
-        if let Some(video) = video {
-            video.stop().await;
+        if let (Some(port), Some(adb)) = (forward_port, self.adb_path.as_ref()) {
+            cleanup_forward(adb, serial, port).await;
         }
     }
 
@@ -425,6 +482,7 @@ impl SessionManager {
             },
             child: None,
             video: None,
+            forward_port: None,
         });
         entry.info.stream = stream;
         entry.info.note = note;
@@ -523,6 +581,7 @@ impl SessionManager {
     pub async fn reap(&self) -> Vec<SessionStatus> {
         let mut changed = Vec::new();
         let mut finished_video = Vec::new();
+        let mut stale_forwards = Vec::new();
         {
             let mut guard = self.sessions.write().await;
             for live in guard.values_mut() {
@@ -530,15 +589,21 @@ impl SessionManager {
                     match child.try_wait() {
                         Ok(Some(status)) => {
                             live.child = None;
+                            if let Some(port) = live.forward_port.take() {
+                                stale_forwards.push((live.info.serial.clone(), port));
+                            }
                             live.info.stream = StreamState::Error;
-                            live.info.note = format!("scrcpy process exited ({status})");
+                            live.info.note = format!("scrcpy-server process exited ({status})");
                             changed.push(live.info.clone());
                         }
                         Ok(None) => {}
                         Err(e) => {
                             live.child = None;
+                            if let Some(port) = live.forward_port.take() {
+                                stale_forwards.push((live.info.serial.clone(), port));
+                            }
                             live.info.stream = StreamState::Error;
-                            live.info.note = format!("scrcpy wait error: {e}");
+                            live.info.note = format!("scrcpy-server wait error: {e}");
                             changed.push(live.info.clone());
                         }
                     }
@@ -552,7 +617,6 @@ impl SessionManager {
             for serial in &finished_video {
                 if let Some(live) = guard.get_mut(serial) {
                     if let Some(pump) = live.video.take() {
-                        // Task already finished; drop without abort wait.
                         drop(pump);
                     }
                     if live.info.stream == StreamState::Streaming {
@@ -561,6 +625,11 @@ impl SessionManager {
                         changed.push(live.info.clone());
                     }
                 }
+            }
+        }
+        if let Some(adb) = self.adb_path.as_ref() {
+            for (serial, port) in stale_forwards {
+                cleanup_forward(adb, &serial, port).await;
             }
         }
         for session in &changed {
@@ -612,7 +681,8 @@ pub fn scrcpy_binary() -> Option<PathBuf> {
             if let Some(cli) = which("scrcpy") {
                 return Some(cli);
             }
-            return Some(p);
+            // Server-only installs still count as "scrcpy available" for health.
+            return None;
         }
     }
     which("scrcpy")
@@ -628,6 +698,13 @@ fn which(bin: &str) -> Option<PathBuf> {
         }
         None
     })
+}
+
+fn env_truthy(key: &str) -> bool {
+    matches!(
+        std::env::var(key).as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    )
 }
 
 #[cfg(test)]
@@ -657,9 +734,13 @@ mod tests {
 
     #[tokio::test]
     async fn start_testpattern_streams() {
-        std::env::set_var("PHONECONTROL_VIDEO_SOURCE", "testpattern");
         let hub = VideoHub::new();
-        let mgr = SessionManager::new(None, None, hub.clone());
+        let mgr = SessionManager::new_with_source(
+            None,
+            None,
+            hub.clone(),
+            VideoSourceKind::TestPattern,
+        );
         let session = mgr.start("SERIAL").await;
         assert_eq!(session.stream, StreamState::Streaming);
         assert_eq!(session.backend, "testpattern");
@@ -682,17 +763,57 @@ mod tests {
         assert!(got_binary, "expected annex-B packets from testpattern");
         let stopped = mgr.stop("SERIAL").await;
         assert_eq!(stopped.stream, StreamState::Idle);
-        std::env::remove_var("PHONECONTROL_VIDEO_SOURCE");
     }
 
     #[tokio::test]
     async fn start_off_stays_idle() {
-        std::env::set_var("PHONECONTROL_VIDEO_SOURCE", "off");
         let hub = VideoHub::new();
-        let mgr = SessionManager::new(None, None, hub);
+        let mgr =
+            SessionManager::new_with_source(None, None, hub, VideoSourceKind::Off);
         let session = mgr.start("SERIAL").await;
         assert_eq!(session.stream, StreamState::Idle);
         assert!(session.backend == "stub" || session.note.contains("off"));
-        std::env::remove_var("PHONECONTROL_VIDEO_SOURCE");
+    }
+
+    #[tokio::test]
+    async fn scrcpy_fixture_mock_streams_as_scrcpy() {
+        std::env::set_var("PHONECONTROL_SCRCPY_FIXTURE", "1");
+        let hub = VideoHub::new();
+        let mgr =
+            SessionManager::new_with_source(None, None, hub.clone(), VideoSourceKind::Scrcpy);
+        let session = mgr.start("SCRCPY-MOCK").await;
+        assert_eq!(session.stream, StreamState::Streaming);
+        assert_eq!(session.backend, "scrcpy");
+        let frame = mgr.video_status_frame("SCRCPY-MOCK").await;
+        assert_eq!(frame.backend, "scrcpy");
+        assert_eq!(frame.framing.as_deref(), Some("annexb"));
+        let mut rx = hub.subscribe("SCRCPY-MOCK").await;
+        let mut got_binary = false;
+        for _ in 0..30 {
+            match tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await {
+                Ok(Ok(crate::video::VideoPacket::AnnexB(b))) if !b.is_empty() => {
+                    got_binary = true;
+                    break;
+                }
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+        assert!(got_binary, "expected annex-B from scrcpy fixture path");
+        let _ = mgr.stop("SCRCPY-MOCK").await;
+        std::env::remove_var("PHONECONTROL_SCRCPY_FIXTURE");
+    }
+
+    #[tokio::test]
+    async fn auto_without_scrcpy_uses_testpattern() {
+        let hub = VideoHub::new();
+        // No adb / no server → auto falls back to testpattern.
+        let mgr =
+            SessionManager::new_with_source(None, None, hub, VideoSourceKind::Auto);
+        assert!(!mgr.scrcpy_ready());
+        let session = mgr.start("AUTO").await;
+        assert_eq!(session.backend, "testpattern");
+        assert_eq!(session.stream, StreamState::Streaming);
+        let _ = mgr.stop("AUTO").await;
     }
 }

@@ -56,9 +56,24 @@ impl AppState {
             adb_path
         };
         let scrcpy = scrcpy_binary();
-        match &scrcpy {
-            Some(p) => info!(path = %p.display(), "scrcpy backend found"),
-            None => info!("scrcpy not found — sessions stay idle stub (set SCRCPY_PATH to enable)"),
+        let server = crate::scrcpy_video::scrcpy_server_jar(scrcpy.as_deref());
+        match (&scrcpy, &server) {
+            (Some(b), Some(s)) => info!(
+                bin = %b.display(),
+                server = %s.display(),
+                "scrcpy binary + server found (raw H264 path ready when ADB present)"
+            ),
+            (None, Some(s)) => info!(
+                server = %s.display(),
+                "scrcpy-server found (binary optional for raw stream)"
+            ),
+            (Some(b), None) => info!(
+                bin = %b.display(),
+                "scrcpy binary found but scrcpy-server missing — set SCRCPY_SERVER_PATH"
+            ),
+            (None, None) => info!(
+                "scrcpy not found — sessions use testpattern/stub (set SCRCPY_PATH / SCRCPY_SERVER_PATH)"
+            ),
         }
 
         let profile = match role {

@@ -8,6 +8,6 @@ Download a **Windows** release of scrcpy (Genymobile/scrcpy), then copy into thi
 
 `Start-PhoneControl.ps1` sets `SCRCPY_PATH` / `SCRCPY_SERVER_PATH` when those files exist.
 
-Phone Control owns discovery and the Web UI; scrcpy is the capture/inject transport. Raw H264 socket→WebSocket forwarding is still evolving — use `PHONECONTROL_VIDEO_SOURCE=testpattern` to validate the browser path without phones.
+Phone Control owns discovery and the Web UI; scrcpy-server is the capture transport for video (`raw_stream=true` over an adb-forwarded TCP socket → Annex-B on the video WebSocket). Inject v1 still uses `adb shell input`. Use `PHONECONTROL_VIDEO_SOURCE=testpattern` to validate the browser path without phones.
 
 Do **not** commit scrcpy redistributables to this repo; download onto the Windows host.

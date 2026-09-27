@@ -42,9 +42,38 @@ cargo run -p phonecontrol-agent
 
 Opening the phone screen (or any client on the video WS) auto-starts the pump; closing the WS does **not** stop the session.
 
-### Real scrcpy
+### Real scrcpy (raw H264 → WebSocket)
 
-When `scrcpy` is installed and `PHONECONTROL_VIDEO_SOURCE=auto|scrcpy`, session start launches headless scrcpy. Raw H264 socket→WS forwarder is still TBD — use `testpattern` to exercise browser decode today.
+When **ADB** and **scrcpy-server** are available and `PHONECONTROL_VIDEO_SOURCE=auto|scrcpy`, session start:
+
+1. `adb push` the server jar to the device  
+2. `adb forward tcp:PORT localabstract:scrcpy`  
+3. Runs the **standalone server** (not the GUI client) with:
+
+```bash
+CLASSPATH=/data/local/tmp/phonecontrol-scrcpy-server.jar \
+  app_process / com.genymobile.scrcpy.Server <version> \
+  tunnel_forward=true audio=false control=false cleanup=false \
+  raw_stream=true video_codec=h264 max_size=1280
+```
+
+4. TCP-connects to `127.0.0.1:PORT`, splits the elementary stream into **Annex-B access units**, and publishes them on the video hub (`backend: scrcpy`).
+
+`raw_stream=true` is the current scrcpy-supported way to get a bare H264 socket (the client no longer supports `--record-format=h264`). Override version with `SCRCPY_SERVER_VERSION` if the jar filename does not include `vX.Y.Z`.
+
+**USB host verify:**
+
+```bash
+# on a machine with adb + a phone + scrcpy release extracted
+export ADB_PATH=$(which adb)
+export SCRCPY_PATH=/path/to/scrcpy
+export SCRCPY_SERVER_PATH=/path/to/scrcpy-server   # or scrcpy-server-v4.1
+export PHONECONTROL_VIDEO_SOURCE=auto
+cargo run -p phonecontrol-agent
+# UI → open online device → status shows backend: scrcpy / streaming + canvas frames
+```
+
+Without phones in this VM, CI uses the Annex-B reader + fixture path (`PHONECONTROL_SCRCPY_FIXTURE=1` forces `backend: scrcpy` with the embedded H264 loop).
 
 ## Run locally (single process)
 
@@ -187,12 +216,16 @@ Mock without phones: `.\Start-PhoneControl.ps1 -Mock` (testpattern video).
 | `PHONECONTROL_CONTROLLER_URL` | `ws://127.0.0.1:3848/ws/agent` | Agent → controller |
 | `PHONECONTROL_HTTP_BASE` | `http://127.0.0.1:$PORT` | Advertised for controller video proxy |
 | `PHONECONTROL_MOCK_PROFILE` | `all` (agent → `lxc`) | `all` / `windows` / `lxc` |
-| `PHONECONTROL_VIDEO_SOURCE` | `auto` | `auto` / `testpattern` / `scrcpy` / `off` |
+| `PHONECONTROL_VIDEO_SOURCE` | `auto` | `auto` / `testpattern` / `scrcpy` / `off` — auto prefers scrcpy when ADB + scrcpy-server are ready |
 | `FFMPEG_PATH` | `which ffmpeg` | Live testsrc encoder for testpattern |
 | `ADB_PATH` | `which adb` | Override ADB binary |
-| `SCRCPY_PATH` | `which scrcpy` | Headless scrcpy CLI |
-| `SCRCPY_SERVER_PATH` | — | Optional server jar/path |
-| `SCRCPY_EXTRA_ARGS` | — | Extra space-separated args for scrcpy |
+| `SCRCPY_PATH` | `which scrcpy` | Optional scrcpy CLI (version probe / sibling server jar) |
+| `SCRCPY_SERVER_PATH` | next to binary / distro paths | **Required for real frames** — standalone server jar |
+| `SCRCPY_SERVER_VERSION` | from filename / `scrcpy --version` | First arg to `com.genymobile.scrcpy.Server` |
+| `SCRCPY_MAX_SIZE` | `1280` | Server `max_size=` |
+| `SCRCPY_SERVER_OPTS` | — | Extra `key=value` server options |
+| `SCRCPY_EXTRA_ARGS` | — | Also maps `--max-size` / `-b` / `--max-fps` into server opts |
+| `PHONECONTROL_SCRCPY_FIXTURE` | unset | `1` → mock scrcpy backend with embedded H264 (no USB) |
 | `PHONECONTROL_FORCE_MOCK` | unset | `1`/`true` → ignore ADB, use mock fleet |
 | `PHONECONTROL_AUTO_SESSION` | unset | Auto-start session when a device comes online |
 | `NEXT_PUBLIC_AGENT_URL` | unset | UI → **controller** base URL |
@@ -219,9 +252,10 @@ Mock without phones: `.\Start-PhoneControl.ps1 -Mock` (testpattern video).
 |---|---|
 | HTTP + WebSocket control plane | WebRTC |
 | ADB discovery when `adb` exists | Full scrcpy control-socket inject (v1 uses `adb shell input`) |
-| Real tap/nav inject via ADB | scrcpy raw H264 socket → WS forwarder |
-| Session manager + synthetic H264 testpattern → browser WebCodecs | Signed MSI / auto-update |
-| Multi-host mesh + video proxy | Deep Proxmox USB docs |
+| Real tap/nav inject via ADB | Signed MSI / auto-update |
+| Session manager + **scrcpy-server `raw_stream` → Annex-B video WS** | Deep Proxmox USB docs |
+| Synthetic H264 testpattern → browser WebCodecs | — |
+| Multi-host mesh + video proxy | — |
 | Windows pack scripts (`PhoneControl.exe` via MinGW cross-build) | — |
 
 ## Stack

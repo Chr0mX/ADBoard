@@ -9,25 +9,27 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
 use tokio::sync::{broadcast, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 /// Embedded 2s Constrained Baseline loop (360×640 @ ~10fps) for CI / no-ffmpeg.
-const FIXTURE_H264: &[u8] = include_bytes!("../fixtures/testpattern.h264");
+pub const FIXTURE_H264: &[u8] = include_bytes!("../fixtures/testpattern.h264");
 
 pub const TESTPATTERN_WIDTH: u32 = 360;
 pub const TESTPATTERN_HEIGHT: u32 = 640;
 pub const TESTPATTERN_CODEC_STRING: &str = "avc1.42E01E";
 pub const TESTPATTERN_FPS: u32 = 10;
+/// Placeholder until SPS / stream meta is known (WebCodecs sizes from decoded frames).
+pub const SCRCPY_DEFAULT_CODEC_STRING: &str = "avc1.42E01E";
 
 const VIDEO_CHANNEL_CAP: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoSourceKind {
-    /// Prefer test pattern when scrcpy missing / mock; else scrcpy process (no frame pump yet).
+    /// Prefer scrcpy raw H264 when ADB + scrcpy-server are ready; else testpattern.
     Auto,
     TestPattern,
     Scrcpy,
@@ -113,7 +115,7 @@ pub struct VideoPump {
     pub height: u32,
     pub codec_string: String,
     handle: JoinHandle<()>,
-    /// Live ffmpeg child when using testsrc; None for fixture loop.
+    /// Live ffmpeg child when using testsrc; None for fixture / socket pumps.
     live_ffmpeg: bool,
     child: Option<Child>,
 }
@@ -127,6 +129,19 @@ impl VideoPump {
         self.live_ffmpeg
     }
 
+    pub fn attach_child(&mut self, child: Child, live_ffmpeg: bool) {
+        self.child = Some(child);
+        self.live_ffmpeg = live_ffmpeg;
+    }
+
+    pub fn try_wait_child(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        if let Some(ref mut c) = self.child {
+            c.try_wait()
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn stop(mut self) {
         self.handle.abort();
         if let Some(mut child) = self.child.take() {
@@ -137,11 +152,169 @@ impl VideoPump {
 }
 
 /// Decide whether session start should attach a test-pattern H264 pump.
-pub fn should_use_testpattern(kind: VideoSourceKind, scrcpy_available: bool) -> bool {
+///
+/// `scrcpy_ready` means ADB + scrcpy-server jar are available for the raw-stream path.
+pub fn should_use_testpattern(kind: VideoSourceKind, scrcpy_ready: bool) -> bool {
     match kind {
         VideoSourceKind::TestPattern => true,
-        VideoSourceKind::Auto => !scrcpy_available,
+        VideoSourceKind::Auto => !scrcpy_ready,
         VideoSourceKind::Scrcpy | VideoSourceKind::Off => false,
+    }
+}
+
+/// Metadata published with an Annex-B reader pump.
+#[derive(Debug, Clone)]
+pub struct AnnexBPumpMeta {
+    pub backend: String,
+    pub note: String,
+    pub width: u32,
+    pub height: u32,
+    pub codec_string: String,
+}
+
+impl AnnexBPumpMeta {
+    pub fn scrcpy(width: u32, height: u32, codec_string: impl Into<String>) -> Self {
+        Self {
+            backend: "scrcpy".into(),
+            note: "scrcpy-server raw H264 → WS annex-B".into(),
+            width,
+            height,
+            codec_string: codec_string.into(),
+        }
+    }
+
+    pub fn testpattern() -> Self {
+        Self {
+            backend: "testpattern".into(),
+            note: "synthetic H264 test pattern".into(),
+            width: TESTPATTERN_WIDTH,
+            height: TESTPATTERN_HEIGHT,
+            codec_string: TESTPATTERN_CODEC_STRING.into(),
+        }
+    }
+}
+
+/// Read a continuous Annex-B byte stream, split into access units, publish to the hub.
+///
+/// Used by ffmpeg testsrc, scrcpy-server TCP, and unit tests (Cursor / fixture readers).
+pub async fn start_annexb_reader_pump<R>(
+    hub: Arc<VideoHub>,
+    serial: String,
+    mut reader: R,
+    meta: AnnexBPumpMeta,
+) -> VideoPump
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    let status = VideoStatusFrame {
+        serial: serial.clone(),
+        stream: StreamState::Streaming,
+        note: meta.note.clone(),
+        backend: meta.backend.clone(),
+        codec: Some("h264".into()),
+        codec_string: Some(meta.codec_string.clone()),
+        width: if meta.width > 0 {
+            Some(meta.width)
+        } else {
+            None
+        },
+        height: if meta.height > 0 {
+            Some(meta.height)
+        } else {
+            None
+        },
+        framing: Some("annexb".into()),
+    };
+    hub.publish_status(&serial, status).await;
+
+    let backend = meta.backend.clone();
+    let width = meta.width;
+    let height = meta.height;
+    let codec_string = meta.codec_string.clone();
+    let serial_pump = serial.clone();
+    let handle = tokio::spawn(async move {
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut pending = Vec::with_capacity(128 * 1024);
+        loop {
+            match reader.read(&mut buf).await {
+                Ok(0) => {
+                    debug!(serial = %serial_pump, backend = %backend, "annex-B reader EOF");
+                    break;
+                }
+                Ok(n) => {
+                    pending.extend_from_slice(&buf[..n]);
+                    let aus = drain_access_units(&mut pending);
+                    for au in aus {
+                        hub.publish_annexb(&serial_pump, au).await;
+                    }
+                }
+                Err(e) => {
+                    warn!(serial = %serial_pump, error = %e, "annex-B reader error");
+                    break;
+                }
+            }
+        }
+    });
+
+    VideoPump {
+        backend: meta.backend,
+        width,
+        height,
+        codec_string,
+        handle,
+        live_ffmpeg: false,
+        child: None,
+    }
+}
+
+/// Pump the embedded fixture through the AU→hub path, labeled `backend: scrcpy`.
+/// Used by integration tests when no USB device / scrcpy-server is present.
+pub async fn start_scrcpy_fixture_pump(hub: Arc<VideoHub>, serial: String) -> VideoPump {
+    let aus = split_annexb_access_units_complete(FIXTURE_H264);
+    let codec = codec_string_from_sps_au(aus.first().map(|a| a.as_slice()).unwrap_or(&[]))
+        .unwrap_or_else(|| SCRCPY_DEFAULT_CODEC_STRING.to_string());
+    let meta = AnnexBPumpMeta {
+        backend: "scrcpy".into(),
+        note: "scrcpy fixture mock (no device) → WS annex-B".into(),
+        width: TESTPATTERN_WIDTH,
+        height: TESTPATTERN_HEIGHT,
+        codec_string: codec.clone(),
+    };
+    let status = VideoStatusFrame {
+        serial: serial.clone(),
+        stream: StreamState::Streaming,
+        note: meta.note.clone(),
+        backend: meta.backend.clone(),
+        codec: Some("h264".into()),
+        codec_string: Some(meta.codec_string.clone()),
+        width: Some(meta.width),
+        height: Some(meta.height),
+        framing: Some("annexb".into()),
+    };
+    hub.publish_status(&serial, status).await;
+
+    let serial_pump = serial.clone();
+    let handle = tokio::spawn(async move {
+        if aus.is_empty() {
+            return;
+        }
+        let frame_delay = Duration::from_millis(1000 / TESTPATTERN_FPS as u64);
+        let mut idx = 0usize;
+        loop {
+            hub.publish_annexb(&serial_pump, aus[idx].clone()).await;
+            idx = (idx + 1) % aus.len();
+            tokio::time::sleep(frame_delay).await;
+        }
+    });
+
+    VideoPump {
+        backend: meta.backend,
+        width: meta.width,
+        height: meta.height,
+        codec_string: codec,
+        handle,
+        live_ffmpeg: false,
+        child: None,
     }
 }
 
@@ -258,52 +431,23 @@ async fn spawn_ffmpeg_testsrc(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("spawn ffmpeg: {e}"))?;
-    let mut stdout = child
+    let stdout = child
         .stdout
         .take()
         .ok_or_else(|| "ffmpeg stdout missing".to_string())?;
 
-    let serial_pump = serial.clone();
-    let handle = tokio::spawn(async move {
-        let mut buf = vec![0u8; 64 * 1024];
-        let mut pending = Vec::with_capacity(128 * 1024);
-        loop {
-            match stdout.read(&mut buf).await {
-                Ok(0) => {
-                    debug!(serial = %serial_pump, "ffmpeg stdout EOF");
-                    break;
-                }
-                Ok(n) => {
-                    pending.extend_from_slice(&buf[..n]);
-                    let aus = drain_access_units(&mut pending);
-                    for au in aus {
-                        hub.publish_annexb(&serial_pump, au).await;
-                    }
-                }
-                Err(e) => {
-                    warn!(serial = %serial_pump, error = %e, "ffmpeg stdout read error");
-                    break;
-                }
-            }
-        }
-    });
+    let meta = AnnexBPumpMeta::testpattern();
+    let mut pump = start_annexb_reader_pump(hub, serial.clone(), stdout, meta).await;
+    pump.attach_child(child, true);
 
     // Brief settle — if ffmpeg dies immediately, surface the error.
     tokio::time::sleep(Duration::from_millis(150)).await;
-    if let Ok(Some(status)) = child.try_wait() {
-        handle.abort();
+    if let Ok(Some(status)) = pump.try_wait_child() {
+        pump.stop().await;
         return Err(format!("ffmpeg exited immediately ({status})"));
     }
 
-    Ok(VideoPump {
-        backend: "testpattern".into(),
-        width: TESTPATTERN_WIDTH,
-        height: TESTPATTERN_HEIGHT,
-        codec_string: TESTPATTERN_CODEC_STRING.into(),
-        handle,
-        live_ffmpeg: true,
-        child: Some(child),
-    })
+    Ok(pump)
 }
 
 async fn fixture_loop(hub: Arc<VideoHub>, serial: String) {
@@ -320,6 +464,19 @@ async fn fixture_loop(hub: Arc<VideoHub>, serial: String) {
         idx = (idx + 1) % aus.len();
         tokio::time::sleep(frame_delay).await;
     }
+}
+
+/// Derive `avc1.PPCCLL` from the first SPS NAL in an Annex-B AU.
+pub fn codec_string_from_sps_au(au: &[u8]) -> Option<String> {
+    for nal in split_annexb_nals(au) {
+        if nal_unit_type(&nal) == 7 && nal.len() >= 4 {
+            return Some(format!(
+                "avc1.{:02X}{:02X}{:02X}",
+                nal[1], nal[2], nal[3]
+            ));
+        }
+    }
+    None
 }
 
 /// Split Annex-B into access units. Non-VCL NALs attach to the following VCL.
@@ -470,10 +627,17 @@ pub fn h264_status_for_session(
         height: None,
         framing: None,
     };
-    if backend == "testpattern" || (stream == StreamState::Streaming && codec_string.is_some()) {
-        if let (Some(w), Some(h), Some(cs)) = (width, height, codec_string) {
-            frame = frame.with_h264(w, h, cs);
+    let pumping = backend == "testpattern"
+        || backend == "scrcpy"
+        || (stream == StreamState::Streaming && codec_string.is_some());
+    if pumping {
+        frame.codec = Some("h264".into());
+        frame.framing = Some("annexb".into());
+        if let Some(cs) = codec_string {
+            frame.codec_string = Some(cs.into());
         }
+        frame.width = width.filter(|w| *w > 0);
+        frame.height = height.filter(|h| *h > 0);
     }
     frame
 }
@@ -541,5 +705,64 @@ mod tests {
             VideoPacket::AnnexB(b) => assert_eq!(b[4], 0x65),
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn annexb_reader_pump_feeds_hub() {
+        let hub = VideoHub::new();
+        let aus = split_annexb_access_units_complete(FIXTURE_H264);
+        let mut bytes = Vec::new();
+        for au in aus.iter().take(3) {
+            bytes.extend_from_slice(au);
+        }
+        let mut rx = hub.subscribe("PIPE").await;
+        let pump = start_annexb_reader_pump(
+            hub,
+            "PIPE".into(),
+            std::io::Cursor::new(bytes),
+            AnnexBPumpMeta::scrcpy(360, 640, "avc1.42E01E"),
+        )
+        .await;
+        let mut got = 0usize;
+        for _ in 0..20 {
+            match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
+                Ok(Ok(VideoPacket::AnnexB(b))) if !b.is_empty() => got += 1,
+                Ok(Ok(VideoPacket::Status(s))) => {
+                    assert_eq!(s.backend, "scrcpy");
+                    assert_eq!(s.framing.as_deref(), Some("annexb"));
+                }
+                _ => break,
+            }
+        }
+        assert!(got >= 1, "expected annex-B AUs from mocked reader");
+        pump.stop().await;
+    }
+
+    #[tokio::test]
+    async fn scrcpy_fixture_pump_backend() {
+        let hub = VideoHub::new();
+        let mut rx = hub.subscribe("MOCK-SCRCPY").await;
+        let pump = start_scrcpy_fixture_pump(hub, "MOCK-SCRCPY".into()).await;
+        assert_eq!(pump.backend, "scrcpy");
+        let mut got_binary = false;
+        for _ in 0..20 {
+            match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+                Ok(Ok(VideoPacket::AnnexB(b))) if annexb_has_vcl(&b) => {
+                    got_binary = true;
+                    break;
+                }
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+        }
+        assert!(got_binary);
+        pump.stop().await;
+    }
+
+    #[test]
+    fn codec_string_from_fixture_sps() {
+        let aus = split_annexb_access_units_complete(FIXTURE_H264);
+        let cs = codec_string_from_sps_au(&aus[0]).expect("SPS in first AU");
+        assert!(cs.starts_with("avc1."), "{cs}");
     }
 }
