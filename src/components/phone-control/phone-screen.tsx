@@ -155,19 +155,22 @@ export function PhoneScreen({
                     <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/50">
                       {!configured && "Mock preview (no agent)"}
                       {configured && decodeState === "connecting" && "Connecting video…"}
-                      {configured && decodeState === "waiting" && "Waiting for H264…"}
+                      {configured && decodeState === "waiting" && (videoError || "Waiting for H264…")}
                       {configured && decodeState === "unsupported" && "WebCodecs unavailable"}
                       {configured && decodeState === "error" && "Video error"}
                       {configured &&
                         decodeState === "idle" &&
                         (session?.note || status?.note || "Stream idle")}
-                      {configured &&
-                        decodeState === "decoding" &&
-                        "Decoder ready"}
+                      {configured && decodeState === "decoding" && "Live H264"}
                     </p>
-                    {(videoError || status?.note) && configured && (
+                    {videoError && configured && decodeState === "error" && (
                       <p className="mt-2 max-w-[90%] font-mono text-[9px] leading-relaxed text-white/40">
-                        {videoError || status?.note}
+                        {videoError}
+                      </p>
+                    )}
+                    {status?.note && configured && decodeState === "idle" && (
+                      <p className="mt-2 max-w-[90%] font-mono text-[9px] leading-relaxed text-white/40">
+                        {status.note}
                       </p>
                     )}
                   </div>

@@ -1,6 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  annexBHasVcl,
+  annexBIsIdr,
+  annexBToAvcc,
+  buildAvcDecoderConfig,
+  codecStringFromSps,
+  extractSpsPps,
+} from "@/lib/video/h264";
 
 export type VideoStreamState = "idle" | "starting" | "streaming" | "error";
 
@@ -44,30 +52,6 @@ function webCodecsSupported(): boolean {
   );
 }
 
-function annexBIsKeyframe(data: Uint8Array): boolean {
-  let i = 0;
-  while (i + 4 < data.length) {
-    let sc = 0;
-    if (
-      data[i] === 0 &&
-      data[i + 1] === 0 &&
-      data[i + 2] === 0 &&
-      data[i + 3] === 1
-    ) {
-      sc = 4;
-    } else if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 1) {
-      sc = 3;
-    } else {
-      i += 1;
-      continue;
-    }
-    const nalType = data[i + sc] & 0x1f;
-    if (nalType === 5 || nalType === 7) return true;
-    i += sc + 1;
-  }
-  return false;
-}
-
 export interface UseDeviceVideoResult {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   status: VideoStatusMessage | null;
@@ -77,9 +61,9 @@ export interface UseDeviceVideoResult {
 }
 
 /**
- * Subscribe to `/ws/devices/{serial}/video`, decode Annex-B H264 via WebCodecs,
- * and paint onto a canvas. Closing the hook only drops the UI subscription —
- * agent sessions keep running.
+ * Subscribe to `/ws/devices/{serial}/video`, decode Annex-B H264 via WebCodecs
+ * (converted to AVCC + avcC description), paint onto a canvas.
+ * Unsubscribing does not stop the agent session.
  */
 export function useDeviceVideo(
   serial: string | null | undefined,
@@ -89,7 +73,6 @@ export function useDeviceVideo(
   const [decodeState, setDecodeState] = useState<VideoDecodeState>("idle");
   const [error, setError] = useState<string | null>(null);
   const configured = Boolean(agentBaseUrl());
-  const codecRef = useRef("avc1.42E01E");
 
   const paintFrame = useCallback((frame: VideoFrame) => {
     const canvas = canvasRef.current;
@@ -133,9 +116,11 @@ export function useDeviceVideo(
     let socket: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let decoder: VideoDecoder | null = null;
-    let configuredCodec: string | null = null;
+    let description: Uint8Array | null = null;
+    let codecString = "avc1.42E01E";
     let timestampUs = 0;
     let sawKeyframe = false;
+    let needsReset = false;
 
     const teardownDecoder = () => {
       if (decoder) {
@@ -146,38 +131,36 @@ export function useDeviceVideo(
         }
         decoder = null;
       }
-      configuredCodec = null;
       sawKeyframe = false;
     };
 
-    const ensureDecoder = (codecString: string) => {
-      if (decoder && configuredCodec === codecString && decoder.state !== "closed") {
-        return decoder;
-      }
+    const createDecoder = (desc: Uint8Array, codec: string) => {
       teardownDecoder();
+      needsReset = false;
       decoder = new VideoDecoder({
         output: (frame) => {
           if (!closed) {
             setDecodeState("decoding");
+            setError(null);
             paintFrame(frame);
           } else {
             frame.close();
           }
         },
         error: (err) => {
-          console.error("[video] decoder error", err);
+          console.warn("[video] decoder error — will reset on next IDR", err);
+          needsReset = true;
           if (!closed) {
-            setDecodeState("error");
-            setError(err.message || "H264 decode failed");
+            setDecodeState("waiting");
+            setError("Recovering decode…");
           }
         },
       });
       decoder.configure({
-        codec: codecString,
+        codec,
+        description: desc,
         optimizeForLatency: true,
       });
-      configuredCodec = codecString;
-      codecRef.current = codecString;
       sawKeyframe = false;
       return decoder;
     };
@@ -185,6 +168,8 @@ export function useDeviceVideo(
     const connect = () => {
       if (closed) return;
       setDecodeState("connecting");
+      description = null;
+      needsReset = false;
       const url = `${httpToWs(base)}/ws/devices/${encodeURIComponent(serial)}/video`;
       socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
@@ -199,18 +184,14 @@ export function useDeviceVideo(
           try {
             const msg = JSON.parse(event.data) as VideoStatusMessage;
             setStatus(msg);
-            if (msg.codecString) {
-              codecRef.current = msg.codecString;
-            }
+            if (msg.codecString) codecString = msg.codecString;
             if (msg.stream === "idle") {
               setDecodeState("idle");
             } else if (msg.stream === "error") {
               setDecodeState("error");
               setError(msg.note || "stream error");
-            } else if (msg.stream === "starting") {
-              setDecodeState("waiting");
-            } else if (msg.codecString) {
-              ensureDecoder(msg.codecString);
+            } else if (msg.stream === "starting" || msg.stream === "streaming") {
+              setDecodeState((prev) => (prev === "decoding" ? prev : "waiting"));
             }
           } catch {
             // ignore
@@ -219,35 +200,56 @@ export function useDeviceVideo(
         }
 
         const buf = new Uint8Array(event.data as ArrayBuffer);
-        if (buf.byteLength === 0) return;
+        if (buf.byteLength === 0 || !annexBHasVcl(buf)) return;
 
-        const dec = ensureDecoder(codecRef.current);
-        if (dec.state === "closed") return;
+        const paramSets = extractSpsPps(buf);
+        if (paramSets) {
+          description = buildAvcDecoderConfig(paramSets.sps, paramSets.pps);
+          codecString = codecStringFromSps(paramSets.sps);
+        }
 
-        const isKey = annexBIsKeyframe(buf);
-        if (!sawKeyframe && !isKey) {
+        const isKey = annexBIsIdr(buf);
+
+        if (!description) {
+          // Wait for an AU that carries SPS/PPS.
           return;
         }
+
+        if (needsReset || !decoder || decoder.state === "closed") {
+          if (!isKey) return;
+          createDecoder(description, codecString);
+        }
+
+        if (!sawKeyframe && !isKey) return;
         if (isKey) sawKeyframe = true;
 
+        const avcc = annexBToAvcc(buf);
+        if (avcc.byteLength === 0) return;
+
         try {
-          dec.decode(
+          if (!decoder || decoder.state !== "configured") return;
+          decoder.decode(
             new EncodedVideoChunk({
               type: isKey ? "key" : "delta",
               timestamp: timestampUs,
-              data: buf,
+              data: avcc,
             }),
           );
           timestampUs += 100_000;
         } catch (err) {
-          console.error("[video] decode() failed", err);
-          setDecodeState("error");
-          setError(err instanceof Error ? err.message : "decode failed");
+          console.warn("[video] decode() failed — reset on next IDR", err);
+          needsReset = true;
+          teardownDecoder();
+          if (!closed) {
+            setDecodeState("waiting");
+            setError("Recovering decode…");
+          }
         }
       };
 
       socket.onclose = () => {
         teardownDecoder();
+        description = null;
         if (!closed) {
           retryTimer = setTimeout(connect, 2000);
         }

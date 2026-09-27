@@ -243,6 +243,8 @@ async fn spawn_ffmpeg_testsrc(
         "0",
         "-pix_fmt",
         "yuv420p",
+        "-x264-params",
+        "repeat-headers=1",
         "-an",
         "-f",
         "h264",
@@ -305,7 +307,7 @@ async fn spawn_ffmpeg_testsrc(
 }
 
 async fn fixture_loop(hub: Arc<VideoHub>, serial: String) {
-    let aus = split_annexb_access_units(FIXTURE_H264);
+    let aus = split_annexb_access_units_complete(FIXTURE_H264);
     if aus.is_empty() {
         warn!(%serial, "fixture contained no access units");
         return;
@@ -320,8 +322,10 @@ async fn fixture_loop(hub: Arc<VideoHub>, serial: String) {
     }
 }
 
-/// Split Annex-B bytelength into access units (non-VCL NALs attach to the following VCL).
-pub fn split_annexb_access_units(data: &[u8]) -> Vec<Vec<u8>> {
+/// Split Annex-B into access units. Non-VCL NALs attach to the following VCL.
+/// Trailing SPS/PPS without a VCL are **not** emitted — returned in `leftover`
+/// so the caller can hold them for the next chunk (avoids decoding config-only AUs).
+pub fn split_annexb_access_units(data: &[u8]) -> (Vec<Vec<u8>>, Vec<u8>) {
     let nals = split_annexb_nals(data);
     let mut aus = Vec::new();
     let mut pending: Vec<u8> = Vec::new();
@@ -335,10 +339,12 @@ pub fn split_annexb_access_units(data: &[u8]) -> Vec<Vec<u8>> {
             }
         }
     }
-    if !pending.is_empty() {
-        // Trailing SPS/PPS without VCL — keep as config AU.
-        aus.push(pending);
-    }
+    (aus, pending)
+}
+
+/// Like [`split_annexb_access_units`] but drops trailing non-VCL (for complete buffers / fixtures).
+pub fn split_annexb_access_units_complete(data: &[u8]) -> Vec<Vec<u8>> {
+    let (aus, _leftover) = split_annexb_access_units(data);
     aus
 }
 
@@ -357,7 +363,15 @@ fn drain_access_units(pending: &mut Vec<u8>) -> Vec<Vec<u8>> {
     let rest = pending[complete_end..].to_vec();
     pending.clear();
     pending.extend_from_slice(&rest);
-    split_annexb_access_units(&chunk)
+    let (aus, leftover) = split_annexb_access_units(&chunk);
+    // Hold SPS/PPS until a VCL arrives in a later read.
+    if !leftover.is_empty() {
+        let mut merged = leftover;
+        merged.extend_from_slice(pending);
+        pending.clear();
+        pending.extend_from_slice(&merged);
+    }
+    aus
 }
 
 /// Returns NAL payloads **without** start codes.
@@ -416,12 +430,21 @@ fn append_annexb_nal(buf: &mut Vec<u8>, nal: &[u8]) {
     buf.extend_from_slice(nal);
 }
 
-/// True when an Annex-B AU contains an IDR (keyframe) or SPS (treat as key for WebCodecs).
+/// True when an Annex-B AU contains an IDR (keyframe).
 pub fn annexb_is_keyframe(au: &[u8]) -> bool {
     for nal in split_annexb_nals(au) {
-        match nal_unit_type(&nal) {
-            5 | 7 => return true, // IDR or SPS
-            _ => {}
+        if nal_unit_type(&nal) == 5 {
+            return true;
+        }
+    }
+    false
+}
+
+/// True when AU contains at least one VCL NAL (slice / IDR).
+pub fn annexb_has_vcl(au: &[u8]) -> bool {
+    for nal in split_annexb_nals(au) {
+        if matches!(nal_unit_type(&nal), 1 | 5) {
+            return true;
         }
     }
     false
@@ -461,7 +484,7 @@ mod tests {
 
     #[test]
     fn fixture_splits_into_access_units() {
-        let aus = split_annexb_access_units(FIXTURE_H264);
+        let aus = split_annexb_access_units_complete(FIXTURE_H264);
         assert!(
             aus.len() >= 5,
             "expected several AUs from fixture, got {}",
@@ -476,7 +499,24 @@ mod tests {
             first_types.contains(&7),
             "first AU should contain SPS, got {first_types:?}"
         );
+        assert!(annexb_has_vcl(&aus[0]));
         assert!(annexb_is_keyframe(&aus[0]));
+        // No config-only AUs.
+        for (i, au) in aus.iter().enumerate() {
+            assert!(
+                annexb_has_vcl(au),
+                "AU {i} missing VCL NAL"
+            );
+        }
+    }
+
+    #[test]
+    fn holds_trailing_sps_without_emitting() {
+        // SPS only (type 7) — should be leftover, not an AU.
+        let sps = [0u8, 0, 0, 1, 0x67, 0x42, 0x00, 0x1e, 0xff];
+        let (aus, leftover) = split_annexb_access_units(&sps);
+        assert!(aus.is_empty());
+        assert!(!leftover.is_empty());
     }
 
     #[test]
