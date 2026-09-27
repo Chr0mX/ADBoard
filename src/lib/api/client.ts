@@ -31,12 +31,11 @@ function delay(ms: number): Promise<void> {
 export function createMockDevicesClient(): DevicesClient {
   return {
     async listDevices() {
-      await delay(120);
       return MOCK_DEVICES.map((d) => ({ ...d }));
     },
 
     async sendTap(mode, targets, point) {
-      await delay(40);
+      await delay(16);
       const mapped: MappedTap[] = mapToDevices(point, targets);
       const broadcast: TapBroadcast = {
         id: `tap-${Date.now()}`,

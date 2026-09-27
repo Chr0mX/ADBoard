@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
+import { MOCK_DEVICES } from "@/lib/devices/mock-data";
 import type {
   ControlMode,
   Device,
@@ -21,44 +22,25 @@ function controllable(devices: Device[]): Device[] {
   return devices.filter((d) => d.status === "online");
 }
 
+function initialActiveId(devices: Device[]): string | null {
+  return devices.find((d) => d.status === "online")?.id ?? null;
+}
+
 export function usePhoneControl() {
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [devices] = useState<Device[]>(() => MOCK_DEVICES.map((d) => ({ ...d })));
+  const [error] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(() =>
+    initialActiveId(MOCK_DEVICES),
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
+    const id = initialActiveId(MOCK_DEVICES);
+    return id ? new Set([id]) : new Set();
+  });
   const [controlMode, setControlMode] = useState<ControlMode>("all");
   const [keyboardOn, setKeyboardOn] = useState(false);
   const [mouseOn, setMouseOn] = useState(true);
   const [lastTap, setLastTap] = useState<TapBroadcast | null>(null);
   const [tapLog, setTapLog] = useState<TapBroadcast[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoading(true);
-        const list = await devicesClient.listDevices();
-        if (cancelled) return;
-        setDevices(list);
-        const firstOnline = list.find((d) => d.status === "online");
-        if (firstOnline) {
-          setActiveId(firstOnline.id);
-          setSelectedIds(new Set([firstOnline.id]));
-        }
-        setError(null);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load devices");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const onlineCount = useMemo(
     () => devices.filter((d) => d.status === "online").length,
@@ -74,30 +56,23 @@ export function usePhoneControl() {
     const { deviceId, ctrlKey, shiftKey, metaKey } = event;
     const multi = ctrlKey || metaKey || shiftKey;
 
-    setDevices((current) => {
-      const target = current.find((d) => d.id === deviceId);
-      if (!target) return current;
+    setActiveId(deviceId);
 
-      // Switching active never "restarts" sessions — only swaps the panel.
-      setActiveId(deviceId);
-
-      if (multi) {
-        setSelectedIds((prev) => {
-          const next = new Set(prev);
-          if (next.has(deviceId)) {
-            if (next.size > 1) next.delete(deviceId);
-          } else {
-            next.add(deviceId);
-          }
-          return next;
-        });
-        setControlMode((mode) => (mode === "selected" ? "multi" : mode));
-      } else {
-        setSelectedIds(new Set([deviceId]));
-        setControlMode((mode) => (mode === "multi" ? "selected" : mode));
-      }
-      return current;
-    });
+    if (multi) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(deviceId)) {
+          if (next.size > 1) next.delete(deviceId);
+        } else {
+          next.add(deviceId);
+        }
+        return next;
+      });
+      setControlMode((mode) => (mode === "selected" ? "multi" : mode));
+    } else {
+      setSelectedIds(new Set([deviceId]));
+      setControlMode((mode) => (mode === "multi" ? "selected" : mode));
+    }
   }, []);
 
   const broadcastTargets = useMemo(() => {
@@ -158,7 +133,7 @@ export function usePhoneControl() {
 
   return {
     devices,
-    loading,
+    loading: false,
     error,
     onlineCount,
     activeDevice,

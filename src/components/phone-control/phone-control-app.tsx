@@ -40,11 +40,11 @@ export function PhoneControlApp() {
   };
 
   return (
-    <div className="pc-shell relative flex min-h-screen flex-col">
+    <div className="pc-shell relative flex h-dvh max-h-dvh flex-col overflow-hidden">
       <div className="pc-atmosphere" aria-hidden />
       <ControlHeader onlineCount={onlineCount} totalCount={devices.length} />
 
-      <main className="relative z-10 flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 lg:flex-row lg:gap-6 lg:px-6 lg:py-5">
+      <main className="relative z-10 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 lg:flex-row lg:overflow-hidden lg:gap-6 lg:px-6 lg:py-5">
         {loading && (
           <div className="flex flex-1 items-center justify-center font-mono text-sm text-[var(--pc-muted)]">
             Loading mock fleet…
@@ -59,7 +59,7 @@ export function PhoneControlApp() {
 
         {!loading && !error && (
           <>
-            <div className="flex min-h-[520px] min-w-0 flex-1 flex-col lg:min-h-0">
+            <div className="flex min-h-[560px] min-w-0 flex-1 flex-col lg:min-h-0">
               <PhoneScreen
                 device={activeDevice}
                 keyboardOn={keyboardOn}
@@ -73,7 +73,7 @@ export function PhoneControlApp() {
               />
             </div>
 
-            <aside className="flex w-full shrink-0 flex-col gap-5 lg:w-[380px] xl:w-[420px]">
+            <aside className="flex w-full shrink-0 flex-col gap-5 pb-2 lg:h-full lg:w-[380px] lg:overflow-y-auto xl:w-[420px]">
               <DeviceGrid
                 devices={devices}
                 activeId={activeId}
