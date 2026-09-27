@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
 import { MOCK_DEVICES } from "@/lib/devices/mock-data";
 import type {
@@ -27,20 +27,68 @@ function initialActiveId(devices: Device[]): string | null {
 }
 
 export function usePhoneControl() {
-  const [devices] = useState<Device[]>(() => MOCK_DEVICES.map((d) => ({ ...d })));
-  const [error] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(() =>
-    initialActiveId(MOCK_DEVICES),
-  );
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
-    const id = initialActiveId(MOCK_DEVICES);
-    return id ? new Set([id]) : new Set();
-  });
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [controlMode, setControlMode] = useState<ControlMode>("all");
   const [keyboardOn, setKeyboardOn] = useState(false);
   const [mouseOn, setMouseOn] = useState(true);
   const [lastTap, setLastTap] = useState<TapBroadcast | null>(null);
   const [tapLog, setTapLog] = useState<TapBroadcast[]>([]);
+
+  const applyFleet = useCallback((next: Device[]) => {
+    setDevices(next);
+    setActiveId((prev) => {
+      if (prev && next.some((d) => d.id === prev)) return prev;
+      return initialActiveId(next);
+    });
+    setSelectedIds((prev) => {
+      const still = [...prev].filter((id) => next.some((d) => d.id === id));
+      if (still.length > 0) return new Set(still);
+      const id = initialActiveId(next);
+      return id ? new Set([id]) : new Set();
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      try {
+        const list = await devicesClient.listDevices();
+        if (cancelled) return;
+        applyFleet(list);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[phone-control] listDevices failed", err);
+        // Keep the desk usable if the agent is down.
+        applyFleet(MOCK_DEVICES.map((d) => ({ ...d })));
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to reach control agent — showing mock fleet",
+        );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    const unsubscribe = devicesClient.subscribeDevices?.((next) => {
+      if (!cancelled) {
+        applyFleet(next);
+        setError(null);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [applyFleet]);
 
   const onlineCount = useMemo(
     () => devices.filter((d) => d.status === "online").length,
@@ -93,13 +141,18 @@ export function usePhoneControl() {
   const handleScreenTap = useCallback(
     async (point: NormalizedPoint) => {
       if (!mouseOn || broadcastTargets.length === 0) return;
-      const result = await devicesClient.sendTap(
-        controlMode,
-        broadcastTargets,
-        point,
-      );
-      setLastTap(result);
-      setTapLog((prev) => [result, ...prev].slice(0, 12));
+      try {
+        const result = await devicesClient.sendTap(
+          controlMode,
+          broadcastTargets,
+          point,
+        );
+        setLastTap(result);
+        setTapLog((prev) => [result, ...prev].slice(0, 12));
+      } catch (err) {
+        console.error("[phone-control] sendTap failed", err);
+        setError(err instanceof Error ? err.message : "Tap failed");
+      }
     },
     [mouseOn, broadcastTargets, controlMode],
   );
@@ -107,33 +160,40 @@ export function usePhoneControl() {
   const handleNav = useCallback(
     async (action: NavAction["type"]) => {
       if (broadcastTargets.length === 0) return;
-      await devicesClient.sendNav(controlMode, broadcastTargets, { type: action });
-      setTapLog((prev) =>
-        [
-          {
-            id: `nav-${Date.now()}`,
-            at: Date.now(),
-            normalized: { x: 0.5, y: 0.5 },
-            mode: controlMode,
-            targets: broadcastTargets.map((d) => ({
-              deviceId: d.id,
-              deviceName: `${d.name} · ${action.toUpperCase()}`,
-              x: 0,
-              y: 0,
-              width: d.resolution.width,
-              height: d.resolution.height,
-            })),
-          },
-          ...prev,
-        ].slice(0, 12),
-      );
+      try {
+        await devicesClient.sendNav(controlMode, broadcastTargets, {
+          type: action,
+        });
+        setTapLog((prev) =>
+          [
+            {
+              id: `nav-${Date.now()}`,
+              at: Date.now(),
+              normalized: { x: 0.5, y: 0.5 },
+              mode: controlMode,
+              targets: broadcastTargets.map((d) => ({
+                deviceId: d.id,
+                deviceName: `${d.name} · ${action.toUpperCase()}`,
+                x: 0,
+                y: 0,
+                width: d.resolution.width,
+                height: d.resolution.height,
+              })),
+            },
+            ...prev,
+          ].slice(0, 12),
+        );
+      } catch (err) {
+        console.error("[phone-control] sendNav failed", err);
+        setError(err instanceof Error ? err.message : "Nav failed");
+      }
     },
     [broadcastTargets, controlMode],
   );
 
   return {
     devices,
-    loading: false,
+    loading,
     error,
     onlineCount,
     activeDevice,

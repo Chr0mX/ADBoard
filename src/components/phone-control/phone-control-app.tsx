@@ -47,18 +47,23 @@ export function PhoneControlApp() {
       <main className="relative z-10 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 lg:flex-row lg:overflow-hidden lg:gap-6 lg:px-6 lg:py-5">
         {loading && (
           <div className="flex flex-1 items-center justify-center font-mono text-sm text-[var(--pc-muted)]">
-            Loading mock fleet…
+            Loading device fleet…
           </div>
         )}
 
-        {error && (
+        {error && !loading && devices.length === 0 && (
           <div className="flex flex-1 items-center justify-center text-sm text-[var(--pc-warn)]">
             {error}
           </div>
         )}
 
-        {!loading && !error && (
+        {!loading && devices.length > 0 && (
           <>
+            {error && (
+              <div className="absolute left-4 top-2 z-20 max-w-md truncate rounded-md border border-[var(--pc-warn)]/40 bg-[var(--pc-panel)] px-3 py-1 font-mono text-[10px] text-[var(--pc-warn)]">
+                {error}
+              </div>
+            )}
             <div className="flex min-h-[560px] min-w-0 flex-1 flex-col lg:min-h-0">
               <PhoneScreen
                 device={activeDevice}

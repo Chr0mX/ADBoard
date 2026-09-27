@@ -1,0 +1,90 @@
+//! Mock fleet matching the Next.js UI seed data when ADB is unavailable.
+
+use phonecontrol_protocol::{
+    ConnectionType, Device, DeviceResolution, DeviceStatus,
+};
+
+pub fn mock_fleet(host: &str) -> Vec<Device> {
+    vec![
+        Device {
+            id: "s24".into(),
+            name: "S24".into(),
+            model: "SM-S921B".into(),
+            android_version: "14".into(),
+            serial: "R5CW90ABC1".into(),
+            connection: ConnectionType::Usb,
+            status: DeviceStatus::Online,
+            battery: Some(78),
+            temperature_c: Some(34.2),
+            resolution: DeviceResolution {
+                width: 1920,
+                height: 1080,
+            },
+            fps: Some(60),
+            bitrate_mbps: Some(12.4),
+            latency_ms: Some(18),
+            host: host.into(),
+            wallpaper_hue: 210,
+        },
+        Device {
+            id: "s23".into(),
+            name: "S23".into(),
+            model: "SM-S911B".into(),
+            android_version: "14".into(),
+            serial: "R3CT50XYZ9".into(),
+            connection: ConnectionType::Usb,
+            status: DeviceStatus::Online,
+            battery: Some(54),
+            temperature_c: Some(36.8),
+            resolution: DeviceResolution {
+                width: 2340,
+                height: 1080,
+            },
+            fps: Some(60),
+            bitrate_mbps: Some(10.1),
+            latency_ms: Some(22),
+            host: host.into(),
+            wallpaper_hue: 165,
+        },
+        Device {
+            id: "pixel".into(),
+            name: "Pixel".into(),
+            model: "Pixel 8".into(),
+            android_version: "15".into(),
+            serial: "35251FDH2001XY".into(),
+            connection: ConnectionType::Network,
+            status: DeviceStatus::Online,
+            battery: Some(91),
+            temperature_c: Some(31.5),
+            resolution: DeviceResolution {
+                width: 2400,
+                height: 1080,
+            },
+            fps: Some(60),
+            bitrate_mbps: Some(8.7),
+            latency_ms: Some(41),
+            host: host.into(),
+            wallpaper_hue: 28,
+        },
+        Device {
+            id: "a52".into(),
+            name: "A52".into(),
+            model: "SM-A525F".into(),
+            android_version: "13".into(),
+            serial: "R58M31DEAD".into(),
+            connection: ConnectionType::Usb,
+            status: DeviceStatus::Offline,
+            battery: None,
+            temperature_c: None,
+            resolution: DeviceResolution {
+                width: 2400,
+                height: 1080,
+            },
+            fps: None,
+            bitrate_mbps: None,
+            latency_ms: None,
+            host: host.into(),
+            wallpaper_hue: 300,
+        },
+    ]
+}

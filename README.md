@@ -1,53 +1,83 @@
 # Phone Control
 
-Multi-device Android control center Web UI. **scrcpy/ADB is the transport; this app owns discovery, sessions, video/input abstraction, and the browser UI.** The browser never talks to ADB directly.
+Multi-device Android control center. **scrcpy/ADB is the transport; this app owns discovery, sessions, video/input abstraction, and the Web UI.** The browser never talks to ADB directly.
 
-## This slice
+## Components
 
-Runnable Next.js UI with a **mocked device fleet** and a thin client API (`src/lib/api/client.ts`) shaped for a future Rust + ADB/scrcpy backend.
+| Piece | Path | Port |
+|---|---|---|
+| Next.js Web UI | `src/` | **3847** |
+| Rust agent (`phonecontrol-agent`) | `crates/phonecontrol-agent` | **3848** |
+| Shared protocol types | `crates/phonecontrol-protocol` | — |
 
-- Active phone screen (mock Android frame) with Back / Home / Recent
-- Device grid with click / Ctrl·Shift multi-select
-- Control modes: Selected / Multi / All Devices
-- Tap normalization (0–1) mapped to each target device resolution
-- Status bar: name · link · resolution · FPS · bitrate
+## Run locally (agent + UI)
 
-## Run locally
+### 1. Control agent
 
 ```bash
+cargo run -p phonecontrol-agent
+```
+
+Listens on **http://127.0.0.1:3848** (override with `PHONECONTROL_PORT`).
+
+- If `adb` is on `PATH` (or `ADB_PATH` is set), the agent polls `adb devices -l` and emits online / offline / unauthorized.
+- If ADB is missing, it serves a **mock fleet** matching the UI seed devices.
+
+### 2. Web UI (pointed at the agent)
+
+```bash
+cp .env.example .env.local   # optional — defaults shown below
 npm install
-npm run dev
+NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848 npm run dev
 ```
 
-Dev server binds to **http://127.0.0.1:3847** (see `package.json` scripts).
+UI: **http://127.0.0.1:3847**
+
+Without `NEXT_PUBLIC_AGENT_URL`, the UI keeps the in-browser mock client (no agent required).
+
+### Agent-only smoke checks
 
 ```bash
-npm run build && npm run start
+curl -s http://127.0.0.1:3848/health | jq
+curl -s http://127.0.0.1:3848/api/devices | jq
+curl -s -X POST http://127.0.0.1:3848/api/input/tap \
+  -H 'content-type: application/json' \
+  -d '{"mode":"all","targetIds":["s24","s23"],"normalized":{"x":0.5,"y":0.4}}' | jq
 ```
+
+WebSocket: `ws://127.0.0.1:3848/ws` (device snapshots + tap/nav events).
+
+## API surface (this slice)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/health` | Agent status + ADB mode (`available` \| `mock`) |
+| GET | `/api/devices` | Current fleet |
+| POST | `/api/input/tap` | Normalized 0–1 point → per-device pixel map + stub inject |
+| POST | `/api/input/nav` | `back` / `home` / `recent` broadcast (stub inject) |
+| WS | `/ws` | `devices`, `device_updated`, `tap_result`, `nav_result`, `notice` |
+
+## Real vs stubbed
+
+| Real | Stubbed (TODO) |
+|---|---|
+| HTTP + WebSocket control plane | scrcpy-server / H264 video pipeline |
+| ADB discovery when `adb` exists | Actual touch/key injection into devices |
+| Mock fleet fallback matching UI | WebRTC, Windows `PhoneControl.exe` packaging |
+| Normalized → device-pixel mapping | Per-device `/ws/devices/{serial}/video` |
 
 ## Stack
 
-- Next.js (App Router) · TypeScript · Tailwind CSS · shadcn/ui
+- Frontend: Next.js · TypeScript · Tailwind · shadcn/ui
+- Backend: Rust · Axum · Tokio (same codebase later as Windows `PhoneControl.exe` / Linux `phonecontrol-agent`)
 
-## Mock vs next
-
-| Now (mock) | Next (real) |
-|---|---|
-| 4 seeded devices in `src/lib/devices/mock-data.ts` | ADB discovery via Rust host / LXC agent |
-| Local `devicesClient` delays + console logs | HTTP + WebSocket control plane |
-| Gradient “stream” placeholder | H264 over WS (later WebRTC) |
-| Tap/nav broadcast feedback in UI | scrcpy-server input injection |
-
-## Project layout
+## Layout
 
 ```text
-src/
-  app/                 # Next.js routes
-  components/
-    phone-control/     # Wireframe UI
-    ui/                # shadcn primitives
-  hooks/               # usePhoneControl
-  lib/
-    api/client.ts      # Thin client — swap for real backend
-    devices/           # Types, mock data, coord helpers
+Cargo.toml                 # workspace
+crates/
+  phonecontrol-protocol/   # shared wire types
+  phonecontrol-agent/      # Linux agent binary
+src/                       # Next.js UI
+  lib/api/client.ts        # mock or agent via NEXT_PUBLIC_AGENT_URL
 ```

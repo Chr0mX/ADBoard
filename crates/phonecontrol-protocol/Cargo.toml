@@ -1,0 +1,11 @@
+[package]
+name = "phonecontrol-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared Phone Control wire types (HTTP + WebSocket)"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
