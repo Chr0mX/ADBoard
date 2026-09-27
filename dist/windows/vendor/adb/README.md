@@ -1,11 +1,17 @@
 # ADB for Windows (not committed)
 
-Download **Android SDK Platform-Tools** for Windows from Google’s developer site, then copy into this folder:
+**Automated (preferred):** from the repo root:
 
-- `adb.exe`
-- `AdbWinApi.dll`
-- `AdbWinUsbApi.dll`
+```bash
+make fetch-deps FETCH_TARGET=windows
+# or on Windows PowerShell:
+.\scripts\fetch-deps.ps1
+```
 
-`Start-PhoneControl.ps1` sets `ADB_PATH` to `vendor\adb\adb.exe` when present.
+Downloads go to `./temp/`; this folder receives `adb.exe`, `AdbWinApi.dll`, `AdbWinUsbApi.dll`.
 
-Do **not** commit these binaries to git (license / redistribution). Install on each Windows host instead.
+**Manual:** download **Android SDK Platform-Tools** for Windows from Google, then copy those files here.
+
+`Start-PhoneControl.ps1` sets `ADB_PATH` to `vendor\adb\adb.exe` when present. The agent also auto-discovers this path.
+
+Do **not** commit these binaries to git (license / redistribution).

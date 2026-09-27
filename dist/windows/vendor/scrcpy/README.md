@@ -1,13 +1,23 @@
 # scrcpy for Windows (not committed)
 
-Download a **Windows** release of scrcpy (Genymobile/scrcpy), then copy into this folder at least:
+**Automated (preferred):** from the repo root:
+
+```bash
+make fetch-deps FETCH_TARGET=windows
+# or on Windows PowerShell:
+.\scripts\fetch-deps.ps1
+```
+
+Downloads go to `./temp/`; this folder receives the scrcpy win64 release (`scrcpy.exe`, `scrcpy-server`, DLLs, …).
+
+**Manual:** download a **Windows** release from Genymobile/scrcpy and copy at least:
 
 - `scrcpy.exe`
-- `scrcpy-server` (or `scrcpy-server.jar` depending on the release layout)
-- any DLLs shipped next to `scrcpy.exe` (SDL, etc.)
+- `scrcpy-server` (or `scrcpy-server.jar`)
+- any DLLs shipped next to `scrcpy.exe`
 
-`Start-PhoneControl.ps1` sets `SCRCPY_PATH` / `SCRCPY_SERVER_PATH` when those files exist.
+`Start-PhoneControl.ps1` sets `SCRCPY_PATH` / `SCRCPY_SERVER_PATH` when those files exist. The agent also auto-discovers vendored paths.
 
 Phone Control owns discovery and the Web UI; scrcpy-server is the capture transport for video (`raw_stream=true` over an adb-forwarded TCP socket → Annex-B on the video WebSocket). Inject v1 still uses `adb shell input`. Use `PHONECONTROL_VIDEO_SOURCE=testpattern` to validate the browser path without phones.
 
-Do **not** commit scrcpy redistributables to this repo; download onto the Windows host.
+Do **not** commit scrcpy redistributables to this repo.

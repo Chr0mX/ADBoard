@@ -4,6 +4,7 @@ mod device_manager;
 mod mesh;
 mod mesh_client;
 mod mock;
+mod paths;
 mod scrcpy_video;
 mod session;
 mod video;

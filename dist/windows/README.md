@@ -19,16 +19,16 @@ vendor/
 
 ## One-time setup
 
-1. **Platform Tools (ADB)**  
-   Download from Google → extract → copy `adb.exe`, `AdbWinApi.dll`, `AdbWinUsbApi.dll` into `vendor/adb/`.  
-   See `vendor/adb/README.md`.
+1. **ADB + scrcpy (automated)** from the repo root:
 
-2. **scrcpy (optional for video; needed for real phone mirror later)**  
-   Download a Windows release from the scrcpy project → copy binaries into `vendor/scrcpy/`.  
-   See `vendor/scrcpy/README.md`.  
-   Until scrcpy H264→WS is wired, use `PHONECONTROL_VIDEO_SOURCE=testpattern` to exercise the UI.
+```powershell
+.\scripts\fetch-deps.ps1
+# or from WSL/Linux: make fetch-deps FETCH_TARGET=windows
+```
 
-3. Enable **USB debugging** on each phone and accept the RSA prompt.
+Caches under `./temp/`; installs into `vendor/adb/` and `vendor/scrcpy/`. See those READMEs for a manual download fallback.
+
+2. Enable **USB debugging** on each phone and accept the RSA prompt.
 
 ## Run (controller on this PC)
 

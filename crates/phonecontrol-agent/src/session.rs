@@ -667,13 +667,16 @@ async fn run_adb(adb: &PathBuf, args: &[String]) -> Result<(), String> {
     }
 }
 
-/// Resolve scrcpy binary: `SCRCPY_PATH`, then `which scrcpy`.
+/// Resolve scrcpy binary: `SCRCPY_PATH`, vendored tree, then `which scrcpy`.
 pub fn scrcpy_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("SCRCPY_PATH") {
         let p = PathBuf::from(path);
         if p.is_file() {
             return Some(p);
         }
+    }
+    if let Some(p) = crate::paths::vendored_scrcpy() {
+        return Some(p);
     }
     if let Ok(path) = std::env::var("SCRCPY_SERVER_PATH") {
         let p = PathBuf::from(path);

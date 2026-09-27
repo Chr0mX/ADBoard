@@ -20,16 +20,19 @@ pub struct AdbDeviceLine {
 }
 
 pub fn adb_binary() -> Option<PathBuf> {
-    which("adb")
-}
-
-fn which(bin: &str) -> Option<PathBuf> {
     if let Ok(path) = std::env::var("ADB_PATH") {
         let p = PathBuf::from(path);
         if p.is_file() {
             return Some(p);
         }
     }
+    if let Some(p) = crate::paths::vendored_adb() {
+        return Some(p);
+    }
+    which("adb")
+}
+
+fn which(bin: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
         for dir in std::env::split_paths(&paths) {
             let candidate = dir.join(bin);

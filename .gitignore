@@ -50,3 +50,20 @@ next-env.d.ts
 
 # Allow Windows pack env example (root .env* rule would otherwise hide it)
 !dist/windows/.env.example
+
+# Dependency fetch cache (make fetch-deps) — never commit downloads/extracts
+/temp/
+
+# Vendored ADB / scrcpy binaries (downloaded, not committed)
+/tools/linux/adb/**
+!/tools/linux/adb/README.md
+!/tools/linux/adb/.gitkeep
+/tools/linux/scrcpy/**
+!/tools/linux/scrcpy/README.md
+!/tools/linux/scrcpy/.gitkeep
+/dist/windows/vendor/adb/**
+!/dist/windows/vendor/adb/README.md
+!/dist/windows/vendor/adb/.gitkeep
+/dist/windows/vendor/scrcpy/**
+!/dist/windows/vendor/scrcpy/README.md
+!/dist/windows/vendor/scrcpy/.gitkeep

@@ -139,6 +139,25 @@ curl -s http://127.0.0.1:3848/api/hosts | jq
 | Proxmox LXC | `agent` | `--role agent` + `PHONECONTROL_CONTROLLER_URL`. Set `PHONECONTROL_HTTP_BASE` to a controller-reachable URL for video proxy. |
 | Browser | UI | Always talks to the **controller** (`NEXT_PUBLIC_AGENT_URL`). |
 
+### Fetch ADB + scrcpy (`make fetch-deps`)
+
+Downloads go to **`./temp/`** only (gitignored). Binaries are installed into:
+
+| Target | Paths |
+|---|---|
+| Linux | `tools/linux/adb/`, `tools/linux/scrcpy/` |
+| Windows pack | `dist/windows/vendor/adb/`, `dist/windows/vendor/scrcpy/` |
+
+```bash
+make fetch-deps                         # host OS (linux here)
+make fetch-deps FETCH_TARGET=windows    # Windows vendor only
+make fetch-deps FETCH_TARGET=all        # both
+make fetch-deps FETCH_FORCE=1           # re-download
+# PowerShell (Windows host): .\scripts\fetch-deps.ps1
+```
+
+The agent auto-discovers vendored binaries (env `ADB_PATH` / `SCRCPY_PATH` / `SCRCPY_SERVER_PATH` still win).
+
 ### Windows host pack (`dist/windows/`)
 
 Zip-ready folder (no MSI / signed installer). Same binary as Linux; renamed to `PhoneControl.exe`.
@@ -149,8 +168,8 @@ dist/windows/
   Start-PhoneControl.ps1
   .env.example
   README.md
-  vendor/adb/README.md       # drop adb.exe + DLLs here (download Platform Tools)
-  vendor/scrcpy/README.md    # drop scrcpy Windows build here (do not commit binaries)
+  vendor/adb/                # make fetch-deps FETCH_TARGET=windows
+  vendor/scrcpy/
 ```
 
 **Build on Linux / CI** (MinGW gnu target — works in this environment; MSVC needs a Windows SDK):
@@ -162,12 +181,12 @@ make build-windows      # → target/x86_64-pc-windows-gnu/release/phonecontrol-
 make package-windows    # → dist/windows/PhoneControl.exe + docs
 ```
 
-Scripts: `scripts/build-windows.sh`, `scripts/package-windows.sh`. Linker config: `.cargo/config.toml`.
+Scripts: `scripts/build-windows.sh`, `scripts/package-windows.sh`, `scripts/fetch-deps.sh`. Linker config: `.cargo/config.toml`.
 
 **On the Windows USB host:**
 
-1. Copy `dist/windows/` to the PC.
-2. Download Platform Tools → `vendor/adb/`; optionally scrcpy → `vendor/scrcpy/` (see those READMEs).
+1. Copy `dist/windows/` to the PC (or clone the repo).
+2. `.\scripts\fetch-deps.ps1` (or `make fetch-deps FETCH_TARGET=windows` from WSL).
 3. PowerShell:
 
 ```powershell
@@ -218,9 +237,9 @@ Mock without phones: `.\Start-PhoneControl.ps1 -Mock` (testpattern video).
 | `PHONECONTROL_MOCK_PROFILE` | `all` (agent → `lxc`) | `all` / `windows` / `lxc` |
 | `PHONECONTROL_VIDEO_SOURCE` | `auto` | `auto` / `testpattern` / `scrcpy` / `off` — auto prefers scrcpy when ADB + scrcpy-server are ready |
 | `FFMPEG_PATH` | `which ffmpeg` | Live testsrc encoder for testpattern |
-| `ADB_PATH` | `which adb` | Override ADB binary |
-| `SCRCPY_PATH` | `which scrcpy` | Optional scrcpy CLI (version probe / sibling server jar) |
-| `SCRCPY_SERVER_PATH` | next to binary / distro paths | **Required for real frames** — standalone server jar |
+| `ADB_PATH` | vendored `tools/…` / `vendor/…`, else `which adb` | Override ADB binary |
+| `SCRCPY_PATH` | vendored scrcpy, else `which scrcpy` | Optional scrcpy CLI (version probe / sibling server jar) |
+| `SCRCPY_SERVER_PATH` | next to binary / vendored / distro paths | **Required for real frames** — standalone server jar |
 | `SCRCPY_SERVER_VERSION` | from filename / `scrcpy --version` | First arg to `com.genymobile.scrcpy.Server` |
 | `SCRCPY_MAX_SIZE` | `1280` | Server `max_size=` |
 | `SCRCPY_SERVER_OPTS` | — | Extra `key=value` server options |

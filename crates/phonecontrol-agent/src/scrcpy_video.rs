@@ -45,7 +45,7 @@ impl ScrcpyRawCapture {
     }
 }
 
-/// Resolve scrcpy-server jar: `SCRCPY_SERVER_PATH`, then next to the scrcpy binary.
+/// Resolve scrcpy-server jar: `SCRCPY_SERVER_PATH`, next to binary, vendored, distro paths.
 pub fn scrcpy_server_jar(scrcpy_bin: Option<&Path>) -> Option<PathBuf> {
     if let Ok(path) = std::env::var("SCRCPY_SERVER_PATH") {
         let p = PathBuf::from(path);
@@ -72,6 +72,9 @@ pub fn scrcpy_server_jar(scrcpy_bin: Option<&Path>) -> Option<PathBuf> {
                 }
             }
         }
+    }
+    if let Some(p) = crate::paths::vendored_scrcpy_server() {
+        return Some(p);
     }
     // Common distro paths
     for candidate in [
