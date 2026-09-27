@@ -406,18 +406,19 @@ async fn spawn_ffmpeg_testsrc(
         "baseline",
         "-level",
         "3.0",
-        "-tune",
-        "zerolatency",
         "-g",
         &TESTPATTERN_FPS.to_string(),
         "-keyint_min",
         &TESTPATTERN_FPS.to_string(),
+        "-sc_threshold",
+        "0",
         "-bf",
         "0",
         "-pix_fmt",
         "yuv420p",
+        // Single-slice IDRs + repeated SPS/PPS — required for clean WebCodecs AUs.
         "-x264-params",
-        "repeat-headers=1",
+        "repeat-headers=1:intra-refresh=0:slices=1",
         "-an",
         "-f",
         "h264",
@@ -479,24 +480,44 @@ pub fn codec_string_from_sps_au(au: &[u8]) -> Option<String> {
     None
 }
 
-/// Split Annex-B into access units. Non-VCL NALs attach to the following VCL.
-/// Trailing SPS/PPS without a VCL are **not** emitted — returned in `leftover`
-/// so the caller can hold them for the next chunk (avoids decoding config-only AUs).
+/// Split Annex-B into access units (one primary coded picture each).
+/// Non-VCL NALs attach to the following VCL. Multi-slice pictures stay together
+/// (new picture starts when `first_mb_in_slice == 0`).
+/// Trailing non-VCL without a VCL is returned as `leftover` (not emitted).
 pub fn split_annexb_access_units(data: &[u8]) -> (Vec<Vec<u8>>, Vec<u8>) {
     let nals = split_annexb_nals(data);
     let mut aus = Vec::new();
     let mut pending: Vec<u8> = Vec::new();
+    let mut pending_has_vcl = false;
+
     for nal in nals {
         let nal_type = nal_unit_type(&nal);
-        append_annexb_nal(&mut pending, &nal);
-        // VCL: slice / IDR → close AU
-        if matches!(nal_type, 1 | 5) {
-            if !pending.is_empty() {
+        let is_vcl = matches!(nal_type, 1 | 5);
+
+        if is_vcl {
+            let first_mb = slice_first_mb_in_slice(&nal).unwrap_or(0);
+            // Start of a new primary picture → close previous AU.
+            if first_mb == 0 && pending_has_vcl {
                 aus.push(std::mem::take(&mut pending));
             }
+            append_annexb_nal(&mut pending, &nal);
+            pending_has_vcl = true;
+        } else if pending_has_vcl && matches!(nal_type, 7 | 8 | 9) {
+            // AUD / SPS / PPS ahead of the next picture → close current AU first.
+            aus.push(std::mem::take(&mut pending));
+            pending_has_vcl = false;
+            append_annexb_nal(&mut pending, &nal);
+        } else {
+            append_annexb_nal(&mut pending, &nal);
         }
     }
-    (aus, pending)
+
+    if pending_has_vcl {
+        aus.push(std::mem::take(&mut pending));
+        (aus, Vec::new())
+    } else {
+        (aus, pending)
+    }
 }
 
 /// Like [`split_annexb_access_units`] but drops trailing non-VCL (for complete buffers / fixtures).
@@ -580,6 +601,46 @@ fn nal_unit_type(nal: &[u8]) -> u8 {
         return 0;
     }
     nal[0] & 0x1f
+}
+
+/// Parse `first_mb_in_slice` (ue(v)) from a VCL NAL payload (including header byte).
+fn slice_first_mb_in_slice(nal: &[u8]) -> Option<u32> {
+    if nal.len() < 2 {
+        return None;
+    }
+    // Skip NAL header; slice_header begins immediately for non-SVC/MVC.
+    exp_golomb_ue(&nal[1..])
+}
+
+fn exp_golomb_ue(bytes: &[u8]) -> Option<u32> {
+    let mut bit_pos = 0usize;
+    let total_bits = bytes.len() * 8;
+    // leading zeros
+    let mut zeros = 0usize;
+    while bit_pos < total_bits {
+        let byte = bytes[bit_pos / 8];
+        let bit = (byte >> (7 - (bit_pos % 8))) & 1;
+        bit_pos += 1;
+        if bit == 0 {
+            zeros += 1;
+            if zeros > 31 {
+                return None;
+            }
+        } else {
+            break;
+        }
+    }
+    let mut value = 1u32;
+    for _ in 0..zeros {
+        if bit_pos >= total_bits {
+            return None;
+        }
+        let byte = bytes[bit_pos / 8];
+        let bit = u32::from((byte >> (7 - (bit_pos % 8))) & 1);
+        bit_pos += 1;
+        value = (value << 1) | bit;
+    }
+    Some(value.saturating_sub(1))
 }
 
 fn append_annexb_nal(buf: &mut Vec<u8>, nal: &[u8]) {
@@ -675,12 +736,66 @@ mod tests {
     }
 
     #[test]
+    fn drain_emits_idrs_from_chunked_reads() {
+        // Simulate ffmpeg pipe reads of a real annex-B stream (fixture has IDRs).
+        let data = FIXTURE_H264;
+        let mut pending = Vec::new();
+        let mut all_aus = Vec::new();
+        // Chunk in irregular sizes like a pipe.
+        let mut off = 0;
+        let mut chunk_sz = 137usize;
+        while off < data.len() {
+            let end = (off + chunk_sz).min(data.len());
+            pending.extend_from_slice(&data[off..end]);
+            all_aus.extend(drain_access_units(&mut pending));
+            off = end;
+            chunk_sz = 64 + (chunk_sz * 3) % 900;
+        }
+        // Flush: append a dummy start code so the final NAL can close.
+        pending.extend_from_slice(&[0, 0, 0, 1, 0x01, 0x00]);
+        all_aus.extend(drain_access_units(&mut pending));
+
+        let idr_count = all_aus.iter().filter(|au| annexb_is_keyframe(au)).count();
+        let sps_count = all_aus
+            .iter()
+            .filter(|au| split_annexb_nals(au).iter().any(|n| nal_unit_type(n) == 7))
+            .count();
+        assert!(
+            idr_count >= 2,
+            "expected IDR AUs from chunked drain, got {idr_count} (total AUs {})",
+            all_aus.len()
+        );
+        assert!(
+            sps_count >= 1,
+            "expected SPS on some AUs, got {sps_count}"
+        );
+    }
+
+    #[test]
     fn holds_trailing_sps_without_emitting() {
-        // SPS only (type 7) — should be leftover, not an AU.
         let sps = [0u8, 0, 0, 1, 0x67, 0x42, 0x00, 0x1e, 0xff];
         let (aus, leftover) = split_annexb_access_units(&sps);
         assert!(aus.is_empty());
         assert!(!leftover.is_empty());
+    }
+
+    #[test]
+    fn groups_multislice_picture_into_one_au() {
+        // first_mb=0 → ue "1" → byte 0x80
+        let slice0 = vec![0x65, 0x80];
+        // first_mb=10 → ue encoding 0001011 → 0x16
+        let slice1 = vec![0x65, 0x16];
+        let mut buf = Vec::new();
+        append_annexb_nal(&mut buf, &slice0);
+        append_annexb_nal(&mut buf, &slice1);
+        let (aus, leftover) = split_annexb_access_units(&buf);
+        assert!(leftover.is_empty());
+        assert_eq!(aus.len(), 1, "multi-slice picture should be one AU");
+        let types: Vec<_> = split_annexb_nals(&aus[0])
+            .iter()
+            .map(|n| nal_unit_type(n))
+            .collect();
+        assert_eq!(types, vec![5, 5]);
     }
 
     #[test]

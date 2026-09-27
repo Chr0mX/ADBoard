@@ -750,14 +750,15 @@ mod tests {
         // Wait briefly for at least one AU.
         let mut rx = hub.subscribe("SERIAL").await;
         let mut got_binary = false;
-        for _ in 0..30 {
+        for _ in 0..50 {
             match tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await {
                 Ok(Ok(crate::video::VideoPacket::AnnexB(b))) if !b.is_empty() => {
                     got_binary = true;
                     break;
                 }
                 Ok(Ok(_)) => {}
-                _ => break,
+                Ok(Err(_)) => break,
+                Err(_) => {} // timeout — keep waiting
             }
         }
         assert!(got_binary, "expected annex-B packets from testpattern");

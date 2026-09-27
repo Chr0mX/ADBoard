@@ -62,8 +62,7 @@ export interface UseDeviceVideoResult {
 
 /**
  * Subscribe to `/ws/devices/{serial}/video`, decode Annex-B H264 via WebCodecs
- * (converted to AVCC + avcC description), paint onto a canvas.
- * Unsubscribing does not stop the agent session.
+ * (AVCC + avcC), paint onto a canvas. Unsubscribe does not stop the agent session.
  */
 export function useDeviceVideo(
   serial: string | null | undefined,
@@ -120,7 +119,9 @@ export function useDeviceVideo(
     let codecString = "avc1.42E01E";
     let timestampUs = 0;
     let sawKeyframe = false;
-    let needsReset = false;
+    /** When set, ignore all input until the next SPS+IDR AU recreates the decoder. */
+    let waitingForKeyframeConfig = false;
+    let lastResetAt = 0;
 
     const teardownDecoder = () => {
       if (decoder) {
@@ -134,9 +135,26 @@ export function useDeviceVideo(
       sawKeyframe = false;
     };
 
+    const markBroken = (reason: string) => {
+      const now = Date.now();
+      // Throttle reset storms (multi-slice / bad AU spam).
+      if (now - lastResetAt < 500) {
+        waitingForKeyframeConfig = true;
+        teardownDecoder();
+        return;
+      }
+      lastResetAt = now;
+      waitingForKeyframeConfig = true;
+      teardownDecoder();
+      if (!closed) {
+        setDecodeState("waiting");
+        setError(reason);
+      }
+    };
+
     const createDecoder = (desc: Uint8Array, codec: string) => {
       teardownDecoder();
-      needsReset = false;
+      waitingForKeyframeConfig = false;
       decoder = new VideoDecoder({
         output: (frame) => {
           if (!closed) {
@@ -148,12 +166,8 @@ export function useDeviceVideo(
           }
         },
         error: (err) => {
-          console.warn("[video] decoder error — will reset on next IDR", err);
-          needsReset = true;
-          if (!closed) {
-            setDecodeState("waiting");
-            setError("Recovering decode…");
-          }
+          console.warn("[video] decoder error", err);
+          markBroken("Recovering decode…");
         },
       });
       decoder.configure({
@@ -161,7 +175,6 @@ export function useDeviceVideo(
         description: desc,
         optimizeForLatency: true,
       });
-      sawKeyframe = false;
       return decoder;
     };
 
@@ -169,7 +182,7 @@ export function useDeviceVideo(
       if (closed) return;
       setDecodeState("connecting");
       description = null;
-      needsReset = false;
+      waitingForKeyframeConfig = false;
       const url = `${httpToWs(base)}/ws/devices/${encodeURIComponent(serial)}/video`;
       socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
@@ -209,25 +222,35 @@ export function useDeviceVideo(
         }
 
         const isKey = annexBIsIdr(buf);
+        // Prefer keyframes that carry SPS/PPS so avcC stays in sync.
+        const isConfigKey = isKey && !!paramSets;
 
         if (!description) {
-          // Wait for an AU that carries SPS/PPS.
-          return;
+          return; // wait for SPS/PPS
         }
 
-        if (needsReset || !decoder || decoder.state === "closed") {
-          if (!isKey) return;
+        const needNewDecoder =
+          waitingForKeyframeConfig ||
+          !decoder ||
+          decoder.state === "closed" ||
+          decoder.state === "unconfigured";
+
+        if (needNewDecoder) {
+          if (!isConfigKey) return; // wait for SPS+IDR together
           createDecoder(description, codecString);
+          sawKeyframe = false;
         }
 
         if (!sawKeyframe && !isKey) return;
         if (isKey) sawKeyframe = true;
 
+        // Never feed a closed/broken decoder.
+        if (!decoder || decoder.state !== "configured") return;
+
         const avcc = annexBToAvcc(buf);
         if (avcc.byteLength === 0) return;
 
         try {
-          if (!decoder || decoder.state !== "configured") return;
           decoder.decode(
             new EncodedVideoChunk({
               type: isKey ? "key" : "delta",
@@ -237,13 +260,8 @@ export function useDeviceVideo(
           );
           timestampUs += 100_000;
         } catch (err) {
-          console.warn("[video] decode() failed — reset on next IDR", err);
-          needsReset = true;
-          teardownDecoder();
-          if (!closed) {
-            setDecodeState("waiting");
-            setError("Recovering decode…");
-          }
+          console.warn("[video] decode() threw", err);
+          markBroken("Recovering decode…");
         }
       };
 
