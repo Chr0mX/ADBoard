@@ -162,7 +162,12 @@ fn parse_wm_size(text: &str) -> Option<DeviceResolution> {
     None
 }
 
-pub fn adb_line_to_device(line: &AdbDeviceLine, host: &str, resolution: DeviceResolution) -> Device {
+pub fn adb_line_to_device(
+    line: &AdbDeviceLine,
+    host_id: &str,
+    host_name: &str,
+    resolution: DeviceResolution,
+) -> Device {
     let short = short_name(&line.serial, line.model.as_deref());
     let id = sanitize_id(&line.serial);
     let hue = wallpaper_hue(&line.serial);
@@ -186,7 +191,8 @@ pub fn adb_line_to_device(line: &AdbDeviceLine, host: &str, resolution: DeviceRe
         fps: if online { Some(60) } else { None },
         bitrate_mbps: if online { Some(8.0) } else { None },
         latency_ms: if online { Some(30) } else { None },
-        host: host.into(),
+        host: host_name.into(),
+        host_id: Some(host_id.into()),
         wallpaper_hue: hue,
     }
 }

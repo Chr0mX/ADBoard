@@ -17,6 +17,7 @@ export const MOCK_DEVICES: Device[] = [
     bitrateMbps: 12.4,
     latencyMs: 18,
     host: "windows-host",
+    hostId: "windows-host",
     wallpaperHue: 210,
   },
   {
@@ -34,6 +35,7 @@ export const MOCK_DEVICES: Device[] = [
     bitrateMbps: 10.1,
     latencyMs: 22,
     host: "windows-host",
+    hostId: "windows-host",
     wallpaperHue: 165,
   },
   {
@@ -51,6 +53,7 @@ export const MOCK_DEVICES: Device[] = [
     bitrateMbps: 8.7,
     latencyMs: 41,
     host: "lxc-agent-01",
+    hostId: "lxc-agent-01",
     wallpaperHue: 28,
   },
   {
@@ -68,6 +71,7 @@ export const MOCK_DEVICES: Device[] = [
     bitrateMbps: null,
     latencyMs: null,
     host: "lxc-agent-01",
+    hostId: "lxc-agent-01",
     wallpaperHue: 300,
   },
 ];

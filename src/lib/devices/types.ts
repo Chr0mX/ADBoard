@@ -3,6 +3,7 @@ export type DeviceStatus = "online" | "offline" | "unauthorized";
 export type ControlMode = "selected" | "multi" | "all";
 export type InjectStatus = "ok" | "stub" | "error";
 export type StreamState = "idle" | "starting" | "streaming" | "error";
+export type HostStatus = "online" | "stale" | "offline";
 
 export interface DeviceResolution {
   width: number;
@@ -24,7 +25,19 @@ export interface Device {
   bitrateMbps: number | null;
   latencyMs: number | null;
   host: string;
+  /** Stable mesh host id when provided by the agent. */
+  hostId?: string;
   wallpaperHue: number;
+}
+
+export interface HostInfo {
+  hostId: string;
+  name: string;
+  os: string;
+  status: HostStatus;
+  deviceCount: number;
+  local: boolean;
+  lastSeenMs?: number;
 }
 
 export interface NormalizedPoint {

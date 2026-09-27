@@ -79,6 +79,33 @@ pub enum InjectMode {
     Stub,
 }
 
+/// Process role for the multi-host mesh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    /// Serves UI API + aggregates local + remote agent fleets.
+    Controller,
+    /// Local ADB/scrcpy only; registers with a controller.
+    Agent,
+}
+
+impl Role {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Controller => "controller",
+            Role::Agent => "agent",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HostStatus {
+    Online,
+    Stale,
+    Offline,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceResolution {
@@ -102,8 +129,18 @@ pub struct Device {
     pub fps: Option<u32>,
     pub bitrate_mbps: Option<f32>,
     pub latency_ms: Option<u32>,
+    /// Display label for the owning host (Windows PC, LXC, …).
     pub host: String,
+    /// Stable host id for mesh routing (defaults to `host` when omitted by older peers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<String>,
     pub wallpaper_hue: u16,
+}
+
+impl Device {
+    pub fn effective_host_id(&self) -> &str {
+        self.host_id.as_deref().unwrap_or(self.host.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -198,16 +235,35 @@ pub struct SessionStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInfo {
+    pub host_id: String,
+    pub name: String,
+    pub os: String,
+    pub status: HostStatus,
+    pub device_count: usize,
+    pub local: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HealthResponse {
     pub status: String,
     pub agent: String,
+    pub role: Role,
+    pub host_id: String,
+    pub host_name: String,
     pub adb: AdbAvailability,
     pub scrcpy: ScrcpyAvailability,
     pub inject: InjectMode,
     pub port: u16,
+    #[serde(default)]
+    pub registered_hosts: usize,
 }
 
-/// Server → client WebSocket frames.
+/// Server → UI WebSocket frames.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerEvent {
@@ -221,11 +277,13 @@ pub enum ServerEvent {
     NavResult { broadcast: NavBroadcast },
     /// Per-device scrcpy / video session status.
     SessionUpdated { session: SessionStatus },
+    /// Mesh host list changed.
+    Hosts { hosts: Vec<HostInfo> },
     /// Non-fatal agent notice.
     Notice { message: String },
 }
 
-/// Client → server WebSocket frames (reserved; HTTP is primary for input today).
+/// UI → server WebSocket frames (reserved; HTTP is primary for input today).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientCommand {
@@ -243,6 +301,104 @@ pub struct VideoStatusFrame {
     pub stream: StreamState,
     pub note: String,
     pub backend: String,
+}
+
+// ── Mesh protocol (agent ↔ controller over `/ws/agent`) ─────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentHello {
+    pub host_id: String,
+    pub host_name: String,
+    pub os: String,
+    pub adb: AdbAvailability,
+    pub scrcpy: ScrcpyAvailability,
+    pub inject: InjectMode,
+}
+
+/// Agent → controller frames.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentToController {
+    Hello(AgentHello),
+    Heartbeat {
+        host_id: String,
+        #[serde(default = "now_ms")]
+        at: u64,
+    },
+    Devices {
+        host_id: String,
+        devices: Vec<Device>,
+    },
+    SessionUpdated {
+        host_id: String,
+        session: SessionStatus,
+    },
+    TapResult {
+        request_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        #[serde(default)]
+        targets: Vec<MappedTap>,
+    },
+    NavResult {
+        request_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        #[serde(default)]
+        targets: Vec<NavTargetResult>,
+    },
+    SessionResult {
+        request_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<SessionStatus>,
+    },
+}
+
+/// Controller → agent frames.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ControllerToAgent {
+    Welcome {
+        controller_host_id: String,
+        message: String,
+    },
+    Ping {
+        at: u64,
+    },
+    Tap {
+        request_id: String,
+        mode: ControlMode,
+        target_ids: Vec<String>,
+        normalized: NormalizedPoint,
+    },
+    Nav {
+        request_id: String,
+        mode: ControlMode,
+        target_ids: Vec<String>,
+        action: NavActionType,
+    },
+    SessionStart {
+        request_id: String,
+        serial: String,
+    },
+    SessionStop {
+        request_id: String,
+        serial: String,
+    },
+    SessionRestart {
+        request_id: String,
+        serial: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionAction {
+    Start,
+    Stop,
+    Restart,
 }
 
 impl TapBroadcast {
@@ -306,8 +462,8 @@ pub fn map_to_devices(point: NormalizedPoint, devices: &[Device]) -> Vec<MappedT
 /// Android keycodes used for nav inject.
 pub fn nav_keycode(action: NavActionType) -> i32 {
     match action {
-        NavActionType::Back => 4,    // KEYCODE_BACK
-        NavActionType::Home => 3,    // KEYCODE_HOME
+        NavActionType::Back => 4,     // KEYCODE_BACK
+        NavActionType::Home => 3,     // KEYCODE_HOME
         NavActionType::Recent => 187, // KEYCODE_APP_SWITCH
     }
 }
@@ -357,6 +513,7 @@ mod tests {
             bitrate_mbps: Some(12.0),
             latency_ms: Some(18),
             host: "test".into(),
+            host_id: Some("test".into()),
             wallpaper_hue: 210,
         }
     }
@@ -398,5 +555,34 @@ mod tests {
             args,
             vec!["-s", "SERIAL", "shell", "input", "keyevent", "187"]
         );
+    }
+
+    #[test]
+    fn mesh_hello_roundtrips() {
+        let hello = AgentToController::Hello(AgentHello {
+            host_id: "lxc-1".into(),
+            host_name: "lxc-agent-01".into(),
+            os: "linux".into(),
+            adb: AdbAvailability::Mock,
+            scrcpy: ScrcpyAvailability::Missing,
+            inject: InjectMode::Stub,
+        });
+        let json = serde_json::to_string(&hello).unwrap();
+        let back: AgentToController = serde_json::from_str(&json).unwrap();
+        match back {
+            AgentToController::Hello(h) => {
+                assert_eq!(h.host_id, "lxc-1");
+                assert_eq!(h.os, "linux");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn device_effective_host_id_falls_back() {
+        let mut d = sample_device(100, 100);
+        d.host_id = None;
+        d.host = "windows-host".into();
+        assert_eq!(d.effective_host_id(), "windows-host");
     }
 }

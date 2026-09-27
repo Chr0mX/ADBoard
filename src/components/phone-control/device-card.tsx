@@ -10,6 +10,8 @@ interface DeviceCardProps {
   isActive: boolean;
   isSelected: boolean;
   onSelect: (event: SelectionEvent) => void;
+  /** Show host chip when the grid is not already grouped by host. */
+  showHost?: boolean;
 }
 
 function statusLabel(status: Device["status"]) {
@@ -28,6 +30,7 @@ export function DeviceCard({
   isActive,
   isSelected,
   onSelect,
+  showHost = true,
 }: DeviceCardProps) {
   const offline = device.status !== "online";
 
@@ -133,6 +136,12 @@ export function DeviceCard({
             {device.latencyMs != null ? `${device.latencyMs} ms` : "—"}
           </dd>
         </div>
+        {showHost && (
+          <div className="col-span-2">
+            <dt className="opacity-70">Host</dt>
+            <dd className="truncate text-[var(--pc-ink)]">{device.host}</dd>
+          </div>
+        )}
       </dl>
 
       {offline && (

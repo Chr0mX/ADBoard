@@ -19,6 +19,7 @@ export function StatusBar({ device, session }: StatusBarProps) {
 
   const parts = [
     device.name,
+    device.host,
     device.connection.toUpperCase(),
     formatResolution(device.resolution.width, device.resolution.height),
     device.fps != null ? `${device.fps} FPS` : "— FPS",
