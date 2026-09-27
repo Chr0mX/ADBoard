@@ -4,7 +4,9 @@ import type {
   Device,
   MappedTap,
   NavAction,
+  NavBroadcast,
   NormalizedPoint,
+  SessionStatus,
   TapBroadcast,
 } from "@/lib/devices/types";
 import { mapToDevices } from "@/lib/devices/coords";
@@ -22,9 +24,17 @@ export interface DevicesClient {
     targets: Device[],
     point: NormalizedPoint,
   ): Promise<TapBroadcast>;
-  sendNav(mode: ControlMode, targets: Device[], action: NavAction): Promise<void>;
+  sendNav(
+    mode: ControlMode,
+    targets: Device[],
+    action: NavAction,
+  ): Promise<NavBroadcast | void>;
+  listSessions?(): Promise<SessionStatus[]>;
   /** Optional live device events from the agent WebSocket. */
-  subscribeDevices?(onDevices: (devices: Device[]) => void): () => void;
+  subscribeDevices?(
+    onDevices: (devices: Device[]) => void,
+    onSession?: (session: SessionStatus) => void,
+  ): () => void;
 }
 
 function delay(ms: number): Promise<void> {
@@ -39,7 +49,11 @@ export function createMockDevicesClient(): DevicesClient {
 
     async sendTap(mode, targets, point) {
       await delay(16);
-      const mapped: MappedTap[] = mapToDevices(point, targets);
+      const mapped: MappedTap[] = mapToDevices(point, targets).map((t) => ({
+        ...t,
+        inject: "stub" as const,
+        injectDetail: "mock client",
+      }));
       const broadcast: TapBroadcast = {
         id: `tap-${Date.now()}`,
         at: Date.now(),
@@ -53,11 +67,21 @@ export function createMockDevicesClient(): DevicesClient {
 
     async sendNav(mode, targets, action) {
       await delay(30);
-      console.info("[mock-control] nav", {
+      const broadcast: NavBroadcast = {
+        id: `nav-${Date.now()}`,
+        at: Date.now(),
         mode,
-        action,
-        targets: targets.map((t) => t.serial),
-      });
+        action: action.type,
+        targetIds: targets.map((t) => t.id),
+        targets: targets.map((t) => ({
+          deviceId: t.id,
+          deviceName: t.name,
+          inject: "stub",
+          detail: "mock client",
+        })),
+      };
+      console.info("[mock-control] nav", broadcast);
+      return broadcast;
     },
   };
 }
@@ -117,9 +141,18 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         const text = await res.text();
         throw new Error(text || `agent sendNav failed: ${res.status}`);
       }
+      return (await res.json()) as NavBroadcast;
     },
 
-    subscribeDevices(onDevices) {
+    async listSessions() {
+      const res = await fetch(`${base}/api/sessions`, { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`agent listSessions failed: ${res.status}`);
+      }
+      return (await res.json()) as SessionStatus[];
+    },
+
+    subscribeDevices(onDevices, onSession) {
       const wsUrl = `${httpToWs(base)}/ws`;
       let closed = false;
       let socket: WebSocket | null = null;
@@ -134,6 +167,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
               type?: string;
               devices?: Device[];
               device?: Device;
+              session?: SessionStatus;
             };
             if (msg.type === "devices" && Array.isArray(msg.devices)) {
               onDevices(msg.devices);
@@ -145,6 +179,8 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
                   if (!closed) onDevices(devices);
                 })
                 .catch(() => {});
+            } else if (msg.type === "session_updated" && msg.session) {
+              onSession?.(msg.session);
             }
           } catch {
             // ignore malformed frames

@@ -15,6 +15,7 @@ export function PhoneControlApp() {
     error,
     onlineCount,
     activeDevice,
+    activeSession,
     activeId,
     selectedIds,
     controlMode,
@@ -32,10 +33,15 @@ export function PhoneControlApp() {
   } = usePhoneControl();
 
   const onTap = async (point: { x: number; y: number }) => {
-    await handleScreenTap(point);
+    const result = await handleScreenTap(point);
     const names = broadcastTargets.map((d) => d.name).join(", ");
+    const injectHint =
+      result?.targets
+        ?.map((t) => t.inject)
+        .filter(Boolean)
+        .join("/") || "—";
     toast.message("Tap broadcast", {
-      description: `${controlMode.toUpperCase()} → ${names || "none"} @ (${point.x.toFixed(3)}, ${point.y.toFixed(3)})`,
+      description: `${controlMode.toUpperCase()} → ${names || "none"} @ (${point.x.toFixed(3)}, ${point.y.toFixed(3)}) · inject ${injectHint}`,
     });
   };
 
@@ -102,7 +108,12 @@ export function PhoneControlApp() {
                     {tapLog.map((entry) => (
                       <li key={entry.id} className="truncate opacity-80">
                         {new Date(entry.at).toLocaleTimeString()} · {entry.mode} ·{" "}
-                        {entry.targets.map((t) => t.deviceName).join(", ")}
+                        {entry.targets
+                          .map(
+                            (t) =>
+                              `${t.deviceName}${t.inject ? `[${t.inject}]` : ""}`,
+                          )
+                          .join(", ")}
                       </li>
                     ))}
                   </ul>
@@ -113,7 +124,7 @@ export function PhoneControlApp() {
         )}
       </main>
 
-      <StatusBar device={activeDevice} />
+      <StatusBar device={activeDevice} session={activeSession} />
     </div>
   );
 }

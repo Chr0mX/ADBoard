@@ -33,6 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let adb = adb_binary();
     let state = AppState::new(host_name.clone(), port, adb);
     state.spawn_adb_watcher();
+    state.spawn_session_reaper();
 
     let app = api::router(state);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -45,9 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     info!("  GET  /health");
     info!("  GET  /api/devices");
+    info!("  GET  /api/sessions");
+    info!("  POST /api/sessions/{{serial}}/start|stop|restart");
     info!("  POST /api/input/tap");
     info!("  POST /api/input/nav");
     info!("  WS   /ws");
+    info!("  WS   /ws/devices/{{serial}}/video");
 
     axum::serve(listener, app).await?;
     Ok(())

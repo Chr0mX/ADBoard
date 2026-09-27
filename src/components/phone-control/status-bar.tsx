@@ -1,13 +1,14 @@
 "use client";
 
 import { formatResolution } from "@/lib/devices/coords";
-import type { Device } from "@/lib/devices/types";
+import type { Device, SessionStatus } from "@/lib/devices/types";
 
 interface StatusBarProps {
   device: Device | null;
+  session?: SessionStatus | null;
 }
 
-export function StatusBar({ device }: StatusBarProps) {
+export function StatusBar({ device, session }: StatusBarProps) {
   if (!device) {
     return (
       <footer className="border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-4 py-2 font-mono text-[11px] text-[var(--pc-muted)] sm:px-6">
@@ -30,6 +31,11 @@ export function StatusBar({ device }: StatusBarProps) {
 
   if (device.status !== "online") {
     parts.push(device.status.toUpperCase());
+  }
+
+  if (session) {
+    parts.push(`stream:${session.stream}`);
+    parts.push(session.backend);
   }
 
   return (

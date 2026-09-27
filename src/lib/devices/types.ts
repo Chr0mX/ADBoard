@@ -1,6 +1,8 @@
 export type ConnectionType = "usb" | "network";
 export type DeviceStatus = "online" | "offline" | "unauthorized";
 export type ControlMode = "selected" | "multi" | "all";
+export type InjectStatus = "ok" | "stub" | "error";
+export type StreamState = "idle" | "starting" | "streaming" | "error";
 
 export interface DeviceResolution {
   width: number;
@@ -37,6 +39,8 @@ export interface MappedTap {
   y: number;
   width: number;
   height: number;
+  inject?: InjectStatus;
+  injectDetail?: string;
 }
 
 export interface TapBroadcast {
@@ -49,4 +53,27 @@ export interface TapBroadcast {
 
 export interface NavAction {
   type: "back" | "home" | "recent";
+}
+
+export interface NavTargetResult {
+  deviceId: string;
+  deviceName: string;
+  inject: InjectStatus;
+  detail?: string;
+}
+
+export interface NavBroadcast {
+  id: string;
+  at: number;
+  mode: ControlMode;
+  action: "back" | "home" | "recent";
+  targetIds: string[];
+  targets?: NavTargetResult[];
+}
+
+export interface SessionStatus {
+  serial: string;
+  stream: StreamState;
+  note: string;
+  backend: string;
 }

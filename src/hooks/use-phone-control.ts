@@ -8,6 +8,7 @@ import type {
   Device,
   NavAction,
   NormalizedPoint,
+  SessionStatus,
   TapBroadcast,
 } from "@/lib/devices/types";
 
@@ -37,6 +38,9 @@ export function usePhoneControl() {
   const [mouseOn, setMouseOn] = useState(true);
   const [lastTap, setLastTap] = useState<TapBroadcast | null>(null);
   const [tapLog, setTapLog] = useState<TapBroadcast[]>([]);
+  const [sessions, setSessions] = useState<Map<string, SessionStatus>>(
+    () => new Map(),
+  );
 
   const applyFleet = useCallback((next: Device[]) => {
     setDevices(next);
@@ -52,6 +56,14 @@ export function usePhoneControl() {
     });
   }, []);
 
+  const applySession = useCallback((session: SessionStatus) => {
+    setSessions((prev) => {
+      const next = new Map(prev);
+      next.set(session.serial, session);
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -62,6 +74,16 @@ export function usePhoneControl() {
         if (cancelled) return;
         applyFleet(list);
         setError(null);
+        if (devicesClient.listSessions) {
+          try {
+            const sess = await devicesClient.listSessions();
+            if (!cancelled) {
+              setSessions(new Map(sess.map((s) => [s.serial, s])));
+            }
+          } catch {
+            // sessions optional
+          }
+        }
       } catch (err) {
         if (cancelled) return;
         console.error("[phone-control] listDevices failed", err);
@@ -77,18 +99,23 @@ export function usePhoneControl() {
       }
     })();
 
-    const unsubscribe = devicesClient.subscribeDevices?.((next) => {
-      if (!cancelled) {
-        applyFleet(next);
-        setError(null);
-      }
-    });
+    const unsubscribe = devicesClient.subscribeDevices?.(
+      (next) => {
+        if (!cancelled) {
+          applyFleet(next);
+          setError(null);
+        }
+      },
+      (session) => {
+        if (!cancelled) applySession(session);
+      },
+    );
 
     return () => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [applyFleet]);
+  }, [applyFleet, applySession]);
 
   const onlineCount = useMemo(
     () => devices.filter((d) => d.status === "online").length,
@@ -99,6 +126,11 @@ export function usePhoneControl() {
     () => devices.find((d) => d.id === activeId) ?? null,
     [devices, activeId],
   );
+
+  const activeSession = useMemo(() => {
+    if (!activeDevice) return null;
+    return sessions.get(activeDevice.serial) ?? null;
+  }, [activeDevice, sessions]);
 
   const selectDevice = useCallback((event: SelectionEvent) => {
     const { deviceId, ctrlKey, shiftKey, metaKey } = event;
@@ -140,7 +172,7 @@ export function usePhoneControl() {
 
   const handleScreenTap = useCallback(
     async (point: NormalizedPoint) => {
-      if (!mouseOn || broadcastTargets.length === 0) return;
+      if (!mouseOn || broadcastTargets.length === 0) return null;
       try {
         const result = await devicesClient.sendTap(
           controlMode,
@@ -149,9 +181,11 @@ export function usePhoneControl() {
         );
         setLastTap(result);
         setTapLog((prev) => [result, ...prev].slice(0, 12));
+        return result;
       } catch (err) {
         console.error("[phone-control] sendTap failed", err);
         setError(err instanceof Error ? err.message : "Tap failed");
+        return null;
       }
     },
     [mouseOn, broadcastTargets, controlMode],
@@ -161,24 +195,38 @@ export function usePhoneControl() {
     async (action: NavAction["type"]) => {
       if (broadcastTargets.length === 0) return;
       try {
-        await devicesClient.sendNav(controlMode, broadcastTargets, {
+        const result = await devicesClient.sendNav(controlMode, broadcastTargets, {
           type: action,
         });
-        setTapLog((prev) =>
-          [
-            {
-              id: `nav-${Date.now()}`,
-              at: Date.now(),
-              normalized: { x: 0.5, y: 0.5 },
-              mode: controlMode,
-              targets: broadcastTargets.map((d) => ({
+        const targets =
+          result && "targets" in result && result.targets
+            ? result.targets.map((t) => ({
+                deviceId: t.deviceId,
+                deviceName: `${t.deviceName} · ${action.toUpperCase()}`,
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                inject: t.inject,
+                injectDetail: t.detail,
+              }))
+            : broadcastTargets.map((d) => ({
                 deviceId: d.id,
                 deviceName: `${d.name} · ${action.toUpperCase()}`,
                 x: 0,
                 y: 0,
                 width: d.resolution.width,
                 height: d.resolution.height,
-              })),
+                inject: "stub" as const,
+              }));
+        setTapLog((prev) =>
+          [
+            {
+              id: result && "id" in result ? result.id : `nav-${Date.now()}`,
+              at: result && "at" in result ? result.at : Date.now(),
+              normalized: { x: 0.5, y: 0.5 },
+              mode: controlMode,
+              targets,
             },
             ...prev,
           ].slice(0, 12),
@@ -197,6 +245,7 @@ export function usePhoneControl() {
     error,
     onlineCount,
     activeDevice,
+    activeSession,
     activeId,
     selectedIds,
     controlMode,

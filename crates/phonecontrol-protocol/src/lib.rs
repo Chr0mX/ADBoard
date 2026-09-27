@@ -37,6 +37,48 @@ pub enum NavActionType {
     Recent,
 }
 
+/// Result of attempting to inject input into a device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InjectStatus {
+    Ok,
+    Stub,
+    Error,
+}
+
+/// Per-device video / scrcpy session stream state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StreamState {
+    Idle,
+    Starting,
+    Streaming,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AdbAvailability {
+    Available,
+    Mock,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScrcpyAvailability {
+    Available,
+    Missing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InjectMode {
+    /// Real `adb shell input …` when ADB is present.
+    Adb,
+    /// Mock fleet / no ADB — inject logged only.
+    Stub,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceResolution {
@@ -79,6 +121,14 @@ pub struct MappedTap {
     pub y: u32,
     pub width: u32,
     pub height: u32,
+    #[serde(default = "default_inject_stub")]
+    pub inject: InjectStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inject_detail: Option<String>,
+}
+
+fn default_inject_stub() -> InjectStatus {
+    InjectStatus::Stub
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,12 +167,34 @@ pub struct NavRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct NavTargetResult {
+    pub device_id: String,
+    pub device_name: String,
+    pub inject: InjectStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NavBroadcast {
     pub id: String,
     pub at: u64,
     pub mode: ControlMode,
     pub action: NavActionType,
     pub target_ids: Vec<String>,
+    #[serde(default)]
+    pub targets: Vec<NavTargetResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStatus {
+    pub serial: String,
+    pub stream: StreamState,
+    pub note: String,
+    /// `scrcpy` when a backend binary was found; `stub` otherwise.
+    pub backend: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,14 +202,9 @@ pub struct HealthResponse {
     pub status: String,
     pub agent: String,
     pub adb: AdbAvailability,
+    pub scrcpy: ScrcpyAvailability,
+    pub inject: InjectMode,
     pub port: u16,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AdbAvailability {
-    Available,
-    Mock,
 }
 
 /// Server → client WebSocket frames.
@@ -152,6 +219,8 @@ pub enum ServerEvent {
     TapResult { broadcast: TapBroadcast },
     /// Nav command ack.
     NavResult { broadcast: NavBroadcast },
+    /// Per-device scrcpy / video session status.
+    SessionUpdated { session: SessionStatus },
     /// Non-fatal agent notice.
     Notice { message: String },
 }
@@ -164,6 +233,16 @@ pub enum ClientCommand {
     Ping,
     Tap(TapRequest),
     Nav(NavRequest),
+}
+
+/// Lightweight status frame for `/ws/devices/{serial}/video` until H264 pump lands.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoStatusFrame {
+    pub serial: String,
+    pub stream: StreamState,
+    pub note: String,
+    pub backend: String,
 }
 
 impl TapBroadcast {
@@ -179,13 +258,19 @@ impl TapBroadcast {
 }
 
 impl NavBroadcast {
-    pub fn new(mode: ControlMode, action: NavActionType, target_ids: Vec<String>) -> Self {
+    pub fn new(
+        mode: ControlMode,
+        action: NavActionType,
+        target_ids: Vec<String>,
+        targets: Vec<NavTargetResult>,
+    ) -> Self {
         Self {
             id: format!("nav-{}", Uuid::new_v4()),
             at: now_ms(),
             mode,
             action,
             target_ids,
+            targets,
         }
     }
 }
@@ -209,9 +294,109 @@ pub fn map_point(point: NormalizedPoint, device: &Device) -> MappedTap {
         y,
         width: device.resolution.width,
         height: device.resolution.height,
+        inject: InjectStatus::Stub,
+        inject_detail: None,
     }
 }
 
 pub fn map_to_devices(point: NormalizedPoint, devices: &[Device]) -> Vec<MappedTap> {
     devices.iter().map(|d| map_point(point, d)).collect()
+}
+
+/// Android keycodes used for nav inject.
+pub fn nav_keycode(action: NavActionType) -> i32 {
+    match action {
+        NavActionType::Back => 4,    // KEYCODE_BACK
+        NavActionType::Home => 3,    // KEYCODE_HOME
+        NavActionType::Recent => 187, // KEYCODE_APP_SWITCH
+    }
+}
+
+/// Build `adb -s SERIAL shell input tap X Y` argv (excluding the adb binary).
+pub fn adb_tap_args(serial: &str, x: u32, y: u32) -> Vec<String> {
+    vec![
+        "-s".into(),
+        serial.into(),
+        "shell".into(),
+        "input".into(),
+        "tap".into(),
+        x.to_string(),
+        y.to_string(),
+    ]
+}
+
+/// Build `adb -s SERIAL shell input keyevent CODE` argv (excluding the adb binary).
+pub fn adb_keyevent_args(serial: &str, keycode: i32) -> Vec<String> {
+    vec![
+        "-s".into(),
+        serial.into(),
+        "shell".into(),
+        "input".into(),
+        "keyevent".into(),
+        keycode.to_string(),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_device(width: u32, height: u32) -> Device {
+        Device {
+            id: "s24".into(),
+            name: "S24".into(),
+            model: "SM-S921B".into(),
+            android_version: "14".into(),
+            serial: "R5CW90ABC1".into(),
+            connection: ConnectionType::Usb,
+            status: DeviceStatus::Online,
+            battery: Some(78),
+            temperature_c: None,
+            resolution: DeviceResolution { width, height },
+            fps: Some(60),
+            bitrate_mbps: Some(12.0),
+            latency_ms: Some(18),
+            host: "test".into(),
+            wallpaper_hue: 210,
+        }
+    }
+
+    #[test]
+    fn maps_normalized_point_to_pixels() {
+        let d = sample_device(1920, 1080);
+        let tap = map_point(NormalizedPoint { x: 0.5, y: 0.4 }, &d);
+        assert_eq!(tap.x, 960);
+        assert_eq!(tap.y, 432);
+        assert_eq!(tap.width, 1920);
+        assert_eq!(tap.height, 1080);
+    }
+
+    #[test]
+    fn clamps_out_of_range_normalized() {
+        let d = sample_device(1000, 2000);
+        let tap = map_point(NormalizedPoint { x: -0.2, y: 1.5 }, &d);
+        assert_eq!(tap.x, 0);
+        assert_eq!(tap.y, 2000);
+    }
+
+    #[test]
+    fn builds_adb_tap_command() {
+        let args = adb_tap_args("R5CW90ABC1", 960, 432);
+        assert_eq!(
+            args,
+            vec!["-s", "R5CW90ABC1", "shell", "input", "tap", "960", "432"]
+        );
+    }
+
+    #[test]
+    fn builds_adb_keyevent_command() {
+        assert_eq!(nav_keycode(NavActionType::Back), 4);
+        assert_eq!(nav_keycode(NavActionType::Home), 3);
+        assert_eq!(nav_keycode(NavActionType::Recent), 187);
+        let args = adb_keyevent_args("SERIAL", 187);
+        assert_eq!(
+            args,
+            vec!["-s", "SERIAL", "shell", "input", "keyevent", "187"]
+        );
+    }
 }
