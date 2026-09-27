@@ -46,6 +46,11 @@ async fn session(
         adb: state.adb_availability(),
         scrcpy: state.scrcpy_availability(),
         inject: state.inject_mode(),
+        http_base: Some(
+            std::env::var("PHONECONTROL_HTTP_BASE").unwrap_or_else(|_| {
+                format!("http://127.0.0.1:{}", state.inner.port)
+            }),
+        ),
     });
     send(&mut sink, &hello).await?;
 

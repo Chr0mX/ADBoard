@@ -73,6 +73,7 @@ export function PhoneControlApp() {
             <div className="flex min-h-[560px] min-w-0 flex-1 flex-col lg:min-h-0">
               <PhoneScreen
                 device={activeDevice}
+                session={activeSession}
                 keyboardOn={keyboardOn}
                 mouseOn={mouseOn}
                 onKeyboardChange={setKeyboardOn}

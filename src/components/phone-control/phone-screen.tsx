@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { normalizePoint } from "@/lib/devices/coords";
-import type { Device, TapBroadcast } from "@/lib/devices/types";
+import type { Device, SessionStatus, TapBroadcast } from "@/lib/devices/types";
+import { useDeviceVideo } from "@/hooks/use-device-video";
 
 interface PhoneScreenProps {
   device: Device | null;
+  session?: SessionStatus | null;
   keyboardOn: boolean;
   mouseOn: boolean;
   onKeyboardChange: (on: boolean) => void;
@@ -22,6 +24,7 @@ interface PhoneScreenProps {
 
 export function PhoneScreen({
   device,
+  session,
   keyboardOn,
   mouseOn,
   onKeyboardChange,
@@ -36,7 +39,26 @@ export function PhoneScreen({
     null,
   );
 
+  const { canvasRef, status, decodeState, error: videoError, configured } =
+    useDeviceVideo(device?.serial);
+
   const offline = !device || device.status !== "online";
+  const showingVideo =
+    !offline &&
+    configured &&
+    decodeState === "decoding" &&
+    (status?.stream === "streaming" || session?.stream === "streaming");
+
+  const streamLabel = (() => {
+    if (!device) return "No device";
+    if (!configured) return `${device.name} · local mock`;
+    if (decodeState === "unsupported") return `${device.name} · decode unsupported`;
+    if (status?.backend) {
+      return `${device.name} · ${status.backend}${status.stream ? `/${status.stream}` : ""}`;
+    }
+    if (session) return `${device.name} · ${session.backend}/${session.stream}`;
+    return `${device.name} · video`;
+  })();
 
   const handlePointer = (e: React.PointerEvent<HTMLDivElement>) => {
     if (offline || !mouseOn || !screenRef.current) return;
@@ -53,7 +75,7 @@ export function PhoneScreen({
           PHONE SCREEN
         </h2>
         <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
-          {device ? `${device.name} mock stream` : "No device"}
+          {streamLabel}
         </p>
       </div>
 
@@ -73,7 +95,7 @@ export function PhoneScreen({
           <div
             ref={screenRef}
             role="application"
-            aria-label="Mock phone screen"
+            aria-label="Phone screen"
             onPointerDown={handlePointer}
             className={cn(
               "relative mx-1.5 mt-1.5 aspect-[9/19.5] overflow-hidden rounded-[1.55rem]",
@@ -88,8 +110,19 @@ export function PhoneScreen({
                     hsl(${(device.wallpaperHue + 80) % 360} 28% 10%) 100%)`,
             }}
           >
-            {/* Atmospheric mock Android UI */}
-            {!offline && device && (
+            {/* H264 canvas — always mounted when agent configured so decoder can paint */}
+            {configured && !offline && (
+              <canvas
+                ref={canvasRef}
+                className={cn(
+                  "absolute inset-0 z-[5] h-full w-full object-cover",
+                  showingVideo ? "opacity-100" : "opacity-0",
+                )}
+              />
+            )}
+
+            {/* Placeholder / mock chrome when not decoding live video */}
+            {!offline && device && !showingVideo && (
               <>
                 <div className="pointer-events-none absolute inset-0 opacity-40">
                   <div
@@ -110,7 +143,7 @@ export function PhoneScreen({
                   <div className="flex items-center justify-between font-mono text-[10px] opacity-80">
                     <span>09:41</span>
                     <span>
-                      {device.battery}% · {device.fps}fps
+                      {device.battery}% · {device.fps ?? "—"}fps
                     </span>
                   </div>
 
@@ -120,8 +153,23 @@ export function PhoneScreen({
                     </p>
                     <p className="text-sm text-white/70">{device.model}</p>
                     <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/50">
-                      Mock scrcpy session
+                      {!configured && "Mock preview (no agent)"}
+                      {configured && decodeState === "connecting" && "Connecting video…"}
+                      {configured && decodeState === "waiting" && "Waiting for H264…"}
+                      {configured && decodeState === "unsupported" && "WebCodecs unavailable"}
+                      {configured && decodeState === "error" && "Video error"}
+                      {configured &&
+                        decodeState === "idle" &&
+                        (session?.note || status?.note || "Stream idle")}
+                      {configured &&
+                        decodeState === "decoding" &&
+                        "Decoder ready"}
                     </p>
+                    {(videoError || status?.note) && configured && (
+                      <p className="mt-2 max-w-[90%] font-mono text-[9px] leading-relaxed text-white/40">
+                        {videoError || status?.note}
+                      </p>
+                    )}
                   </div>
 
                   <div className="mt-auto grid grid-cols-2 gap-2">
@@ -148,7 +196,7 @@ export function PhoneScreen({
                 </p>
                 <p className="text-xs text-white/50">
                   {device
-                    ? "Mock stream unavailable for this device."
+                    ? "Stream unavailable for this device."
                     : "Select an online device to preview."}
                 </p>
               </div>

@@ -5,6 +5,7 @@ mod mesh;
 mod mesh_client;
 mod mock;
 mod session;
+mod video;
 
 use crate::adb::adb_binary;
 use crate::device_manager::AppState;

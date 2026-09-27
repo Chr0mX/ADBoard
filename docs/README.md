@@ -1,13 +1,9 @@
-# Phone Control — first slice notes
+# Phone Control — notes
 
-Runnable mock UI. Full architecture lives in the Project store (`docs/architecture.md`).
+Architecture lives in the Project store (`docs/architecture.md`). Run instructions and video framing: repo root `README.md`.
 
 ## Client API seam
 
-`src/lib/api/client.ts` exports `DevicesClient`:
+`src/lib/api/client.ts` exports `DevicesClient` (list / tap / nav / sessions / subscribe).
 
-- `listDevices()`
-- `sendTap(mode, targets, normalizedPoint)`
-- `sendNav(mode, targets, action)`
-
-Replace `createMockDevicesClient()` with HTTP/WebSocket calls to the Rust control plane without rewriting the React hooks.
+Video is a separate WS: `src/hooks/use-device-video.ts` → `/ws/devices/{serial}/video` (Annex-B H264 + WebCodecs).

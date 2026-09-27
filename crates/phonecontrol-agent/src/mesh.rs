@@ -42,6 +42,8 @@ pub struct RemoteHost {
     pub devices: Vec<Device>,
     pub sessions: HashMap<String, SessionStatus>,
     pub cmd_tx: CmdTx,
+    /// Agent HTTP base for video WS proxy (`http://host:port`).
+    pub http_base: Option<String>,
 }
 
 /// Controller-side registry of connected agents.
@@ -89,6 +91,7 @@ impl MeshRegistry {
         host_name: String,
         os: String,
         cmd_tx: CmdTx,
+        http_base: Option<String>,
     ) -> Result<(), String> {
         let mut hosts = self.hosts.write().await;
         if let Some(existing) = hosts.get(&host_id) {
@@ -109,10 +112,19 @@ impl MeshRegistry {
                 devices: Vec::new(),
                 sessions: HashMap::new(),
                 cmd_tx,
+                http_base,
             },
         );
         info!(%host_id, "agent registered");
         Ok(())
+    }
+
+    pub async fn http_base(&self, host_id: &str) -> Option<String> {
+        self.hosts
+            .read()
+            .await
+            .get(host_id)
+            .and_then(|h| h.http_base.clone())
     }
 
     pub async fn unregister(&self, host_id: &str) {

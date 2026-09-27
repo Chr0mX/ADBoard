@@ -4,6 +4,7 @@ use crate::adb::{self, AdbDeviceLine};
 use crate::mesh::MeshRegistry;
 use crate::mock::{self, MockProfile};
 use crate::session::{scrcpy_binary, SessionManager};
+use crate::video::VideoHub;
 use phonecontrol_protocol::{
     map_to_devices, AdbAvailability, ControlMode, Device, DeviceStatus, HostInfo, InjectMode,
     InjectStatus, MappedTap, NavActionType, NavBroadcast, NavTargetResult, NormalizedPoint, Role,
@@ -77,7 +78,8 @@ impl AppState {
             );
             mock::mock_fleet(&host_id, &host_name, profile)
         };
-        let sessions = SessionManager::new(adb_path.clone(), scrcpy);
+        let video_hub = VideoHub::new();
+        let sessions = SessionManager::new(adb_path.clone(), scrcpy, video_hub);
         let mesh = MeshRegistry::new(host_id.clone(), host_name.clone());
         Self {
             inner: Arc::new(InnerState {
@@ -92,6 +94,25 @@ impl AppState {
                 mesh,
             }),
         }
+    }
+
+    pub fn video_hub(&self) -> Arc<crate::video::VideoHub> {
+        self.inner.sessions.video_hub()
+    }
+
+    /// Local only: start video pump if idle (video WS subscribe path).
+    pub async fn ensure_local_streaming(&self, serial: &str) -> Result<SessionStatus, String> {
+        self.require_local_serial(serial).await?;
+        let session = self.inner.sessions.ensure_streaming(serial).await;
+        self.publish(ServerEvent::SessionUpdated {
+            session: session.clone(),
+        });
+        Ok(session)
+    }
+
+    /// Agent HTTP base for a remote host (video proxy), if advertised at hello.
+    pub async fn remote_http_base(&self, host_id: &str) -> Option<String> {
+        self.inner.mesh.http_base(host_id).await
     }
 
     pub fn role(&self) -> Role {
@@ -271,7 +292,7 @@ impl AppState {
         }
     }
 
-    async fn remote_owner(&self, serial_or_id: &str) -> Option<String> {
+    pub async fn remote_owner(&self, serial_or_id: &str) -> Option<String> {
         if self.inner.role != Role::Controller {
             return None;
         }

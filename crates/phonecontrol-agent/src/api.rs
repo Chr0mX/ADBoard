@@ -368,13 +368,20 @@ async fn handle_agent_frame(
                 hello.host_name.clone(),
                 hello.os.clone(),
                 cmd_tx.clone(),
+                hello.http_base.clone(),
             )
             .await?;
             *registered_host.lock().await = Some(hello.host_id.clone());
             state.publish(ServerEvent::Notice {
                 message: format!(
-                    "agent registered: {} ({})",
-                    hello.host_name, hello.host_id
+                    "agent registered: {} ({}){}",
+                    hello.host_name,
+                    hello.host_id,
+                    hello
+                        .http_base
+                        .as_ref()
+                        .map(|u| format!(" video@{u}"))
+                        .unwrap_or_default()
                 ),
             });
             let hosts = state.list_hosts().await;
@@ -447,7 +454,8 @@ async fn handle_agent_frame(
     Ok(())
 }
 
-/// Video WS: status JSON today; binary H264 frames can be appended later on the same socket.
+/// Video WS: text = VideoStatusFrame JSON; binary = Annex-B H264 access units.
+/// Local serials pump from the video hub; remote serials are proxied via the agent's http_base.
 async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: String) {
     let (mut sender, mut receiver) = socket.split();
 
@@ -459,42 +467,113 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
                 stream: phonecontrol_protocol::StreamState::Error,
                 note: e,
                 backend: "stub".into(),
+                codec: None,
+                codec_string: None,
+                width: None,
+                height: None,
+                framing: None,
             };
             let _ = send_json(&mut sender, &frame).await;
             return;
         }
     };
 
-    let mut events = state.subscribe();
-    let session = state.session_status(&serial).await;
-    let frame = VideoStatusFrame {
-        serial: session.serial.clone(),
-        stream: session.stream,
-        note: session.note.clone(),
-        backend: session.backend.clone(),
-    };
+    // Remote device → proxy agent video WS.
+    if let Some(host_id) = state.remote_owner(&serial).await {
+        match state.remote_http_base(&host_id).await {
+            Some(base) => {
+                info!(%serial, %host_id, %base, "proxying video WS to agent");
+                proxy_remote_video(sender, receiver, &base, &serial).await;
+            }
+            None => {
+                let frame = VideoStatusFrame {
+                    serial: serial.clone(),
+                    stream: phonecontrol_protocol::StreamState::Error,
+                    note: format!(
+                        "agent {host_id} did not advertise http_base — cannot proxy video"
+                    ),
+                    backend: "stub".into(),
+                    codec: None,
+                    codec_string: None,
+                    width: None,
+                    height: None,
+                    framing: None,
+                };
+                let _ = send_json(&mut sender, &frame).await;
+            }
+        }
+        return;
+    }
+
+    // Local: ensure pump is running (subscribe does not tear down on disconnect).
+    if let Err(e) = state.ensure_local_streaming(&serial).await {
+        let frame = VideoStatusFrame {
+            serial: serial.clone(),
+            stream: phonecontrol_protocol::StreamState::Error,
+            note: e,
+            backend: "stub".into(),
+            codec: None,
+            codec_string: None,
+            width: None,
+            height: None,
+            framing: None,
+        };
+        let _ = send_json(&mut sender, &frame).await;
+        return;
+    }
+
+    let frame = state.inner.sessions.video_status_frame(&serial).await;
     if send_json(&mut sender, &frame).await.is_err() {
         return;
     }
 
+    let hub = state.video_hub();
+    let mut video_rx = hub.subscribe(&serial).await;
+    let mut events = state.subscribe();
     let serial_filter = serial.clone();
+
     let mut send_task = tokio::spawn(async move {
         loop {
-            match events.recv().await {
-                Ok(ServerEvent::SessionUpdated { session }) if session.serial == serial_filter => {
-                    let frame = VideoStatusFrame {
-                        serial: session.serial.clone(),
-                        stream: session.stream,
-                        note: session.note.clone(),
-                        backend: session.backend.clone(),
-                    };
-                    if send_json(&mut sender, &frame).await.is_err() {
-                        break;
+            tokio::select! {
+                packet = video_rx.recv() => {
+                    match packet {
+                        Ok(crate::video::VideoPacket::Status(frame)) => {
+                            if send_json(&mut sender, &frame).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(crate::video::VideoPacket::AnnexB(bytes)) => {
+                            if sender
+                                .send(Message::Binary(bytes.into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            debug!(lagged = n, "video subscriber lagged");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
                 }
-                Ok(_) => {}
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                event = events.recv() => {
+                    match event {
+                        Ok(ServerEvent::SessionUpdated { session })
+                            if session.serial == serial_filter =>
+                        {
+                            // Status also arrives via video hub; this covers peers that
+                            // only publish ServerEvent.
+                            let frame = VideoStatusFrame::from_session(&session);
+                            if send_json(&mut sender, &frame).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
             }
         }
     });
@@ -512,7 +591,103 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
         _ = &mut send_task => recv_task.abort(),
         _ = &mut recv_task => send_task.abort(),
     }
-    info!(%serial, "video websocket disconnected");
+    info!(%serial, "video websocket disconnected (session left running)");
+}
+
+/// Relay agent `/ws/devices/{serial}/video` → browser (text + binary).
+async fn proxy_remote_video(
+    mut client_out: futures_util::stream::SplitSink<WebSocket, Message>,
+    mut client_in: futures_util::stream::SplitStream<WebSocket>,
+    agent_http_base: &str,
+    serial: &str,
+) {
+    let ws_url = http_to_ws_video_url(agent_http_base, serial);
+    let (agent_ws, _) = match tokio_tungstenite::connect_async(&ws_url).await {
+        Ok(pair) => pair,
+        Err(e) => {
+            let frame = VideoStatusFrame {
+                serial: serial.into(),
+                stream: phonecontrol_protocol::StreamState::Error,
+                note: format!("video proxy connect failed: {e}"),
+                backend: "stub".into(),
+                codec: None,
+                codec_string: None,
+                width: None,
+                height: None,
+                framing: None,
+            };
+            let _ = send_json(&mut client_out, &frame).await;
+            return;
+        }
+    };
+
+    let (mut agent_out, mut agent_in) = agent_ws.split();
+
+    let mut to_client = tokio::spawn(async move {
+        while let Some(Ok(msg)) = agent_in.next().await {
+            let mapped = match msg {
+                tokio_tungstenite::tungstenite::Message::Text(t) => {
+                    Message::Text(t.as_str().to_string().into())
+                }
+                tokio_tungstenite::tungstenite::Message::Binary(b) => {
+                    Message::Binary(b.to_vec().into())
+                }
+                tokio_tungstenite::tungstenite::Message::Ping(p) => {
+                    Message::Ping(p.to_vec().into())
+                }
+                tokio_tungstenite::tungstenite::Message::Pong(p) => {
+                    Message::Pong(p.to_vec().into())
+                }
+                tokio_tungstenite::tungstenite::Message::Close(_) => break,
+                tokio_tungstenite::tungstenite::Message::Frame(_) => continue,
+            };
+            if client_out.send(mapped).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut to_agent = tokio::spawn(async move {
+        while let Some(Ok(msg)) = client_in.next().await {
+            let mapped = match msg {
+                Message::Text(t) => {
+                    tokio_tungstenite::tungstenite::Message::Text(t.as_str().into())
+                }
+                Message::Binary(b) => {
+                    tokio_tungstenite::tungstenite::Message::Binary(b.to_vec().into())
+                }
+                Message::Ping(p) => {
+                    tokio_tungstenite::tungstenite::Message::Ping(p.to_vec().into())
+                }
+                Message::Pong(p) => {
+                    tokio_tungstenite::tungstenite::Message::Pong(p.to_vec().into())
+                }
+                Message::Close(_) => break,
+            };
+            if agent_out.send(mapped).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    tokio::select! {
+        _ = &mut to_client => to_agent.abort(),
+        _ = &mut to_agent => to_client.abort(),
+    }
+}
+
+fn http_to_ws_video_url(http_base: &str, serial: &str) -> String {
+    let base = http_base.trim_end_matches('/');
+    let ws = if let Some(rest) = base.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if let Some(rest) = base.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else if base.starts_with("ws://") || base.starts_with("wss://") {
+        base.to_string()
+    } else {
+        format!("ws://{base}")
+    };
+    format!("{ws}/ws/devices/{serial}/video")
 }
 
 async fn send_event(

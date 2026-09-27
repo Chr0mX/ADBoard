@@ -293,14 +293,55 @@ pub enum ClientCommand {
     Nav(NavRequest),
 }
 
-/// Lightweight status frame for `/ws/devices/{serial}/video` until H264 pump lands.
+/// Text status frame on `/ws/devices/{serial}/video`.
+/// Binary WebSocket messages on the same socket are Annex-B H264 access units
+/// (each message = one AU: optional SPS/PPS + one VCL NAL, start-code delimited).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoStatusFrame {
     pub serial: String,
     pub stream: StreamState,
     pub note: String,
+    /// `stub` | `scrcpy` | `testpattern`
     pub backend: String,
+    /// Present when a real H264 pump is attached (e.g. `"h264"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codec: Option<String>,
+    /// WebCodecs-style codec string when known (e.g. `avc1.42E01E`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codec_string: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    /// Binary framing: always `"annexb"` when pumping H264.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub framing: Option<String>,
+}
+
+impl VideoStatusFrame {
+    pub fn from_session(session: &SessionStatus) -> Self {
+        Self {
+            serial: session.serial.clone(),
+            stream: session.stream,
+            note: session.note.clone(),
+            backend: session.backend.clone(),
+            codec: None,
+            codec_string: None,
+            width: None,
+            height: None,
+            framing: None,
+        }
+    }
+
+    pub fn with_h264(mut self, width: u32, height: u32, codec_string: &str) -> Self {
+        self.codec = Some("h264".into());
+        self.codec_string = Some(codec_string.into());
+        self.width = Some(width);
+        self.height = Some(height);
+        self.framing = Some("annexb".into());
+        self
+    }
 }
 
 // ── Mesh protocol (agent ↔ controller over `/ws/agent`) ─────────────────────
@@ -314,6 +355,9 @@ pub struct AgentHello {
     pub adb: AdbAvailability,
     pub scrcpy: ScrcpyAvailability,
     pub inject: InjectMode,
+    /// Agent HTTP base (`http://host:port`) so the controller can proxy video WS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_base: Option<String>,
 }
 
 /// Agent → controller frames.
@@ -566,6 +610,7 @@ mod tests {
             adb: AdbAvailability::Mock,
             scrcpy: ScrcpyAvailability::Missing,
             inject: InjectMode::Stub,
+            http_base: Some("http://127.0.0.1:3849".into()),
         });
         let json = serde_json::to_string(&hello).unwrap();
         let back: AgentToController = serde_json::from_str(&json).unwrap();
@@ -573,9 +618,27 @@ mod tests {
             AgentToController::Hello(h) => {
                 assert_eq!(h.host_id, "lxc-1");
                 assert_eq!(h.os, "linux");
+                assert_eq!(h.http_base.as_deref(), Some("http://127.0.0.1:3849"));
             }
             other => panic!("unexpected: {other:?}"),
         }
+    }
+
+    #[test]
+    fn video_status_frame_h264_fields() {
+        let session = SessionStatus {
+            serial: "S".into(),
+            stream: StreamState::Streaming,
+            note: "test".into(),
+            backend: "testpattern".into(),
+        };
+        let frame = VideoStatusFrame::from_session(&session).with_h264(360, 640, "avc1.42E01E");
+        let json = serde_json::to_string(&frame).unwrap();
+        assert!(json.contains("\"framing\":\"annexb\""));
+        assert!(json.contains("\"codec\":\"h264\""));
+        let back: VideoStatusFrame = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.width, Some(360));
+        assert_eq!(back.height, Some(640));
     }
 
     #[test]
