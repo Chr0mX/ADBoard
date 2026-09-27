@@ -38,6 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let host_name = std::env::var("PHONECONTROL_HOST").unwrap_or_else(|_| hostname_fallback());
     let host_id = std::env::var("PHONECONTROL_HOST_ID").unwrap_or_else(|_| host_name.clone());
+    let bind_ip = parse_bind_ip();
 
     let adb = adb_binary();
     let state = AppState::new(role, host_id.clone(), host_name.clone(), port, adb);
@@ -55,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let app = api::router(state);
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let addr = SocketAddr::from((bind_ip, port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     info!(
@@ -80,16 +81,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// `PHONECONTROL_BIND` — IP to listen on.
+/// - `127.0.0.1` — local UI / loopback only (safer default on a Windows USB host)
+/// - `0.0.0.0` — all interfaces (needed so a remote Linux LXC agent can reach `/ws/agent`)
+fn parse_bind_ip() -> [u8; 4] {
+    match std::env::var("PHONECONTROL_BIND")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .as_deref()
+    {
+        None | Some("0.0.0.0") | Some("*") => [0, 0, 0, 0],
+        Some("127.0.0.1") | Some("localhost") => [127, 0, 0, 1],
+        Some(other) => {
+            if let Ok(ip) = other.parse::<std::net::Ipv4Addr>() {
+                ip.octets()
+            } else {
+                tracing::warn!(bind = other, "invalid PHONECONTROL_BIND — using 0.0.0.0");
+                [0, 0, 0, 0]
+            }
+        }
+    }
+}
+
 fn hostname_fallback() -> String {
-    hostname::get_os_hostname().unwrap_or_else(|| "linux-agent".into())
+    hostname::get_os_hostname().unwrap_or_else(|| {
+        if cfg!(windows) {
+            "windows-host".into()
+        } else {
+            "linux-agent".into()
+        }
+    })
 }
 
 mod hostname {
     pub fn get_os_hostname() -> Option<String> {
-        std::fs::read_to_string("/etc/hostname")
+        std::env::var("COMPUTERNAME")
             .ok()
-            .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
-            .or_else(|| std::env::var("HOSTNAME").ok())
+            .or_else(|| std::env::var("HOSTNAME").ok().filter(|s| !s.is_empty()))
+            .or_else(|| {
+                #[cfg(unix)]
+                {
+                    std::fs::read_to_string("/etc/hostname")
+                        .ok()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                }
+                #[cfg(not(unix))]
+                {
+                    None
+                }
+            })
     }
 }

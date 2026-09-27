@@ -102,19 +102,85 @@ curl -s http://127.0.0.1:3848/api/hosts | jq
 # websocat ws://127.0.0.1:3848/ws/devices/s24/video
 ```
 
-## Real Windows + Linux LXC (notes)
+## Real Windows + Linux LXC
 
 | Host | Role | Notes |
 |---|---|---|
-| Windows PC | `controller` (or agent) | Same Rust binary; later packaged as `PhoneControl.exe`. USB phones via ADB. |
+| Windows PC | `controller` (or agent) | Packaged as `PhoneControl.exe` — see **Windows host pack** below |
 | Proxmox LXC | `agent` | `--role agent` + `PHONECONTROL_CONTROLLER_URL`. Set `PHONECONTROL_HTTP_BASE` to a controller-reachable URL for video proxy. |
 | Browser | UI | Always talks to the **controller** (`NEXT_PUBLIC_AGENT_URL`). |
+
+### Windows host pack (`dist/windows/`)
+
+Zip-ready folder (no MSI / signed installer). Same binary as Linux; renamed to `PhoneControl.exe`.
+
+```text
+dist/windows/
+  PhoneControl.exe           # produced by make package-windows (not in git)
+  Start-PhoneControl.ps1
+  .env.example
+  README.md
+  vendor/adb/README.md       # drop adb.exe + DLLs here (download Platform Tools)
+  vendor/scrcpy/README.md    # drop scrcpy Windows build here (do not commit binaries)
+```
+
+**Build on Linux / CI** (MinGW gnu target — works in this environment; MSVC needs a Windows SDK):
+
+```bash
+# once: sudo apt-get install -y gcc-mingw-w64-x86-64
+#       rustup target add x86_64-pc-windows-gnu
+make build-windows      # → target/x86_64-pc-windows-gnu/release/phonecontrol-agent.exe
+make package-windows    # → dist/windows/PhoneControl.exe + docs
+```
+
+Scripts: `scripts/build-windows.sh`, `scripts/package-windows.sh`. Linker config: `.cargo/config.toml`.
+
+**On the Windows USB host:**
+
+1. Copy `dist/windows/` to the PC.
+2. Download Platform Tools → `vendor/adb/`; optionally scrcpy → `vendor/scrcpy/` (see those READMEs).
+3. PowerShell:
+
+```powershell
+cd path\to\dist\windows
+.\Start-PhoneControl.ps1
+# → http://127.0.0.1:3848
+```
+
+4. Point the UI: `NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848`.
+
+**Bind address** (`PHONECONTROL_BIND`):
+
+| Value | Use when |
+|---|---|
+| `127.0.0.1` (script default) | Browser UI on this Windows PC only |
+| `0.0.0.0` | Remote Linux LXC agent (or LAN browser) must reach `/ws/agent` — open firewall TCP 3848 |
+
+```powershell
+.\Start-PhoneControl.ps1 -Bind 0.0.0.0
+```
+
+**Pair Linux LXC agent** (controller on Windows, agent on LXC):
+
+```bash
+# on LXC — use the Windows LAN IP, not 127.0.0.1
+PHONECONTROL_ROLE=agent \
+PHONECONTROL_PORT=3849 \
+PHONECONTROL_HOST=lxc-agent-01 \
+PHONECONTROL_HOST_ID=lxc-agent-01 \
+PHONECONTROL_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
+PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
+./phonecontrol-agent
+```
+
+Mock without phones: `.\Start-PhoneControl.ps1 -Mock` (testpattern video).
 
 ## Environment flags
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `PHONECONTROL_ROLE` / `--role` | `controller` | `controller` or `agent` |
+| `PHONECONTROL_BIND` | `0.0.0.0` | Listen IP — `127.0.0.1` for loopback-only; `0.0.0.0` for LAN / LXC agents |
 | `PHONECONTROL_PORT` | `3848` / `3849` | Listen port (agent defaults to 3849) |
 | `PHONECONTROL_HOST` | OS hostname | Host display label on devices |
 | `PHONECONTROL_HOST_ID` | same as host | Stable mesh id |
@@ -154,8 +220,9 @@ curl -s http://127.0.0.1:3848/api/hosts | jq
 | HTTP + WebSocket control plane | WebRTC |
 | ADB discovery when `adb` exists | Full scrcpy control-socket inject (v1 uses `adb shell input`) |
 | Real tap/nav inject via ADB | scrcpy raw H264 socket → WS forwarder |
-| Session manager + synthetic H264 testpattern → browser WebCodecs | Windows `PhoneControl.exe` packaging |
+| Session manager + synthetic H264 testpattern → browser WebCodecs | Signed MSI / auto-update |
 | Multi-host mesh + video proxy | Deep Proxmox USB docs |
+| Windows pack scripts (`PhoneControl.exe` via MinGW cross-build) | — |
 
 ## Stack
 
@@ -166,10 +233,16 @@ curl -s http://127.0.0.1:3848/api/hosts | jq
 
 ```text
 Cargo.toml                 # workspace
+Makefile                   # build-windows / package-windows / test-linux
+.cargo/config.toml         # MinGW linker for x86_64-pc-windows-gnu
+scripts/
+  build-windows.sh
+  package-windows.sh
 crates/
   phonecontrol-protocol/   # shared wire types + mesh frames + coord/adb helpers
   phonecontrol-agent/      # controller + agent binary + video hub
     fixtures/testpattern.h264
+dist/windows/              # Windows host pack (exe from make package-windows)
 src/                       # Next.js UI
   hooks/use-device-video.ts
   lib/api/client.ts
