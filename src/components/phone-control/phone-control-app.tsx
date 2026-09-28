@@ -47,6 +47,7 @@ export function PhoneControlApp() {
     mouseOn,
     setMouseOn,
     selectDevice,
+    toggleSelected,
     broadcastTargets,
     handlePointer,
     handleNav,
@@ -268,6 +269,7 @@ export function PhoneControlApp() {
                       setDevicesOpen(false);
                     }
                   }}
+                  onToggleSelected={toggleSelected}
                 />
                 <ControlModes
                   mode={controlMode}

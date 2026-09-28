@@ -11,6 +11,7 @@ interface DeviceGridProps {
   activeId: string | null;
   selectedIds: Set<string>;
   onSelect: (event: SelectionEvent) => void;
+  onToggleSelected: (deviceId: string, selected: boolean) => void;
   /** When true, group cards under HOSTS headings (Windows / LXC / …). */
   groupByHost?: boolean;
 }
@@ -28,6 +29,7 @@ export function DeviceGrid({
   activeId,
   selectedIds,
   onSelect,
+  onToggleSelected,
   groupByHost = true,
 }: DeviceGridProps) {
   const groups = useMemo(() => {
@@ -79,6 +81,7 @@ export function DeviceGrid({
                     isActive={device.id === activeId}
                     isSelected={selectedIds.has(device.id)}
                     onSelect={onSelect}
+                    onToggleSelected={onToggleSelected}
                     showHost={!multiHost}
                   />
                 ))}

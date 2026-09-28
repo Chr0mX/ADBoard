@@ -12,6 +12,7 @@ interface DeviceCardProps {
   isActive: boolean;
   isSelected: boolean;
   onSelect: (event: SelectionEvent) => void;
+  onToggleSelected: (deviceId: string, selected: boolean) => void;
   /** Unused: cards no longer repeat the host line. Kept for callers. */
   showHost?: boolean;
 }
@@ -32,6 +33,7 @@ export function DeviceCard({
   isActive,
   isSelected,
   onSelect,
+  onToggleSelected,
 }: DeviceCardProps) {
   const offline = device.status !== "online";
   const [menu, setMenu] = useState(false);
@@ -43,8 +45,10 @@ export function DeviceCard({
         e.preventDefault();
         setMenu(true);
       }}
+      data-device-card={device.id}
+      data-active={isActive ? "1" : "0"}
       className={cn(
-        "group relative w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+        "group relative w-full rounded-xl border py-2 pl-1 pr-1 text-left transition-colors",
         "min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pc-accent)]",
         isActive
           ? "border-[var(--pc-accent)] bg-[var(--pc-panel)]"
@@ -54,6 +58,18 @@ export function DeviceCard({
         offline && "opacity-70",
       )}
     >
+      <div className="flex items-start">
+        <label className="flex h-11 w-11 shrink-0 items-center justify-center">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            data-device-check={device.id}
+            aria-label={`Select ${device.name}`}
+            className="size-4 accent-[var(--pc-accent-fill)]"
+            onChange={(event) => onToggleSelected(device.id, event.target.checked)}
+            onClick={(event) => event.stopPropagation()}
+          />
+        </label>
       <button
         type="button"
         onClick={(e) =>
@@ -64,17 +80,12 @@ export function DeviceCard({
             metaKey: e.metaKey,
           })
         }
-        className="block w-full pr-12 text-left"
+        className="block min-w-0 flex-1 pr-10 text-left"
       >
         <span className="flex min-w-0 items-center gap-1.5">
           <span data-card-name className="min-w-0 break-words font-display text-sm font-semibold leading-5 text-[var(--pc-ink)]">
             {device.name}
           </span>
-          {isSelected && !isActive && (
-            <span className="shrink-0 rounded bg-[var(--pc-accent-soft)] px-1 py-0.5 font-mono text-[9px] uppercase leading-none text-[var(--pc-accent)]">
-              Sel
-            </span>
-          )}
         </span>
         <span className="mt-1 flex min-w-0 flex-col items-start gap-0.5 text-xs leading-4 text-[var(--pc-muted)]">
           <span
@@ -121,6 +132,7 @@ export function DeviceCard({
           )}
         </span>
       </button>
+      </div>
       <button
         ref={menuButtonRef}
         type="button"

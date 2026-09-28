@@ -96,10 +96,14 @@ export function usePhoneControl() {
       return initialActiveId(next);
     });
     setSelectedIds((prev) => {
-      const still = [...prev].filter((id) => next.some((d) => d.id === id));
-      if (still.length > 0) return new Set(still);
+      const alive = new Set(next.map((device) => device.id));
+      const still = [...prev].filter((id) => alive.has(id));
+      if (still.length > 0) {
+        if (still.length === prev.size) return prev;
+        return new Set(still);
+      }
       const saved = readSavedDevice();
-      if (saved && next.some((d) => d.id === saved)) return new Set([saved]);
+      if (saved && alive.has(saved)) return new Set([saved]);
       const id = initialActiveId(next);
       return id ? new Set([id]) : new Set();
     });
@@ -183,26 +187,26 @@ export function usePhoneControl() {
 
   const selectDevice = useCallback((event: SelectionEvent) => {
     const { deviceId, ctrlKey, shiftKey, metaKey } = event;
-    const multi = ctrlKey || metaKey || shiftKey;
-
     setActiveId(deviceId);
     writeSavedDevice(deviceId);
+    if (!(ctrlKey || metaKey || shiftKey)) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(deviceId)) next.delete(deviceId);
+      else next.add(deviceId);
+      return next;
+    });
+    if (storedMode(readControlMode()) === "selected") setControlMode("multi");
+  }, [setControlMode]);
 
-    if (multi) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(deviceId)) {
-          if (next.size > 1) next.delete(deviceId);
-        } else {
-          next.add(deviceId);
-        }
-        return next;
-      });
-      if (storedMode(readControlMode()) === "selected") setControlMode("multi");
-    } else {
-      setSelectedIds(new Set([deviceId]));
-      if (storedMode(readControlMode()) === "multi") setControlMode("selected");
-    }
+  const toggleSelected = useCallback((deviceId: string, selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (selected) next.add(deviceId);
+      else next.delete(deviceId);
+      return next;
+    });
+    if (selected && storedMode(readControlMode()) === "selected") setControlMode("multi");
   }, [setControlMode]);
 
   const broadcastTargets = useMemo(() => {
@@ -447,6 +451,7 @@ export function usePhoneControl() {
     mouseOn,
     setMouseOn,
     selectDevice,
+    toggleSelected,
     broadcastTargets,
     handlePointer,
     handleNav,
