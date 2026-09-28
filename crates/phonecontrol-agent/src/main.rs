@@ -49,9 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     state.spawn_session_reaper();
 
     if role == Role::Agent {
-        let url = controller_ws_url().unwrap_or_else(|| {
-            "ws://127.0.0.1:3848/ws/agent".into()
-        });
+        let url = controller_ws_url().unwrap_or_else(|| "ws://127.0.0.1:3848/ws/agent".into());
         let agent_state = state.clone();
         tokio::spawn(async move {
             mesh_client::run_agent_client(agent_state, url).await;
@@ -78,6 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  POST /api/input/tap");
     info!("  POST /api/input/pointer");
     info!("  POST /api/input/nav");
+    info!("  POST /api/input/install");
     info!("  WS   /ws");
     info!("  WS   /ws/agent   (controller: agent registration)");
     info!("  WS   /ws/devices/{{serial}}/video");

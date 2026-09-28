@@ -7,13 +7,16 @@ use crate::session::{scrcpy_binary, SessionManager};
 use crate::video::VideoHub;
 use phonecontrol_protocol::{
     map_to_devices, AdbAvailability, ControlMode, Device, DeviceStatus, HostInfo, InjectMode,
-    InjectStatus, MappedTap, NavActionType, NavBroadcast, NavTargetResult, NormalizedPoint,
-    PointerPhase, Role, ScrcpyAvailability, ServerEvent, SessionAction, SessionStatus, TapBroadcast,
+    InjectStatus, InstallBroadcast, MappedTap, NavActionType, NavBroadcast, NavTargetResult,
+    NormalizedPoint, PointerPhase, Role, ScrcpyAvailability, ServerEvent, SessionAction,
+    SessionStatus, TapBroadcast,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 
@@ -297,10 +300,7 @@ impl AppState {
 
     async fn require_local_serial(&self, serial: &str) -> Result<(), String> {
         let devices = self.inner.devices.read().await;
-        if devices
-            .iter()
-            .any(|d| d.serial == serial || d.id == serial)
-        {
+        if devices.iter().any(|d| d.serial == serial || d.id == serial) {
             Ok(())
         } else {
             Err(format!("unknown local device serial/id: {serial}"))
@@ -373,12 +373,7 @@ impl AppState {
                 return Err(format!("cannot reach remote host {host_id} from agent"));
             }
             let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
-            match self
-                .inner
-                .mesh
-                .proxy_tap(&host_id, mode, ids, point)
-                .await
-            {
+            match self.inner.mesh.proxy_tap(&host_id, mode, ids, point).await {
                 Ok(remote) => mapped.extend(remote),
                 Err(e) => {
                     for d in &group {
@@ -463,15 +458,7 @@ impl AppState {
             match self
                 .inner
                 .mesh
-                .proxy_pointer(
-                    &host_id,
-                    mode,
-                    ids,
-                    phase,
-                    point,
-                    frame_width,
-                    frame_height,
-                )
+                .proxy_pointer(&host_id, mode, ids, phase, point, frame_width, frame_height)
                 .await
             {
                 Ok(remote) => mapped.extend(remote),
@@ -526,6 +513,13 @@ impl AppState {
         for device in devices {
             let mut tap = frame_tap(point, device, frame_width, frame_height);
             if frame_width == 0 || frame_height == 0 {
+                // Do not fall through to wm size. Scrcpy drops a touch whose
+                // screen size is not the encoded video size, and a 0×0 touch
+                // is not a guess at that size.
+                tap.x = 0;
+                tap.y = 0;
+                tap.width = 0;
+                tap.height = 0;
                 tap.inject = InjectStatus::Error;
                 tap.inject_detail = Some("video size unknown — wait for the picture".into());
                 mapped.push(tap);
@@ -572,11 +566,7 @@ impl AppState {
         let mut ids = Vec::new();
         for d in &local_group {
             ids.push(d.id.clone());
-            let result = self
-                .inner
-                .sessions
-                .inject_nav(&d.serial, action)
-                .await;
+            let result = self.inner.sessions.inject_nav(&d.serial, action).await;
             results.push(NavTargetResult {
                 device_id: d.id.clone(),
                 device_name: d.name.clone(),
@@ -642,11 +632,7 @@ impl AppState {
         }
         let mut results = Vec::with_capacity(devices.len());
         for device in &devices {
-            let result = self
-                .inner
-                .sessions
-                .inject_nav(&device.serial, action)
-                .await;
+            let result = self.inner.sessions.inject_nav(&device.serial, action).await;
             results.push(NavTargetResult {
                 device_id: device.id.clone(),
                 device_name: device.name.clone(),
@@ -656,6 +642,130 @@ impl AppState {
         }
         let ids: Vec<String> = devices.iter().map(|d| d.id.clone()).collect();
         Ok(NavBroadcast::new(mode, action, ids, results))
+    }
+
+    /// Install one APK on the same targets nav would use.
+    pub async fn handle_install(
+        &self,
+        mode: ControlMode,
+        target_ids: &[String],
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<InstallBroadcast, String> {
+        let devices = self.resolve_targets(target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online targets for install".into());
+        }
+
+        let local_serials = self.local_serial_set().await;
+        let mut local_group = Vec::new();
+        let mut by_remote: HashMap<String, Vec<Device>> = HashMap::new();
+        for d in devices {
+            if local_serials.contains(&d.serial) {
+                local_group.push(d);
+            } else {
+                by_remote
+                    .entry(d.effective_host_id().to_string())
+                    .or_default()
+                    .push(d);
+            }
+        }
+
+        let mut results = Vec::new();
+        let mut ids = Vec::new();
+        if !local_group.is_empty() {
+            for d in &local_group {
+                ids.push(d.id.clone());
+            }
+            results.extend(self.install_local_group(&local_group, bytes).await);
+        }
+
+        for (host_id, group) in by_remote {
+            if self.inner.role != Role::Controller {
+                return Err(format!("cannot reach remote host {host_id} from agent"));
+            }
+            for d in &group {
+                ids.push(d.id.clone());
+            }
+            let group_ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+            match self
+                .proxy_install_http(&host_id, mode, &group_ids, filename, bytes)
+                .await
+            {
+                Ok(remote) => results.extend(remote),
+                Err(e) => {
+                    for d in &group {
+                        results.push(install_error(d, e.clone()));
+                    }
+                }
+            }
+        }
+
+        Ok(InstallBroadcast::new(mode, ids, results))
+    }
+
+    async fn install_local_group(&self, devices: &[Device], bytes: &[u8]) -> Vec<NavTargetResult> {
+        let path = std::env::temp_dir().join(format!("phonecontrol-{}.apk", uuid::Uuid::new_v4()));
+        if let Err(e) = tokio::fs::write(&path, bytes).await {
+            return devices
+                .iter()
+                .map(|d| install_error(d, format!("failed to store apk: {e}")))
+                .collect();
+        }
+        let mut results = Vec::with_capacity(devices.len());
+        for device in devices {
+            let result = self.inner.sessions.install_apk(&device.serial, &path).await;
+            results.push(NavTargetResult {
+                device_id: device.id.clone(),
+                device_name: device.name.clone(),
+                inject: result.status,
+                detail: result.detail,
+            });
+        }
+        let _ = tokio::fs::remove_file(&path).await;
+        results
+    }
+
+    async fn proxy_install_http(
+        &self,
+        host_id: &str,
+        mode: ControlMode,
+        target_ids: &[String],
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<Vec<NavTargetResult>, String> {
+        let Some(base) = self.inner.mesh.http_base(host_id).await else {
+            return Err(format!(
+                "agent {host_id} has no http_base — cannot install APK"
+            ));
+        };
+        let url = format!("{}/api/input/install", base.trim_end_matches('/'));
+        let mode_name = match mode {
+            ControlMode::Selected => "selected",
+            ControlMode::Multi => "multi",
+            ControlMode::All => "all",
+        };
+        let (status, body) = http_post_bytes(
+            &url,
+            &[
+                ("Content-Type", "application/vnd.android.package-archive"),
+                ("X-Phonecontrol-Mode", mode_name),
+                ("X-Phonecontrol-Targets", &target_ids.join(",")),
+                ("X-Phonecontrol-Filename", filename),
+            ],
+            bytes,
+        )
+        .await?;
+        if !(200..300).contains(&status) {
+            return Err(if body.trim().is_empty() {
+                format!("install proxy HTTP {status}")
+            } else {
+                body
+            });
+        }
+        let broadcast: InstallBroadcast = serde_json::from_str(&body)
+            .map_err(|e| format!("install proxy returned invalid JSON: {e}"))?;
+        Ok(broadcast.targets)
     }
 
     async fn resolve_targets(&self, target_ids: &[String]) -> Result<Vec<Device>, String> {
@@ -759,7 +869,9 @@ impl AppState {
                     height: 1920,
                 }
             };
-            next.push(adb::adb_line_to_device(line, host_id, host_name, resolution));
+            next.push(adb::adb_line_to_device(
+                line, host_id, host_name, resolution,
+            ));
         }
 
         let auto = env_truthy("PHONECONTROL_AUTO_SESSION");
@@ -837,6 +949,75 @@ fn frame_tap(
     }
 }
 
+fn install_error(device: &Device, detail: String) -> NavTargetResult {
+    NavTargetResult {
+        device_id: device.id.clone(),
+        device_name: device.name.clone(),
+        inject: InjectStatus::Error,
+        detail: Some(detail),
+    }
+}
+
+async fn http_post_bytes(
+    url: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> Result<(u16, String), String> {
+    let rest = url
+        .strip_prefix("http://")
+        .ok_or_else(|| format!("install proxy only supports http:// bases, got {url}"))?;
+    let (hostport, path) = match rest.split_once('/') {
+        Some((host, path)) => (host, format!("/{path}")),
+        None => (rest, "/".to_string()),
+    };
+    if hostport.is_empty() {
+        return Err("install proxy URL is missing a host".into());
+    }
+    let mut header = format!(
+        "POST {path} HTTP/1.1\r\nHost: {hostport}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        body.len()
+    );
+    for (name, value) in headers {
+        if value.contains('\r') || value.contains('\n') {
+            return Err("invalid install proxy header".into());
+        }
+        header.push_str(name);
+        header.push_str(": ");
+        header.push_str(value);
+        header.push_str("\r\n");
+    }
+    header.push_str("\r\n");
+
+    let mut stream = TcpStream::connect(hostport)
+        .await
+        .map_err(|e| format!("install proxy connect failed: {e}"))?;
+    stream
+        .write_all(header.as_bytes())
+        .await
+        .map_err(|e| format!("install proxy write failed: {e}"))?;
+    stream
+        .write_all(body)
+        .await
+        .map_err(|e| format!("install proxy write failed: {e}"))?;
+    let mut buf = Vec::new();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("install proxy read failed: {e}"))?;
+    let text = String::from_utf8_lossy(&buf);
+    let (head, resp_body) = text
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| "install proxy returned a short HTTP response".to_string())?;
+    let status_line = head.lines().next().unwrap_or("");
+    let code = status_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("0")
+        .parse::<u16>()
+        .unwrap_or(0);
+    Ok((code, resp_body.to_string()))
+}
+
 fn env_truthy(key: &str) -> bool {
     matches!(
         std::env::var(key).as_deref(),
@@ -859,4 +1040,71 @@ pub fn inject_summary(targets: &[MappedTap]) -> String {
         .filter(|t| t.inject == InjectStatus::Error)
         .count();
     format!("inject ok={ok} stub={stub} error={err}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn pointer_rejects_unknown_video_size_and_accepts_real_frame() {
+        let state = AppState::new(
+            Role::Controller,
+            "pointer-test".into(),
+            "pointer-test".into(),
+            0,
+            None,
+        );
+        let devices = state.list_devices().await;
+        let device = devices
+            .iter()
+            .find(|d| d.status == DeviceStatus::Online)
+            .expect("mock fleet has an online device");
+        let id = device.id.clone();
+        let point = NormalizedPoint { x: 0.25, y: 0.5 };
+
+        let unknown = state
+            .handle_pointer(
+                ControlMode::Selected,
+                &[id.clone()],
+                PointerPhase::Down,
+                point,
+                0,
+                0,
+            )
+            .await
+            .expect("0×0 pointer still returns a broadcast");
+        let rejected = &unknown.targets[0];
+        assert_eq!(rejected.inject, InjectStatus::Error);
+        assert_eq!(rejected.width, 0);
+        assert_eq!(rejected.height, 0);
+        let detail = rejected.inject_detail.as_deref().unwrap_or("");
+        assert!(
+            detail.contains("video size unknown"),
+            "0×0 pointer should be rejected, got {detail}"
+        );
+
+        let known = state
+            .handle_pointer(
+                ControlMode::Selected,
+                &[id],
+                PointerPhase::Down,
+                point,
+                360,
+                640,
+            )
+            .await
+            .expect("sized pointer returns a broadcast");
+        let sent = &known.targets[0];
+        let detail = sent.inject_detail.as_deref().unwrap_or("");
+        assert!(
+            !detail.contains("video size unknown"),
+            "real frame size must not be rejected as unknown, got {detail}"
+        );
+        assert_eq!(sent.width, 360);
+        assert_eq!(sent.height, 640);
+        assert_ne!(sent.width, device.resolution.width);
+        assert_eq!(sent.x, 90);
+        assert_eq!(sent.y, 320);
+    }
 }

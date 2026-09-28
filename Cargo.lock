@@ -478,11 +478,13 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "futures-util",
+ "http-body-util",
  "phonecontrol-protocol",
  "serde",
  "serde_json",
  "tokio",
  "tokio-tungstenite 0.26.2",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",

@@ -35,6 +35,12 @@ pub enum NavActionType {
     Back,
     Home,
     Recent,
+    /// `KEYCODE_VOLUME_UP` (24). Sent with the other nav keyevents.
+    #[serde(rename = "volume_up")]
+    VolumeUp,
+    /// `KEYCODE_VOLUME_DOWN` (25).
+    #[serde(rename = "volume_down")]
+    VolumeDown,
 }
 
 /// Result of attempting to inject input into a device.
@@ -512,6 +518,29 @@ impl NavBroadcast {
     }
 }
 
+/// POST /api/input/install — raw APK bytes, targets match the nav broadcast.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallBroadcast {
+    pub id: String,
+    pub at: u64,
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+    pub targets: Vec<NavTargetResult>,
+}
+
+impl InstallBroadcast {
+    pub fn new(mode: ControlMode, target_ids: Vec<String>, targets: Vec<NavTargetResult>) -> Self {
+        Self {
+            id: format!("install-{}", Uuid::new_v4()),
+            at: now_ms(),
+            mode,
+            target_ids,
+            targets,
+        }
+    }
+}
+
 pub fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -543,9 +572,11 @@ pub fn map_to_devices(point: NormalizedPoint, devices: &[Device]) -> Vec<MappedT
 /// Android keycodes used for nav inject.
 pub fn nav_keycode(action: NavActionType) -> i32 {
     match action {
-        NavActionType::Back => 4,     // KEYCODE_BACK
-        NavActionType::Home => 3,     // KEYCODE_HOME
-        NavActionType::Recent => 187, // KEYCODE_APP_SWITCH
+        NavActionType::Back => 4,        // KEYCODE_BACK
+        NavActionType::Home => 3,        // KEYCODE_HOME
+        NavActionType::Recent => 187,    // KEYCODE_APP_SWITCH
+        NavActionType::VolumeUp => 24,   // KEYCODE_VOLUME_UP
+        NavActionType::VolumeDown => 25, // KEYCODE_VOLUME_DOWN
     }
 }
 
@@ -559,6 +590,17 @@ pub fn adb_tap_args(serial: &str, x: u32, y: u32) -> Vec<String> {
         "tap".into(),
         x.to_string(),
         y.to_string(),
+    ]
+}
+
+/// Build `adb -s SERIAL install -r PATH` argv (excluding the adb binary).
+pub fn adb_install_args(serial: &str, apk_path: &str) -> Vec<String> {
+    vec![
+        "-s".into(),
+        serial.into(),
+        "install".into(),
+        "-r".into(),
+        apk_path.into(),
     ]
 }
 
@@ -631,11 +673,25 @@ mod tests {
         assert_eq!(nav_keycode(NavActionType::Back), 4);
         assert_eq!(nav_keycode(NavActionType::Home), 3);
         assert_eq!(nav_keycode(NavActionType::Recent), 187);
-        let args = adb_keyevent_args("SERIAL", 187);
+        assert_eq!(nav_keycode(NavActionType::VolumeUp), 24);
+        assert_eq!(nav_keycode(NavActionType::VolumeDown), 25);
+        let args = adb_keyevent_args("SERIAL", 24);
         assert_eq!(
             args,
-            vec!["-s", "SERIAL", "shell", "input", "keyevent", "187"]
+            vec!["-s", "SERIAL", "shell", "input", "keyevent", "24"]
         );
+    }
+
+    #[test]
+    fn volume_nav_json_uses_keyevent_codes() {
+        let req: NavRequest = serde_json::from_str(
+            r#"{"mode":"all","targetIds":["s24"],"action":{"type":"volume_down"}}"#,
+        )
+        .unwrap();
+        assert_eq!(req.action.action_type, NavActionType::VolumeDown);
+        assert_eq!(nav_keycode(req.action.action_type), 25);
+        let args = adb_install_args("SERIAL", "/tmp/app.apk");
+        assert_eq!(args, vec!["-s", "SERIAL", "install", "-r", "/tmp/app.apk"]);
     }
 
     #[test]

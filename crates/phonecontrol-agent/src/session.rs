@@ -18,8 +18,9 @@ use crate::video::{
     TESTPATTERN_HEIGHT, TESTPATTERN_WIDTH,
 };
 use phonecontrol_protocol::{
-    adb_keyevent_args, adb_tap_args, nav_keycode, InjectMode, InjectStatus, MappedTap,
-    NavActionType, PointerPhase, ScrcpyAvailability, SessionStatus, StreamState, VideoStatusFrame,
+    adb_install_args, adb_keyevent_args, adb_tap_args, nav_keycode, InjectMode, InjectStatus,
+    MappedTap, NavActionType, PointerPhase, ScrcpyAvailability, SessionStatus, StreamState,
+    VideoStatusFrame,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -64,7 +65,12 @@ impl SessionManager {
         scrcpy_path: Option<PathBuf>,
         video_hub: Arc<VideoHub>,
     ) -> Arc<Self> {
-        Self::new_with_source(adb_path, scrcpy_path, video_hub, VideoSourceKind::from_env())
+        Self::new_with_source(
+            adb_path,
+            scrcpy_path,
+            video_hub,
+            VideoSourceKind::from_env(),
+        )
     }
 
     pub fn new_with_source(
@@ -233,8 +239,8 @@ impl SessionManager {
                     session.stream,
                     session.note.clone(),
                     &pump.backend,
-                    Some(pump.width),
-                    Some(pump.height),
+                    Some(pump.display_width()),
+                    Some(pump.display_height()),
                     Some(&pump.codec_string),
                 );
             }
@@ -302,10 +308,7 @@ impl SessionManager {
         self.set_status(
             serial,
             StreamState::Starting,
-            format!(
-                "starting scrcpy-server raw H264 ({})",
-                server.display()
-            ),
+            format!("starting scrcpy-server raw H264 ({})", server.display()),
         )
         .await;
 
@@ -321,27 +324,28 @@ impl SessionManager {
             Ok(capture) => {
                 let (pump, server_child, port, server_log, control) = capture.into_parts();
                 let mut guard = self.sessions.write().await;
-                let live = guard.entry(serial.to_string()).or_insert_with(|| LiveSession {
-                    info: SessionStatus {
-                        serial: serial.to_string(),
-                        stream: StreamState::Starting,
-                        note: String::new(),
-                        backend: "scrcpy".into(),
-                    },
-                    child: None,
-                    video: None,
-                    forward_port: None,
-                    server_log: None,
-                    control: None,
-                });
+                let live = guard
+                    .entry(serial.to_string())
+                    .or_insert_with(|| LiveSession {
+                        info: SessionStatus {
+                            serial: serial.to_string(),
+                            stream: StreamState::Starting,
+                            note: String::new(),
+                            backend: "scrcpy".into(),
+                        },
+                        child: None,
+                        video: None,
+                        forward_port: None,
+                        server_log: None,
+                        control: None,
+                    });
                 live.video = Some(pump);
                 live.child = Some(server_child);
                 live.forward_port = Some(port);
                 live.server_log = Some(server_log);
                 live.control = Some(control);
                 live.info.stream = StreamState::Streaming;
-                live.info.note =
-                    "scrcpy-server raw H264 + control socket for touch".into();
+                live.info.note = "scrcpy-server raw H264 + control socket for touch".into();
                 live.info.backend = "scrcpy".into();
                 info!(serial, "scrcpy session streaming (real H264 pipe)");
                 let info = live.info.clone();
@@ -370,19 +374,21 @@ impl SessionManager {
         .await;
         let pump = start_scrcpy_fixture_pump(self.video_hub.clone(), serial.to_string()).await;
         let mut guard = self.sessions.write().await;
-        let live = guard.entry(serial.to_string()).or_insert_with(|| LiveSession {
-            info: SessionStatus {
-                serial: serial.to_string(),
-                stream: StreamState::Idle,
-                note: String::new(),
-                backend: "scrcpy".into(),
-            },
-            child: None,
-            video: None,
-            forward_port: None,
-            server_log: None,
-            control: None,
-        });
+        let live = guard
+            .entry(serial.to_string())
+            .or_insert_with(|| LiveSession {
+                info: SessionStatus {
+                    serial: serial.to_string(),
+                    stream: StreamState::Idle,
+                    note: String::new(),
+                    backend: "scrcpy".into(),
+                },
+                child: None,
+                video: None,
+                forward_port: None,
+                server_log: None,
+                control: None,
+            });
         live.video = Some(pump);
         live.info.stream = StreamState::Streaming;
         live.info.note = "scrcpy fixture mock → WS annex-B (no USB device)".into();
@@ -409,19 +415,21 @@ impl SessionManager {
                     "synthetic H264 via embedded fixture loop → WS annex-B"
                 };
                 let mut guard = self.sessions.write().await;
-                let live = guard.entry(serial.to_string()).or_insert_with(|| LiveSession {
-                    info: SessionStatus {
-                        serial: serial.to_string(),
-                        stream: StreamState::Idle,
-                        note: String::new(),
-                        backend: "testpattern".into(),
-                    },
-                    child: None,
-                    video: None,
-                    forward_port: None,
-                    server_log: None,
-                    control: None,
-                });
+                let live = guard
+                    .entry(serial.to_string())
+                    .or_insert_with(|| LiveSession {
+                        info: SessionStatus {
+                            serial: serial.to_string(),
+                            stream: StreamState::Idle,
+                            note: String::new(),
+                            backend: "testpattern".into(),
+                        },
+                        child: None,
+                        video: None,
+                        forward_port: None,
+                        server_log: None,
+                        control: None,
+                    });
                 live.video = Some(pump);
                 live.info.stream = StreamState::Streaming;
                 live.info.note = note.into();
@@ -491,19 +499,21 @@ impl SessionManager {
     async fn set_status(&self, serial: &str, stream: StreamState, note: String) -> SessionStatus {
         let mut guard = self.sessions.write().await;
         let backend: String = self.backend_label().into();
-        let entry = guard.entry(serial.to_string()).or_insert_with(|| LiveSession {
-            info: SessionStatus {
-                serial: serial.to_string(),
-                stream: StreamState::Idle,
-                note: String::new(),
-                backend: backend.clone(),
-            },
-            child: None,
-            video: None,
-            forward_port: None,
-            server_log: None,
-            control: None,
-        });
+        let entry = guard
+            .entry(serial.to_string())
+            .or_insert_with(|| LiveSession {
+                info: SessionStatus {
+                    serial: serial.to_string(),
+                    stream: StreamState::Idle,
+                    note: String::new(),
+                    backend: backend.clone(),
+                },
+                child: None,
+                video: None,
+                forward_port: None,
+                server_log: None,
+                control: None,
+            });
         entry.info.stream = stream;
         entry.info.note = note;
         // Keep backend truthful for an active pump.
@@ -518,9 +528,7 @@ impl SessionManager {
 
     async fn publish_video_status(&self, session: &SessionStatus) {
         let frame = self.enrich_video_status(session).await;
-        self.video_hub
-            .publish_status(&session.serial, frame)
-            .await;
+        self.video_hub.publish_status(&session.serial, frame).await;
     }
 
     /// Inject a mapped tap. Real path: `adb -s SERIAL shell input tap X Y`.
@@ -582,7 +590,15 @@ impl SessionManager {
         };
         match sender.touch(phase, x, y, width, height).await {
             Ok(()) => {
-                info!(serial, ?phase, x, y, width, height, "[scrcpy-control] touch");
+                info!(
+                    serial,
+                    ?phase,
+                    x,
+                    y,
+                    width,
+                    height,
+                    "[scrcpy-control] touch"
+                );
                 InjectResult {
                     status: InjectStatus::Ok,
                     detail: Some("scrcpy".into()),
@@ -590,6 +606,36 @@ impl SessionManager {
             }
             Err(e) => {
                 warn!(serial, error = %e, "[scrcpy-control] touch failed");
+                InjectResult {
+                    status: InjectStatus::Error,
+                    detail: Some(e),
+                }
+            }
+        }
+    }
+
+    /// `adb -s SERIAL install -r PATH`. Missing ADB is an error, not a fake success.
+    pub async fn install_apk(&self, serial: &str, apk: &std::path::Path) -> InjectResult {
+        let Some(adb) = self.adb_path.clone() else {
+            info!(serial, "[adb-install] no ADB — apk not installed");
+            return InjectResult {
+                status: InjectStatus::Error,
+                detail: Some("adb is not available — cannot install APK".into()),
+            };
+        };
+
+        let args = adb_install_args(serial, &apk.to_string_lossy());
+        info!(serial, path = %apk.display(), "[adb-install] adb install -r");
+        match run_adb(&adb, &args).await {
+            Ok(()) => {
+                info!(serial, "[adb-install] ok");
+                InjectResult {
+                    status: InjectStatus::Ok,
+                    detail: None,
+                }
+            }
+            Err(e) => {
+                warn!(serial, error = %e, "[adb-install] failed");
                 InjectResult {
                     status: InjectStatus::Error,
                     detail: Some(e),
@@ -809,12 +855,8 @@ mod tests {
     #[tokio::test]
     async fn start_testpattern_streams() {
         let hub = VideoHub::new();
-        let mgr = SessionManager::new_with_source(
-            None,
-            None,
-            hub.clone(),
-            VideoSourceKind::TestPattern,
-        );
+        let mgr =
+            SessionManager::new_with_source(None, None, hub.clone(), VideoSourceKind::TestPattern);
         let session = mgr.start("SERIAL").await;
         assert_eq!(session.stream, StreamState::Streaming);
         assert_eq!(session.backend, "testpattern");
@@ -843,8 +885,7 @@ mod tests {
     #[tokio::test]
     async fn start_off_stays_idle() {
         let hub = VideoHub::new();
-        let mgr =
-            SessionManager::new_with_source(None, None, hub, VideoSourceKind::Off);
+        let mgr = SessionManager::new_with_source(None, None, hub, VideoSourceKind::Off);
         let session = mgr.start("SERIAL").await;
         assert_eq!(session.stream, StreamState::Idle);
         assert!(session.backend == "stub" || session.note.contains("off"));
@@ -854,8 +895,7 @@ mod tests {
     async fn scrcpy_fixture_mock_streams_as_scrcpy() {
         std::env::set_var("PHONECONTROL_SCRCPY_FIXTURE", "1");
         let hub = VideoHub::new();
-        let mgr =
-            SessionManager::new_with_source(None, None, hub.clone(), VideoSourceKind::Scrcpy);
+        let mgr = SessionManager::new_with_source(None, None, hub.clone(), VideoSourceKind::Scrcpy);
         let session = mgr.start("SCRCPY-MOCK").await;
         assert_eq!(session.stream, StreamState::Streaming);
         assert_eq!(session.backend, "scrcpy");
@@ -883,8 +923,7 @@ mod tests {
     async fn auto_without_scrcpy_uses_testpattern() {
         let hub = VideoHub::new();
         // No adb / no server → auto falls back to testpattern.
-        let mgr =
-            SessionManager::new_with_source(None, None, hub, VideoSourceKind::Auto);
+        let mgr = SessionManager::new_with_source(None, None, hub, VideoSourceKind::Auto);
         assert!(!mgr.scrcpy_ready());
         let session = mgr.start("AUTO").await;
         assert_eq!(session.backend, "testpattern");

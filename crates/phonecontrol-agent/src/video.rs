@@ -7,6 +7,7 @@ use phonecontrol_protocol::{StreamState, VideoStatusFrame};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -162,6 +163,9 @@ pub struct VideoPump {
     pub backend: String,
     pub width: u32,
     pub height: u32,
+    /// Updated when an SPS arrives. Scrcpy raw streams start at 0×0.
+    learned_width: Arc<AtomicU32>,
+    learned_height: Arc<AtomicU32>,
     pub codec_string: String,
     handle: JoinHandle<()>,
     /// Live ffmpeg child when using testsrc; None for fixture / socket pumps.
@@ -170,6 +174,25 @@ pub struct VideoPump {
 }
 
 impl VideoPump {
+    /// Encoded video size: SPS crop when known, otherwise the size the pump started with.
+    pub fn display_width(&self) -> u32 {
+        let learned = self.learned_width.load(Ordering::Relaxed);
+        if learned > 0 {
+            learned
+        } else {
+            self.width
+        }
+    }
+
+    pub fn display_height(&self) -> u32 {
+        let learned = self.learned_height.load(Ordering::Relaxed);
+        if learned > 0 {
+            learned
+        } else {
+            self.height
+        }
+    }
+
     pub fn is_finished(&self) -> bool {
         self.handle.is_finished()
     }
@@ -279,7 +302,12 @@ where
     let backend = meta.backend.clone();
     let width = meta.width;
     let height = meta.height;
-    let codec_string = meta.codec_string.clone();
+    let note = meta.note.clone();
+    let mut codec_for_task = meta.codec_string.clone();
+    let learned_width = Arc::new(AtomicU32::new(width));
+    let learned_height = Arc::new(AtomicU32::new(height));
+    let task_width = learned_width.clone();
+    let task_height = learned_height.clone();
     let serial_pump = serial.clone();
     let handle = tokio::spawn(async move {
         let mut buf = vec![0u8; 64 * 1024];
@@ -294,6 +322,32 @@ where
                     pending.extend_from_slice(&buf[..n]);
                     let aus = drain_access_units(&mut pending);
                     for au in aus {
+                        if let Some((w, h)) = annexb_sps_dimensions(&au) {
+                            let prev_w = task_width.load(Ordering::Relaxed);
+                            let prev_h = task_height.load(Ordering::Relaxed);
+                            if w > 0 && h > 0 && (w != prev_w || h != prev_h) {
+                                task_width.store(w, Ordering::Relaxed);
+                                task_height.store(h, Ordering::Relaxed);
+                                if let Some(cs) = codec_string_from_sps_au(&au) {
+                                    codec_for_task = cs;
+                                }
+                                hub.publish_status(
+                                    &serial_pump,
+                                    VideoStatusFrame {
+                                        serial: serial_pump.clone(),
+                                        stream: StreamState::Streaming,
+                                        note: note.clone(),
+                                        backend: backend.clone(),
+                                        codec: Some("h264".into()),
+                                        codec_string: Some(codec_for_task.clone()),
+                                        width: Some(w),
+                                        height: Some(h),
+                                        framing: Some("annexb".into()),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
                         hub.publish_annexb(&serial_pump, au).await;
                     }
                 }
@@ -309,7 +363,9 @@ where
         backend: meta.backend,
         width,
         height,
-        codec_string,
+        learned_width,
+        learned_height,
+        codec_string: meta.codec_string,
         handle,
         live_ffmpeg: false,
         child: None,
@@ -356,10 +412,13 @@ pub async fn start_scrcpy_fixture_pump(hub: Arc<VideoHub>, serial: String) -> Vi
         }
     });
 
+    let (learned_width, learned_height) = size_atoms(meta.width, meta.height);
     VideoPump {
         backend: meta.backend,
         width: meta.width,
         height: meta.height,
+        learned_width,
+        learned_height,
         codec_string: codec,
         handle,
         live_ffmpeg: false,
@@ -421,10 +480,13 @@ pub async fn start_testpattern_pump(
 
     let handle = tokio::spawn(fixture_loop(hub, serial.clone()));
     info!(%serial, "testpattern pump via embedded fixture");
+    let (learned_width, learned_height) = size_atoms(TESTPATTERN_WIDTH, TESTPATTERN_HEIGHT);
     Ok(VideoPump {
         backend: "testpattern".into(),
         width: TESTPATTERN_WIDTH,
         height: TESTPATTERN_HEIGHT,
+        learned_width,
+        learned_height,
         codec_string: TESTPATTERN_CODEC_STRING.into(),
         handle,
         live_ffmpeg: false,
@@ -478,9 +540,7 @@ async fn spawn_ffmpeg_testsrc(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("spawn ffmpeg: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| format!("spawn ffmpeg: {e}"))?;
     let stdout = child
         .stdout
         .take()
@@ -516,14 +576,185 @@ async fn fixture_loop(hub: Arc<VideoHub>, serial: String) {
     }
 }
 
+fn size_atoms(width: u32, height: u32) -> (Arc<AtomicU32>, Arc<AtomicU32>) {
+    (
+        Arc::new(AtomicU32::new(width)),
+        Arc::new(AtomicU32::new(height)),
+    )
+}
+
+/// Displayed picture size from the SPS in an Annex-B access unit.
+///
+/// Crop units follow the H.264 spec (4:2:0 high-profile streams, which Xiaomi
+/// encoders emit, subtract `crop * 2`). This is the scrcpy video size — not
+/// `wm size`.
+pub fn annexb_sps_dimensions(au: &[u8]) -> Option<(u32, u32)> {
+    for nal in split_annexb_nals(au) {
+        if nal_unit_type(&nal) == 7 {
+            return sps_dimensions(&nal);
+        }
+    }
+    None
+}
+
+fn sps_dimensions(nal: &[u8]) -> Option<(u32, u32)> {
+    if nal.len() < 4 {
+        return None;
+    }
+    let rbsp = rbsp_from_nal(nal);
+    let mut br = BitReader::new(&rbsp);
+    sps_dimensions_bits(&mut br)
+        .ok()
+        .filter(|(w, h)| *w > 0 && *h > 0)
+}
+
+fn sps_dimensions_bits(br: &mut BitReader<'_>) -> Result<(u32, u32), ()> {
+    let profile = br.u(8)?;
+    br.u(8)?;
+    br.u(8)?;
+    br.ue()?;
+    let mut chroma = 1u32;
+    if matches!(
+        profile,
+        100 | 110 | 122 | 244 | 44 | 83 | 86 | 118 | 128 | 138 | 139 | 134 | 135
+    ) {
+        chroma = br.ue()?;
+        if chroma == 3 {
+            br.u(1)?;
+        }
+        br.ue()?;
+        br.ue()?;
+        br.u(1)?;
+        if br.u(1)? == 1 {
+            let lists = if chroma == 3 { 12 } else { 8 };
+            for i in 0..lists {
+                if br.u(1)? == 1 {
+                    skip_scaling_list(br, if i < 6 { 16 } else { 64 })?;
+                }
+            }
+        }
+    }
+    br.ue()?;
+    let poc = br.ue()?;
+    if poc == 0 {
+        br.ue()?;
+    } else if poc == 1 {
+        br.u(1)?;
+        br.se()?;
+        br.se()?;
+        let n = br.ue()?;
+        for _ in 0..n {
+            br.se()?;
+        }
+    }
+    br.ue()?;
+    br.u(1)?;
+    let width_mbs = br.ue()?.saturating_add(1);
+    let height_maps = br.ue()?.saturating_add(1);
+    let frame_mbs_only = br.u(1)?;
+    if frame_mbs_only == 0 {
+        br.u(1)?;
+    }
+    br.u(1)?;
+    let mut crop_left = 0u32;
+    let mut crop_right = 0u32;
+    let mut crop_top = 0u32;
+    let mut crop_bottom = 0u32;
+    if br.u(1)? == 1 {
+        crop_left = br.ue()?;
+        crop_right = br.ue()?;
+        crop_top = br.ue()?;
+        crop_bottom = br.ue()?;
+    }
+    let crop_unit_x = if chroma == 1 || chroma == 2 { 2 } else { 1 };
+    let crop_unit_y = (if chroma == 1 { 2 } else { 1 }) * (2 - frame_mbs_only);
+    let width = width_mbs * 16 - (crop_left + crop_right) * crop_unit_x;
+    let height = height_maps * 16 * (2 - frame_mbs_only) - (crop_top + crop_bottom) * crop_unit_y;
+    if width == 0 || height == 0 {
+        return Err(());
+    }
+    Ok((width, height))
+}
+
+fn rbsp_from_nal(nal: &[u8]) -> Vec<u8> {
+    let src = &nal[1..];
+    let mut out = Vec::with_capacity(src.len());
+    let mut i = 0;
+    while i < src.len() {
+        if i + 2 < src.len() && src[i] == 0 && src[i + 1] == 0 && src[i + 2] == 3 {
+            out.push(0);
+            out.push(0);
+            i += 3;
+            continue;
+        }
+        out.push(src[i]);
+        i += 1;
+    }
+    out
+}
+
+fn skip_scaling_list(br: &mut BitReader<'_>, size: usize) -> Result<(), ()> {
+    let mut last = 8i32;
+    let mut next = 8i32;
+    for _ in 0..size {
+        if next != 0 {
+            let delta = br.se()?;
+            next = (last + delta + 256).rem_euclid(256);
+        }
+        last = if next == 0 { last } else { next };
+    }
+    Ok(())
+}
+
+struct BitReader<'a> {
+    data: &'a [u8],
+    bit: usize,
+}
+
+impl<'a> BitReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, bit: 0 }
+    }
+
+    fn u(&mut self, n: usize) -> Result<u32, ()> {
+        let mut v = 0u32;
+        for _ in 0..n {
+            let byte = *self.data.get(self.bit >> 3).ok_or(())?;
+            v = (v << 1) | u32::from((byte >> (7 - (self.bit & 7))) & 1);
+            self.bit += 1;
+        }
+        Ok(v)
+    }
+
+    fn ue(&mut self) -> Result<u32, ()> {
+        let mut zeros = 0usize;
+        while self.u(1)? == 0 {
+            zeros += 1;
+            if zeros > 31 {
+                return Err(());
+            }
+        }
+        if zeros == 0 {
+            return Ok(0);
+        }
+        Ok((1u32 << zeros) - 1 + self.u(zeros)?)
+    }
+
+    fn se(&mut self) -> Result<i32, ()> {
+        let v = self.ue()?;
+        if v & 1 == 1 {
+            Ok(((v + 1) >> 1) as i32)
+        } else {
+            Ok(-((v >> 1) as i32))
+        }
+    }
+}
+
 /// Derive `avc1.PPCCLL` from the first SPS NAL in an Annex-B AU.
 pub fn codec_string_from_sps_au(au: &[u8]) -> Option<String> {
     for nal in split_annexb_nals(au) {
         if nal_unit_type(&nal) == 7 && nal.len() >= 4 {
-            return Some(format!(
-                "avc1.{:02X}{:02X}{:02X}",
-                nal[1], nal[2], nal[3]
-            ));
+            return Some(format!("avc1.{:02X}{:02X}{:02X}", nal[1], nal[2], nal[3]));
         }
     }
     None
@@ -699,7 +930,9 @@ fn append_annexb_nal(buf: &mut Vec<u8>, nal: &[u8]) {
 
 /// True when an Annex-B AU contains SPS (type 7).
 pub fn annexb_has_sps(au: &[u8]) -> bool {
-    split_annexb_nals(au).iter().any(|nal| nal_unit_type(nal) == 7)
+    split_annexb_nals(au)
+        .iter()
+        .any(|nal| nal_unit_type(nal) == 7)
 }
 
 /// True when an Annex-B AU contains an IDR (keyframe).
@@ -782,10 +1015,7 @@ mod tests {
         assert!(annexb_is_keyframe(&aus[0]));
         // No config-only AUs.
         for (i, au) in aus.iter().enumerate() {
-            assert!(
-                annexb_has_vcl(au),
-                "AU {i} missing VCL NAL"
-            );
+            assert!(annexb_has_vcl(au), "AU {i} missing VCL NAL");
         }
     }
 
@@ -819,10 +1049,7 @@ mod tests {
             "expected IDR AUs from chunked drain, got {idr_count} (total AUs {})",
             all_aus.len()
         );
-        assert!(
-            sps_count >= 1,
-            "expected SPS on some AUs, got {sps_count}"
-        );
+        assert!(sps_count >= 1, "expected SPS on some AUs, got {sps_count}");
     }
 
     #[test]
@@ -948,5 +1175,25 @@ mod tests {
         let aus = split_annexb_access_units_complete(FIXTURE_H264);
         let cs = codec_string_from_sps_au(&aus[0]).expect("SPS in first AU");
         assert!(cs.starts_with("avc1."), "{cs}");
+    }
+
+    #[test]
+    fn high_profile_sps_crop_is_the_displayed_size() {
+        // libx264 high, 1080×2400. Coded size is 1088×2400; crop_right=4 and
+        // 4:2:0 crop units remove 8 pixels. Scrcpy wants 1080, not 1088.
+        let sps = hex_bytes("67640032acd94044012de5f011000003000100000300320f183196");
+        let mut au = vec![0, 0, 0, 1];
+        au.extend_from_slice(&sps);
+        assert_eq!(annexb_sps_dimensions(&au), Some((1080, 2400)));
+
+        let aus = split_annexb_access_units_complete(FIXTURE_H264);
+        assert_eq!(annexb_sps_dimensions(&aus[0]), Some((360, 640)));
+    }
+
+    fn hex_bytes(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
     }
 }

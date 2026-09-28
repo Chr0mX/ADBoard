@@ -1,19 +1,21 @@
 //! HTTP + WebSocket API for the Phone Control UI + agent mesh.
 
 use crate::device_manager::AppState;
+use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use phonecontrol_protocol::{
-    AgentToController, ClientCommand, ControllerToAgent, HealthResponse, NavRequest,
-    PointerRequest, Role, ServerEvent, SessionStatus, TapRequest, VideoStatusFrame,
+    AgentToController, ClientCommand, ControlMode, ControllerToAgent, HealthResponse,
+    InstallBroadcast, NavRequest, PointerRequest, Role, ServerEvent, SessionStatus, TapRequest,
+    VideoStatusFrame,
 };
-use tokio::sync::mpsc;
 use std::path::PathBuf;
+use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -38,6 +40,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/input/tap", post(input_tap))
         .route("/api/input/pointer", post(input_pointer))
         .route("/api/input/nav", post(input_nav))
+        .route(
+            "/api/input/install",
+            post(input_install).layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
+        )
         .route("/ws", get(ws_upgrade))
         .route("/ws/events", get(ws_upgrade))
         .route("/ws/agent", get(ws_agent_upgrade))
@@ -45,9 +51,7 @@ pub fn router(state: AppState) -> Router {
 
     if let Some(dir) = ui_dir() {
         info!(path = %dir.display(), "serving control UI at /");
-        router = router.fallback_service(
-            ServeDir::new(dir).append_index_html_on_directories(true),
-        );
+        router = router.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true));
     } else {
         warn!("no ui/index.html next to the executable — GET / has no page");
         router = router.route("/", get(ui_not_bundled));
@@ -119,9 +123,10 @@ async fn get_session(
     State(state): State<AppState>,
     Path(serial): Path<String>,
 ) -> Result<Json<SessionStatus>, (StatusCode, String)> {
-    let serial = state.resolve_serial(&serial).await.map_err(|e| {
-        (StatusCode::NOT_FOUND, e)
-    })?;
+    let serial = state
+        .resolve_serial(&serial)
+        .await
+        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
     Ok(Json(state.session_status(&serial).await))
 }
 
@@ -210,11 +215,68 @@ async fn input_nav(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
+/// Raw APK body. Headers name the file, the control mode, and the same target ids nav uses.
+async fn input_install(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<InstallBroadcast>, (StatusCode, String)> {
+    let filename = header_str(&headers, "x-phonecontrol-filename").unwrap_or("");
+    let mode = header_str(&headers, "x-phonecontrol-mode").unwrap_or("selected");
+    let targets = header_str(&headers, "x-phonecontrol-targets").unwrap_or("");
+    validate_apk_upload(filename, &body).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let mode = parse_control_mode(mode).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let target_ids: Vec<String> = targets
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .collect();
+    if target_ids.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "no install targets".into()));
+    }
+    state
+        .handle_install(mode, &target_ids, filename.trim(), &body)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|v| v.to_str().ok())
+}
+
+fn parse_control_mode(value: &str) -> Result<ControlMode, String> {
+    match value.trim() {
+        "selected" => Ok(ControlMode::Selected),
+        "multi" => Ok(ControlMode::Multi),
+        "all" => Ok(ControlMode::All),
+        other => Err(format!("unknown control mode: {other}")),
+    }
+}
+
+fn validate_apk_upload(filename: &str, bytes: &[u8]) -> Result<(), String> {
+    let name = filename.trim();
+    let bad_name = name.is_empty()
+        || name.len() > 180
+        || name.contains(['/', '\\', '\0', '\r', '\n', ':'])
+        || !name.to_ascii_lowercase().ends_with(".apk");
+    let bad_bytes =
+        bytes.len() < 4 || bytes[0] != b'P' || bytes[1] != b'K' || bytes[2] != 3 || bytes[3] != 4;
+    if bad_name || bad_bytes {
+        return Err("only .apk files can be installed".into());
+    }
+    Ok(())
+}
+
 async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-async fn ws_agent_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
+async fn ws_agent_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
     if state.role() != Role::Controller {
         // Still upgrade so the peer gets a clean close rather than HTTP 404 mid-handshake.
         return ws.on_upgrade(|mut socket| async move {
@@ -258,12 +320,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     }
 
     for session in state.list_sessions().await {
-        if send_event(
-            &mut sender,
-            &ServerEvent::SessionUpdated { session },
-        )
-        .await
-        .is_err()
+        if send_event(&mut sender, &ServerEvent::SessionUpdated { session })
+            .await
+            .is_err()
         {
             return;
         }
@@ -312,11 +371,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             }
                             ClientCommand::Nav(req) => {
                                 if let Err(e) = state_in
-                                    .handle_nav(
-                                        req.mode,
-                                        &req.target_ids,
-                                        req.action.action_type,
-                                    )
+                                    .handle_nav(req.mode, &req.target_ids, req.action.action_type)
                                     .await
                                 {
                                     warn!(error = %e, "ws nav failed");
@@ -385,26 +440,19 @@ async fn handle_agent_socket(socket: WebSocket, state: AppState) {
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
-                Message::Text(text) => {
-                    match serde_json::from_str::<AgentToController>(&text) {
-                        Ok(frame) => {
-                            if let Err(e) = handle_agent_frame(
-                                &state_in,
-                                &mesh,
-                                &cmd_tx,
-                                &registered_in,
-                                frame,
-                            )
-                            .await
-                            {
-                                warn!(error = %e, "agent frame handling failed");
-                            }
-                        }
-                        Err(e) => {
-                            debug!(error = %e, %text, "ignored non-mesh agent text");
+                Message::Text(text) => match serde_json::from_str::<AgentToController>(&text) {
+                    Ok(frame) => {
+                        if let Err(e) =
+                            handle_agent_frame(&state_in, &mesh, &cmd_tx, &registered_in, frame)
+                                .await
+                        {
+                            warn!(error = %e, "agent frame handling failed");
                         }
                     }
-                }
+                    Err(e) => {
+                        debug!(error = %e, %text, "ignored non-mesh agent text");
+                    }
+                },
                 Message::Close(_) => break,
                 Message::Ping(_) | Message::Pong(_) | Message::Binary(_) => {}
             }
@@ -609,11 +657,7 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
 
     let mut send_task = tokio::spawn(async move {
         for au in replay {
-            if sender
-                .send(Message::Binary(au.into()))
-                .await
-                .is_err()
-            {
+            if sender.send(Message::Binary(au.into())).await.is_err() {
                 return;
             }
         }
@@ -804,4 +848,95 @@ async fn send_json<T: serde::Serialize>(
         .send(Message::Text(text.into()))
         .await
         .map_err(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use http_body_util::BodyExt;
+    use phonecontrol_protocol::Role;
+    use tower::ServiceExt;
+
+    fn apk_request(filename: &str, targets: &str, bytes: &'static [u8]) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/api/input/install")
+            .header("x-phonecontrol-mode", "selected")
+            .header("x-phonecontrol-targets", targets)
+            .header("x-phonecontrol-filename", filename)
+            .body(Body::from(bytes))
+            .unwrap()
+    }
+
+    async fn body_text(response: axum::response::Response) -> String {
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    #[tokio::test]
+    async fn install_rejects_non_apk_and_reports_missing_adb() {
+        let state = AppState::new(
+            Role::Controller,
+            "install-test".into(),
+            "install-test".into(),
+            0,
+            None,
+        );
+        let devices = state.list_devices().await;
+        let id = devices
+            .iter()
+            .find(|d| d.status == phonecontrol_protocol::DeviceStatus::Online)
+            .expect("online device")
+            .id
+            .clone();
+        let app = router(state);
+
+        let rejected = app
+            .clone()
+            .oneshot(apk_request("notes.txt", &id, b"PK\x03\x04nope"))
+            .await
+            .unwrap();
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+        let text = body_text(rejected).await;
+        assert!(
+            text.contains("apk"),
+            "non-apk upload should be rejected, got {text}"
+        );
+
+        let not_zip = router_oneshot_note(&id).await;
+        assert_eq!(not_zip.0, StatusCode::BAD_REQUEST);
+        assert!(not_zip.1.contains("apk"), "got {}", not_zip.1);
+
+        let response = app
+            .oneshot(apk_request("demo.apk", &id, b"PK\x03\x04fake-apk"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let text = body_text(response).await;
+        assert!(
+            text.contains("adb is not available"),
+            "missing adb should be a clear error, got {text}"
+        );
+        assert!(text.contains("\"inject\":\"error\""), "{text}");
+    }
+
+    async fn router_oneshot_note(id: &str) -> (StatusCode, String) {
+        let state = AppState::new(
+            Role::Controller,
+            "install-test-2".into(),
+            "install-test-2".into(),
+            0,
+            None,
+        );
+        let app = router(state);
+        let response = app
+            .oneshot(apk_request("demo.apk", id, b"this is not a zip"))
+            .await
+            .unwrap();
+        let status = response.status();
+        let text = body_text(response).await;
+        (status, text)
+    }
 }
