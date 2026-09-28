@@ -16,7 +16,7 @@ export function PanelFrame({
   return (
     <section
       data-desk-panel={panel}
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto"
     >
       <h2 className="font-display text-lg font-semibold text-[var(--pc-ink)]">{title}</h2>
       {children}

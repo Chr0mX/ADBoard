@@ -83,7 +83,7 @@ export function FilesPanel() {
 
   return (
     <PanelFrame title="Files" panel="files">
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-2">
         <Pane title="PC" path={pcPath || "/"} pane="pc">
           <div className="mb-2 flex flex-wrap gap-1">
             <button type="button" className="h-9 px-2 text-xs" onClick={() => setPcPath("")}>
@@ -100,7 +100,7 @@ export function FilesPanel() {
           </div>
           {pcError && <p className="text-xs text-[var(--pc-warn)]">{pcError}</p>}
           <ul
-            className="flex flex-col"
+            className="flex min-w-0 flex-col overflow-x-hidden"
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
@@ -115,14 +115,14 @@ export function FilesPanel() {
             }}
           >
             {pcPath && (
-              <li>
+              <li className="min-w-0">
                 <button type="button" className="inline-flex h-11 items-center text-sm" onClick={() => setPcPath(parentPath(pcPath))}>
                   ..
                 </button>
               </li>
             )}
             {pcEntries.map((entry) => (
-              <li key={entry.path} className="flex items-center gap-2">
+              <li key={entry.path} className="flex min-w-0 items-center gap-2">
                 <button
                   type="button"
                   draggable={!entry.dir}
@@ -132,22 +132,22 @@ export function FilesPanel() {
                       JSON.stringify({ side: "pc", path: entry.path, name: entry.name }),
                     );
                   }}
-                  className="inline-flex h-11 min-w-0 flex-1 items-center truncate text-left text-sm"
+                  className="flex h-11 min-w-0 flex-1 items-center text-left text-sm"
                   onClick={() => {
                     if (entry.dir) setPcPath(entry.path);
                     else setSelectedPc(entry);
                   }}
                 >
-                  {entry.dir ? `${entry.name}/` : entry.name}
+                  <span className="min-w-0 flex-1 truncate">{entry.dir ? `${entry.name}/` : entry.name}</span>
                 </button>
                 {!entry.dir && (
-                  <a className="inline-flex h-11 items-center text-xs text-[var(--pc-accent)]" href={devicesClient.hostFileUrl(entry.path)}>
+                  <a className="inline-flex h-11 shrink-0 items-center text-xs text-[var(--pc-accent)]" href={devicesClient.hostFileUrl(entry.path)}>
                     Download
                   </a>
                 )}
                 <button
                   type="button"
-                  className="inline-flex h-11 items-center px-2 text-xs"
+                  className="inline-flex h-11 shrink-0 items-center px-2 text-xs"
                   onClick={() => void devicesClient.deleteHostFile(entry.path).then(() => loadPc(pcPath))}
                 >
                   Delete
@@ -155,11 +155,11 @@ export function FilesPanel() {
               </li>
             ))}
           </ul>
-          <label className="mt-2 block text-xs">
+          <label className="mt-2 block min-w-0 text-xs">
             Upload
             <input
               type="file"
-              className="mt-1 block w-full text-xs"
+              className="mt-1 block w-full min-w-0 max-w-full text-xs"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
@@ -168,7 +168,7 @@ export function FilesPanel() {
             />
           </label>
           <form
-            className="mt-2 flex gap-2"
+            className="mt-2 flex min-w-0 gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               if (!pcFolder.trim()) return;
@@ -184,9 +184,9 @@ export function FilesPanel() {
               onChange={(event) => setPcFolder(event.target.value)}
               placeholder="New folder"
               aria-label="New PC folder"
-              className="h-11 flex-1 rounded-lg border px-2 text-sm"
+              className="h-11 min-w-0 flex-1 rounded-lg border px-2 text-sm"
             />
-            <button type="submit" className="inline-flex h-11 items-center rounded-lg border px-3 text-sm">
+            <button type="submit" className="inline-flex h-11 shrink-0 items-center rounded-lg border px-3 text-sm">
               Create folder
             </button>
           </form>
@@ -202,10 +202,10 @@ export function FilesPanel() {
               Refresh
             </button>
           </div>
-          <p className="mb-1 font-mono text-[10px] text-[var(--pc-muted)]">{phone ? phone.name : "No phone selected"}</p>
+          <p className="mb-1 min-w-0 truncate font-mono text-[10px] text-[var(--pc-muted)]">{phone ? phone.name : "No phone selected"}</p>
           {phoneError && <p className="text-xs text-[var(--pc-warn)]">{phoneError}</p>}
           <ul
-            className="flex flex-col"
+            className="flex min-w-0 flex-col overflow-x-hidden"
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
@@ -218,14 +218,14 @@ export function FilesPanel() {
             }}
           >
             {phonePath !== "/sdcard" && phonePath !== "/" && (
-              <li>
+              <li className="min-w-0">
                 <button type="button" className="inline-flex h-11 items-center text-sm" onClick={() => setPhonePath(parentPath(phonePath) || "/sdcard")}>
                   ..
                 </button>
               </li>
             )}
             {phoneEntries.map((entry) => (
-              <li key={entry.path} className="flex items-center gap-2">
+              <li key={entry.path} className="flex min-w-0 items-center gap-2">
                 <button
                   type="button"
                   draggable={!entry.dir}
@@ -235,17 +235,17 @@ export function FilesPanel() {
                       JSON.stringify({ side: "phone", path: entry.path, name: entry.name }),
                     );
                   }}
-                  className="inline-flex h-11 min-w-0 flex-1 items-center truncate text-left text-sm"
+                  className="flex h-11 min-w-0 flex-1 items-center text-left text-sm"
                   onClick={() => {
                     if (entry.dir) setPhonePath(entry.path);
                   }}
                 >
-                  {entry.dir ? `${entry.name}/` : entry.name}
+                  <span className="min-w-0 flex-1 truncate">{entry.dir ? `${entry.name}/` : entry.name}</span>
                 </button>
                 {!entry.dir && phone && (
                   <button
                     type="button"
-                    className="inline-flex h-11 items-center px-2 text-xs"
+                    className="inline-flex h-11 shrink-0 items-center px-2 text-xs"
                     onClick={() => {
                       void devicesClient.pullFromDevice(phone.id, entry.path).then(async (blob) => {
                         await devicesClient.uploadHostFile(new File([blob], entry.name), "Downloads");
@@ -258,7 +258,7 @@ export function FilesPanel() {
                 )}
                 <button
                   type="button"
-                  className="inline-flex h-11 items-center px-2 text-xs"
+                  className="inline-flex h-11 shrink-0 items-center px-2 text-xs"
                   onClick={() => {
                     if (!phone) return;
                     const next = window.prompt("Rename to", entry.name);
@@ -271,7 +271,7 @@ export function FilesPanel() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-11 items-center px-2 text-xs"
+                  className="inline-flex h-11 shrink-0 items-center px-2 text-xs"
                   onClick={() => {
                     if (!phone) return;
                     void devicesClient.runCommand([phone], "delete", entry.path).then(() => loadPhone(phone, phonePath));
@@ -283,7 +283,7 @@ export function FilesPanel() {
             ))}
           </ul>
           <form
-            className="mt-2 flex gap-2"
+            className="mt-2 flex min-w-0 gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               if (!phone || !phoneFolder.trim()) return;
@@ -298,17 +298,17 @@ export function FilesPanel() {
               aria-label="New phone folder"
               placeholder="New folder"
               value={phoneFolder}
-              className="h-11 flex-1 rounded-lg border px-2 text-sm"
+              className="h-11 min-w-0 flex-1 rounded-lg border px-2 text-sm"
               onChange={(event) => setPhoneFolder(event.target.value)}
             />
-            <button type="submit" className="inline-flex h-11 items-center rounded-lg border px-3 text-sm">
+            <button type="submit" className="inline-flex h-11 shrink-0 items-center rounded-lg border px-3 text-sm">
               Create folder
             </button>
           </form>
         </Pane>
       </div>
       <div className="rounded-xl border border-[var(--pc-line)] p-3">
-        <p className="text-sm">
+        <p className="min-w-0 truncate text-sm">
           PC {selectedPc ? selectedPc.name : "—"} → phone {phonePath}
         </p>
         <TargetChecks devices={desk.devices} checked={checked} onChange={setChecked} />
@@ -346,10 +346,10 @@ function Pane({
   children: React.ReactNode;
 }) {
   return (
-    <section data-file-pane={pane} className="flex min-h-64 flex-col rounded-xl border border-[var(--pc-line)] p-3">
-      <header className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="font-display text-sm font-semibold">{title}</h3>
-        <span className="truncate font-mono text-[10px] text-[var(--pc-muted)]">{path}</span>
+    <section data-file-pane={pane} className="flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--pc-line)] p-3">
+      <header className="mb-2 flex min-w-0 items-baseline justify-between gap-2">
+        <h3 className="shrink-0 font-display text-sm font-semibold">{title}</h3>
+        <span className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-[var(--pc-muted)]">{path}</span>
       </header>
       {children}
     </section>
