@@ -18,7 +18,7 @@ function formatRate(kbps: number): string {
 export function StatusBar({ device, session, stats }: StatusBarProps) {
   if (!device) {
     return (
-      <footer className="border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 py-1 font-mono text-[11px] text-[var(--pc-muted)]">
+      <footer className="shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 py-2 font-mono text-[11px] leading-4 text-[var(--pc-muted)]">
         No active device
       </footer>
     );
@@ -40,9 +40,9 @@ export function StatusBar({ device, session, stats }: StatusBarProps) {
   return (
     <footer
       data-stream-stats
-      className="border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1 backdrop-blur-sm"
+      className="shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-2 backdrop-blur-sm"
     >
-      <p className="truncate font-mono text-[11px] text-[var(--pc-ink)]">
+      <p className="truncate font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
         {device.name}
         {" · "}
         {formatResolution(width, height)}

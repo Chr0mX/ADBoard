@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { formatResolution } from "@/lib/devices/coords";
 import type { Device } from "@/lib/devices/types";
@@ -35,6 +35,7 @@ export function DeviceCard({
 }: DeviceCardProps) {
   const offline = device.status !== "online";
   const [menu, setMenu] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
     <div
@@ -63,55 +64,57 @@ export function DeviceCard({
             metaKey: e.metaKey,
           })
         }
-        className="flex w-full items-center justify-between gap-2 pr-10 text-left"
+        className="block w-full pr-12 text-left"
       >
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate font-display text-sm font-semibold text-[var(--pc-ink)]">
-              {device.name}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-display text-sm font-semibold leading-5 text-[var(--pc-ink)]">
+            {device.name}
+          </span>
+          {isSelected && !isActive && (
+            <span className="shrink-0 rounded bg-[var(--pc-accent-soft)] px-1 py-0.5 font-mono text-[9px] uppercase leading-none text-[var(--pc-accent)]">
+              Sel
             </span>
-            {isSelected && !isActive && (
-              <span className="rounded bg-[var(--pc-accent-soft)] px-1 py-0.5 font-mono text-[9px] uppercase text-[var(--pc-accent)]">
-                Sel
-              </span>
+          )}
+        </span>
+        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs leading-4 text-[var(--pc-muted)]">
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase",
+              device.status === "online"
+                ? "text-[var(--pc-signal)]"
+                : device.status === "unauthorized"
+                  ? "text-[var(--pc-warn)]"
+                  : "text-[var(--pc-muted)]",
             )}
-          </div>
-          <p className="truncate text-xs text-[var(--pc-muted)]">
+          >
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                device.status === "online"
+                  ? "bg-[var(--pc-signal)]"
+                  : device.status === "unauthorized"
+                    ? "bg-[var(--pc-warn)]"
+                    : "bg-[var(--pc-muted)]",
+              )}
+            />
+            {statusLabel(device.status)}
+          </span>
+          <span className="truncate">
             {device.model}
             {" · "}
             {formatResolution(device.resolution.width, device.resolution.height)}
             {device.battery != null ? ` · ${device.battery}%` : ""}
-          </p>
-        </div>
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase",
-            device.status === "online"
-              ? "text-[var(--pc-signal)]"
-              : device.status === "unauthorized"
-                ? "text-[var(--pc-warn)]"
-                : "text-[var(--pc-muted)]",
-          )}
-        >
-          <span
-            className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              device.status === "online"
-                ? "bg-[var(--pc-signal)]"
-                : device.status === "unauthorized"
-                  ? "bg-[var(--pc-warn)]"
-                  : "bg-[var(--pc-muted)]",
-            )}
-          />
-          {statusLabel(device.status)}
+          </span>
         </span>
       </button>
       <button
+        ref={menuButtonRef}
         type="button"
         aria-label={`Actions for ${device.name}`}
         aria-haspopup="menu"
         aria-expanded={menu}
-        className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-lg text-lg text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)]"
+        className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-lg text-lg leading-none text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)]"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
           setMenu((open) => !open);
@@ -119,7 +122,13 @@ export function DeviceCard({
       >
         ⋯
       </button>
-      {menu && <DeviceMenu device={device} onClose={() => setMenu(false)} />}
+      {menu && (
+        <DeviceMenu
+          device={device}
+          anchor={menuButtonRef.current}
+          onClose={() => setMenu(false)}
+        />
+      )}
 
       {offline && (
         <p className="mt-1.5 text-[11px] text-[var(--pc-warn)]">

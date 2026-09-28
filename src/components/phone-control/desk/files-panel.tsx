@@ -116,7 +116,7 @@ export function FilesPanel() {
           >
             {pcPath && (
               <li>
-                <button type="button" className="h-11 text-sm" onClick={() => setPcPath(parentPath(pcPath))}>
+                <button type="button" className="inline-flex h-11 items-center text-sm" onClick={() => setPcPath(parentPath(pcPath))}>
                   ..
                 </button>
               </li>
@@ -132,7 +132,7 @@ export function FilesPanel() {
                       JSON.stringify({ side: "pc", path: entry.path, name: entry.name }),
                     );
                   }}
-                  className="h-11 flex-1 truncate text-left text-sm"
+                  className="inline-flex h-11 min-w-0 flex-1 items-center truncate text-left text-sm"
                   onClick={() => {
                     if (entry.dir) setPcPath(entry.path);
                     else setSelectedPc(entry);
@@ -141,13 +141,13 @@ export function FilesPanel() {
                   {entry.dir ? `${entry.name}/` : entry.name}
                 </button>
                 {!entry.dir && (
-                  <a className="text-xs text-[var(--pc-accent)]" href={devicesClient.hostFileUrl(entry.path)}>
+                  <a className="inline-flex h-11 items-center text-xs text-[var(--pc-accent)]" href={devicesClient.hostFileUrl(entry.path)}>
                     Download
                   </a>
                 )}
                 <button
                   type="button"
-                  className="h-11 px-2 text-xs"
+                  className="inline-flex h-11 items-center px-2 text-xs"
                   onClick={() => void devicesClient.deleteHostFile(entry.path).then(() => loadPc(pcPath))}
                 >
                   Delete
@@ -186,7 +186,7 @@ export function FilesPanel() {
               aria-label="New PC folder"
               className="h-11 flex-1 rounded-lg border px-2 text-sm"
             />
-            <button type="submit" className="h-11 rounded-lg border px-3 text-sm">
+            <button type="submit" className="inline-flex h-11 items-center rounded-lg border px-3 text-sm">
               Create folder
             </button>
           </form>
@@ -219,7 +219,7 @@ export function FilesPanel() {
           >
             {phonePath !== "/sdcard" && phonePath !== "/" && (
               <li>
-                <button type="button" className="h-11 text-sm" onClick={() => setPhonePath(parentPath(phonePath) || "/sdcard")}>
+                <button type="button" className="inline-flex h-11 items-center text-sm" onClick={() => setPhonePath(parentPath(phonePath) || "/sdcard")}>
                   ..
                 </button>
               </li>
@@ -235,7 +235,7 @@ export function FilesPanel() {
                       JSON.stringify({ side: "phone", path: entry.path, name: entry.name }),
                     );
                   }}
-                  className="h-11 flex-1 truncate text-left text-sm"
+                  className="inline-flex h-11 min-w-0 flex-1 items-center truncate text-left text-sm"
                   onClick={() => {
                     if (entry.dir) setPhonePath(entry.path);
                   }}
@@ -245,7 +245,7 @@ export function FilesPanel() {
                 {!entry.dir && phone && (
                   <button
                     type="button"
-                    className="h-11 px-2 text-xs"
+                    className="inline-flex h-11 items-center px-2 text-xs"
                     onClick={() => {
                       void devicesClient.pullFromDevice(phone.id, entry.path).then(async (blob) => {
                         await devicesClient.uploadHostFile(new File([blob], entry.name), "Downloads");
@@ -258,7 +258,7 @@ export function FilesPanel() {
                 )}
                 <button
                   type="button"
-                  className="h-11 px-2 text-xs"
+                  className="inline-flex h-11 items-center px-2 text-xs"
                   onClick={() => {
                     if (!phone) return;
                     const next = window.prompt("Rename to", entry.name);
@@ -271,7 +271,7 @@ export function FilesPanel() {
                 </button>
                 <button
                   type="button"
-                  className="h-11 px-2 text-xs"
+                  className="inline-flex h-11 items-center px-2 text-xs"
                   onClick={() => {
                     if (!phone) return;
                     void devicesClient.runCommand([phone], "delete", entry.path).then(() => loadPhone(phone, phonePath));
@@ -301,7 +301,7 @@ export function FilesPanel() {
               className="h-11 flex-1 rounded-lg border px-2 text-sm"
               onChange={(event) => setPhoneFolder(event.target.value)}
             />
-            <button type="submit" className="h-11 rounded-lg border px-3 text-sm">
+            <button type="submit" className="inline-flex h-11 items-center rounded-lg border px-3 text-sm">
               Create folder
             </button>
           </form>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { devicesClient } from "@/lib/api/client";
 import type { Device } from "@/lib/devices/types";
 import { ConfirmDialog } from "@/components/phone-control/desk/bits";
@@ -25,9 +26,11 @@ const ITEMS = [
 
 export function DeviceMenu({
   device,
+  anchor,
   onClose,
 }: {
   device: Device;
+  anchor: HTMLElement | null;
   onClose: () => void;
 }) {
   const desk = useDeskOptional();
@@ -51,6 +54,33 @@ export function DeviceMenu({
     };
   }, [onClose]);
 
+  useLayoutEffect(() => {
+    const menu = ref.current;
+    if (!menu) return;
+    const place = () => {
+      const margin = 8;
+      const width = menu.offsetWidth;
+      const height = menu.offsetHeight;
+      const rect = anchor?.getBoundingClientRect();
+      let left = rect ? rect.right - width : margin;
+      let top = rect ? rect.bottom + 4 : margin;
+      left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+      if (top + height > window.innerHeight - margin) {
+        top = Math.max(margin, (rect?.top ?? height) - height - 4);
+      }
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
+      menu.style.visibility = "visible";
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchor]);
+
   async function run(op: "reconnect" | "restartAdb" | "reboot" | "shutdown") {
     setBusy(true);
     try {
@@ -65,12 +95,13 @@ export function DeviceMenu({
     }
   }
 
-  return (
+  return createPortal(
     <div
       ref={ref}
       data-device-menu={device.id}
       role="menu"
-      className="absolute right-2 top-10 z-20 w-52 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg"
+      style={{ visibility: "hidden" }}
+      className="fixed z-50 max-h-[calc(100dvh-1rem)] w-56 overflow-y-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg"
     >
       {ITEMS.map((item) => (
         <button
@@ -78,7 +109,7 @@ export function DeviceMenu({
           type="button"
           role="menuitem"
           disabled={busy}
-          className="flex min-h-11 w-full items-center rounded-lg px-2 text-left text-sm text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+          className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm leading-5 text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
           onClick={() => {
             if (item.id === "reboot" || item.id === "shutdown") {
               setConfirm(item.id);
@@ -108,6 +139,7 @@ export function DeviceMenu({
           onConfirm={() => void run(confirm)}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
