@@ -27,7 +27,7 @@ mkdir -p "$DIST/vendor/adb" "$DIST/vendor/scrcpy"
 cp -f "$EXE_SRC" "$DIST/PhoneControl.exe"
 
 # Ensure placeholder docs exist (fresh clone / zip)
-for f in README.md Start-PhoneControl.ps1 .env.example \
+for f in README.md Start-PhoneControl.ps1 run.bat .env.example \
          vendor/adb/README.md vendor/scrcpy/README.md; do
   if [[ ! -f "$DIST/$f" ]]; then
     echo "error: missing committed pack file: $DIST/$f" >&2

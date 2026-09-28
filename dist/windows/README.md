@@ -9,7 +9,8 @@ This is **not** a signed installer / MSI. Copy the folder, drop in ADB + scrcpy,
 
 ```text
 PhoneControl.exe           # controller (or agent) binary
-Start-PhoneControl.ps1     # sets env + launches loopback controller
+run.bat                    # double-click: starts PhoneControl.exe, vendor tools only
+Start-PhoneControl.ps1     # same launch, with -Mock / -Bind switches
 .env.example               # copy to .env and edit (optional; script also sets defaults)
 README.md                  # this file
 vendor/
@@ -32,7 +33,13 @@ Caches under `./temp/`; installs into `vendor/adb/` and `vendor/scrcpy/`. See th
 
 ## Run (controller on this PC)
 
-PowerShell from this folder:
+Double-click `run.bat` in this folder, or from the repo root. It starts `PhoneControl.exe` and uses `vendor\adb` and `vendor\scrcpy` beside it.
+
+```text
+http://127.0.0.1:3848
+```
+
+PowerShell, when you need `-Mock` or a different bind address:
 
 ```powershell
 .\Start-PhoneControl.ps1

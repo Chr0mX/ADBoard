@@ -165,6 +165,7 @@ Zip-ready folder (no MSI / signed installer). Same binary as Linux; renamed to `
 ```text
 dist/windows/
   PhoneControl.exe           # produced by make package-windows (not in git)
+  run.bat                    # double-click: exe + vendor\adb and vendor\scrcpy
   Start-PhoneControl.ps1
   .env.example
   README.md
@@ -187,12 +188,10 @@ Scripts: `scripts/build-windows.sh`, `scripts/package-windows.sh`, `scripts/fetc
 
 1. Copy `dist/windows/` to the PC (or clone the repo).
 2. `.\scripts\fetch-deps.ps1` (or `make fetch-deps FETCH_TARGET=windows` from WSL).
-3. PowerShell:
+3. Double-click `dist\windows\run.bat` (or `run.bat` in the repo root).
 
-```powershell
-cd path\to\dist\windows
-.\Start-PhoneControl.ps1
-# → http://127.0.0.1:3848
+```text
+http://127.0.0.1:3848
 ```
 
 4. Point the UI: `NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848`.
