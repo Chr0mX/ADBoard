@@ -1,19 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Keyboard, MousePointer2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Keyboard, Maximize2, Minimize2, MousePointer2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { normalizePoint } from "@/lib/devices/coords";
 import type { Device, PointerPhase, SessionStatus, TapBroadcast } from "@/lib/devices/types";
 import { useDeviceVideo } from "@/hooks/use-device-video";
+import { useStoredFlag } from "@/hooks/use-stored-flag";
 
 interface PhoneScreenProps {
   device: Device | null;
   session?: SessionStatus | null;
   keyboardOn: boolean;
   mouseOn: boolean;
+  fillWindow: boolean;
+  onFillWindowChange: (on: boolean) => void;
+  showDevicesButton?: boolean;
+  onOpenDevices?: () => void;
   onKeyboardChange: (on: boolean) => void;
   onMouseChange: (on: boolean) => void;
   onPointer: (event: {
@@ -32,6 +37,10 @@ export function PhoneScreen({
   session,
   keyboardOn,
   mouseOn,
+  fillWindow,
+  onFillWindowChange,
+  showDevicesButton,
+  onOpenDevices,
   onKeyboardChange,
   onMouseChange,
   onPointer,
@@ -46,26 +55,7 @@ export function PhoneScreen({
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(
     null,
   );
-  const [showFrame, setShowFrame] = useState(true);
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("phonecontrol-show-frame") === "0") {
-        setShowFrame(false);
-      }
-    } catch {
-      // private mode
-    }
-  }, []);
-
-  const toggleFrame = (on: boolean) => {
-    setShowFrame(on);
-    try {
-      localStorage.setItem("phonecontrol-show-frame", on ? "1" : "0");
-    } catch {
-      // ignore
-    }
-  };
+  const [showFrame, setShowFrame] = useStoredFlag("phonecontrol-show-frame", true);
 
   const { canvasRef, status, decodeState, error: videoError, configured, frameSize } =
     useDeviceVideo(device?.serial);
@@ -100,6 +90,8 @@ export function PhoneScreen({
   const videoWidth = frameSize?.width || device?.resolution.width || 9;
   const videoHeight = frameSize?.height || device?.resolution.height || 19.5;
   const aspectRatio = `${videoWidth} / ${videoHeight}`;
+  const framed = showFrame && !fillWindow;
+  const pointerFailed = lastTap?.targets.some((t) => t.inject === "error") ?? false;
 
   const emitPointer = (phase: PointerPhase, clientX: number, clientY: number) => {
     if (!screenRef.current) return;
@@ -155,25 +147,22 @@ export function PhoneScreen({
   };
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
-          PHONE SCREEN
-        </h2>
-        <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
-          {streamLabel}
+    <section data-fill={fillWindow ? "1" : "0"} className="flex min-h-0 flex-1 flex-col gap-2">
+      {!fillWindow && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
+        <p className="truncate text-center font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
+          {videoError || streamLabel}
         </p>
-      </div>
+      )}
 
       <div className="flex min-h-0 w-full flex-1 flex-col items-center">
         <div
           className={cn(
             "flex min-h-0 w-full max-w-full flex-1 flex-col items-center",
-            showFrame &&
+            framed &&
               "max-w-[380px] rounded-[2rem] border-[3px] border-[var(--pc-frame)] bg-[var(--pc-frame)] shadow-[0_24px_60px_-24px_rgba(15,30,40,0.55)]",
           )}
         >
-          {showFrame && (
+          {framed && (
             <div className="pointer-events-none mt-2 h-5 w-24 shrink-0 rounded-full bg-black/80" />
           )}
 
@@ -188,7 +177,7 @@ export function PhoneScreen({
             onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
               "relative touch-none overflow-hidden select-none",
-              showFrame && "rounded-[1.55rem]",
+              framed && "rounded-[1.55rem]",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
@@ -314,74 +303,101 @@ export function PhoneScreen({
           </div>
           </div>
 
-          <div className={cn("flex shrink-0 items-center justify-center gap-3", showFrame ? "px-4 py-3" : "py-2")}>
+          <div className={cn("flex shrink-0 items-center justify-center gap-2", framed ? "px-3 py-2" : "py-1.5")}>
             {(
               [
-                ["back", "◀", "Back"],
-                ["home", "HOME", "Home"],
-                ["recent", "RECENT", "Recent"],
+                ["back", "Back"],
+                ["home", "Home"],
+                ["recent", "Recent"],
               ] as const
-            ).map(([action, label, name]) => (
+            ).map(([action, name]) => (
               <Button
                 key={action}
                 type="button"
                 variant="ghost"
-                size="sm"
                 disabled={offline}
                 onClick={() => onNav(action)}
                 aria-label={name}
                 className={cn(
-                  "h-8 min-w-12 rounded-full font-mono text-[10px] tracking-wider",
-                  showFrame
+                  "h-11 min-w-16 rounded-full px-3 font-mono text-xs tracking-wide",
+                  framed
                     ? "bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                     : "border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]",
                 )}
               >
-                {label}
+                {name}
               </Button>
             ))}
+            {fillWindow && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onFillWindowChange(false)}
+                aria-label="Exit fill"
+                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)]"
+              >
+                <Minimize2 className="size-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <Toggle
-          pressed={keyboardOn}
-          onPressedChange={onKeyboardChange}
-          aria-label="Toggle keyboard injection"
-          className="gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 data-[state=on]:border-[var(--pc-accent)] data-[state=on]:bg-[var(--pc-accent-soft)] data-[state=on]:text-[var(--pc-accent)]"
-        >
-          <Keyboard className="size-3.5" />
-          Keyboard
-        </Toggle>
-        <Toggle
-          pressed={mouseOn}
-          onPressedChange={onMouseChange}
-          aria-label="Toggle mouse injection"
-          className="gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 data-[state=on]:border-[var(--pc-accent)] data-[state=on]:bg-[var(--pc-accent-soft)] data-[state=on]:text-[var(--pc-accent)]"
-        >
-          <MousePointer2 className="size-3.5" />
-          Mouse
-        </Toggle>
-        <Toggle
-          pressed={showFrame}
-          onPressedChange={toggleFrame}
-          aria-label="Toggle phone frame"
-          className="gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 data-[state=on]:border-[var(--pc-accent)] data-[state=on]:bg-[var(--pc-accent-soft)] data-[state=on]:text-[var(--pc-accent)]"
-        >
-          Frame
-        </Toggle>
-      </div>
-      {lastTap && (
-        <p className="truncate text-center font-mono text-[10px] text-[var(--pc-muted)]">
-          {lastTap.mode} · {broadcastLabel}
-          {lastTap.targets[0]
-            ? ` · ${lastTap.targets[0].deviceName} (${lastTap.targets[0].x}, ${lastTap.targets[0].y})${
-                lastTap.targets[0].inject === "error" && lastTap.targets[0].injectDetail
-                  ? ` · ${lastTap.targets[0].injectDetail}`
-                  : ""
-              }`
-            : ""}
+      {!fillWindow && (
+        <div className="flex flex-wrap items-center justify-center gap-1.5">
+          <Toggle
+            pressed={keyboardOn}
+            onPressedChange={onKeyboardChange}
+            aria-label="Toggle keyboard injection"
+            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+          >
+            <Keyboard className="size-4" />
+            <span className="hidden sm:inline">Keyboard</span>
+          </Toggle>
+          <Toggle
+            pressed={mouseOn}
+            onPressedChange={onMouseChange}
+            aria-label="Toggle touch"
+            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+          >
+            <MousePointer2 className="size-4" />
+            <span className="hidden sm:inline">Touch</span>
+          </Toggle>
+          <Toggle
+            pressed={showFrame}
+            onPressedChange={setShowFrame}
+            aria-label="Toggle phone frame"
+            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+          >
+            Frame
+          </Toggle>
+          <Toggle
+            pressed={fillWindow}
+            onPressedChange={onFillWindowChange}
+            aria-label="Fill window"
+            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+          >
+            <Maximize2 className="size-4" />
+            Fill
+          </Toggle>
+          {showDevicesButton && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11"
+              onClick={onOpenDevices}
+            >
+              Devices
+            </Button>
+          )}
+        </div>
+      )}
+      {pointerFailed && lastTap && (
+        <p className="truncate text-center font-mono text-[10px] text-[var(--pc-warn)]">
+          {lastTap.targets
+            .filter((t) => t.inject === "error")
+            .map((t) => t.injectDetail || `${t.deviceName} failed`)
+            .join(" · ") || `${broadcastLabel} failed`}
         </p>
       )}
     </section>

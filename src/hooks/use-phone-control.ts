@@ -187,7 +187,6 @@ export function usePhoneControl() {
             frameHeight,
           );
           const failed = result.targets.find((t) => t.inject === "error");
-          if (failed?.injectDetail) setError(failed.injectDetail);
           if (phase === "move") {
             if (failed) setLastTap(result);
             return result;

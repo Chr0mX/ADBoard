@@ -1,12 +1,22 @@
 "use client";
 
+import { useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { ControlHeader } from "@/components/phone-control/control-header";
 import { ControlModes } from "@/components/phone-control/control-modes";
 import { DeviceGrid } from "@/components/phone-control/device-grid";
 import { PhoneScreen } from "@/components/phone-control/phone-screen";
 import { StatusBar } from "@/components/phone-control/status-bar";
+import { Button } from "@/components/ui/button";
 import { usePhoneControl } from "@/hooks/use-phone-control";
+import { useStoredFlag } from "@/hooks/use-stored-flag";
+import { cn } from "@/lib/utils";
+
+function subscribeWide(onChange: () => void) {
+  const media = window.matchMedia("(min-width: 1024px)");
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
 
 export function PhoneControlApp() {
   const {
@@ -29,8 +39,20 @@ export function PhoneControlApp() {
     handlePointer,
     handleNav,
     lastTap,
-    tapLog,
   } = usePhoneControl();
+
+  const [fillWindow, setFillWindow] = useStoredFlag("phonecontrol-fill-window", false);
+  const wide = useSyncExternalStore(
+    subscribeWide,
+    () => window.matchMedia("(min-width: 1024px)").matches,
+    () => false,
+  );
+  const [devicesOpen, setDevicesOpen] = useState(false);
+
+  const setFill = (on: boolean) => {
+    setFillWindow(on);
+    if (on) setDevicesOpen(false);
+  };
 
   const onPointer = async (event: {
     phase: "down" | "move" | "up" | "cancel";
@@ -44,49 +66,67 @@ export function PhoneControlApp() {
       event.frameWidth,
       event.frameHeight,
     );
-    if (event.phase !== "up" && event.phase !== "cancel") return;
-    const names = broadcastTargets.map((d) => d.name).join(", ");
-    const injectHint =
-      result?.targets
-        ?.map((t) => t.inject)
-        .filter(Boolean)
-        .join("/") || "—";
-    toast.message(event.phase === "up" ? "Touch" : "Touch cancel", {
-      description: `${controlMode.toUpperCase()} → ${names || "none"} @ (${event.point.x.toFixed(3)}, ${event.point.y.toFixed(3)}) · inject ${injectHint}`,
+    if (event.phase === "move" || event.phase === "down") return;
+    const failed = result?.targets?.filter((t) => t.inject === "error") ?? [];
+    if (failed.length === 0) return;
+    toast.error("Touch failed", {
+      id: "pointer-inject",
+      description: failed
+        .map((t) => t.injectDetail || t.deviceName)
+        .join(" · "),
     });
   };
+
+  const showDevices = !fillWindow && (wide || devicesOpen);
 
   return (
     <div className="pc-shell relative flex h-dvh max-h-dvh flex-col overflow-hidden">
       <div className="pc-atmosphere" aria-hidden />
-      <ControlHeader onlineCount={onlineCount} totalCount={devices.length} />
+      {!fillWindow && (
+        <ControlHeader onlineCount={onlineCount} totalCount={devices.length} />
+      )}
 
-      <main className="relative z-10 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 lg:flex-row lg:overflow-hidden lg:gap-6 lg:px-6 lg:py-5">
+      <main
+        className={cn(
+          "relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden",
+          !fillWindow && "px-2 py-2 lg:px-4 lg:py-3",
+        )}
+      >
         {loading && (
           <div className="flex flex-1 items-center justify-center font-mono text-sm text-[var(--pc-muted)]">
-            Loading device fleet…
+            Loading devices…
           </div>
         )}
 
         {error && !loading && devices.length === 0 && (
-          <div className="flex flex-1 items-center justify-center text-sm text-[var(--pc-warn)]">
+          <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-[var(--pc-warn)]">
             {error}
           </div>
         )}
 
         {!loading && devices.length > 0 && (
           <>
-            {error && (
-              <div className="absolute left-4 top-2 z-20 max-w-md truncate rounded-md border border-[var(--pc-warn)]/40 bg-[var(--pc-panel)] px-3 py-1 font-mono text-[10px] text-[var(--pc-warn)]">
+            {error && !fillWindow && (
+              <p className="mb-1 shrink-0 truncate px-1 font-mono text-[10px] text-[var(--pc-warn)]">
                 {error}
-              </div>
+              </p>
             )}
-            <div className="flex min-h-[560px] min-w-0 flex-1 flex-col lg:min-h-0">
+            <div
+              className={cn(
+                "flex min-h-0 min-w-0 flex-1 flex-col",
+                !fillWindow && "lg:flex-row lg:gap-4",
+              )}
+            >
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <PhoneScreen
                 device={activeDevice}
                 session={activeSession}
                 keyboardOn={keyboardOn}
                 mouseOn={mouseOn}
+                fillWindow={fillWindow}
+                onFillWindowChange={setFill}
+                showDevicesButton={!fillWindow && !wide}
+                onOpenDevices={() => setDevicesOpen(true)}
                 onKeyboardChange={setKeyboardOn}
                 onMouseChange={setMouseOn}
                 onPointer={onPointer}
@@ -96,47 +136,63 @@ export function PhoneControlApp() {
               />
             </div>
 
-            <aside className="flex w-full shrink-0 flex-col gap-5 pb-2 lg:h-full lg:w-[380px] lg:overflow-y-auto xl:w-[420px]">
-              <DeviceGrid
-                devices={devices}
-                activeId={activeId}
-                selectedIds={selectedIds}
-                onSelect={selectDevice}
-              />
-              <ControlModes
-                mode={controlMode}
-                onChange={setControlMode}
-                selectedCount={activeId ? 1 : 0}
-                multiCount={selectedIds.size}
-                onlineCount={onlineCount}
-              />
-
-              {tapLog.length > 0 && (
-                <div className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/60 p-3">
-                  <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
-                    Event log
-                  </p>
-                  <ul className="max-h-28 space-y-1 overflow-y-auto font-mono text-[10px] text-[var(--pc-ink)]">
-                    {tapLog.map((entry) => (
-                      <li key={entry.id} className="truncate opacity-80">
-                        {new Date(entry.at).toLocaleTimeString()} · {entry.mode} ·{" "}
-                        {entry.targets
-                          .map(
-                            (t) =>
-                              `${t.deviceName}${t.inject ? `[${t.inject}]` : ""}`,
-                          )
-                          .join(", ")}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </aside>
+            {showDevices && (
+              <aside
+                className={cn(
+                  "flex min-h-0 flex-col gap-3",
+                  wide
+                    ? "w-[320px] shrink-0 overflow-y-auto xl:w-[360px]"
+                    : "absolute inset-0 z-30 gap-4 overflow-y-auto bg-[var(--pc-paper)] p-3",
+                )}
+              >
+                {!wide && (
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">
+                      Devices
+                    </h2>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 min-w-11"
+                      onClick={() => setDevicesOpen(false)}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                )}
+                <DeviceGrid
+                  devices={devices}
+                  activeId={activeId}
+                  selectedIds={selectedIds}
+                  onSelect={(event) => {
+                    selectDevice(event);
+                    if (
+                      !wide &&
+                      !event.ctrlKey &&
+                      !event.shiftKey &&
+                      !event.metaKey
+                    ) {
+                      setDevicesOpen(false);
+                    }
+                  }}
+                />
+                <ControlModes
+                  mode={controlMode}
+                  onChange={setControlMode}
+                  selectedCount={activeId ? 1 : 0}
+                  multiCount={selectedIds.size}
+                  onlineCount={onlineCount}
+                />
+              </aside>
+            )}
+            </div>
           </>
         )}
       </main>
 
-      <StatusBar device={activeDevice} session={activeSession} />
+      {!fillWindow && (
+        <StatusBar device={activeDevice} session={activeSession} />
+      )}
     </div>
   );
 }

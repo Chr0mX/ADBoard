@@ -53,14 +53,9 @@ export function DeviceGrid({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
-          {multiHost ? "HOSTS" : "DEVICES"}
-        </h2>
-        <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
-          Click · Ctrl/Shift multi
-        </p>
-      </div>
+      <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
+        {multiHost ? "Hosts" : "Devices"}
+      </h2>
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 pr-2">
           {groups.map((group) => (
