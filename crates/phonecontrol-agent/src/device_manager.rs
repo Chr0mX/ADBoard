@@ -930,7 +930,7 @@ impl AppState {
                 ),
                 "files" => op_ok(
                     device,
-                    "Download/\nDCIM/\nPictures/\nMovies/\nAndroid/\n".into(),
+                    "Download/\nDCIM/\nPictures/\nMovies/\nAndroid/\nScreenshot_2026-09-28-14-08-00-very-long-camera-roll-name.png\n".into(),
                 ),
                 "screenshot" if arg != Some("device") => {
                     match crate::device_ops::write_placeholder_screenshot(
@@ -1632,6 +1632,7 @@ impl AppState {
         tokio::spawn(async move {
             let mut known_resolutions: HashMap<String, phonecontrol_protocol::DeviceResolution> =
                 HashMap::new();
+            let mut batteries: HashMap<String, CachedBattery> = HashMap::new();
             let mut previous: HashMap<String, DeviceStatus> = HashMap::new();
             let mut last_recovery: HashMap<String, std::time::Instant> = HashMap::new();
             let mut adb_attempts: HashMap<String, u8> = HashMap::new();
@@ -1639,7 +1640,7 @@ impl AppState {
                 match adb::list_adb_devices(&adb).await {
                     Ok(lines) => {
                         state
-                            .apply_adb_snapshot(&adb, &lines, &mut known_resolutions)
+                            .apply_adb_snapshot(&adb, &lines, &mut known_resolutions, &mut batteries)
                             .await;
                         let next = state.list_local_devices().await;
                         for device in &next {
@@ -1748,6 +1749,7 @@ impl AppState {
         adb: &PathBuf,
         lines: &[AdbDeviceLine],
         known_resolutions: &mut HashMap<String, phonecontrol_protocol::DeviceResolution>,
+        batteries: &mut HashMap<String, CachedBattery>,
     ) {
         let host_id = &self.inner.host_id;
         let host_name = &self.inner.host_name;
@@ -1765,8 +1767,9 @@ impl AppState {
                     height: 1920,
                 }
             };
+            let battery = battery_sample(adb, line, batteries).await;
             next.push(adb::adb_line_to_device(
-                line, host_id, host_name, resolution,
+                line, host_id, host_name, resolution, battery,
             ));
         }
 
@@ -1860,7 +1863,51 @@ fn devices_equal(a: &[Device], b: &[Device]) -> bool {
             && x.resolution.height == y.resolution.height
             && x.connection == y.connection
             && x.host_id == y.host_id
+            && x.battery == y.battery
+            && temp_same(x.temperature_c, y.temperature_c)
     })
+}
+
+struct CachedBattery {
+    sample: adb::BatterySample,
+    fetched: std::time::Instant,
+}
+
+async fn battery_sample(
+    adb: &PathBuf,
+    line: &AdbDeviceLine,
+    batteries: &mut HashMap<String, CachedBattery>,
+) -> adb::BatterySample {
+    if line.status != DeviceStatus::Online {
+        return adb::BatterySample {
+            level: None,
+            temperature_c: None,
+        };
+    }
+    let fresh = batteries
+        .get(&line.serial)
+        .map(|cached| cached.fetched.elapsed() < Duration::from_secs(15))
+        .unwrap_or(false);
+    if fresh {
+        return batteries.get(&line.serial).unwrap().sample;
+    }
+    let sample = adb::query_battery(adb, &line.serial).await;
+    batteries.insert(
+        line.serial.clone(),
+        CachedBattery {
+            sample,
+            fetched: std::time::Instant::now(),
+        },
+    );
+    sample
+}
+
+fn temp_same(left: Option<f32>, right: Option<f32>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(a), Some(b)) => (a - b).abs() < 0.05,
+        _ => false,
+    }
 }
 
 fn frame_tap(

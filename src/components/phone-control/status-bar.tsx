@@ -36,23 +36,23 @@ export function StatusBar({ device, session, stats }: StatusBarProps) {
   const fps = stats && stats.fps > 0 ? `${Math.round(stats.fps)} fps` : "— fps";
   const rate = formatRate(stats?.bitrateKbps ?? 0);
   const codec = stats?.codec || "h264";
+  const battery = device.battery != null ? `${device.battery}%` : "—";
+  const temperature = device.temperatureC != null ? `${device.temperatureC.toFixed(1)}°C` : "—";
 
   return (
     <footer
       data-stream-stats
       className="shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-2 backdrop-blur-sm"
     >
-      <p className="truncate font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
-        {device.name}
-        {" · "}
-        {formatResolution(width, height)}
-        {" · "}
-        {fps}
-        {" · "}
-        {rate}
-        {" · "}
-        {codec}
-        {problem ? ` · ${problem}` : ""}
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
+        <span>{device.name}</span>
+        <span>{formatResolution(width, height)}</span>
+        <span data-battery>{battery}</span>
+        <span data-temperature>{temperature}</span>
+        <span>{fps}</span>
+        <span>{rate}</span>
+        <span>{codec}</span>
+        {problem ? <span>{problem}</span> : null}
       </p>
     </footer>
   );

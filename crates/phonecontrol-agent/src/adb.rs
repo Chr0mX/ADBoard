@@ -119,6 +119,50 @@ pub fn parse_adb_devices_l(stdout: &str) -> Vec<AdbDeviceLine> {
     devices
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct BatterySample {
+    pub level: Option<u8>,
+    pub temperature_c: Option<f32>,
+}
+
+/// `dumpsys battery` level (percent) and temperature (tenths of a degree).
+pub fn parse_dumpsys_battery(text: &str) -> BatterySample {
+    let mut level = None;
+    let mut temperature_c = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("level:") {
+            level = rest.trim().parse().ok();
+        } else if let Some(rest) = line.strip_prefix("temperature:") {
+            if let Ok(tenths) = rest.trim().parse::<f32>() {
+                temperature_c = Some(tenths / 10.0);
+            }
+        }
+    }
+    BatterySample {
+        level,
+        temperature_c,
+    }
+}
+
+pub async fn query_battery(adb: &PathBuf, serial: &str) -> BatterySample {
+    let output = Command::new(adb)
+        .args(["-s", serial, "shell", "dumpsys", "battery"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+    match output {
+        Ok(out) if out.status.success() => {
+            parse_dumpsys_battery(&String::from_utf8_lossy(&out.stdout))
+        }
+        _ => BatterySample {
+            level: None,
+            temperature_c: None,
+        },
+    }
+}
+
 /// Best-effort `wm size` for resolution; falls back to 1080×1920.
 pub async fn query_resolution(adb: &PathBuf, serial: &str) -> DeviceResolution {
     let output = Command::new(adb)
@@ -170,6 +214,7 @@ pub fn adb_line_to_device(
     host_id: &str,
     host_name: &str,
     resolution: DeviceResolution,
+    battery: BatterySample,
 ) -> Device {
     let short = short_name(&line.serial, line.model.as_deref());
     let id = sanitize_id(&line.serial);
@@ -188,8 +233,8 @@ pub fn adb_line_to_device(
         serial: line.serial.clone(),
         connection: line.connection,
         status: line.status,
-        battery: if online { Some(0) } else { None },
-        temperature_c: None,
+        battery: if online { battery.level } else { None },
+        temperature_c: if online { battery.temperature_c } else { None },
         resolution,
         fps: if online { Some(60) } else { None },
         bitrate_mbps: if online { Some(8.0) } else { None },
@@ -253,5 +298,13 @@ OFFLINE1               offline usb:1-3 transport_id:4
         let res = parse_wm_size("Physical size: 1080x2400\n").unwrap();
         assert_eq!(res.width, 1080);
         assert_eq!(res.height, 2400);
+    }
+
+    #[test]
+    fn parses_dumpsys_battery() {
+        let sample = "Current Battery Service state:\n  level: 78\n  temperature: 342\n";
+        let parsed = parse_dumpsys_battery(sample);
+        assert_eq!(parsed.level, Some(78));
+        assert_eq!(parsed.temperature_c, Some(34.2));
     }
 }

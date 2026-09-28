@@ -76,7 +76,7 @@ export function DeviceCard({
             </span>
           )}
         </span>
-        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs leading-4 text-[var(--pc-muted)]">
+        <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs leading-4 text-[var(--pc-muted)]">
           <span
             className={cn(
               "inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase",
@@ -99,12 +99,21 @@ export function DeviceCard({
             />
             {statusLabel(device.status)}
           </span>
-          <span className="truncate">
+          <span className="min-w-0 truncate">
             {device.model}
             {" · "}
             {formatResolution(device.resolution.width, device.resolution.height)}
-            {device.battery != null ? ` · ${device.battery}%` : ""}
           </span>
+          {device.battery != null && (
+            <span data-card-battery className="shrink-0 font-mono text-[10px]">
+              {device.battery}%
+            </span>
+          )}
+          {device.temperatureC != null && (
+            <span data-card-temperature className="shrink-0 font-mono text-[10px]">
+              {device.temperatureC.toFixed(1)}°C
+            </span>
+          )}
         </span>
       </button>
       <button
