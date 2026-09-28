@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { normalizePoint } from "@/lib/devices/coords";
 import type { Device, NavAction, PointerPhase, SessionStatus, TapBroadcast } from "@/lib/devices/types";
 import { useDeviceVideo } from "@/hooks/use-device-video";
+import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 
 interface PhoneScreenProps {
   device: Device | null;
@@ -32,6 +33,7 @@ interface PhoneScreenProps {
   onInstall: (file: File) => Promise<string>;
   lastTap: TapBroadcast | null;
   broadcastLabel: string;
+  targetIds: string[];
 }
 
 export function PhoneScreen({
@@ -52,6 +54,7 @@ export function PhoneScreen({
   onInstall,
   lastTap,
   broadcastLabel,
+  targetIds,
 }: PhoneScreenProps) {
   const screenRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: number; lastX: number; lastY: number; lastSent: number } | null>(
@@ -320,6 +323,7 @@ export function PhoneScreen({
                 ["recent", "Recent"],
                 ["volume_down", "Vol−"],
                 ["volume_up", "Vol+"],
+                ["power", "Power"],
               ] as const
             ).map(([action, name]) => (
               <Button
@@ -333,7 +337,9 @@ export function PhoneScreen({
                     ? "Volume up"
                     : action === "volume_down"
                       ? "Volume down"
-                      : name
+                      : action === "power"
+                        ? "Power"
+                        : name
                 }
                 className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
               >
@@ -421,6 +427,11 @@ export function PhoneScreen({
           )}
         </div>
       )}
+      <ScrcpyOptions
+        targetIds={targetIds}
+        serial={device?.serial ?? null}
+        disabled={offline}
+      />
       {installNote && (
         <p
           data-install-note

@@ -67,7 +67,7 @@ export interface TapBroadcast {
 }
 
 export interface NavAction {
-  type: "back" | "home" | "recent" | "volume_up" | "volume_down";
+  type: "back" | "home" | "recent" | "volume_up" | "volume_down" | "power";
 }
 
 export interface NavTargetResult {
@@ -81,7 +81,7 @@ export interface NavBroadcast {
   id: string;
   at: number;
   mode: ControlMode;
-  action: "back" | "home" | "recent" | "volume_up" | "volume_down";
+  action: "back" | "home" | "recent" | "volume_up" | "volume_down" | "power";
   targetIds: string[];
   targets?: NavTargetResult[];
 }
@@ -92,6 +92,27 @@ export interface InstallBroadcast {
   mode: ControlMode;
   targetIds: string[];
   targets: NavTargetResult[];
+}
+
+export interface DeviceOpResult {
+  deviceId: string;
+  deviceName: string;
+  ok: boolean;
+  output?: string;
+  error?: string;
+}
+
+export interface DeviceCommandResponse {
+  id: string;
+  op: string;
+  results: DeviceOpResult[];
+}
+
+export interface HostFileEntry {
+  name: string;
+  path: string;
+  dir: boolean;
+  size: number;
 }
 
 export interface SessionStatus {

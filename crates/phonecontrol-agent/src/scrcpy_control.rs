@@ -7,34 +7,72 @@
 
 use phonecontrol_protocol::PointerPhase;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::OwnedReadHalf;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 /// `SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT`
 const INJECT_TOUCH_EVENT: u8 = 2;
+/// `SC_CONTROL_MSG_TYPE_GET_CLIPBOARD`
+const GET_CLIPBOARD: u8 = 8;
+/// `SC_CONTROL_MSG_TYPE_SET_CLIPBOARD`
+const SET_CLIPBOARD: u8 = 9;
+/// `SC_CONTROL_MSG_TYPE_SET_DISPLAY_POWER`
+const SET_DISPLAY_POWER: u8 = 10;
+/// `SC_SCREEN_POWER_MODE_OFF`
+const POWER_OFF: u8 = 0;
+/// `SC_SCREEN_POWER_MODE_NORMAL`
+const POWER_NORMAL: u8 = 2;
+const MAX_CLIPBOARD: usize = 256 * 1024;
 /// `SC_POINTER_ID_GENERIC_FINGER` (`-2`). Primary mouse clicks are also turned
 /// into a finger by scrcpy; a finger id is a touch, which is what a swipe is.
 const POINTER_ID_FINGER: u64 = u64::MAX - 1;
 
 #[derive(Clone)]
 pub struct ControlSender {
-    tx: mpsc::Sender<[u8; 32]>,
+    tx: mpsc::Sender<Vec<u8>>,
+    /// `(generation, text)`. Generation bumps on every phone clipboard message.
+    clipboard_rx: watch::Receiver<(u64, String)>,
+    sequence: Arc<AtomicU64>,
 }
 
 impl ControlSender {
-    pub fn spawn(mut stream: TcpStream) -> Self {
+    pub fn spawn(stream: TcpStream) -> Self {
         let _ = stream.set_nodelay(true);
-        let (tx, mut rx) = mpsc::channel::<[u8; 32]>(64);
+        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(64);
+        let (read, mut write) = stream.into_split();
+        let (clip_tx, clip_rx) = watch::channel((0u64, String::new()));
+        let clip_reader = clip_tx.clone();
+        tokio::spawn(async move {
+            let _ = read_device_messages(read, clip_reader).await;
+        });
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
-                if stream.write_all(&msg).await.is_err() {
+                if write.write_all(&msg).await.is_err() {
                     break;
                 }
             }
         });
-        Self { tx }
+        Self {
+            tx,
+            clipboard_rx: clip_rx,
+            sequence: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    pub fn clipboard_receiver(&self) -> watch::Receiver<(u64, String)> {
+        self.clipboard_rx.clone()
+    }
+
+    async fn send_raw(&self, msg: Vec<u8>) -> Result<(), String> {
+        self.tx
+            .send(msg)
+            .await
+            .map_err(|_| "scrcpy control socket closed".to_string())
     }
 
     pub async fn touch(
@@ -45,12 +83,165 @@ impl ControlSender {
         width: u32,
         height: u32,
     ) -> Result<(), String> {
-        let msg = encode_touch(phase, x, y, width, height)?;
-        self.tx
-            .send(msg)
-            .await
-            .map_err(|_| "scrcpy control socket closed".to_string())
+        let msg = encode_touch(phase, x, y, width, height)?.to_vec();
+        self.send_raw(msg).await
     }
+
+    /// `on == false` is scrcpy's "turn device screen off" (mode 0). Mode 2 turns it back on.
+    pub async fn set_display_power(&self, on: bool) -> Result<(), String> {
+        self.send_raw(encode_display_power(on).to_vec()).await
+    }
+
+    /// Copy `text` to the phone clipboard. `paste` also injects it into the focused field.
+    pub async fn set_clipboard(&self, text: &str, paste: bool) -> Result<(), String> {
+        if text.len() > MAX_CLIPBOARD {
+            return Err("clipboard text is too long".into());
+        }
+        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed) + 1;
+        self.send_raw(encode_set_clipboard(sequence, paste, text))
+            .await
+    }
+
+    /// Ask the phone for its clipboard and wait until a device clipboard message arrives.
+    pub async fn pull_clipboard(&self) -> Result<String, String> {
+        let mut rx = self.clipboard_rx.clone();
+        rx.borrow_and_update();
+        self.send_raw(encode_get_clipboard().to_vec()).await?;
+        let wait = rx.changed();
+        match tokio::time::timeout(Duration::from_millis(800), wait).await {
+            Ok(Ok(())) => Ok(rx.borrow().1.clone()),
+            Ok(Err(_)) => Err("scrcpy control socket closed".into()),
+            Err(_) => Err("phone did not send its clipboard".into()),
+        }
+    }
+}
+
+pub fn encode_display_power(on: bool) -> [u8; 2] {
+    [SET_DISPLAY_POWER, if on { POWER_NORMAL } else { POWER_OFF }]
+}
+
+pub fn encode_get_clipboard() -> [u8; 2] {
+    [GET_CLIPBOARD, 0]
+}
+
+pub fn encode_set_clipboard(sequence: u64, paste: bool, text: &str) -> Vec<u8> {
+    let bytes = text.as_bytes();
+    let mut buf = Vec::with_capacity(14 + bytes.len());
+    buf.push(SET_CLIPBOARD);
+    buf.extend_from_slice(&sequence.to_be_bytes());
+    buf.push(u8::from(paste));
+    buf.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    buf.extend_from_slice(bytes);
+    buf
+}
+
+/// Bytes consumed from the front of `buf`. `None` means a full message is not here yet.
+pub fn consume_device_message(buf: &[u8]) -> Result<Option<(usize, Option<String>)>, ()> {
+    if buf.is_empty() {
+        return Ok(None);
+    }
+    match buf[0] {
+        0 => {
+            if buf.len() < 5 {
+                return Ok(None);
+            }
+            let len = u32::from_be_bytes(buf[1..5].try_into().unwrap()) as usize;
+            if len > MAX_CLIPBOARD {
+                return Err(());
+            }
+            if buf.len() < 5 + len {
+                return Ok(None);
+            }
+            let text = String::from_utf8_lossy(&buf[5..5 + len]).into_owned();
+            Ok(Some((5 + len, Some(text))))
+        }
+        1 => {
+            if buf.len() < 9 {
+                return Ok(None);
+            }
+            Ok(Some((9, None)))
+        }
+        2 => {
+            if buf.len() < 5 {
+                return Ok(None);
+            }
+            let size = u16::from_be_bytes([buf[3], buf[4]]) as usize;
+            if size > 64 * 1024 {
+                return Err(());
+            }
+            if buf.len() < 5 + size {
+                return Ok(None);
+            }
+            Ok(Some((5 + size, None)))
+        }
+        _ => Ok(Some((1, None))),
+    }
+}
+
+async fn read_device_messages(
+    mut read: OwnedReadHalf,
+    clipboard: watch::Sender<(u64, String)>,
+) -> Result<(), String> {
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    loop {
+        let n = read
+            .read(&mut tmp)
+            .await
+            .map_err(|e| format!("control read: {e}"))?;
+        if n == 0 {
+            return Ok(());
+        }
+        buf.extend_from_slice(&tmp[..n]);
+        loop {
+            match consume_device_message(&buf) {
+                Ok(Some((used, text))) => {
+                    buf.drain(..used);
+                    if let Some(text) = text {
+                        clipboard.send_modify(|slot| {
+                            slot.0 = slot.0.wrapping_add(1);
+                            slot.1 = text.clone();
+                        });
+                    }
+                }
+                Ok(None) => break,
+                Err(()) => return Err("scrcpy device message was not usable".into()),
+            }
+        }
+    }
+}
+
+/// One scrcpy socket (audio-only server): connect, then read the dummy byte.
+pub async fn open_audio_socket(addr: SocketAddr, budget: Duration) -> Result<TcpStream, String> {
+    let start = std::time::Instant::now();
+    let mut last = "scrcpy audio server did not send the handshake byte".to_string();
+    while start.elapsed() < budget {
+        match TcpStream::connect(addr).await {
+            Ok(mut stream) => {
+                let mut byte = [0u8; 1];
+                match tokio::time::timeout(Duration::from_millis(400), stream.read_exact(&mut byte))
+                    .await
+                {
+                    Ok(Ok(_)) => {
+                        let _ = stream.set_nodelay(true);
+                        return Ok(stream);
+                    }
+                    Ok(Err(e)) => {
+                        last = format!("audio socket closed before handshake: {e}");
+                    }
+                    Err(_) => {
+                        last = "scrcpy audio server accepted TCP but did not send the handshake byte"
+                            .into();
+                    }
+                }
+            }
+            Err(e) => {
+                last = format!("audio TCP connect failed: {e}");
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+    Err(last)
 }
 
 pub fn encode_touch(
@@ -212,5 +403,73 @@ mod tests {
             encode_touch(PointerPhase::Move, 10, 20, 576, 1280).unwrap()
         );
         assert_eq!(buf[1], 2);
+    }
+
+    #[test]
+    fn display_power_and_clipboard_match_scrcpy_layout() {
+        assert_eq!(encode_display_power(false), [10, 0]);
+        assert_eq!(encode_display_power(true), [10, 2]);
+        assert_eq!(encode_get_clipboard(), [8, 0]);
+        let set = encode_set_clipboard(7, true, "hi");
+        assert_eq!(set[0], 9);
+        assert_eq!(&set[1..9], &7u64.to_be_bytes());
+        assert_eq!(set[9], 1);
+        assert_eq!(&set[10..14], &2u32.to_be_bytes());
+        assert_eq!(&set[14..], b"hi");
+    }
+
+    #[test]
+    fn device_clipboard_message_is_consumed() {
+        let mut buf = vec![0u8];
+        buf.extend_from_slice(&5u32.to_be_bytes());
+        buf.extend_from_slice(b"paste");
+        buf.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 3]);
+        let (used, text) = consume_device_message(&buf).unwrap().unwrap();
+        assert_eq!(used, 10);
+        assert_eq!(text.as_deref(), Some("paste"));
+        let (used, text) = consume_device_message(&buf[10..]).unwrap().unwrap();
+        assert_eq!(used, 9);
+        assert!(text.is_none());
+        assert!(consume_device_message(&[0, 0, 0]).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn pull_clipboard_reads_the_device_message() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut req = [0u8; 2];
+            sock.read_exact(&mut req).await.unwrap();
+            assert_eq!(req, [8, 0]);
+            let mut msg = vec![0u8];
+            msg.extend_from_slice(&4u32.to_be_bytes());
+            msg.extend_from_slice(b"from");
+            sock.write_all(&msg).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        });
+        let stream = TcpStream::connect(addr).await.unwrap();
+        let sender = ControlSender::spawn(stream);
+        let text = sender.pull_clipboard().await.unwrap();
+        assert_eq!(text, "from");
+    }
+
+    #[tokio::test]
+    async fn audio_socket_waits_for_the_dummy_byte() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let _ = sock.shutdown().await;
+            let (mut sock, _) = listener.accept().await.unwrap();
+            sock.write_all(&[0x00, 0x6f]).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        });
+        let mut stream = open_audio_socket(addr, Duration::from_secs(3))
+            .await
+            .unwrap();
+        let mut next = [0u8; 1];
+        stream.read_exact(&mut next).await.unwrap();
+        assert_eq!(next, [0x6f]);
     }
 }

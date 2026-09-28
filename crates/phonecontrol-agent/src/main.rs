@@ -1,6 +1,8 @@
 mod adb;
 mod api;
+mod audio;
 mod device_manager;
+mod device_ops;
 mod mesh;
 mod mesh_client;
 mod mock;
@@ -77,6 +79,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  POST /api/input/pointer");
     info!("  POST /api/input/nav");
     info!("  POST /api/input/install");
+    info!("  GET  /api/scrcpy/options");
+    info!("  POST /api/scrcpy/options");
+    info!("  POST /api/input/clipboard");
+    info!("  POST /api/input/clipboard/pull");
+    info!("  WS   /ws/devices/{{serial}}/audio");
+    info!("  POST /api/device/command");
+    info!("  POST /api/device/push");
+    info!("  GET  /api/device/pull");
+    info!("  GET  /api/host/files");
     info!("  WS   /ws");
     info!("  WS   /ws/agent   (controller: agent registration)");
     info!("  WS   /ws/devices/{{serial}}/video");

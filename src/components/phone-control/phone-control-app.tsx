@@ -146,6 +146,7 @@ export function PhoneControlApp() {
                 onInstall={handleInstall}
                 lastTap={lastTap}
                 broadcastLabel={`${broadcastTargets.length} target${broadcastTargets.length === 1 ? "" : "s"}`}
+                targetIds={broadcastTargets.map((device) => device.id)}
               />
             </div>
 

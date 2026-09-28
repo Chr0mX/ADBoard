@@ -3,16 +3,17 @@
 use crate::device_manager::AppState;
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{Html, IntoResponse};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use phonecontrol_protocol::{
-    AgentToController, ClientCommand, ControlMode, ControllerToAgent, HealthResponse,
-    InstallBroadcast, NavRequest, PointerRequest, Role, ServerEvent, SessionStatus, TapRequest,
-    VideoStatusFrame,
+    AgentToController, ClientCommand, ClipboardPullRequest, ClipboardResponse, ClipboardSetRequest,
+    ControlMode, ControllerToAgent, DeviceCommandRequest, HealthResponse, HostFileEntry,
+    InstallBroadcast, NavRequest, PointerRequest, Role, ScrcpyOptionsRequest, ScrcpyOptionsResponse,
+    ServerEvent, SessionStatus, TapRequest, VideoStatusFrame,
 };
 use std::path::PathBuf;
 use tokio::sync::mpsc;
@@ -44,10 +45,31 @@ pub fn router(state: AppState) -> Router {
             "/api/input/install",
             post(input_install).layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
         )
+        .route("/api/device/command", post(device_command))
+        .route(
+            "/api/device/push",
+            post(device_push).layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
+        )
+        .route("/api/device/pull", get(device_pull))
+        .route(
+            "/api/host/files",
+            get(host_files)
+                .delete(host_file_delete)
+                .post(host_file_upload)
+                .layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
+        )
+        .route("/api/host/files/raw", get(host_file_raw))
+        .route(
+            "/api/scrcpy/options",
+            get(scrcpy_options_get).post(scrcpy_options_set),
+        )
+        .route("/api/input/clipboard", post(clipboard_set))
+        .route("/api/input/clipboard/pull", post(clipboard_pull))
         .route("/ws", get(ws_upgrade))
         .route("/ws/events", get(ws_upgrade))
         .route("/ws/agent", get(ws_agent_upgrade))
-        .route("/ws/devices/{serial}/video", get(ws_video_upgrade));
+        .route("/ws/devices/{serial}/video", get(ws_video_upgrade))
+        .route("/ws/devices/{serial}/audio", get(ws_audio_upgrade));
 
     if let Some(dir) = ui_dir() {
         info!(path = %dir.display(), "serving control UI at /");
@@ -215,6 +237,50 @@ async fn input_nav(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
+async fn scrcpy_options_get(State(state): State<AppState>) -> Json<ScrcpyOptionsResponse> {
+    let prefs = state.inner.sessions.prefs().await;
+    Json(ScrcpyOptionsResponse {
+        quality: prefs.quality,
+        audio: prefs.audio,
+        screen_off: prefs.screen_off,
+        restarted: Vec::new(),
+        results: Vec::new(),
+    })
+}
+
+async fn scrcpy_options_set(
+    State(state): State<AppState>,
+    Json(body): Json<ScrcpyOptionsRequest>,
+) -> Result<Json<ScrcpyOptionsResponse>, (StatusCode, String)> {
+    state
+        .handle_scrcpy_options(body)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+async fn clipboard_set(
+    State(state): State<AppState>,
+    Json(body): Json<ClipboardSetRequest>,
+) -> Result<Json<ClipboardResponse>, (StatusCode, String)> {
+    state
+        .handle_clipboard_set(body)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+async fn clipboard_pull(
+    State(state): State<AppState>,
+    Json(body): Json<ClipboardPullRequest>,
+) -> Result<Json<ClipboardResponse>, (StatusCode, String)> {
+    state
+        .handle_clipboard_pull(body)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
 /// Raw APK body. Headers name the file, the control mode, and the same target ids nav uses.
 async fn input_install(
     State(state): State<AppState>,
@@ -269,6 +335,184 @@ fn validate_apk_upload(filename: &str, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+async fn device_command(
+    State(state): State<AppState>,
+    Json(body): Json<DeviceCommandRequest>,
+) -> Result<Json<phonecontrol_protocol::DeviceCommandResponse>, (StatusCode, String)> {
+    state
+        .handle_command(body)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+async fn device_push(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<phonecontrol_protocol::DeviceCommandResponse>, (StatusCode, String)> {
+    let targets = header_list(&headers, "x-phonecontrol-targets")?;
+    let filename = header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
+    let dest = header_value(&headers, "x-phonecontrol-dest").unwrap_or_else(|| "/sdcard/Download/".into());
+    if filename.contains('/') || filename.contains('\\') {
+        return Err((StatusCode::BAD_REQUEST, "invalid filename".into()));
+    }
+    state
+        .push_file(&targets, &filename, &dest, &body)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+async fn device_pull(
+    State(state): State<AppState>,
+    Query(query): Query<PullQuery>,
+) -> Result<Response, (StatusCode, String)> {
+    let (name, bytes) = state
+        .pull_file(&query.device_id, &query.path)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    Response::builder()
+        .header("content-type", "application/octet-stream")
+        .header(
+            "content-disposition",
+            format!("attachment; filename=\"{name}\""),
+        )
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+#[derive(serde::Deserialize)]
+struct PullQuery {
+    #[serde(rename = "deviceId")]
+    device_id: String,
+    path: String,
+}
+
+#[derive(serde::Deserialize)]
+struct HostPathQuery {
+    #[serde(default)]
+    path: String,
+}
+
+async fn host_files(
+    Query(query): Query<HostPathQuery>,
+) -> Result<Json<Vec<HostFileEntry>>, (StatusCode, String)> {
+    let root = crate::device_ops::files_root();
+    let dir = crate::device_ops::host_path(&root, &query.path)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let mut entries = Vec::new();
+    let read = std::fs::read_dir(&dir).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    for item in read.flatten() {
+        let name = item.file_name().to_string_lossy().to_string();
+        let meta = item.metadata().ok();
+        let rel = if query.path.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", query.path.trim_matches('/'), name)
+        };
+        entries.push(HostFileEntry {
+            name,
+            path: rel,
+            dir: meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+            size: meta.map(|m| m.len()).unwrap_or(0),
+        });
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(Json(entries))
+}
+
+async fn host_file_delete(
+    Query(query): Query<HostPathQuery>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    if query.path.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "path is required".into()));
+    }
+    let root = crate::device_ops::files_root();
+    let path = crate::device_ops::host_path(&root, &query.path)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    if path == root {
+        return Err((StatusCode::BAD_REQUEST, "refusing to delete the file root".into()));
+    }
+    if path.is_dir() {
+        std::fs::remove_dir_all(&path).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    } else {
+        std::fs::remove_file(&path).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn host_file_upload(
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<HostFileEntry>, (StatusCode, String)> {
+    let filename = header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
+    let dir = header_value(&headers, "x-phonecontrol-dir").unwrap_or_else(|| "Downloads".into());
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err((StatusCode::BAD_REQUEST, "invalid filename".into()));
+    }
+    let root = crate::device_ops::files_root();
+    let rel = format!("{}/{}", dir.trim_matches('/'), filename);
+    let path = crate::device_ops::host_path(&root, &rel).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    }
+    tokio::fs::write(&path, &body)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(HostFileEntry {
+        name: filename,
+        path: rel,
+        dir: false,
+        size: body.len() as u64,
+    }))
+}
+
+async fn host_file_raw(
+    Query(query): Query<HostPathQuery>,
+) -> Result<Response, (StatusCode, String)> {
+    let root = crate::device_ops::files_root();
+    let path = crate::device_ops::host_path(&root, &query.path)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+    Response::builder()
+        .header("content-type", "application/octet-stream")
+        .header(
+            "content-disposition",
+            format!("attachment; filename=\"{name}\""),
+        )
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn header_list(headers: &HeaderMap, name: &str) -> Result<Vec<String>, (StatusCode, String)> {
+    let raw = header_value(headers, name).unwrap_or_default();
+    let ids: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if ids.is_empty() {
+        Err((StatusCode::BAD_REQUEST, format!("missing {name}")))
+    } else {
+        Ok(ids)
+    }
+}
+
 async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
@@ -297,6 +541,14 @@ async fn ws_video_upgrade(
     Path(serial): Path<String>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_video_socket(socket, state, serial))
+}
+
+async fn ws_audio_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    Path(serial): Path<String>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_audio_socket(socket, state, serial))
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
@@ -603,7 +855,7 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
         match state.remote_http_base(&host_id).await {
             Some(base) => {
                 info!(%serial, %host_id, %base, "proxying video WS to agent");
-                proxy_remote_video(sender, receiver, &base, &serial).await;
+                proxy_remote_stream(sender, receiver, &base, &serial, "video").await;
             }
             None => {
                 let frame = VideoStatusFrame {
@@ -736,14 +988,84 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
     info!(%serial, "video websocket disconnected (session left running)");
 }
 
-/// Relay agent `/ws/devices/{serial}/video` → browser (text + binary).
-async fn proxy_remote_video(
+async fn handle_audio_socket(socket: WebSocket, state: AppState, serial: String) {
+    let (mut sender, receiver) = socket.split();
+    let serial = match state.resolve_serial(&serial).await {
+        Ok(serial) => serial,
+        Err(e) => {
+            let frame = state.inner.sessions.audio_status(&serial).await;
+            let mut frame = frame;
+            frame.stream = phonecontrol_protocol::StreamState::Error;
+            frame.note = e;
+            let _ = send_json(&mut sender, &frame).await;
+            return;
+        }
+    };
+
+    if let Some(host_id) = state.remote_owner(&serial).await {
+        match state.remote_http_base(&host_id).await {
+            Some(base) => {
+                info!(%serial, %host_id, "proxying audio WS to agent");
+                proxy_remote_stream(sender, receiver, &base, &serial, "audio").await;
+            }
+            None => {
+                let mut frame = state.inner.sessions.audio_status(&serial).await;
+                frame.stream = phonecontrol_protocol::StreamState::Error;
+                frame.note = format!("agent {host_id} did not advertise http_base — cannot proxy audio");
+                let _ = send_json(&mut sender, &frame).await;
+            }
+        }
+        return;
+    }
+
+    let frame = state.inner.sessions.audio_status(&serial).await;
+    if send_json(&mut sender, &frame).await.is_err() {
+        return;
+    }
+    let hub = state.inner.sessions.audio_hub();
+    let (mut audio_rx, _) = hub.subscribe(&serial).await;
+    let mut send_task = tokio::spawn(async move {
+        loop {
+            match audio_rx.recv().await {
+                Ok(crate::audio::AudioFrame::Status(frame)) => {
+                    if send_json(&mut sender, &frame).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(crate::audio::AudioFrame::Packet(bytes)) => {
+                    if sender.send(Message::Binary(bytes.into())).await.is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+    let mut recv_task = tokio::spawn(async move {
+        let mut receiver = receiver;
+        while let Some(Ok(msg)) = receiver.next().await {
+            if matches!(msg, Message::Close(_)) {
+                break;
+            }
+        }
+    });
+    tokio::select! {
+        _ = &mut send_task => recv_task.abort(),
+        _ = &mut recv_task => send_task.abort(),
+    }
+    info!(%serial, "audio websocket disconnected");
+}
+
+/// Relay an agent device websocket (video or audio) to the browser.
+async fn proxy_remote_stream(
     mut client_out: futures_util::stream::SplitSink<WebSocket, Message>,
     mut client_in: futures_util::stream::SplitStream<WebSocket>,
     agent_http_base: &str,
     serial: &str,
+    channel: &str,
 ) {
-    let ws_url = http_to_ws_video_url(agent_http_base, serial);
+    let ws_url = http_to_ws_device_url(agent_http_base, serial, channel);
     let (agent_ws, _) = match tokio_tungstenite::connect_async(&ws_url).await {
         Ok(pair) => pair,
         Err(e) => {
@@ -818,7 +1140,7 @@ async fn proxy_remote_video(
     }
 }
 
-fn http_to_ws_video_url(http_base: &str, serial: &str) -> String {
+fn http_to_ws_device_url(http_base: &str, serial: &str, channel: &str) -> String {
     let base = http_base.trim_end_matches('/');
     let ws = if let Some(rest) = base.strip_prefix("https://") {
         format!("wss://{rest}")
@@ -829,7 +1151,7 @@ fn http_to_ws_video_url(http_base: &str, serial: &str) -> String {
     } else {
         format!("ws://{base}")
     };
-    format!("{ws}/ws/devices/{serial}/video")
+    format!("{ws}/ws/devices/{serial}/{channel}")
 }
 
 async fn send_event(
@@ -920,6 +1242,137 @@ mod tests {
             "missing adb should be a clear error, got {text}"
         );
         assert!(text.contains("\"inject\":\"error\""), "{text}");
+    }
+
+    #[tokio::test]
+    async fn command_reports_missing_adb_and_rejects_a_bad_shell() {
+        let state = AppState::new(
+            Role::Controller,
+            "command-test".into(),
+            "command-test".into(),
+            0,
+            None,
+        );
+        let devices = state.list_devices().await;
+        let id = devices
+            .iter()
+            .find(|d| d.status == phonecontrol_protocol::DeviceStatus::Online)
+            .expect("online device")
+            .id
+            .clone();
+        let app = router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/device/command")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        "{{\"targetIds\":[\"{id}\"],\"op\":\"shell\",\"arg\":\"pm list packages\"}}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let text = body_text(response).await;
+        assert!(text.contains("adb is not available"), "{text}");
+        assert!(text.contains("\"ok\":false"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn scrcpy_options_and_clipboard_on_a_mock_device() {
+        let state = AppState::new(
+            Role::Controller,
+            "scrcpy-opt".into(),
+            "scrcpy-opt".into(),
+            0,
+            None,
+        );
+        let devices = state.list_devices().await;
+        let id = devices
+            .iter()
+            .find(|d| d.status == phonecontrol_protocol::DeviceStatus::Online)
+            .expect("online device")
+            .id
+            .clone();
+        let app = router(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/scrcpy/options")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"mode":"selected","targetIds":["{id}"],"quality":"high","audio":true,"screenOff":false}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let text = body_text(response).await;
+        assert!(text.contains("\"quality\":\"high\""), "{text}");
+        assert!(text.contains("\"audio\":true"), "{text}");
+
+        let screen = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/scrcpy/options")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"mode":"selected","targetIds":["{id}"],"quality":"high","audio":true,"screenOff":true}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(screen.status(), StatusCode::OK);
+        let screen_text = body_text(screen).await;
+        assert!(screen_text.contains("\"screenOff\":true"), "{screen_text}");
+        assert!(
+            screen_text.contains("scrcpy control is not connected"),
+            "screen-off on a mock session should say the control socket is missing, got {screen_text}"
+        );
+
+        let saved = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/scrcpy/options")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(saved.status(), StatusCode::OK);
+        let saved_text = body_text(saved).await;
+        assert!(saved_text.contains("\"quality\":\"high\""), "{saved_text}");
+
+        let clip = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/input/clipboard")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"mode":"selected","targetIds":["{id}"],"text":"hello","paste":true}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(clip.status(), StatusCode::OK);
+        let clip_text = body_text(clip).await;
+        assert!(
+            clip_text.contains("scrcpy control is not connected"),
+            "{clip_text}"
+        );
+        assert!(clip_text.contains("\"ok\":false"), "{clip_text}");
     }
 
     async fn router_oneshot_note(id: &str) -> (StatusCode, String) {

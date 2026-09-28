@@ -8,9 +8,11 @@
 //! - Touch and swipe: scrcpy control-socket messages (the same ones scrcpy uses).
 //! - Nav keys: `adb shell input keyevent` when ADB is available; otherwise stub.
 
+use crate::audio::AudioHub;
 use crate::scrcpy_control::ControlSender;
 use crate::scrcpy_video::{
-    cleanup_forward, scrcpy_server_jar, scrcpy_video_ready, start_scrcpy_raw_capture, ServerLog,
+    cleanup_forward, scrcpy_server_jar, scrcpy_video_ready, start_scrcpy_audio_capture,
+    start_scrcpy_raw_capture, video_launch_for, ServerLog,
 };
 use crate::video::{
     h264_status_for_session, should_use_testpattern, start_scrcpy_fixture_pump,
@@ -18,16 +20,16 @@ use crate::video::{
     TESTPATTERN_HEIGHT, TESTPATTERN_WIDTH,
 };
 use phonecontrol_protocol::{
-    adb_install_args, adb_keyevent_args, adb_tap_args, nav_keycode, InjectMode, InjectStatus,
-    MappedTap, NavActionType, PointerPhase, ScrcpyAvailability, SessionStatus, StreamState,
-    VideoStatusFrame,
+    adb_install_args, adb_keyevent_args, adb_tap_args, nav_keycode, AudioStatusFrame, InjectMode,
+    InjectStatus, MappedTap, NavActionType, PointerPhase, ScrcpyAvailability, SessionStatus,
+    StreamState, VideoStatusFrame,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::{Child, Command};
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
@@ -45,8 +47,35 @@ struct LiveSession {
     forward_port: Option<u16>,
     /// Recent scrcpy-server stdout/stderr, when a real server was started.
     server_log: Option<ServerLog>,
-    /// Scrcpy control socket. Touch down/move/up are written here.
+    /// Scrcpy control socket. Touch, clipboard, and display power are written here.
     control: Option<ControlSender>,
+    /// Opus scrcpy-server, when audio forwarding is on.
+    audio_child: Option<Child>,
+    audio_port: Option<u16>,
+}
+
+/// Quality, audio, and screen-off choices for the next (or current) scrcpy session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScrcpyPrefs {
+    pub quality: String,
+    pub audio: bool,
+    pub screen_off: bool,
+}
+
+impl Default for ScrcpyPrefs {
+    fn default() -> Self {
+        Self {
+            quality: "balanced".into(),
+            audio: false,
+            screen_off: false,
+        }
+    }
+}
+
+pub struct OptionsApplied {
+    pub restarted: Vec<String>,
+    /// Serial + result for an immediate screen-power message (no stream restart).
+    pub power: Vec<(String, Result<(), String>)>,
 }
 
 pub struct SessionManager {
@@ -56,7 +85,10 @@ pub struct SessionManager {
     scrcpy_server: Option<PathBuf>,
     inject_mode: InjectMode,
     video_hub: Arc<VideoHub>,
+    audio_hub: Arc<AudioHub>,
     video_source: VideoSourceKind,
+    prefs: RwLock<ScrcpyPrefs>,
+    clipboard_tx: broadcast::Sender<(String, String)>,
 }
 
 impl SessionManager {
@@ -91,6 +123,7 @@ impl SessionManager {
             scrcpy_server = scrcpy_server.as_ref().map(|p| p.display().to_string()),
             "video source configured"
         );
+        let (clipboard_tx, _) = broadcast::channel(64);
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
             adb_path,
@@ -98,12 +131,27 @@ impl SessionManager {
             scrcpy_server,
             inject_mode,
             video_hub,
+            audio_hub: AudioHub::new(),
             video_source,
+            prefs: RwLock::new(ScrcpyPrefs::default()),
+            clipboard_tx,
         })
     }
 
     pub fn video_hub(&self) -> Arc<VideoHub> {
         self.video_hub.clone()
+    }
+
+    pub fn audio_hub(&self) -> Arc<AudioHub> {
+        self.audio_hub.clone()
+    }
+
+    pub fn subscribe_clipboard(&self) -> broadcast::Receiver<(String, String)> {
+        self.clipboard_tx.subscribe()
+    }
+
+    pub async fn prefs(&self) -> ScrcpyPrefs {
+        self.prefs.read().await.clone()
     }
 
     #[allow(dead_code)]
@@ -183,6 +231,8 @@ impl SessionManager {
                 forward_port: None,
                 server_log: None,
                 control: None,
+                audio_child: None,
+                audio_port: None,
             },
         );
         info
@@ -312,17 +362,50 @@ impl SessionManager {
         )
         .await;
 
+        let prefs = self.prefs.read().await.clone();
+        let launch = video_launch_for(&prefs.quality, prefs.screen_off);
         match start_scrcpy_raw_capture(
             self.video_hub.clone(),
-            adb,
-            server,
+            adb.clone(),
+            server.clone(),
             self.scrcpy_path.clone(),
             serial.to_string(),
+            launch,
         )
         .await
         {
             Ok(capture) => {
                 let (pump, server_child, port, server_log, control) = capture.into_parts();
+                let mut note = "scrcpy-server raw H264 + control socket for touch".to_string();
+                if prefs.screen_off {
+                    match control.set_display_power(false).await {
+                        Ok(()) => note.push_str(" | screen off"),
+                        Err(e) => note.push_str(&format!(" | screen off failed: {e}")),
+                    }
+                }
+                let (audio_child, audio_port) = if prefs.audio {
+                    match start_scrcpy_audio_capture(
+                        self.audio_hub.clone(),
+                        &adb,
+                        &server,
+                        self.scrcpy_path.as_deref(),
+                        serial,
+                    )
+                    .await
+                    {
+                        Ok(audio) => {
+                            note.push_str(" | audio opus");
+                            (Some(audio.child), Some(audio.local_port))
+                        }
+                        Err(e) => {
+                            note.push_str(&format!(" | audio failed: {e}"));
+                            (None, None)
+                        }
+                    }
+                } else {
+                    (None, None)
+                };
+                self.watch_clipboard(serial, control.clone());
                 let mut guard = self.sessions.write().await;
                 let live = guard
                     .entry(serial.to_string())
@@ -338,14 +421,18 @@ impl SessionManager {
                         forward_port: None,
                         server_log: None,
                         control: None,
+                        audio_child: None,
+                        audio_port: None,
                     });
                 live.video = Some(pump);
                 live.child = Some(server_child);
                 live.forward_port = Some(port);
                 live.server_log = Some(server_log);
                 live.control = Some(control);
+                live.audio_child = audio_child;
+                live.audio_port = audio_port;
                 live.info.stream = StreamState::Streaming;
-                live.info.note = "scrcpy-server raw H264 + control socket for touch".into();
+                live.info.note = note;
                 live.info.backend = "scrcpy".into();
                 info!(serial, "scrcpy session streaming (real H264 pipe)");
                 let info = live.info.clone();
@@ -388,6 +475,8 @@ impl SessionManager {
                 forward_port: None,
                 server_log: None,
                 control: None,
+                audio_child: None,
+                audio_port: None,
             });
         live.video = Some(pump);
         live.info.stream = StreamState::Streaming;
@@ -429,6 +518,8 @@ impl SessionManager {
                         forward_port: None,
                         server_log: None,
                         control: None,
+                audio_child: None,
+                audio_port: None,
                     });
                 live.video = Some(pump);
                 live.info.stream = StreamState::Streaming;
@@ -470,7 +561,7 @@ impl SessionManager {
     }
 
     async fn stop_producers(&self, serial: &str) {
-        let (child, video, forward_port, control) = {
+        let (child, video, forward_port, control, audio_child, audio_port) = {
             let mut guard = self.sessions.write().await;
             if let Some(live) = guard.get_mut(serial) {
                 (
@@ -478,9 +569,11 @@ impl SessionManager {
                     live.video.take(),
                     live.forward_port.take(),
                     live.control.take(),
+                    live.audio_child.take(),
+                    live.audio_port.take(),
                 )
             } else {
-                (None, None, None, None)
+                (None, None, None, None, None, None)
             }
         };
         drop(control);
@@ -491,8 +584,160 @@ impl SessionManager {
             let _ = child.kill().await;
             let _ = child.wait().await;
         }
-        if let (Some(port), Some(adb)) = (forward_port, self.adb_path.as_ref()) {
-            cleanup_forward(adb, serial, port).await;
+        if let Some(mut child) = audio_child {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+        }
+        if let Some(adb) = self.adb_path.as_ref() {
+            if let Some(port) = forward_port {
+                cleanup_forward(adb, serial, port).await;
+            }
+            if let Some(port) = audio_port {
+                cleanup_forward(adb, serial, port).await;
+            }
+        }
+    }
+
+    fn watch_clipboard(&self, serial: &str, control: ControlSender) {
+        let mut rx = control.clipboard_receiver();
+        let tx = self.clipboard_tx.clone();
+        let serial = serial.to_string();
+        tokio::spawn(async move {
+            rx.borrow_and_update();
+            loop {
+                if rx.changed().await.is_err() {
+                    break;
+                }
+                let text = rx.borrow().1.clone();
+                let _ = tx.send((serial.clone(), text));
+            }
+        });
+    }
+
+    pub fn parse_quality(quality: &str) -> Result<&'static str, String> {
+        match quality {
+            "low" => Ok("low"),
+            "balanced" => Ok("balanced"),
+            "high" => Ok("high"),
+            "original" => Ok("original"),
+            _ => Err("quality must be low, balanced, high, or original".into()),
+        }
+    }
+
+    /// Store prefs. Quality and audio restart a live session. Screen power is a control message.
+    pub async fn apply_options(
+        &self,
+        incoming: ScrcpyPrefs,
+        serials: &[String],
+    ) -> Result<OptionsApplied, String> {
+        let quality = Self::parse_quality(&incoming.quality)?.to_string();
+        let next = ScrcpyPrefs {
+            quality,
+            audio: incoming.audio,
+            screen_off: incoming.screen_off,
+        };
+        let prev = self.prefs.read().await.clone();
+        let quality_changed = prev.quality != next.quality;
+        let audio_changed = prev.audio != next.audio;
+        let screen_changed = prev.screen_off != next.screen_off;
+        *self.prefs.write().await = next.clone();
+
+        let mut restarted = Vec::new();
+        let mut power = Vec::new();
+        if quality_changed || audio_changed {
+            for serial in serials {
+                let streaming = self
+                    .get_session(serial)
+                    .await
+                    .is_some_and(|s| {
+                        matches!(s.stream, StreamState::Streaming | StreamState::Starting)
+                    });
+                if streaming {
+                    let _ = self.restart(serial).await;
+                    restarted.push(serial.clone());
+                }
+            }
+        } else if screen_changed {
+            let on = !next.screen_off;
+            for serial in serials {
+                power.push((serial.clone(), self.set_display_power(serial, on).await));
+            }
+        }
+        Ok(OptionsApplied { restarted, power })
+    }
+
+    pub async fn set_display_power(&self, serial: &str, on: bool) -> Result<(), String> {
+        let sender = {
+            let guard = self.sessions.read().await;
+            guard.get(serial).and_then(|live| live.control.clone())
+        };
+        let Some(sender) = sender else {
+            return Err("scrcpy control is not connected".into());
+        };
+        sender.set_display_power(on).await
+    }
+
+    pub async fn set_clipboard(&self, serial: &str, text: &str, paste: bool) -> Result<(), String> {
+        if text.len() > 256 * 1024 {
+            return Err("clipboard text is too long".into());
+        }
+        let sender = {
+            let guard = self.sessions.read().await;
+            guard.get(serial).and_then(|live| live.control.clone())
+        };
+        let Some(sender) = sender else {
+            return Err("scrcpy control is not connected".into());
+        };
+        sender.set_clipboard(text, paste).await
+    }
+
+    pub async fn pull_clipboard(&self, serial: &str) -> Result<String, String> {
+        let sender = {
+            let guard = self.sessions.read().await;
+            guard.get(serial).and_then(|live| live.control.clone())
+        };
+        let Some(sender) = sender else {
+            return Err("scrcpy control is not connected".into());
+        };
+        sender.pull_clipboard().await
+    }
+
+    pub async fn audio_status(&self, serial: &str) -> AudioStatusFrame {
+        if let Some(frame) = self.audio_hub.last_status(serial).await {
+            return frame;
+        }
+        let prefs = self.prefs.read().await.clone();
+        if !prefs.audio {
+            return AudioStatusFrame {
+                serial: serial.into(),
+                stream: StreamState::Idle,
+                note: "Audio forwarding is off.".into(),
+                codec: "opus".into(),
+                sample_rate: 48_000,
+                channels: 2,
+                framing: "opus-pts".into(),
+                description: None,
+            };
+        }
+        let note = if self.scrcpy_ready() {
+            "Waiting for the Opus stream.".into()
+        } else {
+            "Audio forwarding needs scrcpy-server and ADB. This session has no device audio."
+                .into()
+        };
+        AudioStatusFrame {
+            serial: serial.into(),
+            stream: if self.scrcpy_ready() {
+                StreamState::Starting
+            } else {
+                StreamState::Error
+            },
+            note,
+            codec: "opus".into(),
+            sample_rate: 48_000,
+            channels: 2,
+            framing: "opus-pts".into(),
+            description: None,
         }
     }
 
@@ -513,6 +758,8 @@ impl SessionManager {
                 forward_port: None,
                 server_log: None,
                 control: None,
+                audio_child: None,
+                audio_port: None,
             });
         entry.info.stream = stream;
         entry.info.note = note;
@@ -566,6 +813,39 @@ impl SessionManager {
                 }
             }
         }
+    }
+
+    /// Encoded picture size from the live pump. Zero until an SPS or a known source size exists.
+    pub async fn video_display_size(&self, serial: &str) -> Option<(u32, u32)> {
+        let guard = self.sessions.read().await;
+        let pump = guard.get(serial)?.video.as_ref()?;
+        let width = pump.display_width();
+        let height = pump.display_height();
+        if width == 0 || height == 0 {
+            None
+        } else {
+            Some((width, height))
+        }
+    }
+
+    /// Map a 0–1 point into the encoded video size and send one scrcpy touch.
+    pub async fn inject_normalized(
+        &self,
+        serial: &str,
+        phase: PointerPhase,
+        x: f64,
+        y: f64,
+    ) -> InjectResult {
+        let Some((width, height)) = self.video_display_size(serial).await else {
+            return InjectResult {
+                status: InjectStatus::Error,
+                detail: Some("video size unknown — wait for the picture".into()),
+            };
+        };
+        let px = (x.clamp(0.0, 1.0) * f64::from(width.saturating_sub(1))).round() as u32;
+        let py = (y.clamp(0.0, 1.0) * f64::from(height.saturating_sub(1))).round() as u32;
+        self.inject_pointer(serial, phase, px, py, width, height)
+            .await
     }
 
     /// Write one scrcpy touch message. `width`/`height` are the encoded video size.
@@ -712,6 +992,17 @@ impl SessionManager {
                             live.info.stream = StreamState::Error;
                             live.info.note = format!("scrcpy-server wait error: {e}");
                             changed.push(live.info.clone());
+                        }
+                    }
+                }
+                if let Some(ref mut audio) = live.audio_child {
+                    match audio.try_wait() {
+                        Ok(None) => {}
+                        Ok(Some(_)) | Err(_) => {
+                            live.audio_child = None;
+                            if let Some(port) = live.audio_port.take() {
+                                stale_forwards.push((live.info.serial.clone(), port));
+                            }
                         }
                     }
                 }

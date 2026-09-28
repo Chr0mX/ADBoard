@@ -7,6 +7,8 @@ import type {
   NavBroadcast,
   NormalizedPoint,
   PointerPhase,
+  DeviceCommandResponse,
+  HostFileEntry,
   InstallBroadcast,
   SessionStatus,
   TapBroadcast,
@@ -44,6 +46,18 @@ export interface DevicesClient {
     targets: Device[],
     file: File,
   ): Promise<InstallBroadcast>;
+  runCommand(
+    targets: Device[],
+    op: string,
+    arg?: string,
+    arg2?: string,
+  ): Promise<DeviceCommandResponse>;
+  listHostFiles(path?: string): Promise<HostFileEntry[]>;
+  uploadHostFile(file: File, dir: string): Promise<HostFileEntry>;
+  deleteHostFile(path: string): Promise<void>;
+  hostFileUrl(path: string): string;
+  pushToDevices(targets: Device[], file: File, dest: string): Promise<DeviceCommandResponse>;
+  listHosts?(): Promise<import("@/lib/devices/types").HostInfo[]>;
   listSessions?(): Promise<SessionStatus[]>;
   /** Optional live device events from the agent WebSocket. */
   subscribeDevices?(
@@ -138,6 +152,53 @@ export function createMockDevicesClient(): DevicesClient {
           deviceName: t.name,
           inject: "error" as const,
           detail: "adb is not available — cannot install APK",
+        })),
+      };
+    },
+
+    async runCommand(targets, op, arg, arg2) {
+      return {
+        id: `cmd-${Date.now()}`,
+        op,
+        results: targets.map((device) => ({
+          deviceId: device.id,
+          deviceName: device.name,
+          ok: false,
+          error:
+            op === "reconnect"
+              ? "mock fleet has no live ADB session to restart"
+              : "adb is not available",
+          output: arg && arg2 ? undefined : undefined,
+        })),
+      };
+    },
+
+    async listHostFiles() {
+      return [
+        { name: "Screenshots", path: "Screenshots", dir: true, size: 0 },
+        { name: "Downloads", path: "Downloads", dir: true, size: 0 },
+      ];
+    },
+
+    async uploadHostFile(file, dir) {
+      return { name: file.name, path: `${dir}/${file.name}`, dir: false, size: file.size };
+    },
+
+    async deleteHostFile() {},
+
+    hostFileUrl(path) {
+      return path;
+    },
+
+    async pushToDevices(targets) {
+      return {
+        id: `push-${Date.now()}`,
+        op: "push",
+        results: targets.map((device) => ({
+          deviceId: device.id,
+          deviceName: device.name,
+          ok: false,
+          error: "adb is not available",
         })),
       };
     },
@@ -247,6 +308,76 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         throw new Error(text || `agent install failed: ${res.status}`);
       }
       return (await res.json()) as InstallBroadcast;
+    },
+
+    async runCommand(targets, op, arg, arg2) {
+      const res = await fetch(`${base}/api/device/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetIds: targets.map((t) => t.id),
+          op,
+          arg,
+          arg2,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `command failed: ${res.status}`);
+      }
+      return (await res.json()) as DeviceCommandResponse;
+    },
+
+    async listHostFiles(path = "") {
+      const res = await fetch(`${base}/api/host/files?path=${encodeURIComponent(path)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as HostFileEntry[];
+    },
+
+    async uploadHostFile(file, dir) {
+      const res = await fetch(`${base}/api/host/files`, {
+        method: "POST",
+        headers: {
+          "X-Phonecontrol-Filename": file.name,
+          "X-Phonecontrol-Dir": dir,
+        },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as HostFileEntry;
+    },
+
+    async deleteHostFile(path) {
+      const res = await fetch(`${base}/api/host/files?path=${encodeURIComponent(path)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok && res.status !== 204) throw new Error(await res.text());
+    },
+
+    hostFileUrl(path) {
+      return `${base}/api/host/files/raw?path=${encodeURIComponent(path)}`;
+    },
+
+    async pushToDevices(targets, file, dest) {
+      const res = await fetch(`${base}/api/device/push`, {
+        method: "POST",
+        headers: {
+          "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
+          "X-Phonecontrol-Filename": file.name,
+          "X-Phonecontrol-Dest": dest,
+        },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as DeviceCommandResponse;
+    },
+
+    async listHosts() {
+      const res = await fetch(`${base}/api/hosts`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as import("@/lib/devices/types").HostInfo[];
     },
 
     async listSessions() {

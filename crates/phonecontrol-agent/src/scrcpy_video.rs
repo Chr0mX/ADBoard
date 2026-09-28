@@ -20,7 +20,8 @@
 //! socket is listening, so the first byte is the only way to know the server
 //! is actually there. Everything after that byte is Annex-B H264.
 
-use crate::scrcpy_control::{open_video_and_control, ControlSender};
+use crate::audio::{spawn_opus_pump, AudioHub};
+use crate::scrcpy_control::{open_audio_socket, open_video_and_control, ControlSender};
 use crate::video::{
     start_annexb_reader_pump, AnnexBPumpMeta, VideoHub, VideoPump, SCRCPY_DEFAULT_CODEC_STRING,
 };
@@ -36,6 +37,59 @@ use tracing::{info, warn};
 
 const REMOTE_SERVER_PATH: &str = "/data/local/tmp/phonecontrol-scrcpy-server.jar";
 const DEFAULT_MAX_SIZE: u32 = 1280;
+
+/// Video-server launch. Audio stays off here so the Annex-B parser is unchanged.
+/// Opus is a second server; see [`start_scrcpy_audio_capture`].
+#[derive(Debug, Clone)]
+pub struct VideoLaunch {
+    pub max_size: u32,
+    pub video_bit_rate: Option<u32>,
+    pub max_fps: Option<u32>,
+    pub stay_awake: bool,
+}
+
+impl Default for VideoLaunch {
+    fn default() -> Self {
+        Self {
+            max_size: DEFAULT_MAX_SIZE,
+            video_bit_rate: None,
+            max_fps: None,
+            stay_awake: false,
+        }
+    }
+}
+
+/// Preset → server args. `balanced` keeps the historical max_size default.
+pub fn video_launch_for(quality: &str, screen_off: bool) -> VideoLaunch {
+    let mut launch = match quality {
+        "low" => VideoLaunch {
+            max_size: 720,
+            video_bit_rate: Some(1_000_000),
+            max_fps: Some(15),
+            stay_awake: false,
+        },
+        "high" => VideoLaunch {
+            max_size: 1920,
+            video_bit_rate: Some(8_000_000),
+            max_fps: Some(60),
+            stay_awake: false,
+        },
+        "original" => VideoLaunch {
+            max_size: 0,
+            video_bit_rate: Some(16_000_000),
+            max_fps: Some(60),
+            stay_awake: false,
+        },
+        _ => VideoLaunch {
+            max_size: max_size_from_env(),
+            video_bit_rate: None,
+            max_fps: None,
+            stay_awake: false,
+        },
+    };
+    launch.stay_awake = screen_off;
+    launch
+}
 
 /// Last lines printed by scrcpy-server (stdout and stderr).
 #[derive(Clone, Default)]
@@ -205,12 +259,14 @@ pub fn max_size_from_env() -> u32 {
 pub fn build_server_shell_command(
     remote_jar: &str,
     version: &str,
-    max_size: u32,
+    launch: &VideoLaunch,
     extra_opts: &[String],
 ) -> String {
     // `raw_stream` clears send_dummy_byte. Put send_dummy_byte after it so
     // the handshake byte comes back. adb forward accepts TCP before the
     // device is listening; without that byte the reader sees EOF immediately.
+    // Do not set send_frame_meta after raw_stream: that would prefix every
+    // video packet and break the Annex-B reader.
     let mut opts = vec![
         "scid=-1".to_string(),
         "log_level=info".to_string(),
@@ -221,13 +277,59 @@ pub fn build_server_shell_command(
         "raw_stream=true".to_string(),
         "send_dummy_byte=true".to_string(),
         "video_codec=h264".to_string(),
-        format!("max_size={max_size}"),
+        format!("max_size={}", launch.max_size),
     ];
+    if let Some(rate) = launch.video_bit_rate {
+        opts.push(format!("video_bit_rate={rate}"));
+    }
+    if let Some(fps) = launch.max_fps {
+        opts.push(format!("max_fps={fps}"));
+    }
+    if launch.stay_awake {
+        opts.push("stay_awake=true".to_string());
+    }
     opts.extend(extra_opts.iter().cloned());
     format!(
         "CLASSPATH={remote_jar} app_process / com.genymobile.scrcpy.Server {version} {}",
         opts.join(" ")
     )
+}
+
+/// Audio-only server. No `raw_stream`, so codec id + packet headers stay on.
+/// Socket name is `scrcpy_{scid:08x}` (scid=-1 would steal the video socket).
+pub fn build_audio_server_command(remote_jar: &str, version: &str, scid: u32) -> String {
+    let opts = [
+        format!("scid={scid}"),
+        "log_level=info".to_string(),
+        "tunnel_forward=true".to_string(),
+        "video=false".to_string(),
+        "audio=true".to_string(),
+        "audio_codec=opus".to_string(),
+        "control=false".to_string(),
+        "cleanup=false".to_string(),
+        "send_dummy_byte=true".to_string(),
+    ];
+    format!(
+        "CLASSPATH={remote_jar} app_process / com.genymobile.scrcpy.Server {version} {}",
+        opts.join(" ")
+    )
+}
+
+pub fn audio_scid(serial: &str) -> u32 {
+    let mut hash = 0u32;
+    for b in serial.bytes() {
+        hash = hash.wrapping_mul(31).wrapping_add(u32::from(b));
+    }
+    let id = hash & 0x7fff_fffe;
+    if id == 0 { 1 } else { id }
+}
+
+pub fn audio_socket_name(scid: u32) -> String {
+    format!("scrcpy_{scid:08x}")
+}
+
+fn audio_port_for_serial(serial: &str) -> u16 {
+    31183 + (local_port_for_serial(serial) - 27183)
 }
 
 fn local_port_for_serial(serial: &str) -> u16 {
@@ -311,9 +413,9 @@ pub async fn start_scrcpy_raw_capture(
     server_jar: PathBuf,
     scrcpy_bin: Option<PathBuf>,
     serial: String,
+    launch: VideoLaunch,
 ) -> Result<ScrcpyRawCapture, String> {
     let version = scrcpy_server_version(&server_jar, scrcpy_bin.as_deref());
-    let max_size = max_size_from_env();
     let local_port = local_port_for_serial(&serial);
     let extra = extra_server_opts();
 
@@ -351,7 +453,7 @@ pub async fn start_scrcpy_raw_capture(
     )
     .await?;
 
-    let shell_cmd = build_server_shell_command(REMOTE_SERVER_PATH, &version, max_size, &extra);
+    let shell_cmd = build_server_shell_command(REMOTE_SERVER_PATH, &version, &launch, &extra);
     let mut server = Command::new(&adb)
         .args(["-s", &serial, "shell", &shell_cmd])
         .stdin(Stdio::null())
@@ -477,6 +579,89 @@ async fn connect_until_handshake(
     Err(last)
 }
 
+/// Second scrcpy-server: Opus only. The video handshake is not involved.
+pub struct AudioCapture {
+    pub child: Child,
+    pub local_port: u16,
+}
+
+pub async fn start_scrcpy_audio_capture(
+    hub: Arc<AudioHub>,
+    adb: &Path,
+    server_jar: &Path,
+    scrcpy_bin: Option<&Path>,
+    serial: &str,
+) -> Result<AudioCapture, String> {
+    let version = scrcpy_server_version(server_jar, scrcpy_bin);
+    let scid = audio_scid(serial);
+    let socket = audio_socket_name(scid);
+    let local_port = audio_port_for_serial(serial);
+
+    run_adb(
+        adb,
+        &[
+            "-s",
+            serial,
+            "push",
+            server_jar.to_str().ok_or("server path not utf-8")?,
+            REMOTE_SERVER_PATH,
+        ],
+    )
+    .await?;
+
+    let _ = adb_forward_remove(adb, serial, local_port).await;
+    run_adb(
+        adb,
+        &[
+            "-s",
+            serial,
+            "forward",
+            &format!("tcp:{local_port}"),
+            &format!("localabstract:{socket}"),
+        ],
+    )
+    .await?;
+
+    let shell_cmd = build_audio_server_command(REMOTE_SERVER_PATH, &version, scid);
+    let mut server = Command::new(adb)
+        .args(["-s", serial, "shell", &shell_cmd])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("spawn scrcpy audio server: {e}"))?;
+
+    let server_log = ServerLog::default();
+    if let Some(out) = server.stdout.take() {
+        spawn_server_log(out, format!("{serial}-audio"), server_log.clone());
+    }
+    if let Some(err) = server.stderr.take() {
+        spawn_server_log(err, format!("{serial}-audio"), server_log.clone());
+    }
+
+    // Audio-only server accepts one socket, then writes the dummy byte.
+    let addr = SocketAddr::from(([127, 0, 0, 1], local_port));
+    let stream = match open_audio_socket(addr, Duration::from_secs(10)).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            let _ = server.kill().await;
+            let _ = server.wait().await;
+            let _ = adb_forward_remove(adb, serial, local_port).await;
+            return Err(with_server_log(
+                &format!("scrcpy audio handshake failed: {e}"),
+                &server_log,
+            ));
+        }
+    };
+    spawn_opus_pump(hub, serial.to_string(), stream);
+    info!(%serial, local_port, %socket, "scrcpy opus audio pump attached");
+    Ok(AudioCapture {
+        child: server,
+        local_port,
+    })
+}
+
 /// Remove a previously installed adb forward (best-effort helper for session stop).
 pub async fn cleanup_forward(adb: &Path, serial: &str, port: u16) {
     if let Err(e) = adb_forward_remove(adb, serial, port).await {
@@ -493,7 +678,10 @@ mod tests {
         let cmd = build_server_shell_command(
             REMOTE_SERVER_PATH,
             "3.3.1",
-            1280,
+            &VideoLaunch {
+                max_size: 1280,
+                ..VideoLaunch::default()
+            },
             &["max_fps=15".into()],
         );
         assert!(cmd.contains("com.genymobile.scrcpy.Server 3.3.1"));
@@ -509,6 +697,47 @@ mod tests {
         let raw = cmd.find("raw_stream=true").unwrap();
         let dummy = cmd.find("send_dummy_byte=true").unwrap();
         assert!(dummy > raw, "dummy byte must override raw_stream");
+        assert!(!cmd.contains("stay_awake"));
+        assert!(!cmd.contains("video_bit_rate"));
+    }
+
+    #[test]
+    fn quality_presets_change_size_bitrate_and_fps() {
+        let low = video_launch_for("low", false);
+        let cmd = build_server_shell_command(REMOTE_SERVER_PATH, "3.3.1", &low, &[]);
+        assert!(cmd.contains("max_size=720"));
+        assert!(cmd.contains("video_bit_rate=1000000"));
+        assert!(cmd.contains("max_fps=15"));
+        assert!(cmd.contains("audio=false"));
+        assert!(!cmd.contains("send_frame_meta"));
+
+        let off = video_launch_for("balanced", true);
+        let cmd = build_server_shell_command(REMOTE_SERVER_PATH, "3.3.1", &off, &[]);
+        assert!(cmd.contains("stay_awake=true"));
+        assert!(cmd.contains("audio=false"));
+
+        let original = video_launch_for("original", false);
+        assert_eq!(original.max_size, 0);
+        assert_eq!(original.video_bit_rate, Some(16_000_000));
+    }
+
+    #[test]
+    fn audio_server_is_separate_and_keeps_packet_headers() {
+        let scid = audio_scid("R5CR50AR96VZ");
+        assert_ne!(scid, 0);
+        let cmd = build_audio_server_command(REMOTE_SERVER_PATH, "3.3.1", scid);
+        assert!(cmd.contains(&format!("scid={scid}")));
+        assert!(cmd.contains("video=false"));
+        assert!(cmd.contains("audio=true"));
+        assert!(cmd.contains("audio_codec=opus"));
+        assert!(cmd.contains("control=false"));
+        assert!(cmd.contains("send_dummy_byte=true"));
+        assert!(!cmd.contains("raw_stream"));
+        assert!(!cmd.contains("send_frame_meta"));
+        assert_eq!(audio_socket_name(scid), format!("scrcpy_{scid:08x}"));
+        let video_port = local_port_for_serial("R5CR50AR96VZ");
+        let audio_port = audio_port_for_serial("R5CR50AR96VZ");
+        assert_ne!(video_port, audio_port);
     }
 
     #[test]

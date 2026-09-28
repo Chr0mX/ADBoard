@@ -3,13 +3,14 @@
 use crate::adb::{self, AdbDeviceLine};
 use crate::mesh::MeshRegistry;
 use crate::mock::{self, MockProfile};
-use crate::session::{scrcpy_binary, SessionManager};
+use crate::session::{scrcpy_binary, ScrcpyPrefs, SessionManager};
 use crate::video::VideoHub;
 use phonecontrol_protocol::{
-    map_to_devices, AdbAvailability, ControlMode, Device, DeviceStatus, HostInfo, InjectMode,
-    InjectStatus, InstallBroadcast, MappedTap, NavActionType, NavBroadcast, NavTargetResult,
-    NormalizedPoint, PointerPhase, Role, ScrcpyAvailability, ServerEvent, SessionAction,
-    SessionStatus, TapBroadcast,
+    map_to_devices, AdbAvailability, ClipboardPullRequest, ClipboardResponse, ClipboardSetRequest,
+    ControlMode, Device, DeviceCommandRequest, DeviceCommandResponse, DeviceOpResult, DeviceStatus,
+    HostInfo, InjectMode, InjectStatus, InstallBroadcast, MappedTap, NavActionType, NavBroadcast,
+    NavTargetResult, NormalizedPoint, PointerPhase, Role, ScrcpyAvailability, ScrcpyOptionsRequest,
+    ScrcpyOptionsResponse, ServerEvent, SessionAction, SessionStatus, StreamState, TapBroadcast,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -99,7 +100,7 @@ impl AppState {
         let video_hub = VideoHub::new();
         let sessions = SessionManager::new(adb_path.clone(), scrcpy, video_hub);
         let mesh = MeshRegistry::new(host_id.clone(), host_name.clone());
-        Self {
+        let app = Self {
             inner: Arc::new(InnerState {
                 role,
                 host_id,
@@ -111,7 +112,21 @@ impl AppState {
                 sessions,
                 mesh,
             }),
-        }
+        };
+        let events = app.inner.events.clone();
+        let mut clip_rx = app.inner.sessions.subscribe_clipboard();
+        tokio::spawn(async move {
+            loop {
+                match clip_rx.recv().await {
+                    Ok((serial, text)) => {
+                        let _ = events.send(ServerEvent::Clipboard { serial, text });
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+        app
     }
 
     pub fn video_hub(&self) -> Arc<crate::video::VideoHub> {
@@ -768,6 +783,541 @@ impl AppState {
         Ok(broadcast.targets)
     }
 
+    pub async fn handle_command(
+        &self,
+        request: DeviceCommandRequest,
+    ) -> Result<DeviceCommandResponse, String> {
+        let op = request.op.trim().to_string();
+        if op.is_empty() {
+            return Err("missing operation".into());
+        }
+        let devices = if op == "reconnect" || op == "restartAdb" {
+            self.resolve_known(&request.target_ids).await?
+        } else {
+            self.resolve_targets(&request.target_ids).await?
+        };
+        if devices.is_empty() {
+            return Err("no targets for command".into());
+        }
+
+        let local_serials = self.local_serial_set().await;
+        let mut local_group = Vec::new();
+        let mut by_remote: HashMap<String, Vec<Device>> = HashMap::new();
+        for device in devices {
+            if local_serials.contains(&device.serial) {
+                local_group.push(device);
+            } else {
+                by_remote
+                    .entry(device.effective_host_id().to_string())
+                    .or_default()
+                    .push(device);
+            }
+        }
+
+        let mut results = Vec::new();
+        for device in local_group {
+            results.push(self.command_one(&device, &op, request.arg.as_deref(), request.arg2.as_deref()).await);
+        }
+        for (host_id, group) in by_remote {
+            if self.inner.role != Role::Controller {
+                for device in group {
+                    results.push(op_error(&device, format!("cannot reach remote host {host_id}")));
+                }
+                continue;
+            }
+            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+            let forwarded = DeviceCommandRequest {
+                target_ids: ids,
+                op: op.clone(),
+                arg: request.arg.clone(),
+                arg2: request.arg2.clone(),
+            };
+            match self.proxy_command_http(&host_id, &forwarded).await {
+                Ok(remote) => results.extend(remote),
+                Err(error) => {
+                    for device in group {
+                        results.push(op_error(&device, error.clone()));
+                    }
+                }
+            }
+        }
+
+        Ok(DeviceCommandResponse {
+            id: format!("cmd-{}", uuid::Uuid::new_v4()),
+            op,
+            results,
+        })
+    }
+
+    async fn command_one(
+        &self,
+        device: &Device,
+        op: &str,
+        arg: Option<&str>,
+        arg2: Option<&str>,
+    ) -> DeviceOpResult {
+        if op == "reconnect" {
+            return match self.restart_session(&device.serial).await {
+                Ok(session) => op_ok(device, session.note),
+                Err(error) => op_error(device, error),
+            };
+        }
+        if matches!(op, "tap" | "swipe" | "longPress") {
+            return self.gesture(device, op, arg, arg2).await;
+        }
+        let Some(adb) = self.inner.adb_path.clone() else {
+            return op_error(device, "adb is not available");
+        };
+        match crate::device_ops::run_adb_op(
+            &adb,
+            &device.serial,
+            op,
+            arg,
+            arg2,
+            &crate::device_ops::files_root(),
+        )
+        .await
+        {
+            Ok(output) => op_ok(device, output),
+            Err(error) => op_error(device, error),
+        }
+    }
+
+    async fn gesture(
+        &self,
+        device: &Device,
+        op: &str,
+        arg: Option<&str>,
+        _arg2: Option<&str>,
+    ) -> DeviceOpResult {
+        let numbers = parse_fractions(arg.unwrap_or(""));
+        let result = match op {
+            "tap" if numbers.len() == 2 => {
+                let down = self
+                    .inner
+                    .sessions
+                    .inject_normalized(&device.serial, PointerPhase::Down, numbers[0], numbers[1])
+                    .await;
+                if down.status == InjectStatus::Error {
+                    down
+                } else {
+                    self.inner
+                        .sessions
+                        .inject_normalized(&device.serial, PointerPhase::Up, numbers[0], numbers[1])
+                        .await
+                }
+            }
+            "longPress" if numbers.len() == 2 => {
+                let down = self
+                    .inner
+                    .sessions
+                    .inject_normalized(&device.serial, PointerPhase::Down, numbers[0], numbers[1])
+                    .await;
+                if down.status == InjectStatus::Error {
+                    down
+                } else {
+                    tokio::time::sleep(Duration::from_millis(600)).await;
+                    self.inner
+                        .sessions
+                        .inject_normalized(&device.serial, PointerPhase::Up, numbers[0], numbers[1])
+                        .await
+                }
+            }
+            "swipe" if numbers.len() == 4 => {
+                let down = self
+                    .inner
+                    .sessions
+                    .inject_normalized(&device.serial, PointerPhase::Down, numbers[0], numbers[1])
+                    .await;
+                if down.status == InjectStatus::Error {
+                    down
+                } else {
+                    for step in 1..=4 {
+                        let t = f64::from(step) / 4.0;
+                        let x = numbers[0] + (numbers[2] - numbers[0]) * t;
+                        let y = numbers[1] + (numbers[3] - numbers[1]) * t;
+                        let moved = self
+                            .inner
+                            .sessions
+                            .inject_normalized(&device.serial, PointerPhase::Move, x, y)
+                            .await;
+                        if moved.status == InjectStatus::Error {
+                            return op_error(device, moved.detail.unwrap_or_else(|| "swipe failed".into()));
+                        }
+                    }
+                    self.inner
+                        .sessions
+                        .inject_normalized(&device.serial, PointerPhase::Up, numbers[2], numbers[3])
+                        .await
+                }
+            }
+            _ => {
+                return op_error(device, "tap and long press need x,y; swipe needs x,y,x2,y2");
+            }
+        };
+        match result.status {
+            InjectStatus::Error => op_error(device, result.detail.unwrap_or_else(|| "gesture failed".into())),
+            _ => op_ok(device, result.detail.unwrap_or_else(|| "ok".into())),
+        }
+    }
+
+    async fn proxy_command_http(
+        &self,
+        host_id: &str,
+        request: &DeviceCommandRequest,
+    ) -> Result<Vec<DeviceOpResult>, String> {
+        let Some(base) = self.inner.mesh.http_base(host_id).await else {
+            return Err(format!("agent {host_id} has no http_base"));
+        };
+        let url = format!("{}/api/device/command", base.trim_end_matches('/'));
+        let body = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+        let (status, text) = http_post_bytes(
+            &url,
+            &[("Content-Type", "application/json")],
+            &body,
+        )
+        .await?;
+        if !(200..300).contains(&status) {
+            return Err(if text.trim().is_empty() {
+                format!("command proxy HTTP {status}")
+            } else {
+                text
+            });
+        }
+        let response: DeviceCommandResponse =
+            serde_json::from_str(&text).map_err(|e| format!("command proxy JSON: {e}"))?;
+        Ok(response.results)
+    }
+
+    pub async fn push_file(
+        &self,
+        target_ids: &[String],
+        filename: &str,
+        dest: &str,
+        bytes: &[u8],
+    ) -> Result<DeviceCommandResponse, String> {
+        let devices = self.resolve_targets(target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online targets for upload".into());
+        }
+        let safe_name = std::path::Path::new(filename)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("upload.bin");
+        let local = std::env::temp_dir().join(format!("phonecontrol-push-{}", uuid::Uuid::new_v4()));
+        tokio::fs::write(&local, bytes)
+            .await
+            .map_err(|e| format!("failed to store upload: {e}"))?;
+        let dest = if dest.ends_with('/') {
+            format!("{dest}{safe_name}")
+        } else {
+            dest.to_string()
+        };
+        let mut results = Vec::new();
+        let Some(adb) = self.inner.adb_path.clone() else {
+            let _ = tokio::fs::remove_file(&local).await;
+            return Ok(DeviceCommandResponse {
+                id: format!("push-{}", uuid::Uuid::new_v4()),
+                op: "push".into(),
+                results: devices
+                    .iter()
+                    .map(|d| op_error(d, "adb is not available"))
+                    .collect(),
+            });
+        };
+        for device in &devices {
+            match crate::device_ops::adb_push(&adb, &device.serial, &local, &dest).await {
+                Ok(output) => results.push(op_ok(device, output)),
+                Err(error) => results.push(op_error(device, error)),
+            }
+        }
+        let _ = tokio::fs::remove_file(&local).await;
+        Ok(DeviceCommandResponse {
+            id: format!("push-{}", uuid::Uuid::new_v4()),
+            op: "push".into(),
+            results,
+        })
+    }
+
+    pub async fn pull_file(&self, device_id: &str, remote: &str) -> Result<(String, Vec<u8>), String> {
+        let devices = self.resolve_targets(std::slice::from_ref(&device_id.to_string())).await?;
+        let Some(device) = devices.into_iter().next() else {
+            return Err("device is not online".into());
+        };
+        let Some(adb) = self.inner.adb_path.clone() else {
+            return Err("adb is not available".into());
+        };
+        let local = std::env::temp_dir().join(format!("phonecontrol-pull-{}", uuid::Uuid::new_v4()));
+        crate::device_ops::adb_pull(&adb, &device.serial, remote, &local).await?;
+        let bytes = tokio::fs::read(&local)
+            .await
+            .map_err(|e| format!("failed to read pulled file: {e}"))?;
+        let _ = tokio::fs::remove_file(&local).await;
+        let name = remote.rsplit('/').next().unwrap_or("download.bin").to_string();
+        Ok((name, bytes))
+    }
+
+    pub async fn handle_scrcpy_options(
+        &self,
+        body: ScrcpyOptionsRequest,
+    ) -> Result<ScrcpyOptionsResponse, String> {
+        let devices = self.resolve_targets(&body.target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online targets".into());
+        }
+        let quality = SessionManager::parse_quality(&body.quality)?.to_string();
+        let prefs = ScrcpyPrefs {
+            quality: quality.clone(),
+            audio: body.audio,
+            screen_off: body.screen_off,
+        };
+        let local_serials = self.local_serial_set().await;
+        let mut local = Vec::new();
+        let mut by_remote: HashMap<String, Vec<Device>> = HashMap::new();
+        for device in devices {
+            if local_serials.contains(&device.serial) {
+                local.push(device);
+            } else {
+                by_remote
+                    .entry(device.effective_host_id().to_string())
+                    .or_default()
+                    .push(device);
+            }
+        }
+
+        let mut restarted = Vec::new();
+        let mut results = Vec::new();
+        if !local.is_empty() {
+            let serials: Vec<String> = local.iter().map(|d| d.serial.clone()).collect();
+            let applied = self
+                .inner
+                .sessions
+                .apply_options(prefs.clone(), &serials)
+                .await?;
+            restarted.extend(applied.restarted.clone());
+            for (serial, result) in applied.power {
+                let device = local.iter().find(|d| d.serial == serial);
+                let (ok, error) = match result {
+                    Ok(()) => (true, None),
+                    Err(e) => (false, Some(e)),
+                };
+                results.push(DeviceOpResult {
+                    device_id: device
+                        .map(|d| d.id.clone())
+                        .unwrap_or_else(|| serial.clone()),
+                    device_name: device.map(|d| d.name.clone()).unwrap_or_default(),
+                    ok,
+                    output: None,
+                    error,
+                });
+            }
+            for serial in applied.restarted {
+                if let Some(session) = self.inner.sessions.get_session(&serial).await {
+                    self.publish(ServerEvent::SessionUpdated { session });
+                }
+            }
+        }
+
+        for (host_id, group) in by_remote {
+            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+            let forward = ScrcpyOptionsRequest {
+                mode: ControlMode::Selected,
+                target_ids: ids,
+                quality: quality.clone(),
+                audio: body.audio,
+                screen_off: body.screen_off,
+            };
+            match self
+                .proxy_json::<ScrcpyOptionsRequest, ScrcpyOptionsResponse>(
+                    &host_id,
+                    "/api/scrcpy/options",
+                    &forward,
+                )
+                .await
+            {
+                Ok(remote) => {
+                    restarted.extend(remote.restarted);
+                    results.extend(remote.results);
+                }
+                Err(e) => {
+                    for device in group {
+                        results.push(op_error(&device, e.clone()));
+                    }
+                }
+            }
+        }
+
+        Ok(ScrcpyOptionsResponse {
+            quality,
+            audio: body.audio,
+            screen_off: body.screen_off,
+            restarted,
+            results,
+        })
+    }
+
+    pub async fn handle_clipboard_set(
+        &self,
+        body: ClipboardSetRequest,
+    ) -> Result<ClipboardResponse, String> {
+        if body.text.len() > 256 * 1024 {
+            return Err("clipboard text is too long".into());
+        }
+        let devices = self.resolve_targets(&body.target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online targets".into());
+        }
+        let local_serials = self.local_serial_set().await;
+        let mut results = Vec::new();
+        let mut by_remote: HashMap<String, Vec<Device>> = HashMap::new();
+        for device in devices {
+            if local_serials.contains(&device.serial) {
+                match self
+                    .inner
+                    .sessions
+                    .set_clipboard(&device.serial, &body.text, body.paste)
+                    .await
+                {
+                    Ok(()) => results.push(DeviceOpResult {
+                        device_id: device.id.clone(),
+                        device_name: device.name.clone(),
+                        ok: true,
+                        output: None,
+                        error: None,
+                    }),
+                    Err(e) => results.push(op_error(&device, e)),
+                }
+            } else {
+                by_remote
+                    .entry(device.effective_host_id().to_string())
+                    .or_default()
+                    .push(device);
+            }
+        }
+        for (host_id, group) in by_remote {
+            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+            let forward = ClipboardSetRequest {
+                mode: ControlMode::Selected,
+                target_ids: ids,
+                text: body.text.clone(),
+                paste: body.paste,
+            };
+            match self
+                .proxy_json::<ClipboardSetRequest, ClipboardResponse>(
+                    &host_id,
+                    "/api/input/clipboard",
+                    &forward,
+                )
+                .await
+            {
+                Ok(remote) => results.extend(remote.results),
+                Err(e) => {
+                    for device in group {
+                        results.push(op_error(&device, e.clone()));
+                    }
+                }
+            }
+        }
+        Ok(ClipboardResponse { results })
+    }
+
+    pub async fn handle_clipboard_pull(
+        &self,
+        body: ClipboardPullRequest,
+    ) -> Result<ClipboardResponse, String> {
+        let devices = self.resolve_targets(&body.target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online targets".into());
+        }
+        let local_serials = self.local_serial_set().await;
+        let mut results = Vec::new();
+        let mut by_remote: HashMap<String, Vec<Device>> = HashMap::new();
+        for device in devices {
+            if local_serials.contains(&device.serial) {
+                match self.inner.sessions.pull_clipboard(&device.serial).await {
+                    Ok(text) => results.push(DeviceOpResult {
+                        device_id: device.id.clone(),
+                        device_name: device.name.clone(),
+                        ok: true,
+                        output: Some(text),
+                        error: None,
+                    }),
+                    Err(e) => results.push(op_error(&device, e)),
+                }
+            } else {
+                by_remote
+                    .entry(device.effective_host_id().to_string())
+                    .or_default()
+                    .push(device);
+            }
+        }
+        for (host_id, group) in by_remote {
+            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+            let forward = ClipboardPullRequest {
+                mode: ControlMode::Selected,
+                target_ids: ids,
+            };
+            match self
+                .proxy_json::<ClipboardPullRequest, ClipboardResponse>(
+                    &host_id,
+                    "/api/input/clipboard/pull",
+                    &forward,
+                )
+                .await
+            {
+                Ok(remote) => results.extend(remote.results),
+                Err(e) => {
+                    for device in group {
+                        results.push(op_error(&device, e.clone()));
+                    }
+                }
+            }
+        }
+        Ok(ClipboardResponse { results })
+    }
+
+    async fn proxy_json<T, R>(&self, host_id: &str, path: &str, body: &T) -> Result<R, String>
+    where
+        T: serde::Serialize,
+        R: serde::de::DeserializeOwned,
+    {
+        if self.inner.role != Role::Controller {
+            return Err(format!("cannot reach remote host {host_id} from agent"));
+        }
+        let base = self
+            .remote_http_base(host_id)
+            .await
+            .ok_or_else(|| format!("agent {host_id} did not advertise http_base"))?;
+        let url = format!(
+            "{}/{}",
+            base.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        );
+        let bytes = serde_json::to_vec(body).map_err(|e| e.to_string())?;
+        let (status, text) = http_post_bytes(&url, &[("Content-Type", "application/json")], &bytes)
+            .await?;
+        if status != 200 {
+            return Err(if text.trim().is_empty() {
+                format!("remote {path} returned {status}")
+            } else {
+                text
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| format!("remote {path} response: {e}"))
+    }
+
+    async fn resolve_known(&self, target_ids: &[String]) -> Result<Vec<Device>, String> {
+        let all = self.list_devices().await;
+        let mut out = Vec::new();
+        for id in target_ids {
+            match all.iter().find(|d| d.id == *id || d.serial == *id) {
+                Some(device) => out.push(device.clone()),
+                None => return Err(format!("unknown device id: {id}")),
+            }
+        }
+        Ok(out)
+    }
+
     async fn resolve_targets(&self, target_ids: &[String]) -> Result<Vec<Device>, String> {
         let all = self.list_devices().await;
         let mut out = Vec::new();
@@ -837,10 +1387,24 @@ impl AppState {
     pub fn spawn_session_reaper(&self) {
         let state = self.clone();
         tokio::spawn(async move {
+            let mut last_recovery: HashMap<String, std::time::Instant> = HashMap::new();
             loop {
                 tokio::time::sleep(Duration::from_secs(SESSION_REAP_SECS)).await;
                 let changed = state.inner.sessions.reap().await;
                 for session in changed {
+                    if session.stream == StreamState::Error {
+                        let due = last_recovery
+                            .get(&session.serial)
+                            .map(|at| at.elapsed() > Duration::from_secs(20))
+                            .unwrap_or(true);
+                        if due {
+                            last_recovery.insert(session.serial.clone(), std::time::Instant::now());
+                            if let Ok(restarted) = state.restart_session(&session.serial).await {
+                                state.publish(ServerEvent::SessionUpdated { session: restarted });
+                                continue;
+                            }
+                        }
+                    }
                     state.publish(ServerEvent::SessionUpdated { session });
                 }
             }
@@ -947,6 +1511,33 @@ fn frame_tap(
         inject: InjectStatus::Stub,
         inject_detail: None,
     }
+}
+
+fn op_ok(device: &Device, output: String) -> DeviceOpResult {
+    DeviceOpResult {
+        device_id: device.id.clone(),
+        device_name: device.name.clone(),
+        ok: true,
+        output: Some(output),
+        error: None,
+    }
+}
+
+fn op_error(device: &Device, error: impl Into<String>) -> DeviceOpResult {
+    DeviceOpResult {
+        device_id: device.id.clone(),
+        device_name: device.name.clone(),
+        ok: false,
+        output: None,
+        error: Some(error.into()),
+    }
+}
+
+fn parse_fractions(raw: &str) -> Vec<f64> {
+    raw.split(',')
+        .filter_map(|part| part.trim().parse::<f64>().ok())
+        .map(|n| if n > 1.0 { n / 100.0 } else { n })
+        .collect()
 }
 
 fn install_error(device: &Device, detail: String) -> NavTargetResult {

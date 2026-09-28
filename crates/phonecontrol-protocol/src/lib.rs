@@ -41,6 +41,8 @@ pub enum NavActionType {
     /// `KEYCODE_VOLUME_DOWN` (25).
     #[serde(rename = "volume_down")]
     VolumeDown,
+    /// `KEYCODE_POWER` (26).
+    Power,
 }
 
 /// Result of attempting to inject input into a device.
@@ -310,6 +312,8 @@ pub enum ServerEvent {
     SessionUpdated { session: SessionStatus },
     /// Mesh host list changed.
     Hosts { hosts: Vec<HostInfo> },
+    /// Phone clipboard text, pushed when the device sends one.
+    Clipboard { serial: String, text: String },
     /// Non-fatal agent notice.
     Notice { message: String },
 }
@@ -374,6 +378,22 @@ impl VideoStatusFrame {
         self.framing = Some("annexb".into());
         self
     }
+}
+
+/// Text status on `/ws/devices/{serial}/audio`.
+/// Binary messages are `opus-pts`: 8-byte big-endian PTS in microseconds, then one Opus packet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioStatusFrame {
+    pub serial: String,
+    pub stream: StreamState,
+    pub note: String,
+    pub codec: String,
+    pub sample_rate: u32,
+    pub channels: u32,
+    pub framing: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 // ── Mesh protocol (agent ↔ controller over `/ws/agent`) ─────────────────────
@@ -577,7 +597,99 @@ pub fn nav_keycode(action: NavActionType) -> i32 {
         NavActionType::Recent => 187,    // KEYCODE_APP_SWITCH
         NavActionType::VolumeUp => 24,   // KEYCODE_VOLUME_UP
         NavActionType::VolumeDown => 25, // KEYCODE_VOLUME_DOWN
+        NavActionType::Power => 26,      // KEYCODE_POWER
     }
+}
+
+/// POST /api/device/command — one operation, fanned out to the same targets as nav.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCommandRequest {
+    pub target_ids: Vec<String>,
+    pub op: String,
+    #[serde(default)]
+    pub arg: Option<String>,
+    #[serde(default)]
+    pub arg2: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceOpResult {
+    pub device_id: String,
+    pub device_name: String,
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCommandResponse {
+    pub id: String,
+    pub op: String,
+    pub results: Vec<DeviceOpResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostFileEntry {
+    pub name: String,
+    pub path: String,
+    pub dir: bool,
+    pub size: u64,
+}
+
+/// POST /api/scrcpy/options — quality, audio, and screen power for the current targets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrcpyOptionsRequest {
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+    /// `low` | `balanced` | `high` | `original`
+    pub quality: String,
+    pub audio: bool,
+    pub screen_off: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrcpyOptionsResponse {
+    pub quality: String,
+    pub audio: bool,
+    pub screen_off: bool,
+    #[serde(default)]
+    pub restarted: Vec<String>,
+    #[serde(default)]
+    pub results: Vec<DeviceOpResult>,
+}
+
+/// POST /api/input/clipboard — PC text onto the phone clipboard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardSetRequest {
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+    pub text: String,
+    /// When true, scrcpy also pastes into the focused field.
+    #[serde(default)]
+    pub paste: bool,
+}
+
+/// POST /api/input/clipboard/pull — ask the phone for its clipboard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardPullRequest {
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardResponse {
+    pub results: Vec<DeviceOpResult>,
 }
 
 /// Build `adb -s SERIAL shell input tap X Y` argv (excluding the adb binary).
@@ -675,6 +787,7 @@ mod tests {
         assert_eq!(nav_keycode(NavActionType::Recent), 187);
         assert_eq!(nav_keycode(NavActionType::VolumeUp), 24);
         assert_eq!(nav_keycode(NavActionType::VolumeDown), 25);
+        assert_eq!(nav_keycode(NavActionType::Power), 26);
         let args = adb_keyevent_args("SERIAL", 24);
         assert_eq!(
             args,
