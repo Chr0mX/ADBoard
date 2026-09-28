@@ -76,7 +76,7 @@ export function AutomatePanel() {
             key={id}
             type="button"
             aria-pressed={tab === id}
-            className={`h-11 rounded-lg px-3 text-sm ${tab === id ? "bg-[var(--pc-accent)] text-white" : "border border-[var(--pc-line)]"}`}
+            className={`h-11 rounded-lg px-3 text-sm ${tab === id ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
             onClick={() => setTab(id)}
           >
             {label}

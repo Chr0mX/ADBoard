@@ -50,47 +50,48 @@
 }
 
 :root {
-  /* Phone Control palette — cool slate desk, teal signal, ink brand */
-  --pc-paper: #f3f6f8;
-  --pc-ink: #13202b;
-  --pc-muted: #5d6f7c;
-  --pc-line: color-mix(in srgb, #13202b 12%, transparent);
-  --pc-panel: color-mix(in srgb, #ffffff 78%, #d7e4ea);
-  --pc-accent: #0d7377;
-  --pc-accent-soft: color-mix(in srgb, #0d7377 14%, white);
-  --pc-signal: #1a9f6e;
-  --pc-signal-soft: color-mix(in srgb, #1a9f6e 16%, white);
-  --pc-warn: #c45c26;
-  --pc-warn-soft: color-mix(in srgb, #c45c26 14%, white);
-  --pc-frame: #161d24;
+  /* Phone Control palette — dark desk, teal signal */
+  --pc-paper: #0e141b;
+  --pc-ink: #e8eef2;
+  --pc-muted: #9aadb8;
+  --pc-line: color-mix(in srgb, #e8eef2 14%, transparent);
+  --pc-panel: #1a242e;
+  --pc-accent: #8eeadf;
+  --pc-accent-fill: #0e7a73;
+  --pc-accent-soft: color-mix(in srgb, #8eeadf 16%, #121a22);
+  --pc-signal: #3dcc8a;
+  --pc-signal-soft: color-mix(in srgb, #3dcc8a 18%, #121a22);
+  --pc-warn: #ff9b63;
+  --pc-warn-soft: color-mix(in srgb, #ff9b63 16%, #121a22);
+  --pc-frame: #070b0f;
 
   --background: var(--pc-paper);
   --foreground: var(--pc-ink);
   --card: var(--pc-panel);
   --card-foreground: var(--pc-ink);
-  --popover: #ffffff;
+  --popover: #182229;
   --popover-foreground: var(--pc-ink);
-  --primary: var(--pc-accent);
+  --primary: var(--pc-accent-fill);
   --primary-foreground: #f4fffe;
-  --secondary: color-mix(in srgb, #d7e4ea 70%, white);
+  --secondary: #24303a;
   --secondary-foreground: var(--pc-ink);
-  --muted: color-mix(in srgb, #d7e4ea 55%, white);
+  --muted: #24303a;
   --muted-foreground: var(--pc-muted);
   --accent: var(--pc-accent-soft);
   --accent-foreground: var(--pc-accent);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.704 0.191 22.216);
   --border: var(--pc-line);
-  --input: var(--pc-line);
+  --input: color-mix(in srgb, #e8eef2 16%, #0e141b);
   --ring: var(--pc-accent);
-  --chart-1: oklch(0.55 0.08 200);
-  --chart-2: oklch(0.62 0.1 160);
-  --chart-3: oklch(0.5 0.08 40);
-  --chart-4: oklch(0.45 0.05 240);
-  --chart-5: oklch(0.35 0.04 220);
+  --chart-1: oklch(0.72 0.1 190);
+  --chart-2: oklch(0.74 0.12 160);
+  --chart-3: oklch(0.75 0.1 40);
+  --chart-4: oklch(0.68 0.06 240);
+  --chart-5: oklch(0.6 0.04 220);
   --radius: 0.625rem;
   --sidebar: var(--pc-panel);
   --sidebar-foreground: var(--pc-ink);
-  --sidebar-primary: var(--pc-accent);
+  --sidebar-primary: var(--pc-accent-fill);
   --sidebar-primary-foreground: #f4fffe;
   --sidebar-accent: var(--pc-accent-soft);
   --sidebar-accent-foreground: var(--pc-accent);
@@ -107,6 +108,13 @@
   }
   html {
     @apply font-sans;
+    color-scheme: dark;
+  }
+  input,
+  textarea,
+  select {
+    background-color: var(--pc-panel);
+    color: var(--pc-ink);
   }
 }
 
@@ -129,20 +137,20 @@
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(ellipse 90% 60% at 12% -10%, rgba(13, 115, 119, 0.18), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 95% 10%, rgba(45, 90, 130, 0.14), transparent 50%),
-    radial-gradient(ellipse 60% 40% at 50% 110%, rgba(26, 159, 110, 0.1), transparent 45%),
-    linear-gradient(165deg, #e8eef2 0%, #f3f6f8 42%, #dde7ec 100%);
+    radial-gradient(ellipse 90% 60% at 12% -10%, rgba(142, 234, 223, 0.14), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 95% 10%, rgba(70, 120, 180, 0.12), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 50% 110%, rgba(61, 204, 138, 0.08), transparent 45%),
+    linear-gradient(165deg, #0c1218 0%, #121a22 48%, #0d1614 100%);
 }
 
 .pc-atmosphere::before {
   content: "";
   position: absolute;
   inset: 0;
-  opacity: 0.35;
+  opacity: 0.4;
   background-image:
-    linear-gradient(rgba(19, 32, 43, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(19, 32, 43, 0.035) 1px, transparent 1px);
+    linear-gradient(rgba(232, 238, 242, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232, 238, 242, 0.035) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black, transparent);
 }

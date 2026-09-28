@@ -66,7 +66,7 @@ export function ManagePanel() {
             key={item.id}
             type="button"
             aria-pressed={tab === item.id}
-            className={`h-11 rounded-lg px-3 text-sm ${tab === item.id ? "bg-[var(--pc-accent)] text-white" : "border border-[var(--pc-line)]"}`}
+            className={`h-11 rounded-lg px-3 text-sm ${tab === item.id ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
             onClick={() => setTab(item.id)}
           >
             {item.label}
@@ -231,7 +231,7 @@ function RecordTools({
         <select
           value={size}
           onChange={(event) => setSize(event.target.value)}
-          className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-white px-2"
+          className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] px-2"
         >
           <option value="1280x720">1280 × 720</option>
           <option value="1920x1080">1920 × 1080</option>
@@ -243,7 +243,7 @@ function RecordTools({
         <select
           value={fps}
           onChange={(event) => setFps(event.target.value)}
-          className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-white px-2"
+          className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] px-2"
         >
           <option value="device">Device default</option>
           <option value="30">30</option>
@@ -255,12 +255,12 @@ function RecordTools({
         <input
           value={bitrate}
           onChange={(event) => setBitrate(event.target.value)}
-          className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-white px-2 font-mono text-xs"
+          className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] px-2 font-mono text-xs"
         />
       </label>
       <label className="text-sm">
         Format
-        <input value="mp4" readOnly className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-white px-2" />
+        <input value="mp4" readOnly className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] px-2" />
       </label>
       <label className="flex min-h-11 items-center gap-2 text-sm">
         <input type="checkbox" disabled />
@@ -271,14 +271,14 @@ function RecordTools({
         <input
           value={dest}
           onChange={(event) => setDest(event.target.value)}
-          className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-white px-2 font-mono text-xs"
+          className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] px-2 font-mono text-xs"
         />
       </label>
       <div className="flex gap-2 sm:col-span-2">
         <button
           type="submit"
           disabled={busy}
-          className="h-11 rounded-lg bg-[var(--pc-accent)] px-4 text-sm font-semibold text-white"
+          className="h-11 rounded-lg bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold text-white"
         >
           Start
         </button>

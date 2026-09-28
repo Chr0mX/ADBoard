@@ -24,7 +24,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
             aria-current={section === item.id ? "page" : undefined}
             className={`inline-flex h-11 shrink-0 items-center justify-center rounded-lg px-2.5 text-sm leading-5 ${
               section === item.id
-                ? "bg-[var(--pc-accent)] text-white"
+                ? "bg-[var(--pc-accent-fill)] text-white"
                 : "text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
             }`}
             onClick={() => onSection(item.id)}

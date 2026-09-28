@@ -39,7 +39,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${syne.variable} ${figtree.variable} ${jetbrains.variable} h-full antialiased`}
+      className={`${syne.variable} ${figtree.variable} ${jetbrains.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
         <TooltipProvider>

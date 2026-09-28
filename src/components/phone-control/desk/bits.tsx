@@ -169,7 +169,7 @@ export function ConfirmDialog({
           <button
             type="button"
             disabled={busy}
-            className="h-11 rounded-lg bg-[var(--pc-accent)] px-3 text-sm font-medium text-white disabled:opacity-60"
+            className="h-11 rounded-lg bg-[var(--pc-accent-fill)] px-3 text-sm font-medium text-white disabled:opacity-60"
             onClick={onConfirm}
           >
             {confirmLabel}
@@ -198,7 +198,7 @@ export function TextField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 rounded-lg border border-[var(--pc-line)] bg-white px-2 font-mono text-xs"
+        className="h-11 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-xs text-[var(--pc-ink)]"
       />
     </label>
   );
@@ -220,7 +220,7 @@ export function PrimaryButton({
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className="h-11 rounded-lg bg-[var(--pc-accent)] px-4 text-sm font-semibold tracking-wide text-white disabled:opacity-60"
+      className="h-11 rounded-lg bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold tracking-wide text-white disabled:opacity-60"
     >
       {children}
     </button>
