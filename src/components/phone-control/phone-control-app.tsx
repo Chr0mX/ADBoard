@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { toast } from "sonner";
 import { ControlHeader } from "@/components/phone-control/control-header";
 import { ControlModes } from "@/components/phone-control/control-modes";
 import { DeviceGrid } from "@/components/phone-control/device-grid";
@@ -60,21 +59,12 @@ export function PhoneControlApp() {
     frameWidth: number;
     frameHeight: number;
   }) => {
-    const result = await handlePointer(
+    await handlePointer(
       event.phase,
       event.point,
       event.frameWidth,
       event.frameHeight,
     );
-    if (event.phase === "move" || event.phase === "down") return;
-    const failed = result?.targets?.filter((t) => t.inject === "error") ?? [];
-    if (failed.length === 0) return;
-    toast.error("Touch failed", {
-      id: "pointer-inject",
-      description: failed
-        .map((t) => t.injectDetail || t.deviceName)
-        .join(" · "),
-    });
   };
 
   const showDevices = !fillWindow && (wide || devicesOpen);

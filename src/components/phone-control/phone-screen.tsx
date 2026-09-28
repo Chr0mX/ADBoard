@@ -394,10 +394,13 @@ export function PhoneScreen({
       )}
       {pointerFailed && lastTap && (
         <p className="truncate text-center font-mono text-[10px] text-[var(--pc-warn)]">
-          {lastTap.targets
-            .filter((t) => t.inject === "error")
-            .map((t) => t.injectDetail || `${t.deviceName} failed`)
-            .join(" · ") || `${broadcastLabel} failed`}
+          {[
+            ...new Set(
+              lastTap.targets
+                .filter((t) => t.inject === "error")
+                .map((t) => t.injectDetail || `${t.deviceName} failed`),
+            ),
+          ].join(" · ") || `${broadcastLabel} failed`}
         </p>
       )}
     </section>
