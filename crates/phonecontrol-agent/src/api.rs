@@ -4,7 +4,7 @@ use crate::device_manager::AppState;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
@@ -13,7 +13,9 @@ use phonecontrol_protocol::{
     ServerEvent, SessionStatus, TapRequest, VideoStatusFrame,
 };
 use tokio::sync::mpsc;
+use std::path::PathBuf;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, warn};
 
@@ -23,7 +25,7 @@ pub fn router(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let mut router = Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
         .route("/api/devices", get(list_devices))
@@ -38,10 +40,46 @@ pub fn router(state: AppState) -> Router {
         .route("/ws", get(ws_upgrade))
         .route("/ws/events", get(ws_upgrade))
         .route("/ws/agent", get(ws_agent_upgrade))
-        .route("/ws/devices/{serial}/video", get(ws_video_upgrade))
+        .route("/ws/devices/{serial}/video", get(ws_video_upgrade));
+
+    if let Some(dir) = ui_dir() {
+        info!(path = %dir.display(), "serving control UI at /");
+        router = router.fallback_service(
+            ServeDir::new(dir).append_index_html_on_directories(true),
+        );
+    } else {
+        warn!("no ui/index.html next to the executable — GET / has no page");
+        router = router.route("/", get(ui_not_bundled));
+    }
+
+    router
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+fn ui_dir() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("ui"));
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("ui"));
+        candidates.push(cwd.join("dist/windows/ui"));
+    }
+    candidates
+        .into_iter()
+        .find(|dir| dir.join("index.html").is_file())
+}
+
+async fn ui_not_bundled() -> Html<&'static str> {
+    Html(
+        "<!doctype html><meta charset=\"utf-8\"><title>Phone Control</title>\
+         <p>Phone Control is running, but the web UI was not found next to the executable.</p>\
+         <p><a href=\"/health\">Health</a></p>",
+    )
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {

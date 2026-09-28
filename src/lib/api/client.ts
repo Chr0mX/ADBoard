@@ -89,10 +89,16 @@ export function createMockDevicesClient(): DevicesClient {
 function agentBaseUrl(): string | null {
   const raw = process.env.NEXT_PUBLIC_AGENT_URL?.trim();
   if (!raw) return null;
+  // Packaged UI is served by the agent itself.
+  if (raw === "same" || raw === "same-origin") return "";
   return raw.replace(/\/$/, "");
 }
 
 function httpToWs(base: string): string {
+  if (!base && typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
+    return `${proto}${window.location.host}`;
+  }
   if (base.startsWith("https://")) return `wss://${base.slice("https://".length)}`;
   if (base.startsWith("http://")) return `ws://${base.slice("http://".length)}`;
   return base;
@@ -209,8 +215,11 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
 
 function createDevicesClient(): DevicesClient {
   const agent = agentBaseUrl();
-  if (agent) {
-    console.info("[phone-control] using agent at", agent);
+  if (agent !== null) {
+    console.info(
+      "[phone-control] using agent at",
+      agent || "same origin",
+    );
     return createAgentDevicesClient(agent);
   }
   console.info("[phone-control] NEXT_PUBLIC_AGENT_URL unset — using mock client");

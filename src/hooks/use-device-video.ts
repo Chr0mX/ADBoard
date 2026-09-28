@@ -35,10 +35,15 @@ export type VideoDecodeState =
 function agentBaseUrl(): string | null {
   const raw = process.env.NEXT_PUBLIC_AGENT_URL?.trim();
   if (!raw) return null;
+  if (raw === "same" || raw === "same-origin") return "";
   return raw.replace(/\/$/, "");
 }
 
 function httpToWs(base: string): string {
+  if (!base && typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
+    return `${proto}${window.location.host}`;
+  }
   if (base.startsWith("https://")) return `wss://${base.slice("https://".length)}`;
   if (base.startsWith("http://")) return `ws://${base.slice("http://".length)}`;
   return base;
@@ -71,7 +76,7 @@ export function useDeviceVideo(
   const [status, setStatus] = useState<VideoStatusMessage | null>(null);
   const [decodeState, setDecodeState] = useState<VideoDecodeState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const configured = Boolean(agentBaseUrl());
+  const configured = agentBaseUrl() !== null;
 
   const paintFrame = useCallback((frame: VideoFrame) => {
     const canvas = canvasRef.current;
@@ -99,7 +104,8 @@ export function useDeviceVideo(
     }
 
     const base = agentBaseUrl();
-    if (!base) {
+    // "" is same-origin (packaged UI). Only null means the in-browser mock.
+    if (base === null) {
       setDecodeState("idle");
       setError(null);
       return;

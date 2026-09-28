@@ -68,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         host = %host_name,
         "phonecontrol-agent listening (HTTP + WS)"
     );
+    info!("  GET  /          (control UI)");
     info!("  GET  /health");
     info!("  GET  /api/devices");
     info!("  GET  /api/hosts");

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Assemble / refresh dist/windows/ with a fresh PhoneControl.exe (no MSI).
 #
-# Committed tree already contains README, Start-PhoneControl.ps1, .env.example,
-# and vendor/*/README placeholders. This script only builds + copies the exe.
+# Builds the same-origin control page into dist/windows/ui and copies
+# PhoneControl.exe beside it. README, run.bat, and vendor placeholders stay committed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,6 +12,16 @@ TARGET="${PHONECONTROL_WINDOWS_TARGET:-x86_64-pc-windows-gnu}"
 PROFILE="${PHONECONTROL_CARGO_PROFILE:-release}"
 DIST="${PHONECONTROL_WINDOWS_DIST:-dist/windows}"
 BUILD="${PHONECONTROL_SKIP_BUILD:-0}"
+
+if [[ "${PHONECONTROL_SKIP_UI:-0}" != "1" ]]; then
+  echo "==> static control UI (same origin as the agent)"
+  PHONECONTROL_STATIC_EXPORT=1 NEXT_PUBLIC_AGENT_URL=same \
+    npx next build --webpack
+  rm -rf "$DIST/ui"
+  mkdir -p "$DIST/ui"
+  cp -a "$ROOT/out/." "$DIST/ui/"
+  test -f "$DIST/ui/index.html"
+fi
 
 if [[ "$BUILD" != "1" ]]; then
   bash "$ROOT/scripts/build-windows.sh"

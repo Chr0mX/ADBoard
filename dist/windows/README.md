@@ -9,6 +9,7 @@ This is **not** a signed installer / MSI. Copy the folder, drop in ADB + scrcpy,
 
 ```text
 PhoneControl.exe           # controller (or agent) binary
+ui/                        # control page served at http://127.0.0.1:3848/
 run.bat                    # double-click: starts PhoneControl.exe, vendor tools only
 Start-PhoneControl.ps1     # same launch, with -Mock / -Bind switches
 .env.example               # copy to .env and edit (optional; script also sets defaults)
@@ -33,10 +34,10 @@ Caches under `./temp/`; installs into `vendor/adb/` and `vendor/scrcpy/`. See th
 
 ## Run (controller on this PC)
 
-Double-click `run.bat` in this folder, or from the repo root. It starts `PhoneControl.exe` and uses `vendor\adb` and `vendor\scrcpy` beside it.
+Double-click `run.bat` in this folder, or from the repo root. It starts `PhoneControl.exe` and uses `vendor\adb` and `vendor\scrcpy` beside it. The same process serves the control page from `ui/` — open that URL in a browser. A separate Node server is not required.
 
 ```text
-http://127.0.0.1:3848
+http://127.0.0.1:3848/
 ```
 
 PowerShell, when you need `-Mock` or a different bind address:
@@ -58,11 +59,7 @@ $env:SCRCPY_PATH = "$PWD\vendor\scrcpy\scrcpy.exe"
 .\PhoneControl.exe
 ```
 
-Point the Next.js UI at the controller:
-
-```text
-NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848
-```
+The page at `/` talks to this process on the same origin. A dev checkout can still point a separate Next server at the agent with `NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848`.
 
 ## Bind address: `127.0.0.1` vs `0.0.0.0`
 
