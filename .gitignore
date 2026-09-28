@@ -45,9 +45,6 @@ next-env.d.ts
 /target/
 **/*.rs.bk
 
-# Windows pack: keep docs/scripts; ignore the cross-built exe
-/dist/windows/PhoneControl.exe
-
 # Allow Windows pack env example (root .env* rule would otherwise hide it)
 !dist/windows/.env.example
 

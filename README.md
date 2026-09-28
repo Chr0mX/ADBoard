@@ -164,7 +164,7 @@ Zip-ready folder (no MSI / signed installer). Same binary as Linux; renamed to `
 
 ```text
 dist/windows/
-  PhoneControl.exe           # produced by make package-windows (not in git)
+  PhoneControl.exe           # Windows controller (double-click run.bat)
   run.bat                    # double-click: exe + vendor\adb and vendor\scrcpy
   Start-PhoneControl.ps1
   .env.example
