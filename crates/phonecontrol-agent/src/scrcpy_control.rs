@@ -268,6 +268,7 @@ async fn read_device_messages(
 }
 
 /// One scrcpy socket (audio-only server): connect, then read the dummy byte.
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn open_audio_socket(addr: SocketAddr, budget: Duration) -> Result<TcpStream, String> {
     let start = std::time::Instant::now();
     let mut last = "scrcpy audio server did not send the handshake byte".to_string();
