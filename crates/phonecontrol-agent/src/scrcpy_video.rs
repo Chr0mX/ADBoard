@@ -295,6 +295,10 @@ pub fn build_server_shell_command(
 /// Audio-only server. No `raw_stream`, so codec id + packet headers stay on.
 /// Socket name is `scrcpy_{scid:08x}` (scid=-1 would steal the video socket).
 /// `scid` is hex: `Options.parse` uses `Integer.parseInt(value, 16)`.
+/// This socket is the server's first socket, so scrcpy still writes the 64-byte
+/// device name before the codec id (the same prefix `scrcpy.exe` reads). The
+/// audio pump skips that name. Do not set `raw_stream` here: it also strips
+/// the Opus headers.
 pub fn build_audio_server_command(remote_jar: &str, version: &str, scid: u32) -> String {
     let opts = [
         format!("scid={scid:x}"),

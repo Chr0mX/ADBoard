@@ -3,9 +3,17 @@
 //!
 //! The video server stays `raw_stream=true` with no frame headers. Audio uses
 //! its own socket so those headers never land on the H264 parser.
-//! After the dummy byte the audio socket is: 4-byte codec id, then 12-byte
-//! packet headers (`pts+flags` u64 BE, size u32 BE) and the payload.
-//! Config packets (flag bit 63) are the OpusHead description.
+//!
+//! An audio-only server's socket is the *first* socket, so scrcpy writes the
+//! same prefix the official client reads (`DesktopConnection.sendDeviceMeta`):
+//! the dummy byte (consumed during connect), then a 64-byte device name, then
+//! the 4-byte codec id. The name is the phone model (`2312DRAABC` on this
+//! Redmi). Reading those bytes as a codec id yields `0x32333132`.
+//!
+//! Packet headers are 12 bytes (`pts+flags` u64 BE, size u32 BE). scrcpy 3.x
+//! marks a config packet with bit 63. scrcpy 4.x moved that to bit 62 and uses
+//! bit 63 for video session packets. The Opus description itself starts with
+//! `OpusHead`, which is what the player needs.
 
 use phonecontrol_protocol::{AudioStatusFrame, StreamState};
 use std::collections::HashMap;
@@ -15,6 +23,11 @@ use tokio::sync::{broadcast, Mutex};
 use tracing::warn;
 
 pub const OPUS_CODEC_ID: u32 = 0x6f70_7573;
+const AAC_CODEC_ID: u32 = 0x0061_6163;
+const FLAC_CODEC_ID: u32 = 0x666c_6163;
+const RAW_CODEC_ID: u32 = 0x0072_6177;
+/// `DesktopConnection.DEVICE_NAME_FIELD_LENGTH` in scrcpy 4.1.
+const DEVICE_NAME_LEN: usize = 64;
 const MAX_PACKET: u32 = 1_000_000;
 
 #[derive(Clone)]
@@ -95,12 +108,69 @@ pub fn encode_opus_packet(pts_us: u64, data: &[u8]) -> Vec<u8> {
 }
 
 /// Split one scrcpy audio packet header.
+///
+/// `legacy_config` is bit 63, the scrcpy 3.x config flag. scrcpy 4.x uses that
+/// bit for video session packets and puts the config flag in bit 62; the pump
+/// also treats a payload that starts with `OpusHead` as the description.
+/// PTS keeps the low 61 bits so neither generation's flag bits leak into it.
 pub fn parse_packet_header(header: &[u8; 12]) -> (bool, u64, u32) {
     let pts_flags = u64::from_be_bytes(header[0..8].try_into().unwrap());
-    let config = pts_flags & (1 << 63) != 0;
-    let pts = pts_flags & ((1 << 62) - 1);
+    let legacy_config = pts_flags & (1 << 63) != 0;
+    let pts = pts_flags & ((1 << 61) - 1);
     let len = u32::from_be_bytes(header[8..12].try_into().unwrap());
-    (config, pts, len)
+    (legacy_config, pts, len)
+}
+
+fn is_known_audio_codec(id: u32) -> bool {
+    matches!(id, OPUS_CODEC_ID | AAC_CODEC_ID | FLAC_CODEC_ID | RAW_CODEC_ID)
+}
+
+fn codec_id_error(codec_id: u32) -> Result<u32, String> {
+    match codec_id {
+        OPUS_CODEC_ID => Ok(codec_id),
+        0 => Err("device turned audio capture off".into()),
+        1 => Err("scrcpy audio configuration error".into()),
+        AAC_CODEC_ID | FLAC_CODEC_ID | RAW_CODEC_ID => Err(format!(
+            "audio codec is not opus ({codec_id:#x})"
+        )),
+        _ => Err(format!("audio codec is not opus ({codec_id:#x})")),
+    }
+}
+
+fn opus_head(data: &[u8]) -> bool {
+    data.starts_with(b"OpusHead")
+}
+
+/// Codec id, after the 64-byte device name when this socket is the first one.
+async fn read_audio_codec<R>(reader: &mut R, serial: &str) -> Result<u32, String>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut word = [0u8; 4];
+    reader
+        .read_exact(&mut word)
+        .await
+        .map_err(|e| format!("audio codec id: {e}"))?;
+    let first = u32::from_be_bytes(word);
+    if is_known_audio_codec(first) || first <= 1 {
+        return codec_id_error(first);
+    }
+    let mut rest = [0u8; DEVICE_NAME_LEN - 4];
+    reader
+        .read_exact(&mut rest)
+        .await
+        .map_err(|e| format!("audio device name: {e}"))?;
+    let mut name = [0u8; DEVICE_NAME_LEN];
+    name[..4].copy_from_slice(&word);
+    name[4..].copy_from_slice(&rest);
+    let end = name.iter().position(|b| *b == 0).unwrap_or(name.len());
+    let device = String::from_utf8_lossy(&name[..end]);
+    tracing::info!(%serial, %device, "scrcpy audio device name");
+    reader
+        .read_exact(&mut word)
+        .await
+        .map_err(|e| format!("audio codec id: {e}"))?;
+    codec_id_error(u32::from_be_bytes(word))
 }
 
 pub fn b64_encode(data: &[u8]) -> String {
@@ -158,15 +228,7 @@ pub async fn run_opus_pump<R>(hub: Arc<AudioHub>, serial: &str, mut reader: R) -
 where
     R: AsyncRead + Unpin,
 {
-    let mut codec = [0u8; 4];
-    reader
-        .read_exact(&mut codec)
-        .await
-        .map_err(|e| format!("audio codec id: {e}"))?;
-    let codec_id = u32::from_be_bytes(codec);
-    if codec_id != OPUS_CODEC_ID {
-        return Err(format!("audio codec is not opus ({codec_id:#x})"));
-    }
+    read_audio_codec(&mut reader, serial).await?;
 
     let mut description: Option<String> = None;
     loop {
@@ -174,7 +236,7 @@ where
         if reader.read_exact(&mut header).await.is_err() {
             return Ok(());
         }
-        let (config, pts, len) = parse_packet_header(&header);
+        let (legacy_config, pts, len) = parse_packet_header(&header);
         if len > MAX_PACKET {
             return Err("audio packet is too large".into());
         }
@@ -183,6 +245,9 @@ where
             .read_exact(&mut data)
             .await
             .map_err(|e| format!("audio packet: {e}"))?;
+        // 3.x sets bit 63. 4.x sets bit 62 and the payload is the OpusHead
+        // block the browser has to configure with.
+        let config = legacy_config || opus_head(&data);
         if config {
             let encoded = b64_encode(&data);
             description = Some(encoded.clone());
@@ -233,6 +298,16 @@ mod tests {
         assert!(config);
         assert_eq!(pts, 1234);
         assert_eq!(len, 19);
+
+        // scrcpy 4.x: bit 62 is the config flag, bit 61 is the keyframe flag.
+        let mut v4 = [0u8; 12];
+        let flags = (1u64 << 62) | (1u64 << 61) | 77;
+        v4[0..8].copy_from_slice(&flags.to_be_bytes());
+        v4[8..12].copy_from_slice(&8u32.to_be_bytes());
+        let (legacy, pts, len) = parse_packet_header(&v4);
+        assert!(!legacy);
+        assert_eq!(pts, 77);
+        assert_eq!(len, 8);
     }
 
     #[test]
@@ -281,6 +356,65 @@ mod tests {
                 AudioFrame::Status(status) => {
                     assert_eq!(status.codec, "opus");
                     assert_eq!(status.description.as_deref(), Some(b64_encode(b"head").as_str()));
+                    saw_status = true;
+                }
+                AudioFrame::Packet(bytes) => {
+                    assert_eq!(&bytes[..8], &50u64.to_be_bytes());
+                    assert_eq!(&bytes[8..], &[0xf8, 0xff]);
+                    saw_packet = true;
+                    break;
+                }
+            }
+        }
+        assert!(saw_status && saw_packet);
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn pump_skips_device_name_and_reads_scrcpy4_config() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut name = [0u8; 64];
+            name[..10].copy_from_slice(b"2312DRAABC");
+            sock.write_all(&name).await.unwrap();
+            sock.write_all(&OPUS_CODEC_ID.to_be_bytes()).await.unwrap();
+            let mut config = [0u8; 12];
+            let flags = 1u64 << 62;
+            config[0..8].copy_from_slice(&flags.to_be_bytes());
+            config[8..12].copy_from_slice(&8u32.to_be_bytes());
+            sock.write_all(&config).await.unwrap();
+            sock.write_all(b"OpusHead").await.unwrap();
+            let mut data = [0u8; 12];
+            data[0..8].copy_from_slice(&50u64.to_be_bytes());
+            data[8..12].copy_from_slice(&2u32.to_be_bytes());
+            sock.write_all(&data).await.unwrap();
+            sock.write_all(&[0xf8, 0xff]).await.unwrap();
+        });
+
+        let hub = AudioHub::new();
+        let (mut rx, _) = hub.subscribe("2312DRAABC").await;
+        let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let pump = hub.clone();
+        let task = tokio::spawn(async move {
+            run_opus_pump(pump, "2312DRAABC", stream).await.unwrap();
+        });
+
+        let mut saw_status = false;
+        let mut saw_packet = false;
+        for _ in 0..8 {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            match frame {
+                AudioFrame::Status(status) => {
+                    assert_eq!(status.stream, StreamState::Streaming);
+                    assert_eq!(
+                        status.description.as_deref(),
+                        Some(b64_encode(b"OpusHead").as_str())
+                    );
                     saw_status = true;
                 }
                 AudioFrame::Packet(bytes) => {
