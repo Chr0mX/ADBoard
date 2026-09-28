@@ -206,7 +206,7 @@ export function usePhoneControl() {
       else next.delete(deviceId);
       return next;
     });
-    if (selected && storedMode(readControlMode()) === "selected") setControlMode("multi");
+    if (storedMode(readControlMode()) === "selected") setControlMode("multi");
   }, [setControlMode]);
 
   const broadcastTargets = useMemo(() => {
