@@ -133,8 +133,13 @@ export function PhoneScreen({
     const node = stageRef.current;
     if (!node) return;
     const measure = () => {
-      const width = node.clientWidth;
-      const height = node.clientHeight;
+      const style = getComputedStyle(node);
+      const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      // clientWidth includes padding. The picture has to fit the content box
+      // or the flex item is shrunk on one axis and the aspect ratio breaks.
+      const width = Math.max(0, Math.floor(node.clientWidth - padX));
+      const height = Math.max(0, Math.floor(node.clientHeight - padY));
       setStageSize((prev) =>
         prev.width === width && prev.height === height ? prev : { width, height },
       );
@@ -279,7 +284,7 @@ export function PhoneScreen({
             onPointerUp={(e) => finishPointer(e, "up")}
             onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
-              "relative touch-none overflow-hidden select-none",
+              "relative shrink-0 touch-none overflow-hidden select-none",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
