@@ -132,6 +132,13 @@ export function PhoneScreen({
   const videoHeight = frameSize?.height || (configured ? 16 : device?.resolution.height || 16);
   const fitted = fitVideoBox(stageSize.width, stageSize.height, videoWidth, videoHeight);
   const orientation = videoWidth >= videoHeight ? "landscape" : "portrait";
+  // Portrait pictures leave a gutter on each side of the stage. Park volume and
+  // power there so the bottom row is only navigation. A tight gutter would
+  // cover the picture, so those buttons stay in the row until there is room.
+  const sideGutter = Math.max(0, Math.floor((stageSize.width - fitted.width) / 2));
+  const sideControls = !fillWindow && fitted.width > 0 && sideGutter >= 72;
+  const railClass =
+    "h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]";
 
   useLayoutEffect(() => {
     const node = stageRef.current;
@@ -254,6 +261,7 @@ export function PhoneScreen({
   return (
     <section
       data-fill={fillWindow ? "1" : "0"}
+      data-side-controls={sideControls ? "1" : "0"}
       data-device-id={device?.id ?? ""}
       data-device-name={device?.name ?? ""}
       className={cn("relative flex min-h-0 flex-1 flex-col", compactFill ? "gap-0" : "gap-2")}
@@ -270,7 +278,7 @@ export function PhoneScreen({
             ref={stageRef}
             data-screen-stage
             className={cn(
-              "flex min-h-0 w-full flex-1 items-center justify-center [container-type:size]",
+              "relative flex min-h-0 w-full flex-1 items-center justify-center [container-type:size]",
               compactFill ? "px-0" : "px-1.5",
             )}
           >
@@ -419,19 +427,68 @@ export function PhoneScreen({
             )}
 
           </div>
+          {sideControls && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+              <div className="relative h-full" style={{ width: fitted.width }}>
+                <div
+                  data-side-volume
+                  className="pointer-events-auto absolute right-full top-1/2 flex -translate-y-1/2 flex-col gap-2 pr-2"
+                >
+                  {(
+                    [
+                      ["volume_up", "Vol+"],
+                      ["volume_down", "Vol−"],
+                    ] as const
+                  ).map(([action, name]) => (
+                    <Button
+                      key={action}
+                      type="button"
+                      variant="ghost"
+                      disabled={offline}
+                      onClick={() => onNav(action)}
+                      aria-label={action === "volume_up" ? "Volume up" : "Volume down"}
+                      className={railClass}
+                    >
+                      {name}
+                    </Button>
+                  ))}
+                </div>
+                <div
+                  data-side-power
+                  className="pointer-events-auto absolute left-full top-1/2 -translate-y-1/2 pl-2"
+                >
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={offline}
+                    onClick={() => onNav("power")}
+                    aria-label="Power"
+                    className={railClass}
+                  >
+                    Power
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
           </div>
 
           {!compactFill && (
-          <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
-            {(
-              [
-                ["back", "Back"],
-                ["home", "Home"],
-                ["recent", "Recent"],
-                ["volume_down", "Vol−"],
-                ["volume_up", "Vol+"],
-                ["power", "Power"],
-              ] as const
+          <div data-nav-row className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
+            {(sideControls
+              ? ([
+                  ["back", "Back"],
+                  ["home", "Home"],
+                  ["recent", "Recent"],
+                ] as const)
+              : ([
+                  ["back", "Back"],
+                  ["home", "Home"],
+                  ["recent", "Recent"],
+                  ["volume_down", "Vol−"],
+                  ["volume_up", "Vol+"],
+                  ["power", "Power"],
+                ] as const)
             ).map(([action, name]) => (
               <Button
                 key={action}
@@ -448,7 +505,7 @@ export function PhoneScreen({
                         ? "Power"
                         : name
                 }
-                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+                className={railClass}
               >
                 {name}
               </Button>
