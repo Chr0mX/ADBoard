@@ -9,6 +9,7 @@ import {
   codecStringFromSps,
   extractSpsPps,
 } from "@/lib/video/h264";
+import { MseH264Player } from "@/lib/video/mse-player";
 
 export type VideoStreamState = "idle" | "starting" | "streaming" | "error";
 
@@ -54,6 +55,14 @@ function webCodecsSupported(): boolean {
     typeof window !== "undefined" &&
     typeof (window as unknown as { VideoDecoder?: unknown }).VideoDecoder ===
       "function"
+  );
+}
+
+function mseSupported(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof MediaSource !== "undefined" &&
+    MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"')
   );
 }
 
@@ -119,9 +128,10 @@ export function useDeviceVideo(
       return;
     }
 
-    if (!webCodecsSupported()) {
+    const useMse = !webCodecsSupported();
+    if (useMse && !mseSupported()) {
       setDecodeState("unsupported");
-      setError("WebCodecs VideoDecoder is not available in this browser");
+      setError("H264 decode is not available in this browser");
       return;
     }
 
@@ -136,6 +146,25 @@ export function useDeviceVideo(
     /** When set, ignore all input until the next SPS+IDR AU recreates the decoder. */
     let waitingForKeyframeConfig = false;
     let lastResetAt = 0;
+    let mse: MseH264Player | null = null;
+
+    const openMse = () => {
+      mse?.close();
+      mse = new MseH264Player(
+        () => canvasRef.current,
+        (size) => {
+          if (closed) return;
+          setFrameSize(size);
+          setDecodeState("decoding");
+          setError(null);
+        },
+        (message) => {
+          if (closed) return;
+          setDecodeState("error");
+          setError(message);
+        },
+      );
+    };
 
     const teardownDecoder = () => {
       if (decoder) {
@@ -194,6 +223,7 @@ export function useDeviceVideo(
 
     const connect = () => {
       if (closed) return;
+      if (useMse) openMse();
       setDecodeState("connecting");
       description = null;
       waitingForKeyframeConfig = false;
@@ -228,6 +258,12 @@ export function useDeviceVideo(
 
         const buf = new Uint8Array(event.data as ArrayBuffer);
         if (buf.byteLength === 0) return;
+
+        // LAN http:// has no WebCodecs. MSE plays the same Annex-B access units.
+        if (mse) {
+          mse.push(buf);
+          return;
+        }
 
         // SPS/PPS often arrive in their own access unit, before the IDR.
         const paramSets = extractSpsPps(buf);
@@ -301,6 +337,7 @@ export function useDeviceVideo(
       closed = true;
       if (retryTimer) clearTimeout(retryTimer);
       teardownDecoder();
+      mse?.close();
       socket?.close();
     };
   }, [serial, paintFrame]);

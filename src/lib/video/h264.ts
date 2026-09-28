@@ -119,3 +119,139 @@ export function extractSpsPps(
   if (!sps || !pps) return null;
   return { sps, pps };
 }
+
+/** Visible picture size from an SPS NAL (header included). */
+export function spsDimensions(
+  sps: Uint8Array,
+): { width: number; height: number } | null {
+  if (sps.length < 4) return null;
+  const br = new BitReader(rbspFromNal(sps));
+  try {
+    const profile = br.u(8);
+    br.u(8);
+    br.u(8);
+    br.ue();
+    let chroma = 1;
+    if (
+      profile === 100 ||
+      profile === 110 ||
+      profile === 122 ||
+      profile === 244 ||
+      profile === 44 ||
+      profile === 83 ||
+      profile === 86 ||
+      profile === 118 ||
+      profile === 128 ||
+      profile === 138 ||
+      profile === 139 ||
+      profile === 134 ||
+      profile === 135
+    ) {
+      chroma = br.ue();
+      if (chroma === 3) br.u(1);
+      br.ue();
+      br.ue();
+      br.u(1);
+      if (br.u(1)) {
+        const lists = chroma === 3 ? 12 : 8;
+        for (let i = 0; i < lists; i++) {
+          if (br.u(1)) skipScalingList(br, i < 6 ? 16 : 64);
+        }
+      }
+    }
+    br.ue();
+    const poc = br.ue();
+    if (poc === 0) {
+      br.ue();
+    } else if (poc === 1) {
+      br.u(1);
+      br.se();
+      br.se();
+      const n = br.ue();
+      for (let i = 0; i < n; i++) br.se();
+    }
+    br.ue();
+    br.u(1);
+    const widthMbs = br.ue() + 1;
+    const heightMaps = br.ue() + 1;
+    const frameMbsOnly = br.u(1);
+    if (!frameMbsOnly) br.u(1);
+    br.u(1);
+    let cropLeft = 0;
+    let cropRight = 0;
+    let cropTop = 0;
+    let cropBottom = 0;
+    if (br.u(1)) {
+      cropLeft = br.ue();
+      cropRight = br.ue();
+      cropTop = br.ue();
+      cropBottom = br.ue();
+    }
+    const cropUnitX = chroma === 1 || chroma === 2 ? 2 : 1;
+    const cropUnitY = (chroma === 1 ? 2 : 1) * (2 - frameMbsOnly);
+    const width = widthMbs * 16 - (cropLeft + cropRight) * cropUnitX;
+    const height = heightMaps * 16 * (2 - frameMbsOnly) - (cropTop + cropBottom) * cropUnitY;
+    if (width <= 0 || height <= 0) return null;
+    return { width, height };
+  } catch {
+    return null;
+  }
+}
+
+function rbspFromNal(nal: Uint8Array): Uint8Array {
+  const src = nal.subarray(1);
+  const out: number[] = [];
+  for (let i = 0; i < src.length; i++) {
+    if (i + 2 < src.length && src[i] === 0 && src[i + 1] === 0 && src[i + 2] === 3) {
+      out.push(0, 0);
+      i += 2;
+      continue;
+    }
+    out.push(src[i]);
+  }
+  return Uint8Array.from(out);
+}
+
+function skipScalingList(br: BitReader, size: number) {
+  let last = 8;
+  let next = 8;
+  for (let j = 0; j < size; j++) {
+    if (next !== 0) {
+      const delta = br.se();
+      next = (last + delta + 256) % 256;
+    }
+    last = next === 0 ? last : next;
+  }
+}
+
+class BitReader {
+  private bit = 0;
+
+  constructor(private data: Uint8Array) {}
+
+  u(n: number): number {
+    let v = 0;
+    for (let i = 0; i < n; i++) {
+      const byte = this.data[this.bit >> 3];
+      if (byte === undefined) throw new Error("sps truncated");
+      v = (v << 1) | ((byte >> (7 - (this.bit & 7))) & 1);
+      this.bit++;
+    }
+    return v;
+  }
+
+  ue(): number {
+    let zeros = 0;
+    while (this.u(1) === 0) {
+      zeros++;
+      if (zeros > 31) throw new Error("sps exp-golomb");
+    }
+    if (zeros === 0) return 0;
+    return (1 << zeros) - 1 + this.u(zeros);
+  }
+
+  se(): number {
+    const v = this.ue();
+    return (v & 1) === 1 ? (v + 1) >> 1 : -(v >> 1);
+  }
+}
