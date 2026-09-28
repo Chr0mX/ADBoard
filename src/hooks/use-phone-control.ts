@@ -210,6 +210,33 @@ export function usePhoneControl() {
     [mouseOn, broadcastTargets, controlMode],
   );
 
+  const handleInstall = useCallback(
+    async (file: File) => {
+      if (!file.name.toLowerCase().endsWith(".apk")) {
+        return "Only .apk files can be installed";
+      }
+      if (broadcastTargets.length === 0) return "No online targets";
+      try {
+        const result = await devicesClient.installApk(
+          controlMode,
+          broadcastTargets,
+          file,
+        );
+        const failed = result.targets.filter((t) => t.inject === "error");
+        if (failed.length === 0) {
+          const names = result.targets.map((t) => t.deviceName).join(", ");
+          return names ? `Installed on ${names}` : "Installed";
+        }
+        return failed
+          .map((t) => t.detail || `${t.deviceName} failed`)
+          .join(" · ");
+      } catch (err) {
+        return err instanceof Error ? err.message : "Install failed";
+      }
+    },
+    [broadcastTargets, controlMode],
+  );
+
   const handleNav = useCallback(
     async (action: NavAction["type"]) => {
       if (broadcastTargets.length === 0) return;
@@ -277,6 +304,7 @@ export function usePhoneControl() {
     broadcastTargets,
     handlePointer,
     handleNav,
+    handleInstall,
     lastTap,
     tapLog,
   };

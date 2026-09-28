@@ -7,6 +7,7 @@ import type {
   NavBroadcast,
   NormalizedPoint,
   PointerPhase,
+  InstallBroadcast,
   SessionStatus,
   TapBroadcast,
 } from "@/lib/devices/types";
@@ -38,6 +39,11 @@ export interface DevicesClient {
     targets: Device[],
     action: NavAction,
   ): Promise<NavBroadcast | void>;
+  installApk(
+    mode: ControlMode,
+    targets: Device[],
+    file: File,
+  ): Promise<InstallBroadcast>;
   listSessions?(): Promise<SessionStatus[]>;
   /** Optional live device events from the agent WebSocket. */
   subscribeDevices?(
@@ -116,6 +122,24 @@ export function createMockDevicesClient(): DevicesClient {
       };
       console.info("[mock-control] nav", broadcast);
       return broadcast;
+    },
+
+    async installApk(mode, targets, file) {
+      if (!file.name.toLowerCase().endsWith(".apk")) {
+        throw new Error("only .apk files can be installed");
+      }
+      return {
+        id: `install-${Date.now()}`,
+        at: Date.now(),
+        mode,
+        targetIds: targets.map((t) => t.id),
+        targets: targets.map((t) => ({
+          deviceId: t.id,
+          deviceName: t.name,
+          inject: "error" as const,
+          detail: "adb is not available — cannot install APK",
+        })),
+      };
     },
   };
 }
@@ -202,6 +226,27 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         throw new Error(text || `agent sendNav failed: ${res.status}`);
       }
       return (await res.json()) as NavBroadcast;
+    },
+
+    async installApk(mode, targets, file) {
+      if (!file.name.toLowerCase().endsWith(".apk")) {
+        throw new Error("only .apk files can be installed");
+      }
+      const res = await fetch(`${base}/api/input/install`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/vnd.android.package-archive",
+          "X-Phonecontrol-Mode": mode,
+          "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
+          "X-Phonecontrol-Filename": file.name,
+        },
+        body: file,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `agent install failed: ${res.status}`);
+      }
+      return (await res.json()) as InstallBroadcast;
     },
 
     async listSessions() {

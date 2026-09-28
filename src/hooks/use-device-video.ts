@@ -8,6 +8,7 @@ import {
   buildAvcDecoderConfig,
   codecStringFromSps,
   extractSpsPps,
+  spsDimensions,
 } from "@/lib/video/h264";
 import { MseH264Player } from "@/lib/video/mse-player";
 
@@ -74,6 +75,14 @@ export interface UseDeviceVideoResult {
   configured: boolean;
   /** Decoded frame size. The click target uses this so taps match the picture. */
   frameSize: { width: number; height: number } | null;
+  /**
+   * Latest non-zero video size, updated as soon as SPS or a status frame
+   * arrives — before React re-renders and before the first painted frame.
+   */
+  frameSizeRef: React.RefObject<{
+    width: number;
+    height: number;
+  } | null>;
 }
 
 /**
@@ -90,25 +99,72 @@ export function useDeviceVideo(
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(
     null,
   );
+  const frameSizeRef = useRef<{
+    width: number;
+    height: number;
+    source: "sps" | "status" | "frame";
+  } | null>(null);
   const configured = agentBaseUrl() !== null;
 
-  const paintFrame = useCallback((frame: VideoFrame) => {
-    const canvas = canvasRef.current;
-    if (!canvas) {
+  const publishSize = useCallback(
+    (width: number, height: number, source: "sps" | "status" | "frame") => {
+      if (!(width > 0 && height > 0)) return;
+      const prev = frameSizeRef.current;
+      // SPS crop is the scrcpy video size. A later 0×0 display size, or the
+      // device wm size, must not replace it.
+      if (prev?.source === "sps" && source !== "sps") return;
+      if (prev?.source === "frame" && source === "status") return;
+      if (prev && prev.width === width && prev.height === height) {
+        if (source === "sps" && prev.source !== "sps") {
+          frameSizeRef.current = { width, height, source };
+        }
+        return;
+      }
+      frameSizeRef.current = { width, height, source };
+      setFrameSize({ width, height });
+    },
+    [],
+  );
+
+  const paintFrame = useCallback(
+    (frame: VideoFrame) => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        frame.close();
+        return;
+      }
+      const displayW = frame.displayWidth;
+      const displayH = frame.displayHeight;
+      const known = frameSizeRef.current;
+      const width =
+        known?.source === "sps" && known.width > 0
+          ? known.width
+          : displayW > 0
+            ? displayW
+            : known?.width || frame.codedWidth;
+      const height =
+        known?.source === "sps" && known.height > 0
+          ? known.height
+          : displayH > 0
+            ? displayH
+            : known?.height || frame.codedHeight;
+      if (width > 0 && height > 0) {
+        if (displayW > 0 && displayH > 0) {
+          publishSize(displayW, displayH, "frame");
+        }
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+      }
+      const ctx = canvas.getContext("2d");
+      if (ctx && canvas.width > 0 && canvas.height > 0) {
+        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+      }
       frame.close();
-      return;
-    }
-    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-      canvas.width = frame.displayWidth;
-      canvas.height = frame.displayHeight;
-      setFrameSize({ width: frame.displayWidth, height: frame.displayHeight });
-    }
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-    }
-    frame.close();
-  }, []);
+    },
+    [publishSize],
+  );
 
   useEffect(() => {
     if (!serial) {
@@ -116,9 +172,11 @@ export function useDeviceVideo(
       setDecodeState("idle");
       setError(null);
       setFrameSize(null);
+      frameSizeRef.current = null;
       return;
     }
     setFrameSize(null);
+    frameSizeRef.current = null;
 
     const base = agentBaseUrl();
     // "" is same-origin (packaged UI). Only null means the in-browser mock.
@@ -152,9 +210,12 @@ export function useDeviceVideo(
       mse?.close();
       mse = new MseH264Player(
         () => canvasRef.current,
-        (size) => {
+        (size, source) => {
           if (closed) return;
-          setFrameSize(size);
+          publishSize(size.width, size.height, source);
+        },
+        () => {
+          if (closed) return;
           setDecodeState("decoding");
           setError(null);
         },
@@ -242,6 +303,9 @@ export function useDeviceVideo(
             const msg = JSON.parse(event.data) as VideoStatusMessage;
             setStatus(msg);
             if (msg.codecString) codecString = msg.codecString;
+            if (msg.width && msg.height && msg.width > 0 && msg.height > 0) {
+              publishSize(msg.width, msg.height, "status");
+            }
             if (msg.stream === "idle") {
               setDecodeState("idle");
             } else if (msg.stream === "error") {
@@ -270,6 +334,8 @@ export function useDeviceVideo(
         if (paramSets) {
           description = buildAvcDecoderConfig(paramSets.sps, paramSets.pps);
           codecString = codecStringFromSps(paramSets.sps);
+          const dims = spsDimensions(paramSets.sps);
+          if (dims) publishSize(dims.width, dims.height, "sps");
         }
 
         if (!annexBHasVcl(buf)) return;
@@ -340,7 +406,15 @@ export function useDeviceVideo(
       mse?.close();
       socket?.close();
     };
-  }, [serial, paintFrame]);
+  }, [serial, paintFrame, publishSize]);
 
-  return { canvasRef, status, decodeState, error, configured, frameSize };
+  return {
+    canvasRef,
+    status,
+    decodeState,
+    error,
+    configured,
+    frameSize,
+    frameSizeRef,
+  };
 }

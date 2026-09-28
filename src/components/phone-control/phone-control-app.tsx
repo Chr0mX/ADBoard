@@ -5,6 +5,7 @@ import { ControlHeader } from "@/components/phone-control/control-header";
 import { ControlModes } from "@/components/phone-control/control-modes";
 import { DeviceGrid } from "@/components/phone-control/device-grid";
 import { PhoneScreen } from "@/components/phone-control/phone-screen";
+import { ScreenGrid } from "@/components/phone-control/screen-grid";
 import { StatusBar } from "@/components/phone-control/status-bar";
 import { Button } from "@/components/ui/button";
 import { usePhoneControl } from "@/hooks/use-phone-control";
@@ -37,6 +38,7 @@ export function PhoneControlApp() {
     broadcastTargets,
     handlePointer,
     handleNav,
+    handleInstall,
     lastTap,
   } = usePhoneControl();
 
@@ -47,6 +49,7 @@ export function PhoneControlApp() {
     () => false,
   );
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [screensOpen, setScreensOpen] = useState(false);
 
   const setFill = (on: boolean) => {
     setFillWindow(on);
@@ -68,6 +71,8 @@ export function PhoneControlApp() {
   };
 
   const showDevices = !fillWindow && (wide || devicesOpen);
+  const dockedScreens = wide && !fillWindow;
+  const screenSheet = screensOpen && !dockedScreens;
 
   return (
     <div className="pc-shell relative flex h-dvh max-h-dvh flex-col overflow-hidden">
@@ -104,9 +109,18 @@ export function PhoneControlApp() {
             <div
               className={cn(
                 "flex min-h-0 min-w-0 flex-1 flex-col",
-                !fillWindow && "lg:flex-row lg:gap-4",
+                !fillWindow && "lg:flex-row lg:gap-3",
               )}
             >
+            {dockedScreens && (
+              <aside className="flex min-h-0 w-[200px] shrink-0 flex-col xl:w-[240px]">
+                <ScreenGrid
+                  devices={devices}
+                  activeId={activeId}
+                  onSelect={selectDevice}
+                />
+              </aside>
+            )}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <PhoneScreen
                 device={activeDevice}
@@ -116,11 +130,20 @@ export function PhoneControlApp() {
                 fillWindow={fillWindow}
                 onFillWindowChange={setFill}
                 showDevicesButton={!fillWindow && !wide}
-                onOpenDevices={() => setDevicesOpen(true)}
+                onOpenDevices={() => {
+                  setScreensOpen(false);
+                  setDevicesOpen(true);
+                }}
+                showScreensButton={!dockedScreens}
+                onOpenScreens={() => {
+                  setDevicesOpen(false);
+                  setScreensOpen(true);
+                }}
                 onKeyboardChange={setKeyboardOn}
                 onMouseChange={setMouseOn}
                 onPointer={onPointer}
                 onNav={handleNav}
+                onInstall={handleInstall}
                 lastTap={lastTap}
                 broadcastLabel={`${broadcastTargets.length} target${broadcastTargets.length === 1 ? "" : "s"}`}
               />
@@ -176,6 +199,34 @@ export function PhoneControlApp() {
               </aside>
             )}
             </div>
+            {screenSheet && (
+              <div className="absolute inset-0 z-40 flex flex-col gap-3 overflow-hidden bg-[var(--pc-paper)] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">
+                    Screens
+                  </h2>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 min-w-11"
+                    onClick={() => setScreensOpen(false)}
+                  >
+                    Close
+                  </Button>
+                </div>
+                <ScreenGrid
+                  devices={devices}
+                  activeId={activeId}
+                  showHeading={false}
+                  onSelect={(event) => {
+                    selectDevice(event);
+                    if (!event.ctrlKey && !event.shiftKey && !event.metaKey) {
+                      setScreensOpen(false);
+                    }
+                  }}
+                />
+              </div>
+            )}
           </>
         )}
       </main>

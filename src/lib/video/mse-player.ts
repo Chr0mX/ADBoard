@@ -32,7 +32,11 @@ export class MseH264Player {
 
   constructor(
     private canvas: () => HTMLCanvasElement | null,
-    private onPicture: (size: { width: number; height: number }) => void,
+    private onSize: (
+      size: { width: number; height: number },
+      source: "sps" | "frame",
+    ) => void,
+    private onPlaying: () => void,
     private onError: (message: string) => void,
   ) {
     this.video = document.createElement("video");
@@ -64,6 +68,10 @@ export class MseH264Player {
       this.sps = sets.sps;
       this.pps = sets.pps;
       this.codec = codecStringFromSps(sets.sps);
+      const size = spsDimensions(sets.sps);
+      if (size && size.width > 0 && size.height > 0) {
+        this.onSize(size, "sps");
+      }
     }
     if (!this.sourceOpen) {
       this.held.push(au);
@@ -169,9 +177,10 @@ export class MseH264Player {
           this.video.currentTime = Math.max(0, end - 0.05);
         }
       }
+      this.onSize({ width, height }, "frame");
       if (!this.painted) {
         this.painted = true;
-        this.onPicture({ width, height });
+        this.onPlaying();
       }
     }
     this.raf = requestAnimationFrame(this.draw);

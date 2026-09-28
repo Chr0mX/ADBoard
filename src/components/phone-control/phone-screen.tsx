@@ -6,9 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { normalizePoint } from "@/lib/devices/coords";
-import type { Device, PointerPhase, SessionStatus, TapBroadcast } from "@/lib/devices/types";
+import type { Device, NavAction, PointerPhase, SessionStatus, TapBroadcast } from "@/lib/devices/types";
 import { useDeviceVideo } from "@/hooks/use-device-video";
-import { useStoredFlag } from "@/hooks/use-stored-flag";
 
 interface PhoneScreenProps {
   device: Device | null;
@@ -19,6 +18,8 @@ interface PhoneScreenProps {
   onFillWindowChange: (on: boolean) => void;
   showDevicesButton?: boolean;
   onOpenDevices?: () => void;
+  showScreensButton?: boolean;
+  onOpenScreens?: () => void;
   onKeyboardChange: (on: boolean) => void;
   onMouseChange: (on: boolean) => void;
   onPointer: (event: {
@@ -27,7 +28,8 @@ interface PhoneScreenProps {
     frameWidth: number;
     frameHeight: number;
   }) => void;
-  onNav: (action: "back" | "home" | "recent") => void;
+  onNav: (action: NavAction["type"]) => void;
+  onInstall: (file: File) => Promise<string>;
   lastTap: TapBroadcast | null;
   broadcastLabel: string;
 }
@@ -41,10 +43,13 @@ export function PhoneScreen({
   onFillWindowChange,
   showDevicesButton,
   onOpenDevices,
+  showScreensButton,
+  onOpenScreens,
   onKeyboardChange,
   onMouseChange,
   onPointer,
   onNav,
+  onInstall,
   lastTap,
   broadcastLabel,
 }: PhoneScreenProps) {
@@ -55,9 +60,10 @@ export function PhoneScreen({
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(
     null,
   );
-  const [showFrame, setShowFrame] = useStoredFlag("phonecontrol-show-frame", true);
+  const [installNote, setInstallNote] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
 
-  const { canvasRef, status, decodeState, error: videoError, configured, frameSize } =
+  const { canvasRef, status, decodeState, error: videoError, configured, frameSize, frameSizeRef } =
     useDeviceVideo(device?.serial);
 
   const offline = !device || device.status !== "online";
@@ -87,11 +93,11 @@ export function PhoneScreen({
     return `${device.name} · video`;
   })();
 
-  const videoWidth = frameSize?.width || device?.resolution.width || 9;
-  const videoHeight = frameSize?.height || device?.resolution.height || 19.5;
+  const videoWidth = frameSize?.width || (configured ? 9 : device?.resolution.width || 9);
+  const videoHeight = frameSize?.height || (configured ? 16 : device?.resolution.height || 16);
   const aspectRatio = `${videoWidth} / ${videoHeight}`;
-  const framed = showFrame && !fillWindow;
   const pointerFailed = lastTap?.targets.some((t) => t.inject === "error") ?? false;
+  const installFailed = !!installNote && !installNote.startsWith("Installed");
 
   const emitPointer = (phase: PointerPhase, clientX: number, clientY: number) => {
     if (!screenRef.current) return;
@@ -102,12 +108,22 @@ export function PhoneScreen({
       y: point.y * 100,
       key: phase === "down" ? Date.now() : (prev?.key ?? Date.now()),
     }));
+    const size = frameSizeRef.current;
     onPointer({
       phase,
       point,
-      frameWidth: frameSize?.width ?? 0,
-      frameHeight: frameSize?.height ?? 0,
+      frameWidth: size?.width ?? 0,
+      frameHeight: size?.height ?? 0,
     });
+  };
+
+  const pickApk = async (file: File) => {
+    setInstalling(true);
+    try {
+      setInstallNote(await onInstall(file));
+    } finally {
+      setInstalling(false);
+    }
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -147,7 +163,11 @@ export function PhoneScreen({
   };
 
   return (
-    <section data-fill={fillWindow ? "1" : "0"} className="flex min-h-0 flex-1 flex-col gap-2">
+    <section
+      data-fill={fillWindow ? "1" : "0"}
+      data-device-name={device?.name ?? ""}
+      className="flex min-h-0 flex-1 flex-col gap-2"
+    >
       {!fillWindow && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
         <p className="truncate text-center font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
           {videoError || streamLabel}
@@ -155,17 +175,7 @@ export function PhoneScreen({
       )}
 
       <div className="flex min-h-0 w-full flex-1 flex-col items-center">
-        <div
-          className={cn(
-            "flex min-h-0 w-full max-w-full flex-1 flex-col items-center",
-            framed &&
-              "max-w-[380px] rounded-[2rem] border-[3px] border-[var(--pc-frame)] bg-[var(--pc-frame)] shadow-[0_24px_60px_-24px_rgba(15,30,40,0.55)]",
-          )}
-        >
-          {framed && (
-            <div className="pointer-events-none mt-2 h-5 w-24 shrink-0 rounded-full bg-black/80" />
-          )}
-
+        <div className="flex min-h-0 w-full max-w-full flex-1 flex-col items-center">
           <div className="flex min-h-0 w-full flex-1 items-center justify-center px-1.5 [container-type:size]">
           <div
             ref={screenRef}
@@ -177,7 +187,6 @@ export function PhoneScreen({
             onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
               "relative touch-none overflow-hidden select-none",
-              framed && "rounded-[1.55rem]",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
@@ -303,12 +312,14 @@ export function PhoneScreen({
           </div>
           </div>
 
-          <div className={cn("flex shrink-0 items-center justify-center gap-2", framed ? "px-3 py-2" : "py-1.5")}>
+          <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
             {(
               [
                 ["back", "Back"],
                 ["home", "Home"],
                 ["recent", "Recent"],
+                ["volume_down", "Vol−"],
+                ["volume_up", "Vol+"],
               ] as const
             ).map(([action, name]) => (
               <Button
@@ -317,17 +328,32 @@ export function PhoneScreen({
                 variant="ghost"
                 disabled={offline}
                 onClick={() => onNav(action)}
-                aria-label={name}
-                className={cn(
-                  "h-11 min-w-16 rounded-full px-3 font-mono text-xs tracking-wide",
-                  framed
-                    ? "bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
-                    : "border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]",
-                )}
+                aria-label={
+                  action === "volume_up"
+                    ? "Volume up"
+                    : action === "volume_down"
+                      ? "Volume down"
+                      : name
+                }
+                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
               >
                 {name}
               </Button>
             ))}
+            {fillWindow && (
+              <ApkFileButton disabled={offline || installing} onFile={pickApk} />
+            )}
+            {fillWindow && showScreensButton && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onOpenScreens}
+                aria-label="Screens"
+                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)]"
+              >
+                Screens
+              </Button>
+            )}
             {fillWindow && (
               <Button
                 type="button"
@@ -363,14 +389,7 @@ export function PhoneScreen({
             <MousePointer2 className="size-4" />
             <span className="hidden sm:inline">Touch</span>
           </Toggle>
-          <Toggle
-            pressed={showFrame}
-            onPressedChange={setShowFrame}
-            aria-label="Toggle phone frame"
-            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
-          >
-            Frame
-          </Toggle>
+          <ApkFileButton disabled={offline || installing} onFile={pickApk} />
           <Toggle
             pressed={fillWindow}
             onPressedChange={onFillWindowChange}
@@ -380,6 +399,16 @@ export function PhoneScreen({
             <Maximize2 className="size-4" />
             Fill
           </Toggle>
+          {showScreensButton && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11"
+              onClick={onOpenScreens}
+            >
+              Screens
+            </Button>
+          )}
           {showDevicesButton && (
             <Button
               type="button"
@@ -391,6 +420,17 @@ export function PhoneScreen({
             </Button>
           )}
         </div>
+      )}
+      {installNote && (
+        <p
+          data-install-note
+          className={cn(
+            "mx-auto max-w-lg text-center font-mono text-[10px] leading-snug",
+            installFailed ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]",
+          )}
+        >
+          {installNote}
+        </p>
       )}
       {pointerFailed && lastTap && (
         <p className="truncate text-center font-mono text-[10px] text-[var(--pc-warn)]">
@@ -404,5 +444,36 @@ export function PhoneScreen({
         </p>
       )}
     </section>
+  );
+}
+
+function ApkFileButton({
+  disabled,
+  onFile,
+}: {
+  disabled: boolean;
+  onFile: (file: File) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "inline-flex h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 font-mono text-xs text-[var(--pc-ink)]",
+        disabled && "pointer-events-none opacity-50",
+      )}
+    >
+      APK
+      <input
+        type="file"
+        accept=".apk,application/vnd.android.package-archive"
+        aria-label="Install APK"
+        className="sr-only"
+        disabled={disabled}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) onFile(file);
+        }}
+      />
+    </label>
   );
 }

@@ -67,7 +67,7 @@ export interface TapBroadcast {
 }
 
 export interface NavAction {
-  type: "back" | "home" | "recent";
+  type: "back" | "home" | "recent" | "volume_up" | "volume_down";
 }
 
 export interface NavTargetResult {
@@ -81,9 +81,17 @@ export interface NavBroadcast {
   id: string;
   at: number;
   mode: ControlMode;
-  action: "back" | "home" | "recent";
+  action: "back" | "home" | "recent" | "volume_up" | "volume_down";
   targetIds: string[];
   targets?: NavTargetResult[];
+}
+
+export interface InstallBroadcast {
+  id: string;
+  at: number;
+  mode: ControlMode;
+  targetIds: string[];
+  targets: NavTargetResult[];
 }
 
 export interface SessionStatus {

@@ -226,8 +226,11 @@ function skipScalingList(br: BitReader, size: number) {
 
 class BitReader {
   private bit = 0;
+  private data: Uint8Array;
 
-  constructor(private data: Uint8Array) {}
+  constructor(data: Uint8Array) {
+    this.data = data;
+  }
 
   u(n: number): number {
     let v = 0;
