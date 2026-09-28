@@ -549,8 +549,39 @@ impl AppState {
     ) -> Vec<MappedTap> {
         let mut mapped = Vec::with_capacity(devices.len());
         for device in devices {
-            let mut tap = frame_tap(point, device, frame_width, frame_height);
-            if frame_width == 0 || frame_height == 0 {
+            // Each phone's scrcpy server ignores a touch whose width/height
+            // is not that phone's encoded video. The picture on screen is
+            // only one of the targets, so reuse its size only when this
+            // device has not published its own yet.
+            let mut size = self
+                .inner
+                .sessions
+                .video_display_size(&device.serial)
+                .await;
+            if size.is_none() && frame_width > 0 && frame_height > 0 {
+                let session = self.inner.sessions.get_session(&device.serial).await;
+                let running = session
+                    .as_ref()
+                    .map(|status| {
+                        matches!(status.stream, StreamState::Streaming | StreamState::Starting)
+                    })
+                    .unwrap_or(false);
+                if !running {
+                    let _ = self
+                        .inner
+                        .sessions
+                        .ensure_streaming(&device.serial)
+                        .await;
+                    size = self
+                        .inner
+                        .sessions
+                        .video_display_size(&device.serial)
+                        .await;
+                }
+            }
+            let (width, height) = size.unwrap_or((frame_width, frame_height));
+            let mut tap = frame_tap(point, device, width, height);
+            if width == 0 || height == 0 {
                 // Do not fall through to wm size. Scrcpy drops a touch whose
                 // screen size is not the encoded video size, and a 0×0 touch
                 // is not a guess at that size.
@@ -2126,6 +2157,66 @@ mod tests {
         assert_ne!(sent.width, device.resolution.width);
         assert_eq!(sent.x, 90);
         assert_eq!(sent.y, 320);
+    }
+
+    #[tokio::test]
+    async fn multi_pointer_uses_each_devices_video_size() {
+        let state = AppState::new(
+            Role::Controller,
+            "pointer-multi".into(),
+            "pointer-multi".into(),
+            0,
+            None,
+        );
+        let devices = state.list_devices().await;
+        let online: Vec<_> = devices
+            .iter()
+            .filter(|device| device.status == DeviceStatus::Online)
+            .take(2)
+            .cloned()
+            .collect();
+        assert!(online.len() == 2, "mock fleet needs two online phones");
+        let first = &online[0];
+        state
+            .start_session_local(&first.serial)
+            .await
+            .expect("first phone streams");
+        let ids = vec![first.id.clone(), online[1].id.clone()];
+        let point = NormalizedPoint { x: 0.25, y: 0.5 };
+        let broadcast = state
+            .handle_pointer(
+                ControlMode::Multi,
+                &ids,
+                PointerPhase::Down,
+                PointerTool::Finger,
+                point,
+                1080,
+                2400,
+            )
+            .await
+            .expect("multi pointer returns every target");
+        assert_eq!(broadcast.targets.len(), 2);
+        let streamed = broadcast
+            .targets
+            .iter()
+            .find(|tap| tap.device_id == first.id)
+            .expect("first phone is in the broadcast");
+        assert_eq!(streamed.width, 360);
+        assert_eq!(streamed.height, 640);
+        assert_eq!(streamed.x, 90);
+        assert_eq!(streamed.y, 320);
+        assert_ne!(streamed.width, 1080);
+        let other = broadcast
+            .targets
+            .iter()
+            .find(|tap| tap.device_id == online[1].id)
+            .expect("second phone is in the broadcast");
+        assert_eq!(
+            (other.width, other.height),
+            (360, 640),
+            "second phone must use its own stream, not the 1080×2400 picture on screen ({})",
+            other.inject_detail.as_deref().unwrap_or("")
+        );
     }
 
     fn sample(serial: &str, status: DeviceStatus) -> Device {
