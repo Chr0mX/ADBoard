@@ -86,6 +86,8 @@ function ScreenTile({
       )}
     >
       <div
+        data-video-orientation={width >= height ? "landscape" : "portrait"}
+        data-video-frame={`${width}x${height}`}
         className="relative w-full overflow-hidden bg-[#101418]"
         style={{ aspectRatio: `${width} / ${height}` }}
       >
@@ -99,7 +101,7 @@ function ScreenTile({
           <canvas
             ref={canvasRef}
             className={cn(
-              "pointer-events-none absolute inset-0 h-full w-full",
+              "pointer-events-none absolute inset-0 h-full w-full object-contain",
               live ? "opacity-100" : "opacity-0",
             )}
           />

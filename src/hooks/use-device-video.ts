@@ -11,6 +11,7 @@ import {
   spsDimensions,
 } from "@/lib/video/h264";
 import { MseH264Player } from "@/lib/video/mse-player";
+import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
 import type { StreamStats } from "@/lib/devices/types";
 
 export type VideoStreamState = "idle" | "starting" | "streaming" | "error";
@@ -109,31 +110,21 @@ export function useDeviceVideo(
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(
     null,
   );
-  const frameSizeRef = useRef<{
-    width: number;
-    height: number;
-    source: "sps" | "status" | "frame";
-  } | null>(null);
+  const frameSizeRef = useRef<TrackedVideoSize | null>(null);
   const configured = agentBaseUrl() !== null;
   const [stats, setStats] = useState<StreamStats>(EMPTY_STATS);
   const meter = useRef({ t: 0, frames: 0, bytes: 0 });
 
   const publishSize = useCallback(
     (width: number, height: number, source: "sps" | "status" | "frame") => {
-      if (!(width > 0 && height > 0)) return;
-      const prev = frameSizeRef.current;
-      // SPS crop is the scrcpy video size. A later 0×0 display size, or the
-      // device wm size, must not replace it.
-      if (prev?.source === "sps" && source !== "sps") return;
-      if (prev?.source === "frame" && source === "status") return;
-      if (prev && prev.width === width && prev.height === height) {
-        if (source === "sps" && prev.source !== "sps") {
-          frameSizeRef.current = { width, height, source };
-        }
-        return;
-      }
-      frameSizeRef.current = { width, height, source };
-      setFrameSize({ width, height });
+      const next = nextVideoSize(frameSizeRef.current, width, height, source);
+      if (!next || next === frameSizeRef.current) return;
+      frameSizeRef.current = next;
+      setFrameSize((prev) =>
+        prev && prev.width === next.width && prev.height === next.height
+          ? prev
+          : { width: next.width, height: next.height },
+      );
     },
     [],
   );
@@ -145,29 +136,17 @@ export function useDeviceVideo(
         frame.close();
         return;
       }
-      const displayW = frame.displayWidth;
-      const displayH = frame.displayHeight;
-      const known = frameSizeRef.current;
-      const width =
-        known?.source === "sps" && known.width > 0
-          ? known.width
-          : displayW > 0
-            ? displayW
-            : known?.width || frame.codedWidth;
-      const height =
-        known?.source === "sps" && known.height > 0
-          ? known.height
-          : displayH > 0
-            ? displayH
-            : known?.height || frame.codedHeight;
-      if (width > 0 && height > 0) {
-        if (displayW > 0 && displayH > 0) {
-          publishSize(displayW, displayH, "frame");
-        }
-        if (canvas.width !== width || canvas.height !== height) {
-          canvas.width = width;
-          canvas.height = height;
-        }
+      const displayW = frame.displayWidth > 0 ? frame.displayWidth : frame.codedWidth;
+      const displayH = frame.displayHeight > 0 ? frame.displayHeight : frame.codedHeight;
+      if (displayW > 0 && displayH > 0) {
+        publishSize(displayW, displayH, "frame");
+      }
+      const shown = frameSizeRef.current;
+      const width = shown?.width || displayW;
+      const height = shown?.height || displayH;
+      if (width > 0 && height > 0 && (canvas.width !== width || canvas.height !== height)) {
+        canvas.width = width;
+        canvas.height = height;
       }
       const ctx = canvas.getContext("2d");
       if (ctx && canvas.width > 0 && canvas.height > 0) {
@@ -213,6 +192,9 @@ export function useDeviceVideo(
     let codecString = "avc1.42E01E";
     let timestampUs = 0;
     let sawKeyframe = false;
+    /** Cropped SPS size. A later SPS with different dimensions needs a new decoder. */
+    let pictureW = 0;
+    let pictureH = 0;
     /** When set, ignore all input until the next SPS+IDR AU recreates the decoder. */
     let waitingForKeyframeConfig = false;
     let lastResetAt = 0;
@@ -351,7 +333,20 @@ export function useDeviceVideo(
           description = buildAvcDecoderConfig(paramSets.sps, paramSets.pps);
           codecString = codecStringFromSps(paramSets.sps);
           const dims = spsDimensions(paramSets.sps);
-          if (dims) publishSize(dims.width, dims.height, "sps");
+          if (dims && dims.width > 0 && dims.height > 0) {
+            publishSize(dims.width, dims.height, "sps");
+            const sizeChanged =
+              pictureW > 0 &&
+              (dims.width !== pictureW || dims.height !== pictureH);
+            pictureW = dims.width;
+            pictureH = dims.height;
+            // The existing decoder keeps the old coded size. Drop it so this
+            // access unit's IDR (or the next one) configures the new picture.
+            if (sizeChanged) {
+              waitingForKeyframeConfig = true;
+              teardownDecoder();
+            }
+          }
         }
 
         if (!annexBHasVcl(buf)) return;

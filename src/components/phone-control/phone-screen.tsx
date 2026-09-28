@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Keyboard, Maximize2, Minimize2, MousePointer2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
@@ -16,6 +16,7 @@ import type {
   TapBroadcast,
 } from "@/lib/devices/types";
 import { useDeviceVideo } from "@/hooks/use-device-video";
+import { fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 
@@ -69,6 +70,8 @@ export function PhoneScreen({
   targetIds,
 }: PhoneScreenProps) {
   const screenRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const dragRef = useRef<{
     id: number;
     lastX: number;
@@ -119,9 +122,29 @@ export function PhoneScreen({
     return `${device.name} · video`;
   })();
 
+  // Live picture size comes from the scrcpy frame. 9/16 is only the placeholder
+  // before the first frame; device wm size is not the stream aspect.
   const videoWidth = frameSize?.width || (configured ? 9 : device?.resolution.width || 9);
   const videoHeight = frameSize?.height || (configured ? 16 : device?.resolution.height || 16);
-  const aspectRatio = `${videoWidth} / ${videoHeight}`;
+  const fitted = fitVideoBox(stageSize.width, stageSize.height, videoWidth, videoHeight);
+  const orientation = videoWidth >= videoHeight ? "landscape" : "portrait";
+
+  useLayoutEffect(() => {
+    const node = stageRef.current;
+    if (!node) return;
+    const measure = () => {
+      const width = node.clientWidth;
+      const height = node.clientHeight;
+      setStageSize((prev) =>
+        prev.width === width && prev.height === height ? prev : { width, height },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fillWindow, device?.id]);
+
   const pointerFailed = lastTap?.targets.some((t) => t.inject === "error") ?? false;
   const installFailed = !!installNote && !installNote.startsWith("Installed");
 
@@ -234,11 +257,18 @@ export function PhoneScreen({
 
       <div className="flex min-h-0 w-full flex-1 flex-col items-center">
         <div className="flex min-h-0 w-full max-w-full flex-1 flex-col items-center">
-          <div className="flex min-h-0 w-full flex-1 items-center justify-center px-1.5 [container-type:size]">
+          <div
+            ref={stageRef}
+            data-screen-stage
+            className="flex min-h-0 w-full flex-1 items-center justify-center px-1.5 [container-type:size]"
+          >
           <div
             ref={screenRef}
             role="application"
             aria-label="Phone screen"
+            data-video-orientation={orientation}
+            data-video-frame={`${videoWidth}x${videoHeight}`}
+            data-video-box={fitted.width > 0 ? `${fitted.width}x${fitted.height}` : ""}
             onPointerEnter={(e) => {
               if (offline || !mouseOn || e.pointerType === "touch" || e.buttons !== 0) return;
               emitPointer("hover", e.clientX, e.clientY, "mouse");
@@ -253,8 +283,12 @@ export function PhoneScreen({
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
-              aspectRatio,
-              width: `min(100cqw, calc(100cqh * ${videoWidth} / ${videoHeight}))`,
+              width:
+                fitted.width > 0
+                  ? fitted.width
+                  : `min(100cqw, calc(100cqh * ${videoWidth} / ${videoHeight}))`,
+              height: fitted.height > 0 ? fitted.height : undefined,
+              aspectRatio: fitted.width > 0 ? undefined : `${videoWidth} / ${videoHeight}`,
               background: offline
                 ? "linear-gradient(160deg, #1a1f24 0%, #0c0e10 100%)"
                 : `linear-gradient(165deg,
@@ -268,7 +302,7 @@ export function PhoneScreen({
               <canvas
                 ref={canvasRef}
                 className={cn(
-                  "absolute inset-0 z-[5] h-full w-full",
+                  "absolute inset-0 z-[5] h-full w-full object-contain",
                   showingVideo ? "opacity-100" : "opacity-0",
                 )}
               />
