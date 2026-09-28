@@ -147,7 +147,10 @@ export function PhoneScreen({
       const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
       // clientWidth includes padding. The picture has to fit the content box
       // or the flex item is shrunk on one axis and the aspect ratio breaks.
-      const width = Math.max(0, Math.floor(node.clientWidth - padX));
+      // Non-fill reserves a rail on each side so volume and power sit beside
+      // the picture without covering it.
+      const rails = fillWindow ? 0 : 76 * 2 + 16;
+      const width = Math.max(0, Math.floor(node.clientWidth - padX - rails));
       const height = Math.max(0, Math.floor(node.clientHeight - padY));
       setStageSize((prev) =>
         prev.width === width && prev.height === height ? prev : { width, height },
@@ -272,11 +275,18 @@ export function PhoneScreen({
 
       <div className="flex min-h-0 w-full flex-1 flex-col items-center">
         <div className="flex min-h-0 w-full max-w-full flex-1 flex-col items-center">
-          <div className="flex min-h-0 w-full flex-1 items-stretch">
+          <div
+            ref={stageRef}
+            data-screen-stage
+            className={cn(
+              "flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden",
+              sideControls && "gap-2",
+            )}
+          >
           {sideControls && (
             <div
               data-side-volume
-              className="flex shrink-0 flex-col items-center justify-center gap-2 pr-2"
+              className="flex w-[4.75rem] shrink-0 flex-col items-center justify-center gap-2"
             >
               {(
                 [
@@ -298,14 +308,6 @@ export function PhoneScreen({
               ))}
             </div>
           )}
-          <div
-            ref={stageRef}
-            data-screen-stage
-            className={cn(
-              "relative flex min-h-0 min-w-0 flex-1 items-center justify-center [container-type:size]",
-              compactFill || sideControls ? "px-0" : "px-1.5",
-            )}
-          >
           <div
             ref={screenRef}
             role="application"
@@ -451,11 +453,10 @@ export function PhoneScreen({
             )}
 
           </div>
-          </div>
           {sideControls && (
             <div
               data-side-power
-              className="flex shrink-0 items-center justify-center pl-2"
+              className="flex w-[4.75rem] shrink-0 items-center justify-center"
             >
               <Button
                 type="button"
