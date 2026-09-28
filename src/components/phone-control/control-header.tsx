@@ -7,14 +7,14 @@ interface ControlHeaderProps {
 
 export function ControlHeader({ onlineCount, totalCount }: ControlHeaderProps) {
   return (
-    <header className="relative z-10 flex flex-wrap items-end justify-between gap-4 border-b border-[var(--pc-line)] px-4 py-4 sm:px-6">
-      <div className="flex flex-col gap-1">
-        <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--pc-muted)]">
-          PhoneFarm · Control Plane
-        </p>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--pc-ink)] sm:text-4xl">
+    <header className="relative z-10 flex shrink-0 items-center justify-between gap-3 border-b border-[var(--pc-line)] px-4 py-2 sm:px-6">
+      <div className="flex min-w-0 items-baseline gap-3">
+        <h1 className="font-display text-lg font-bold tracking-tight text-[var(--pc-ink)]">
           Phone Control
         </h1>
+        <p className="truncate font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--pc-muted)]">
+          PhoneFarm
+        </p>
       </div>
       <div className="flex items-center gap-2 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1.5 backdrop-blur-sm">
         <span

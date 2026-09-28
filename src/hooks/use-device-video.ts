@@ -63,6 +63,8 @@ export interface UseDeviceVideoResult {
   decodeState: VideoDecodeState;
   error: string | null;
   configured: boolean;
+  /** Decoded frame size. The click target uses this so taps match the picture. */
+  frameSize: { width: number; height: number } | null;
 }
 
 /**
@@ -76,6 +78,9 @@ export function useDeviceVideo(
   const [status, setStatus] = useState<VideoStatusMessage | null>(null);
   const [decodeState, setDecodeState] = useState<VideoDecodeState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(
+    null,
+  );
   const configured = agentBaseUrl() !== null;
 
   const paintFrame = useCallback((frame: VideoFrame) => {
@@ -87,6 +92,7 @@ export function useDeviceVideo(
     if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
       canvas.width = frame.displayWidth;
       canvas.height = frame.displayHeight;
+      setFrameSize({ width: frame.displayWidth, height: frame.displayHeight });
     }
     const ctx = canvas.getContext("2d");
     if (ctx) {
@@ -100,8 +106,10 @@ export function useDeviceVideo(
       setStatus(null);
       setDecodeState("idle");
       setError(null);
+      setFrameSize(null);
       return;
     }
+    setFrameSize(null);
 
     const base = agentBaseUrl();
     // "" is same-origin (packaged UI). Only null means the in-browser mock.
@@ -294,5 +302,5 @@ export function useDeviceVideo(
     };
   }, [serial, paintFrame]);
 
-  return { canvasRef, status, decodeState, error, configured };
+  return { canvasRef, status, decodeState, error, configured, frameSize };
 }

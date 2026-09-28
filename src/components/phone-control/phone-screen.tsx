@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Keyboard, MousePointer2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
@@ -38,8 +38,28 @@ export function PhoneScreen({
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(
     null,
   );
+  const [showFrame, setShowFrame] = useState(true);
 
-  const { canvasRef, status, decodeState, error: videoError, configured } =
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("phonecontrol-show-frame") === "0") {
+        setShowFrame(false);
+      }
+    } catch {
+      // private mode
+    }
+  }, []);
+
+  const toggleFrame = (on: boolean) => {
+    setShowFrame(on);
+    try {
+      localStorage.setItem("phonecontrol-show-frame", on ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  };
+
+  const { canvasRef, status, decodeState, error: videoError, configured, frameSize } =
     useDeviceVideo(device?.serial);
 
   const offline = !device || device.status !== "online";
@@ -60,6 +80,10 @@ export function PhoneScreen({
     return `${device.name} · video`;
   })();
 
+  const videoWidth = frameSize?.width || device?.resolution.width || 9;
+  const videoHeight = frameSize?.height || device?.resolution.height || 19.5;
+  const aspectRatio = `${videoWidth} / ${videoHeight}`;
+
   const handlePointer = (e: React.PointerEvent<HTMLDivElement>) => {
     if (offline || !mouseOn || !screenRef.current) return;
     const rect = screenRef.current.getBoundingClientRect();
@@ -79,29 +103,32 @@ export function PhoneScreen({
         </p>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center">
         <div
           className={cn(
-            "relative flex w-full max-w-[min(100%,360px)] flex-col",
-            "rounded-[2rem] border-[3px] border-[var(--pc-frame)] bg-[var(--pc-frame)]",
-            "shadow-[0_24px_60px_-24px_rgba(15,30,40,0.55)]",
-            "transition-[transform,box-shadow] duration-500 ease-out",
-            !offline && "hover:-translate-y-0.5",
+            "flex min-h-0 w-full max-w-full flex-1 flex-col items-center",
+            showFrame &&
+              "max-w-[380px] rounded-[2rem] border-[3px] border-[var(--pc-frame)] bg-[var(--pc-frame)] shadow-[0_24px_60px_-24px_rgba(15,30,40,0.55)]",
           )}
         >
-          {/* Notch */}
-          <div className="absolute left-1/2 top-2 z-20 h-5 w-24 -translate-x-1/2 rounded-full bg-black/80" />
+          {showFrame && (
+            <div className="pointer-events-none mt-2 h-5 w-24 shrink-0 rounded-full bg-black/80" />
+          )}
 
+          <div className="flex min-h-0 w-full flex-1 items-center justify-center px-1.5 [container-type:size]">
           <div
             ref={screenRef}
             role="application"
             aria-label="Phone screen"
             onPointerDown={handlePointer}
             className={cn(
-              "relative mx-1.5 mt-1.5 aspect-[9/19.5] overflow-hidden rounded-[1.55rem]",
+              "relative overflow-hidden",
+              showFrame && "rounded-[1.55rem]",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
+              aspectRatio,
+              width: `min(100cqw, calc(100cqh * ${videoWidth} / ${videoHeight}))`,
               background: offline
                 ? "linear-gradient(160deg, #1a1f24 0%, #0c0e10 100%)"
                 : `linear-gradient(165deg,
@@ -115,7 +142,7 @@ export function PhoneScreen({
               <canvas
                 ref={canvasRef}
                 className={cn(
-                  "absolute inset-0 z-[5] h-full w-full object-cover",
+                  "absolute inset-0 z-[5] h-full w-full",
                   showingVideo ? "opacity-100" : "opacity-0",
                 )}
               />
@@ -213,55 +240,35 @@ export function PhoneScreen({
               />
             )}
 
-            {lastTap && (
-              <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 rounded-lg border border-white/15 bg-black/55 px-2.5 py-2 backdrop-blur-md">
-                <p className="font-mono text-[9px] uppercase tracking-wider text-[var(--pc-signal)]">
-                  Broadcast · {lastTap.mode} · {broadcastLabel}
-                </p>
-                <ul className="mt-1 max-h-16 space-y-0.5 overflow-hidden font-mono text-[10px] text-white/85">
-                  {lastTap.targets.map((t) => (
-                    <li key={t.deviceId}>
-                      {t.deviceName}: ({t.x}, {t.y}) / {t.width}×{t.height}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+          </div>
           </div>
 
-          {/* Android nav bar area */}
-          <div className="flex items-center justify-center gap-6 px-4 py-3">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={offline}
-              onClick={() => onNav("back")}
-              className="h-8 min-w-10 rounded-full bg-white/5 font-mono text-xs text-white/80 hover:bg-white/10 hover:text-white"
-              aria-label="Back"
-            >
-              ◀
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={offline}
-              onClick={() => onNav("home")}
-              className="h-8 min-w-14 rounded-full bg-white/5 font-mono text-[10px] tracking-wider text-white/80 hover:bg-white/10 hover:text-white"
-            >
-              HOME
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={offline}
-              onClick={() => onNav("recent")}
-              className="h-8 min-w-14 rounded-full bg-white/5 font-mono text-[10px] tracking-wider text-white/80 hover:bg-white/10 hover:text-white"
-            >
-              RECENT
-            </Button>
+          <div className={cn("flex shrink-0 items-center justify-center gap-3", showFrame ? "px-4 py-3" : "py-2")}>
+            {(
+              [
+                ["back", "◀", "Back"],
+                ["home", "HOME", "Home"],
+                ["recent", "RECENT", "Recent"],
+              ] as const
+            ).map(([action, label, name]) => (
+              <Button
+                key={action}
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={offline}
+                onClick={() => onNav(action)}
+                aria-label={name}
+                className={cn(
+                  "h-8 min-w-12 rounded-full font-mono text-[10px] tracking-wider",
+                  showFrame
+                    ? "bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+                    : "border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]",
+                )}
+              >
+                {label}
+              </Button>
+            ))}
           </div>
         </div>
       </div>
@@ -285,7 +292,23 @@ export function PhoneScreen({
           <MousePointer2 className="size-3.5" />
           Mouse
         </Toggle>
+        <Toggle
+          pressed={showFrame}
+          onPressedChange={toggleFrame}
+          aria-label="Toggle phone frame"
+          className="gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 data-[state=on]:border-[var(--pc-accent)] data-[state=on]:bg-[var(--pc-accent-soft)] data-[state=on]:text-[var(--pc-accent)]"
+        >
+          Frame
+        </Toggle>
       </div>
+      {lastTap && (
+        <p className="truncate text-center font-mono text-[10px] text-[var(--pc-muted)]">
+          {lastTap.mode} · {broadcastLabel}
+          {lastTap.targets[0]
+            ? ` · ${lastTap.targets[0].deviceName} (${lastTap.targets[0].x}, ${lastTap.targets[0].y})`
+            : ""}
+        </p>
+      )}
     </section>
   );
 }
