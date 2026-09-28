@@ -227,9 +227,9 @@ export function usePhoneControl() {
           const names = result.targets.map((t) => t.deviceName).join(", ");
           return names ? `Installed on ${names}` : "Installed";
         }
-        return failed
-          .map((t) => t.detail || `${t.deviceName} failed`)
-          .join(" · ");
+        return [...new Set(failed.map((t) => t.detail || `${t.deviceName} failed`))].join(
+          " · ",
+        );
       } catch (err) {
         return err instanceof Error ? err.message : "Install failed";
       }
