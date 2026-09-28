@@ -6,6 +6,7 @@ import type {
   NavAction,
   NavBroadcast,
   NormalizedPoint,
+  PointerPhase,
   SessionStatus,
   TapBroadcast,
 } from "@/lib/devices/types";
@@ -23,6 +24,14 @@ export interface DevicesClient {
     mode: ControlMode,
     targets: Device[],
     point: NormalizedPoint,
+  ): Promise<TapBroadcast>;
+  sendPointer(
+    mode: ControlMode,
+    targets: Device[],
+    phase: PointerPhase,
+    point: NormalizedPoint,
+    frameWidth: number,
+    frameHeight: number,
   ): Promise<TapBroadcast>;
   sendNav(
     mode: ControlMode,
@@ -62,6 +71,31 @@ export function createMockDevicesClient(): DevicesClient {
         targets: mapped,
       };
       console.info("[mock-control] tap", broadcast);
+      return broadcast;
+    },
+
+    async sendPointer(mode, targets, _phase, point, frameWidth, frameHeight) {
+      await delay(8);
+      const width = frameWidth || targets[0]?.resolution.width || 0;
+      const height = frameHeight || targets[0]?.resolution.height || 0;
+      const mapped: MappedTap[] = targets.map((device) => ({
+        deviceId: device.id,
+        deviceName: device.name,
+        x: Math.round(point.x * width),
+        y: Math.round(point.y * height),
+        width,
+        height,
+        inject: "stub" as const,
+        injectDetail: "mock client",
+      }));
+      const broadcast: TapBroadcast = {
+        id: `pointer-${Date.now()}`,
+        at: Date.now(),
+        normalized: point,
+        mode,
+        targets: mapped,
+      };
+      console.info("[mock-control] pointer", broadcast);
       return broadcast;
     },
 
@@ -129,6 +163,26 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || `agent sendTap failed: ${res.status}`);
+      }
+      return (await res.json()) as TapBroadcast;
+    },
+
+    async sendPointer(mode, targets, phase, point, frameWidth, frameHeight) {
+      const res = await fetch(`${base}/api/input/pointer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode,
+          targetIds: targets.map((t) => t.id),
+          phase,
+          normalized: point,
+          frameWidth,
+          frameHeight,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `agent sendPointer failed: ${res.status}`);
       }
       return (await res.json()) as TapBroadcast;
     },

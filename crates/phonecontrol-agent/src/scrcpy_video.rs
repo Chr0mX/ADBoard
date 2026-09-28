@@ -8,9 +8,11 @@
 //! adb -s SERIAL push scrcpy-server /data/local/tmp/phonecontrol-scrcpy-server.jar
 //! adb -s SERIAL forward tcp:PORT localabstract:NAME
 //! adb -s SERIAL shell CLASSPATH=... app_process / com.genymobile.scrcpy.Server VER \
-//!     tunnel_forward=true audio=false control=false cleanup=false \
+//!     tunnel_forward=true audio=false control=true cleanup=false \
 //!     raw_stream=true video_codec=h264 max_size=1280
-//! # then TCP connect 127.0.0.1:PORT → raw Annex-B H264
+//! # TCP connect video, then control. Dummy byte is on the video socket.
+//! # Bytes after that byte are Annex-B H264. The control socket takes
+//! # scrcpy INJECT_TOUCH_EVENT messages.
 //! ```
 //!
 //! `raw_stream=true` forces device/frame/stream metadata off. `send_dummy_byte`
@@ -18,6 +20,7 @@
 //! socket is listening, so the first byte is the only way to know the server
 //! is actually there. Everything after that byte is Annex-B H264.
 
+use crate::scrcpy_control::{open_video_and_control, ControlSender};
 use crate::video::{
     start_annexb_reader_pump, AnnexBPumpMeta, VideoHub, VideoPump, SCRCPY_DEFAULT_CODEC_STRING,
 };
@@ -75,11 +78,18 @@ pub struct ScrcpyRawCapture {
     server: Child,
     local_port: u16,
     pub server_log: ServerLog,
+    pub control: ControlSender,
 }
 
 impl ScrcpyRawCapture {
-    pub fn into_parts(self) -> (VideoPump, Child, u16, ServerLog) {
-        (self.pump, self.server, self.local_port, self.server_log)
+    pub fn into_parts(self) -> (VideoPump, Child, u16, ServerLog, ControlSender) {
+        (
+            self.pump,
+            self.server,
+            self.local_port,
+            self.server_log,
+            self.control,
+        )
     }
 }
 
@@ -206,7 +216,7 @@ pub fn build_server_shell_command(
         "log_level=info".to_string(),
         "tunnel_forward=true".to_string(),
         "audio=false".to_string(),
-        "control=false".to_string(),
+        "control=true".to_string(),
         "cleanup=false".to_string(),
         "raw_stream=true".to_string(),
         "send_dummy_byte=true".to_string(),
@@ -359,11 +369,13 @@ pub async fn start_scrcpy_raw_capture(
         spawn_server_log(err, serial.clone(), server_log.clone());
     }
 
-    // adb forward accepts localhost immediately, even when scrcpy-server is
-    // not listening yet. Read the dummy byte before treating the socket as H264.
+    // adb forward accepts localhost before scrcpy-server listens. The server
+    // writes the dummy byte on the video socket only after the control socket
+    // is accepted, so both connects happen before that read.
     let addr = SocketAddr::from(([127, 0, 0, 1], local_port));
-    let stream = match connect_until_handshake(addr, Duration::from_secs(10)).await {
-        Ok(s) => s,
+    let (stream, control_stream) = match open_video_and_control(addr, Duration::from_secs(10)).await
+    {
+        Ok(pair) => pair,
         Err(e) => {
             let _ = server.kill().await;
             let _ = server.wait().await;
@@ -374,6 +386,7 @@ pub async fn start_scrcpy_raw_capture(
             ));
         }
     };
+    let control = ControlSender::spawn(control_stream);
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     if let Ok(Some(status)) = server.try_wait() {
@@ -393,6 +406,7 @@ pub async fn start_scrcpy_raw_capture(
         server,
         local_port,
         server_log,
+        control,
     })
 }
 
@@ -431,6 +445,7 @@ where
 ///
 /// A bare connect is not enough: `adb forward` accepts on 127.0.0.1 before
 /// `localabstract:scrcpy` exists, and that socket then EOFs.
+#[cfg_attr(not(test), allow(dead_code))]
 async fn connect_until_handshake(
     addr: SocketAddr,
     budget: Duration,
@@ -486,7 +501,7 @@ mod tests {
         assert!(cmd.contains("raw_stream=true"));
         assert!(cmd.contains("tunnel_forward=true"));
         assert!(cmd.contains("audio=false"));
-        assert!(cmd.contains("control=false"));
+        assert!(cmd.contains("control=true"));
         assert!(cmd.contains("video_codec=h264"));
         assert!(cmd.contains("max_size=1280"));
         assert!(cmd.contains("max_fps=15"));

@@ -193,6 +193,31 @@ pub struct TapRequest {
     pub normalized: NormalizedPoint,
 }
 
+/// One step of a finger gesture. Passed through as a scrcpy touch event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PointerPhase {
+    Down,
+    Move,
+    Up,
+    Cancel,
+}
+
+/// POST /api/input/pointer
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PointerRequest {
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+    pub phase: PointerPhase,
+    pub normalized: NormalizedPoint,
+    /// Decoded video size. Scrcpy drops a touch whose screen size is not the video size.
+    #[serde(default)]
+    pub frame_width: u32,
+    #[serde(default)]
+    pub frame_height: u32,
+}
+
 /// POST /api/input/nav
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -291,6 +316,7 @@ pub enum ClientCommand {
     Ping,
     Tap(TapRequest),
     Nav(NavRequest),
+    Pointer(PointerRequest),
 }
 
 /// Text status frame on `/ws/devices/{serial}/video`.
@@ -417,6 +443,17 @@ pub enum ControllerToAgent {
         mode: ControlMode,
         target_ids: Vec<String>,
         normalized: NormalizedPoint,
+    },
+    Pointer {
+        request_id: String,
+        mode: ControlMode,
+        target_ids: Vec<String>,
+        phase: PointerPhase,
+        normalized: NormalizedPoint,
+        #[serde(default)]
+        frame_width: u32,
+        #[serde(default)]
+        frame_height: u32,
     },
     Nav {
         request_id: String,

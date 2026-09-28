@@ -200,6 +200,39 @@ async fn handle_controller_cmd(
             };
             send(sink, &reply).await?;
         }
+        ControllerToAgent::Pointer {
+            request_id,
+            mode,
+            target_ids,
+            phase,
+            normalized,
+            frame_width,
+            frame_height,
+        } => {
+            let reply = match state
+                .handle_pointer_local(
+                    mode,
+                    &target_ids,
+                    phase,
+                    normalized,
+                    frame_width,
+                    frame_height,
+                )
+                .await
+            {
+                Ok(broadcast) => AgentToController::TapResult {
+                    request_id,
+                    error: None,
+                    targets: broadcast.targets,
+                },
+                Err(e) => AgentToController::TapResult {
+                    request_id,
+                    error: Some(e),
+                    targets: vec![],
+                },
+            };
+            send(sink, &reply).await?;
+        }
         ControllerToAgent::Nav {
             request_id,
             mode,

@@ -7,8 +7,8 @@ use crate::session::{scrcpy_binary, SessionManager};
 use crate::video::VideoHub;
 use phonecontrol_protocol::{
     map_to_devices, AdbAvailability, ControlMode, Device, DeviceStatus, HostInfo, InjectMode,
-    InjectStatus, MappedTap, NavActionType, NavBroadcast, NavTargetResult, NormalizedPoint, Role,
-    ScrcpyAvailability, ServerEvent, SessionAction, SessionStatus, TapBroadcast,
+    InjectStatus, MappedTap, NavActionType, NavBroadcast, NavTargetResult, NormalizedPoint,
+    PointerPhase, Role, ScrcpyAvailability, ServerEvent, SessionAction, SessionStatus, TapBroadcast,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -418,6 +418,131 @@ impl AppState {
         Ok(TapBroadcast::new(mode, point, mapped))
     }
 
+    /// Pass a finger event through to each device's scrcpy control socket.
+    pub async fn handle_pointer(
+        &self,
+        mode: ControlMode,
+        target_ids: &[String],
+        phase: PointerPhase,
+        point: NormalizedPoint,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<TapBroadcast, String> {
+        let devices = self.resolve_targets(target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online targets for pointer".into());
+        }
+
+        let local_serials = self.local_serial_set().await;
+        let mut local_group = Vec::new();
+        let mut by_remote: HashMap<String, Vec<Device>> = HashMap::new();
+        for d in devices {
+            if local_serials.contains(&d.serial) {
+                local_group.push(d);
+            } else {
+                by_remote
+                    .entry(d.effective_host_id().to_string())
+                    .or_default()
+                    .push(d);
+            }
+        }
+
+        let mut mapped: Vec<MappedTap> = Vec::new();
+        if !local_group.is_empty() {
+            mapped.extend(
+                self.inject_pointer_group(&local_group, phase, point, frame_width, frame_height)
+                    .await,
+            );
+        }
+
+        for (host_id, group) in by_remote {
+            if self.inner.role != Role::Controller {
+                return Err(format!("cannot reach remote host {host_id} from agent"));
+            }
+            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+            match self
+                .inner
+                .mesh
+                .proxy_pointer(
+                    &host_id,
+                    mode,
+                    ids,
+                    phase,
+                    point,
+                    frame_width,
+                    frame_height,
+                )
+                .await
+            {
+                Ok(remote) => mapped.extend(remote),
+                Err(e) => {
+                    for d in &group {
+                        let mut tap = frame_tap(point, d, frame_width, frame_height);
+                        tap.inject = InjectStatus::Error;
+                        tap.inject_detail = Some(e.clone());
+                        mapped.push(tap);
+                    }
+                }
+            }
+        }
+
+        let broadcast = TapBroadcast::new(mode, point, mapped);
+        if phase != PointerPhase::Move {
+            self.publish(ServerEvent::TapResult {
+                broadcast: broadcast.clone(),
+            });
+        }
+        Ok(broadcast)
+    }
+
+    pub async fn handle_pointer_local(
+        &self,
+        mode: ControlMode,
+        target_ids: &[String],
+        phase: PointerPhase,
+        point: NormalizedPoint,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<TapBroadcast, String> {
+        let devices = self.resolve_local_targets(target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online local targets for pointer".into());
+        }
+        let mapped = self
+            .inject_pointer_group(&devices, phase, point, frame_width, frame_height)
+            .await;
+        Ok(TapBroadcast::new(mode, point, mapped))
+    }
+
+    async fn inject_pointer_group(
+        &self,
+        devices: &[Device],
+        phase: PointerPhase,
+        point: NormalizedPoint,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Vec<MappedTap> {
+        let mut mapped = Vec::with_capacity(devices.len());
+        for device in devices {
+            let mut tap = frame_tap(point, device, frame_width, frame_height);
+            if frame_width == 0 || frame_height == 0 {
+                tap.inject = InjectStatus::Error;
+                tap.inject_detail = Some("video size unknown — wait for the picture".into());
+                mapped.push(tap);
+                continue;
+            }
+            let result = self
+                .inner
+                .sessions
+                .inject_pointer(&device.serial, phase, tap.x, tap.y, tap.width, tap.height)
+                .await;
+            tap.inject = result.status;
+            tap.inject_detail = result.detail;
+            mapped.push(tap);
+        }
+        mapped
+    }
+
     pub async fn handle_nav(
         &self,
         mode: ControlMode,
@@ -680,6 +805,36 @@ fn devices_equal(a: &[Device], b: &[Device]) -> bool {
             && x.connection == y.connection
             && x.host_id == y.host_id
     })
+}
+
+fn frame_tap(
+    point: NormalizedPoint,
+    device: &Device,
+    frame_width: u32,
+    frame_height: u32,
+) -> MappedTap {
+    let width = if frame_width > 0 {
+        frame_width
+    } else {
+        device.resolution.width
+    };
+    let height = if frame_height > 0 {
+        frame_height
+    } else {
+        device.resolution.height
+    };
+    let x = (point.x.clamp(0.0, 1.0) * f64::from(width)).round() as u32;
+    let y = (point.y.clamp(0.0, 1.0) * f64::from(height)).round() as u32;
+    MappedTap {
+        device_id: device.id.clone(),
+        device_name: device.name.clone(),
+        x,
+        y,
+        width,
+        height,
+        inject: InjectStatus::Stub,
+        inject_detail: None,
+    }
 }
 
 fn env_truthy(key: &str) -> bool {

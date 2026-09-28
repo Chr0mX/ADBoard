@@ -5,8 +5,10 @@
 //! - When scrcpy-server + ADB are ready and source is `auto|scrcpy`: start standalone
 //!   scrcpy-server with `raw_stream=true`, demux Annex-B AUs into the video hub
 //!   (`backend: scrcpy`).
-//! - Inject v1: `adb shell input tap` / `keyevent` when ADB is available; otherwise stub.
+//! - Touch and swipe: scrcpy control-socket messages (the same ones scrcpy uses).
+//! - Nav keys: `adb shell input keyevent` when ADB is available; otherwise stub.
 
+use crate::scrcpy_control::ControlSender;
 use crate::scrcpy_video::{
     cleanup_forward, scrcpy_server_jar, scrcpy_video_ready, start_scrcpy_raw_capture, ServerLog,
 };
@@ -17,7 +19,7 @@ use crate::video::{
 };
 use phonecontrol_protocol::{
     adb_keyevent_args, adb_tap_args, nav_keycode, InjectMode, InjectStatus, MappedTap,
-    NavActionType, ScrcpyAvailability, SessionStatus, StreamState, VideoStatusFrame,
+    NavActionType, PointerPhase, ScrcpyAvailability, SessionStatus, StreamState, VideoStatusFrame,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -42,6 +44,8 @@ struct LiveSession {
     forward_port: Option<u16>,
     /// Recent scrcpy-server stdout/stderr, when a real server was started.
     server_log: Option<ServerLog>,
+    /// Scrcpy control socket. Touch down/move/up are written here.
+    control: Option<ControlSender>,
 }
 
 pub struct SessionManager {
@@ -172,6 +176,7 @@ impl SessionManager {
                 video: None,
                 forward_port: None,
                 server_log: None,
+                control: None,
             },
         );
         info
@@ -314,7 +319,7 @@ impl SessionManager {
         .await
         {
             Ok(capture) => {
-                let (pump, server_child, port, server_log) = capture.into_parts();
+                let (pump, server_child, port, server_log, control) = capture.into_parts();
                 let mut guard = self.sessions.write().await;
                 let live = guard.entry(serial.to_string()).or_insert_with(|| LiveSession {
                     info: SessionStatus {
@@ -327,14 +332,16 @@ impl SessionManager {
                     video: None,
                     forward_port: None,
                     server_log: None,
+                    control: None,
                 });
                 live.video = Some(pump);
                 live.child = Some(server_child);
                 live.forward_port = Some(port);
                 live.server_log = Some(server_log);
+                live.control = Some(control);
                 live.info.stream = StreamState::Streaming;
                 live.info.note =
-                    "scrcpy-server raw_stream=true → Annex-B AUs on video WS".into();
+                    "scrcpy-server raw H264 + control socket for touch".into();
                 live.info.backend = "scrcpy".into();
                 info!(serial, "scrcpy session streaming (real H264 pipe)");
                 let info = live.info.clone();
@@ -374,6 +381,7 @@ impl SessionManager {
             video: None,
             forward_port: None,
             server_log: None,
+            control: None,
         });
         live.video = Some(pump);
         live.info.stream = StreamState::Streaming;
@@ -412,6 +420,7 @@ impl SessionManager {
                     video: None,
                     forward_port: None,
                     server_log: None,
+                    control: None,
                 });
                 live.video = Some(pump);
                 live.info.stream = StreamState::Streaming;
@@ -453,18 +462,20 @@ impl SessionManager {
     }
 
     async fn stop_producers(&self, serial: &str) {
-        let (child, video, forward_port) = {
+        let (child, video, forward_port, control) = {
             let mut guard = self.sessions.write().await;
             if let Some(live) = guard.get_mut(serial) {
                 (
                     live.child.take(),
                     live.video.take(),
                     live.forward_port.take(),
+                    live.control.take(),
                 )
             } else {
-                (None, None, None)
+                (None, None, None, None)
             }
         };
+        drop(control);
         if let Some(video) = video {
             video.stop().await;
         }
@@ -491,6 +502,7 @@ impl SessionManager {
             video: None,
             forward_port: None,
             server_log: None,
+            control: None,
         });
         entry.info.stream = stream;
         entry.info.note = note;
@@ -540,6 +552,44 @@ impl SessionManager {
             }
             Err(e) => {
                 warn!(serial, error = %e, "[adb-inject] tap failed");
+                InjectResult {
+                    status: InjectStatus::Error,
+                    detail: Some(e),
+                }
+            }
+        }
+    }
+
+    /// Write one scrcpy touch message. `width`/`height` are the encoded video size.
+    pub async fn inject_pointer(
+        &self,
+        serial: &str,
+        phase: PointerPhase,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    ) -> InjectResult {
+        let sender = {
+            let guard = self.sessions.read().await;
+            guard.get(serial).and_then(|live| live.control.clone())
+        };
+        let Some(sender) = sender else {
+            return InjectResult {
+                status: InjectStatus::Error,
+                detail: Some("scrcpy control is not connected".into()),
+            };
+        };
+        match sender.touch(phase, x, y, width, height).await {
+            Ok(()) => {
+                info!(serial, ?phase, x, y, width, height, "[scrcpy-control] touch");
+                InjectResult {
+                    status: InjectStatus::Ok,
+                    detail: Some("scrcpy".into()),
+                }
+            }
+            Err(e) => {
+                warn!(serial, error = %e, "[scrcpy-control] touch failed");
                 InjectResult {
                     status: InjectStatus::Error,
                     detail: Some(e),

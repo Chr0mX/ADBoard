@@ -9,8 +9,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use phonecontrol_protocol::{
-    AgentToController, ClientCommand, ControllerToAgent, HealthResponse, NavRequest, Role,
-    ServerEvent, SessionStatus, TapRequest, VideoStatusFrame,
+    AgentToController, ClientCommand, ControllerToAgent, HealthResponse, NavRequest,
+    PointerRequest, Role, ServerEvent, SessionStatus, TapRequest, VideoStatusFrame,
 };
 use tokio::sync::mpsc;
 use std::path::PathBuf;
@@ -36,6 +36,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/sessions/{serial}/stop", post(stop_session))
         .route("/api/sessions/{serial}/restart", post(restart_session))
         .route("/api/input/tap", post(input_tap))
+        .route("/api/input/pointer", post(input_pointer))
         .route("/api/input/nav", post(input_nav))
         .route("/ws", get(ws_upgrade))
         .route("/ws/events", get(ws_upgrade))
@@ -180,6 +181,24 @@ async fn input_tap(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
+async fn input_pointer(
+    State(state): State<AppState>,
+    Json(body): Json<PointerRequest>,
+) -> Result<Json<phonecontrol_protocol::TapBroadcast>, (StatusCode, String)> {
+    state
+        .handle_pointer(
+            body.mode,
+            &body.target_ids,
+            body.phase,
+            body.normalized,
+            body.frame_width,
+            body.frame_height,
+        )
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
 async fn input_nav(
     State(state): State<AppState>,
     Json(body): Json<NavRequest>,
@@ -301,6 +320,21 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     .await
                                 {
                                     warn!(error = %e, "ws nav failed");
+                                }
+                            }
+                            ClientCommand::Pointer(req) => {
+                                if let Err(e) = state_in
+                                    .handle_pointer(
+                                        req.mode,
+                                        &req.target_ids,
+                                        req.phase,
+                                        req.normalized,
+                                        req.frame_width,
+                                        req.frame_height,
+                                    )
+                                    .await
+                                {
+                                    warn!(error = %e, "ws pointer failed");
                                 }
                             }
                         }

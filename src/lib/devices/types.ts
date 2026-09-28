@@ -45,6 +45,8 @@ export interface NormalizedPoint {
   y: number;
 }
 
+export type PointerPhase = "down" | "move" | "up" | "cancel";
+
 export interface MappedTap {
   deviceId: string;
   deviceName: string;

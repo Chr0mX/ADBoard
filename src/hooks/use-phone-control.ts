@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
 import { MOCK_DEVICES } from "@/lib/devices/mock-data";
 import type {
@@ -8,6 +8,7 @@ import type {
   Device,
   NavAction,
   NormalizedPoint,
+  PointerPhase,
   SessionStatus,
   TapBroadcast,
 } from "@/lib/devices/types";
@@ -170,23 +171,42 @@ export function usePhoneControl() {
     }
   }, [devices, controlMode, selectedIds, activeId]);
 
-  const handleScreenTap = useCallback(
-    async (point: NormalizedPoint) => {
-      if (!mouseOn || broadcastTargets.length === 0) return null;
-      try {
-        const result = await devicesClient.sendTap(
-          controlMode,
-          broadcastTargets,
-          point,
-        );
-        setLastTap(result);
-        setTapLog((prev) => [result, ...prev].slice(0, 12));
-        return result;
-      } catch (err) {
-        console.error("[phone-control] sendTap failed", err);
-        setError(err instanceof Error ? err.message : "Tap failed");
-        return null;
-      }
+  const pointerQueue = useRef<Promise<unknown>>(Promise.resolve());
+
+  const handlePointer = useCallback(
+    (phase: PointerPhase, point: NormalizedPoint, frameWidth: number, frameHeight: number) => {
+      if (!mouseOn || broadcastTargets.length === 0) return Promise.resolve(null);
+      const run = async () => {
+        try {
+          const result = await devicesClient.sendPointer(
+            controlMode,
+            broadcastTargets,
+            phase,
+            point,
+            frameWidth,
+            frameHeight,
+          );
+          const failed = result.targets.find((t) => t.inject === "error");
+          if (failed?.injectDetail) setError(failed.injectDetail);
+          if (phase === "move") {
+            if (failed) setLastTap(result);
+            return result;
+          }
+          setLastTap(result);
+          setTapLog((prev) => [result, ...prev].slice(0, 12));
+          return result;
+        } catch (err) {
+          console.error("[phone-control] sendPointer failed", err);
+          setError(err instanceof Error ? err.message : "Touch failed");
+          return null;
+        }
+      };
+      const next = pointerQueue.current.then(run, run);
+      pointerQueue.current = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
     },
     [mouseOn, broadcastTargets, controlMode],
   );
@@ -256,7 +276,7 @@ export function usePhoneControl() {
     setMouseOn,
     selectDevice,
     broadcastTargets,
-    handleScreenTap,
+    handlePointer,
     handleNav,
     lastTap,
     tapLog,

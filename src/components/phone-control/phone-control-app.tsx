@@ -26,22 +26,33 @@ export function PhoneControlApp() {
     setMouseOn,
     selectDevice,
     broadcastTargets,
-    handleScreenTap,
+    handlePointer,
     handleNav,
     lastTap,
     tapLog,
   } = usePhoneControl();
 
-  const onTap = async (point: { x: number; y: number }) => {
-    const result = await handleScreenTap(point);
+  const onPointer = async (event: {
+    phase: "down" | "move" | "up" | "cancel";
+    point: { x: number; y: number };
+    frameWidth: number;
+    frameHeight: number;
+  }) => {
+    const result = await handlePointer(
+      event.phase,
+      event.point,
+      event.frameWidth,
+      event.frameHeight,
+    );
+    if (event.phase !== "up" && event.phase !== "cancel") return;
     const names = broadcastTargets.map((d) => d.name).join(", ");
     const injectHint =
       result?.targets
         ?.map((t) => t.inject)
         .filter(Boolean)
         .join("/") || "—";
-    toast.message("Tap broadcast", {
-      description: `${controlMode.toUpperCase()} → ${names || "none"} @ (${point.x.toFixed(3)}, ${point.y.toFixed(3)}) · inject ${injectHint}`,
+    toast.message(event.phase === "up" ? "Touch" : "Touch cancel", {
+      description: `${controlMode.toUpperCase()} → ${names || "none"} @ (${event.point.x.toFixed(3)}, ${event.point.y.toFixed(3)}) · inject ${injectHint}`,
     });
   };
 
@@ -78,7 +89,7 @@ export function PhoneControlApp() {
                 mouseOn={mouseOn}
                 onKeyboardChange={setKeyboardOn}
                 onMouseChange={setMouseOn}
-                onTap={onTap}
+                onPointer={onPointer}
                 onNav={handleNav}
                 lastTap={lastTap}
                 broadcastLabel={`${broadcastTargets.length} target${broadcastTargets.length === 1 ? "" : "s"}`}

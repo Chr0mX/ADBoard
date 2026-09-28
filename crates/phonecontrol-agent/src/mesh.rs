@@ -2,7 +2,7 @@
 
 use phonecontrol_protocol::{
     now_ms, ControlMode, ControllerToAgent, Device, HostInfo, HostStatus, MappedTap, NavActionType,
-    NavTargetResult, NormalizedPoint, Role, SessionAction, SessionStatus,
+    NavTargetResult, NormalizedPoint, PointerPhase, Role, SessionAction, SessionStatus,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -270,6 +270,45 @@ impl MeshRegistry {
             Err(_) => {
                 self.pending.lock().await.taps.remove(&request_id);
                 Err(format!("tap proxy timeout for host {host_id}"))
+            }
+        }
+    }
+
+    pub async fn proxy_pointer(
+        &self,
+        host_id: &str,
+        mode: ControlMode,
+        target_ids: Vec<String>,
+        phase: PointerPhase,
+        normalized: NormalizedPoint,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<Vec<MappedTap>, String> {
+        let request_id = Uuid::new_v4().to_string();
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = self.pending.lock().await;
+            pending.taps.insert(request_id.clone(), PendingTap { tx });
+        }
+        self.send(
+            host_id,
+            ControllerToAgent::Pointer {
+                request_id: request_id.clone(),
+                mode,
+                target_ids,
+                phase,
+                normalized,
+                frame_width,
+                frame_height,
+            },
+        )
+        .await?;
+        match tokio::time::timeout(PROXY_TIMEOUT, rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err("agent dropped pointer response".into()),
+            Err(_) => {
+                self.pending.lock().await.taps.remove(&request_id);
+                Err(format!("pointer proxy timeout for host {host_id}"))
             }
         }
     }

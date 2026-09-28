@@ -5,6 +5,7 @@ mod mesh;
 mod mesh_client;
 mod mock;
 mod paths;
+mod scrcpy_control;
 mod scrcpy_video;
 mod session;
 mod video;
@@ -75,6 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  GET  /api/sessions");
     info!("  POST /api/sessions/{{serial}}/start|stop|restart");
     info!("  POST /api/input/tap");
+    info!("  POST /api/input/pointer");
     info!("  POST /api/input/nav");
     info!("  WS   /ws");
     info!("  WS   /ws/agent   (controller: agent registration)");

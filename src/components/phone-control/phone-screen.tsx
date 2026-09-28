@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { normalizePoint } from "@/lib/devices/coords";
-import type { Device, SessionStatus, TapBroadcast } from "@/lib/devices/types";
+import type { Device, PointerPhase, SessionStatus, TapBroadcast } from "@/lib/devices/types";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 
 interface PhoneScreenProps {
@@ -16,7 +16,12 @@ interface PhoneScreenProps {
   mouseOn: boolean;
   onKeyboardChange: (on: boolean) => void;
   onMouseChange: (on: boolean) => void;
-  onTap: (point: { x: number; y: number }) => void;
+  onPointer: (event: {
+    phase: PointerPhase;
+    point: { x: number; y: number };
+    frameWidth: number;
+    frameHeight: number;
+  }) => void;
   onNav: (action: "back" | "home" | "recent") => void;
   lastTap: TapBroadcast | null;
   broadcastLabel: string;
@@ -29,12 +34,15 @@ export function PhoneScreen({
   mouseOn,
   onKeyboardChange,
   onMouseChange,
-  onTap,
+  onPointer,
   onNav,
   lastTap,
   broadcastLabel,
 }: PhoneScreenProps) {
   const screenRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ id: number; lastX: number; lastY: number; lastSent: number } | null>(
+    null,
+  );
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(
     null,
   );
@@ -93,12 +101,57 @@ export function PhoneScreen({
   const videoHeight = frameSize?.height || device?.resolution.height || 19.5;
   const aspectRatio = `${videoWidth} / ${videoHeight}`;
 
-  const handlePointer = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (offline || !mouseOn || !screenRef.current) return;
+  const emitPointer = (phase: PointerPhase, clientX: number, clientY: number) => {
+    if (!screenRef.current) return;
     const rect = screenRef.current.getBoundingClientRect();
-    const point = normalizePoint(e.clientX, e.clientY, rect);
-    setRipple({ x: point.x * 100, y: point.y * 100, key: Date.now() });
-    onTap(point);
+    const point = normalizePoint(clientX, clientY, rect);
+    setRipple((prev) => ({
+      x: point.x * 100,
+      y: point.y * 100,
+      key: phase === "down" ? Date.now() : (prev?.key ?? Date.now()),
+    }));
+    onPointer({
+      phase,
+      point,
+      frameWidth: frameSize?.width ?? 0,
+      frameHeight: frameSize?.height ?? 0,
+    });
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (offline || !mouseOn || e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      id: e.pointerId,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      lastSent: performance.now(),
+    };
+    emitPointer("down", e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.id !== e.pointerId) return;
+    const now = performance.now();
+    const dx = e.clientX - drag.lastX;
+    const dy = e.clientY - drag.lastY;
+    if (now - drag.lastSent < 16 && dx * dx + dy * dy < 4) return;
+    drag.lastX = e.clientX;
+    drag.lastY = e.clientY;
+    drag.lastSent = now;
+    emitPointer("move", e.clientX, e.clientY);
+  };
+
+  const finishPointer = (e: React.PointerEvent<HTMLDivElement>, phase: "up" | "cancel") => {
+    const drag = dragRef.current;
+    if (!drag || drag.id !== e.pointerId) return;
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    emitPointer(phase, e.clientX, e.clientY);
   };
 
   return (
@@ -129,9 +182,12 @@ export function PhoneScreen({
             ref={screenRef}
             role="application"
             aria-label="Phone screen"
-            onPointerDown={handlePointer}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={(e) => finishPointer(e, "up")}
+            onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
-              "relative overflow-hidden",
+              "relative touch-none overflow-hidden select-none",
               showFrame && "rounded-[1.55rem]",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
@@ -320,7 +376,11 @@ export function PhoneScreen({
         <p className="truncate text-center font-mono text-[10px] text-[var(--pc-muted)]">
           {lastTap.mode} · {broadcastLabel}
           {lastTap.targets[0]
-            ? ` · ${lastTap.targets[0].deviceName} (${lastTap.targets[0].x}, ${lastTap.targets[0].y})`
+            ? ` · ${lastTap.targets[0].deviceName} (${lastTap.targets[0].x}, ${lastTap.targets[0].y})${
+                lastTap.targets[0].inject === "error" && lastTap.targets[0].injectDetail
+                  ? ` · ${lastTap.targets[0].injectDetail}`
+                  : ""
+              }`
             : ""}
         </p>
       )}
