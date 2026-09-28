@@ -942,6 +942,8 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
                 return;
             }
         }
+        // Set after a gap. P-frames must not follow the replayed IDR.
+        let mut wait_for_key = false;
         loop {
             tokio::select! {
                 packet = video_rx.recv() => {
@@ -952,6 +954,9 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
                             }
                         }
                         Ok(crate::video::VideoPacket::AnnexB(bytes)) => {
+                            if !crate::video::keep_after_gap(&mut wait_for_key, &bytes) {
+                                continue;
+                            }
                             if sender
                                 .send(Message::Binary(bytes.into()))
                                 .await
@@ -976,6 +981,7 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
                             if failed {
                                 break;
                             }
+                            wait_for_key = true;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }

@@ -26,7 +26,8 @@ pub const TESTPATTERN_FPS: u32 = 10;
 /// Placeholder until SPS / stream meta is known (WebCodecs sizes from decoded frames).
 pub const SCRCPY_DEFAULT_CODEC_STRING: &str = "avc1.42E01E";
 
-const VIDEO_CHANNEL_CAP: usize = 64;
+/// A few seconds at 60 fps. A short hitch must not drop the reference frames.
+const VIDEO_CHANNEL_CAP: usize = 180;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoSourceKind {
@@ -935,6 +936,21 @@ pub fn annexb_has_sps(au: &[u8]) -> bool {
         .any(|nal| nal_unit_type(nal) == 7)
 }
 
+/// After a subscriber misses packets, only a fresh IDR (and the SPS ahead of it)
+/// can be shown. P-frames that follow a replayed old IDR decode as garbage.
+pub fn keep_after_gap(waiting_for_key: &mut bool, au: &[u8]) -> bool {
+    if !*waiting_for_key {
+        return true;
+    }
+    if annexb_has_sps(au) || annexb_is_keyframe(au) {
+        if annexb_is_keyframe(au) {
+            *waiting_for_key = false;
+        }
+        return true;
+    }
+    false
+}
+
 /// True when an Annex-B AU contains an IDR (keyframe).
 pub fn annexb_is_keyframe(au: &[u8]) -> bool {
     for nal in split_annexb_nals(au) {
@@ -1168,6 +1184,27 @@ mod tests {
         }
         assert!(got_binary);
         pump.stop().await;
+    }
+
+    #[test]
+    fn gap_drops_predicted_frames_until_the_next_idr() {
+        let idr = {
+            let aus = split_annexb_access_units_complete(FIXTURE_H264);
+            aus.into_iter().find(|au| annexb_is_keyframe(au)).expect("idr")
+        };
+        let pframe = vec![0u8, 0, 0, 1, 0x01, 0x00];
+        let mut waiting = true;
+        assert!(!keep_after_gap(&mut waiting, &pframe));
+        assert!(waiting);
+        let mut sps_only = vec![0u8, 0, 0, 1];
+        sps_only.extend_from_slice(&hex_bytes(
+            "67640032acd94044012de5f011000003000100000300320f183196",
+        ));
+        assert!(keep_after_gap(&mut waiting, &sps_only));
+        assert!(waiting, "parameter sets do not end the gap");
+        assert!(keep_after_gap(&mut waiting, &idr));
+        assert!(!waiting);
+        assert!(keep_after_gap(&mut waiting, &pframe));
     }
 
     #[test]

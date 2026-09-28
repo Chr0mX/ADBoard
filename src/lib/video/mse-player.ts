@@ -14,18 +14,22 @@ import { createInitSegment, createMediaSegment } from "./fmp4";
  */
 export class MseH264Player {
   private video: HTMLVideoElement;
-  private media: MediaSource;
-  private url: string;
+  private media!: MediaSource;
+  private url!: string;
   private sb: SourceBuffer | null = null;
   private queue: Uint8Array[] = [];
   private held: Uint8Array[] = [];
   private sps: Uint8Array | null = null;
   private pps: Uint8Array | null = null;
   private codec = "avc1.42E01E";
+  private picture: { width: number; height: number } | null = null;
   private sourceOpen = false;
   private sawKey = false;
   private sequence = 1;
-  private decodeTime = 0;
+  private mediaTime = 0;
+  private lastPushAt = 0;
+  private keyTimes: number[] = [];
+  private lastSeekAt = 0;
   private raf = 0;
   private closed = false;
   private painted = false;
@@ -43,9 +47,15 @@ export class MseH264Player {
     this.video.muted = true;
     this.video.playsInline = true;
     this.video.autoplay = true;
+    this.video.dataset.scrcpyVideo = "mse";
     this.video.style.cssText =
       "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none";
     document.body.appendChild(this.video);
+    this.attachMedia();
+    this.raf = requestAnimationFrame(() => this.draw());
+  }
+
+  private attachMedia() {
     this.media = new MediaSource();
     this.url = URL.createObjectURL(this.media);
     this.video.src = this.url;
@@ -58,18 +68,31 @@ export class MseH264Player {
         if (!this.closed) this.onError("Browser blocked video playback");
       });
     });
-    this.raf = requestAnimationFrame(() => this.draw());
   }
 
   push(au: Uint8Array) {
     if (this.closed) return;
     const sets = extractSpsPps(au);
     if (sets) {
+      const codec = codecStringFromSps(sets.sps);
+      const size = spsDimensions(sets.sps);
+      const sizeChanged =
+        size != null &&
+        this.picture != null &&
+        (size.width !== this.picture.width || size.height !== this.picture.height);
+      if (this.sb && (codec !== this.codec || sizeChanged)) {
+        this.sps = sets.sps;
+        this.pps = sets.pps;
+        this.codec = codec;
+        this.picture = size ?? this.picture;
+        this.reopen(au);
+        return;
+      }
       this.sps = sets.sps;
       this.pps = sets.pps;
-      this.codec = codecStringFromSps(sets.sps);
-      const size = spsDimensions(sets.sps);
+      this.codec = codec;
       if (size && size.width > 0 && size.height > 0) {
+        this.picture = size;
         this.onSize(size, "sps");
       }
     }
@@ -83,14 +106,47 @@ export class MseH264Player {
     if (!this.sb && !key) return;
     this.ensureBuffer();
     if (!this.sb) return;
-    if (key) this.sawKey = true;
+    if (key) {
+      this.sawKey = true;
+      this.keyTimes.push(this.mediaTime / 1000);
+      if (this.keyTimes.length > 12) this.keyTimes.shift();
+    }
     const sample = annexBToAvcc(au);
     if (sample.byteLength === 0) return;
+    const duration = this.frameDuration();
     this.enqueue(
-      createMediaSegment(sample, this.sequence, this.decodeTime, key),
+      createMediaSegment(sample, this.sequence, this.mediaTime, key, duration),
     );
     this.sequence += 1;
-    this.decodeTime += 33;
+    this.mediaTime += duration;
+  }
+
+  /** Match the phone's arrival rate. A fixed 30 fps clock runs behind a 60 fps stream. */
+  private frameDuration(): number {
+    const now = performance.now();
+    const gap = this.lastPushAt === 0 ? 16 : now - this.lastPushAt;
+    this.lastPushAt = now;
+    return Math.round(Math.min(80, Math.max(8, gap)));
+  }
+
+  /** New encoder size or profile needs a new SourceBuffer. Repeating SPS does not. */
+  private reopen(au: Uint8Array) {
+    this.queue = [];
+    this.held = [au];
+    this.sb = null;
+    this.sourceOpen = false;
+    this.sawKey = false;
+    this.mediaTime = 0;
+    this.keyTimes = [];
+    this.lastPushAt = 0;
+    try {
+      if (this.media.readyState === "open") this.media.endOfStream();
+    } catch {
+      // already closing
+    }
+    this.video.pause();
+    URL.revokeObjectURL(this.url);
+    this.attachMedia();
   }
 
   close() {
@@ -121,7 +177,9 @@ export class MseH264Player {
       return;
     }
     this.sb = this.media.addSourceBuffer(chosen);
-    this.sb.mode = "segments";
+    // Sequence mode plays appended samples back to back. Segment mode plus a
+    // fixed 33 ms clock made Original (60 fps) jump into the middle of a GOP.
+    this.sb.mode = "sequence";
     this.sb.addEventListener("updateend", () => this.pump());
     this.sb.addEventListener("error", () => {
       if (!this.closed) this.onError("H264 playback failed");
@@ -138,24 +196,44 @@ export class MseH264Player {
   private pump() {
     const sb = this.sb;
     if (!sb || sb.updating || this.queue.length === 0 || this.closed) return;
-    if (this.video.buffered.length > 0) {
-      const start = this.video.buffered.start(0);
-      if (this.video.currentTime - start > 1.5) {
-        try {
-          sb.remove(start, Math.max(start, this.video.currentTime - 0.4));
-          return;
-        } catch {
-          // fall through and append
-        }
-      }
-    }
     const next = this.queue.shift();
     if (!next) return;
     try {
       sb.appendBuffer(next.slice());
     } catch (err) {
+      const quota = err instanceof DOMException && err.name === "QuotaExceededError";
+      if (quota && this.video.buffered.length > 0) {
+        this.queue.unshift(next);
+        try {
+          const start = this.video.buffered.start(0);
+          sb.remove(start, start + 1);
+        } catch {
+          if (!this.closed) this.onError("H264 playback failed");
+        }
+        return;
+      }
       console.warn("[video] mse append failed", err);
       if (!this.closed) this.onError("H264 playback failed");
+    }
+  }
+
+  /** Jump only to a keyframe, and not on every frame. */
+  private catchUp() {
+    const video = this.video;
+    if (video.buffered.length === 0) return;
+    const end = video.buffered.end(video.buffered.length - 1);
+    if (end - video.currentTime < 0.75) return;
+    const now = performance.now();
+    if (now - this.lastSeekAt < 1000) return;
+    const target = [...this.keyTimes]
+      .reverse()
+      .find((time) => time < end - 0.02 && time > video.currentTime);
+    if (target == null) return;
+    this.lastSeekAt = now;
+    try {
+      video.currentTime = target;
+    } catch {
+      // seek while updating
     }
   }
 
@@ -171,12 +249,7 @@ export class MseH264Player {
       }
       const ctx = canvas.getContext("2d");
       ctx?.drawImage(this.video, 0, 0, width, height);
-      if (this.video.buffered.length > 0) {
-        const end = this.video.buffered.end(this.video.buffered.length - 1);
-        if (end - this.video.currentTime > 0.35) {
-          this.video.currentTime = Math.max(0, end - 0.05);
-        }
-      }
+      this.catchUp();
       this.onSize({ width, height }, "frame");
       if (!this.painted) {
         this.painted = true;

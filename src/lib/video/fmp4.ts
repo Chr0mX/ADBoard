@@ -173,6 +173,7 @@ export function createMediaSegment(
   sequence: number,
   decodeTime: number,
   keyframe: boolean,
+  duration = SAMPLE_DURATION,
 ): Uint8Array {
   const tfhd = fullbox("tfhd", 0, 0x020000, u32(1));
   const tfdt = fullbox("tfdt", 1, 0, u64(decodeTime));
@@ -181,7 +182,7 @@ export function createMediaSegment(
     "trun",
     0,
     0x000001 | 0x000100 | 0x000200 | 0x000400,
-    concat([u32(1), u32(0), u32(SAMPLE_DURATION), u32(sample.length), u32(sampleFlags)]),
+    concat([u32(1), u32(0), u32(duration), u32(sample.length), u32(sampleFlags)]),
   );
   const traf = box("traf", concat([tfhd, tfdt, trun]));
   const mfhd = fullbox("mfhd", 0, 0, u32(sequence));
