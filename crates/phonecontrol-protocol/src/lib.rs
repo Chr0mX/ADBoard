@@ -692,6 +692,30 @@ pub struct ClipboardResponse {
     pub results: Vec<DeviceOpResult>,
 }
 
+/// POST /api/input/text — scrcpy `INJECT_TEXT` into the focused field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextInjectRequest {
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+    pub text: String,
+}
+
+/// POST /api/input/key — scrcpy `INJECT_KEYCODE`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyInjectRequest {
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+    /// `down` or `up`.
+    pub action: String,
+    pub keycode: u32,
+    #[serde(default)]
+    pub repeat: u32,
+    #[serde(default)]
+    pub metastate: u32,
+}
+
 /// Build `adb -s SERIAL shell input tap X Y` argv (excluding the adb binary).
 pub fn adb_tap_args(serial: &str, x: u32, y: u32) -> Vec<String> {
     vec![

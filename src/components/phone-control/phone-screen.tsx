@@ -168,6 +168,7 @@ export function PhoneScreen({
   return (
     <section
       data-fill={fillWindow ? "1" : "0"}
+      data-device-id={device?.id ?? ""}
       data-device-name={device?.name ?? ""}
       className="flex min-h-0 flex-1 flex-col gap-2"
     >
@@ -346,6 +347,16 @@ export function PhoneScreen({
                 {name}
               </Button>
             ))}
+            {fillWindow && (
+              <Toggle
+                pressed={keyboardOn}
+                onPressedChange={onKeyboardChange}
+                aria-label="Toggle keyboard injection"
+                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+              >
+                <Keyboard className="size-4" />
+              </Toggle>
+            )}
             {fillWindow && (
               <ApkFileButton disabled={offline || installing} onFile={pickApk} />
             )}

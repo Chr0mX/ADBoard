@@ -12,8 +12,9 @@ use futures_util::{SinkExt, StreamExt};
 use phonecontrol_protocol::{
     AgentToController, ClientCommand, ClipboardPullRequest, ClipboardResponse, ClipboardSetRequest,
     ControlMode, ControllerToAgent, DeviceCommandRequest, HealthResponse, HostFileEntry,
-    InstallBroadcast, NavRequest, PointerRequest, Role, ScrcpyOptionsRequest, ScrcpyOptionsResponse,
-    ServerEvent, SessionStatus, TapRequest, VideoStatusFrame,
+    InstallBroadcast, KeyInjectRequest, NavRequest, PointerRequest, Role, ScrcpyOptionsRequest,
+    ScrcpyOptionsResponse, ServerEvent, SessionStatus, TapRequest, TextInjectRequest,
+    VideoStatusFrame,
 };
 use std::path::PathBuf;
 use tokio::sync::mpsc;
@@ -65,6 +66,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/input/clipboard", post(clipboard_set))
         .route("/api/input/clipboard/pull", post(clipboard_pull))
+        .route("/api/input/text", post(input_text))
+        .route("/api/input/key", post(input_key))
         .route("/ws", get(ws_upgrade))
         .route("/ws/events", get(ws_upgrade))
         .route("/ws/agent", get(ws_agent_upgrade))
@@ -270,6 +273,28 @@ async fn clipboard_set(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
+async fn input_text(
+    State(state): State<AppState>,
+    Json(body): Json<TextInjectRequest>,
+) -> Result<Json<ClipboardResponse>, (StatusCode, String)> {
+    state
+        .handle_text(body)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+async fn input_key(
+    State(state): State<AppState>,
+    Json(body): Json<KeyInjectRequest>,
+) -> Result<Json<ClipboardResponse>, (StatusCode, String)> {
+    state
+        .handle_key(body)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
 async fn clipboard_pull(
     State(state): State<AppState>,
     Json(body): Json<ClipboardPullRequest>,
@@ -352,8 +377,10 @@ async fn device_push(
     body: Bytes,
 ) -> Result<Json<phonecontrol_protocol::DeviceCommandResponse>, (StatusCode, String)> {
     let targets = header_list(&headers, "x-phonecontrol-targets")?;
-    let filename = header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
-    let dest = header_value(&headers, "x-phonecontrol-dest").unwrap_or_else(|| "/sdcard/Download/".into());
+    let filename =
+        header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
+    let dest =
+        header_value(&headers, "x-phonecontrol-dest").unwrap_or_else(|| "/sdcard/Download/".into());
     if filename.contains('/') || filename.contains('\\') {
         return Err((StatusCode::BAD_REQUEST, "invalid filename".into()));
     }
@@ -432,7 +459,10 @@ async fn host_file_delete(
     let path = crate::device_ops::host_path(&root, &query.path)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     if path == root {
-        return Err((StatusCode::BAD_REQUEST, "refusing to delete the file root".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "refusing to delete the file root".into(),
+        ));
     }
     if path.is_dir() {
         std::fs::remove_dir_all(&path).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
@@ -446,14 +476,16 @@ async fn host_file_upload(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<HostFileEntry>, (StatusCode, String)> {
-    let filename = header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
+    let filename =
+        header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
     let dir = header_value(&headers, "x-phonecontrol-dir").unwrap_or_else(|| "Downloads".into());
     if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
         return Err((StatusCode::BAD_REQUEST, "invalid filename".into()));
     }
     let root = crate::device_ops::files_root();
     let rel = format!("{}/{}", dir.trim_matches('/'), filename);
-    let path = crate::device_ops::host_path(&root, &rel).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let path =
+        crate::device_ops::host_path(&root, &rel).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     }
@@ -477,10 +509,7 @@ async fn host_file_raw(
     let bytes = tokio::fs::read(&path)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     Response::builder()
         .header("content-type", "application/octet-stream")
         .header(
@@ -1011,7 +1040,8 @@ async fn handle_audio_socket(socket: WebSocket, state: AppState, serial: String)
             None => {
                 let mut frame = state.inner.sessions.audio_status(&serial).await;
                 frame.stream = phonecontrol_protocol::StreamState::Error;
-                frame.note = format!("agent {host_id} did not advertise http_base — cannot proxy audio");
+                frame.note =
+                    format!("agent {host_id} did not advertise http_base — cannot proxy audio");
                 let _ = send_json(&mut sender, &frame).await;
             }
         }
@@ -1373,6 +1403,60 @@ mod tests {
             "{clip_text}"
         );
         assert!(clip_text.contains("\"ok\":false"), "{clip_text}");
+    }
+
+    #[tokio::test]
+    async fn keyboard_routes_use_the_control_socket() {
+        let state = AppState::new(Role::Controller, "keys".into(), "keys".into(), 0, None);
+        let devices = state.list_devices().await;
+        let id = devices
+            .iter()
+            .find(|d| d.status == phonecontrol_protocol::DeviceStatus::Online)
+            .expect("online device")
+            .id
+            .clone();
+        let app = router(state);
+
+        let text = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/input/text")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"mode":"selected","targetIds":["{id}"],"text":"a"}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(text.status(), StatusCode::OK);
+        let text_body = body_text(text).await;
+        assert!(
+            text_body.contains("scrcpy control is not connected"),
+            "{text_body}"
+        );
+
+        let key = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/input/key")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"mode":"selected","targetIds":["{id}"],"action":"down","keycode":66,"repeat":0,"metastate":0}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(key.status(), StatusCode::OK);
+        let key_body = body_text(key).await;
+        assert!(
+            key_body.contains("scrcpy control is not connected"),
+            "{key_body}"
+        );
     }
 
     async fn router_oneshot_note(id: &str) -> (StatusCode, String) {

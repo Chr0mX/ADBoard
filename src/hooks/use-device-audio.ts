@@ -162,6 +162,7 @@ function openSink(status: AudioStatus): Sink | null {
 
 export function useDeviceAudio(serial: string | null, enabled: boolean) {
   const [note, setNote] = useState<string | null>(null);
+  const [stream, setStream] = useState<string | null>(null);
   const sinkRef = useRef<Sink | null>(null);
 
   useEffect(() => {
@@ -188,6 +189,7 @@ export function useDeviceAudio(serial: string | null, enabled: boolean) {
           const sink = status.codec === "opus" && status.stream === "streaming" ? openSink(status) : null;
           sinkRef.current = sink;
           sink?.resume();
+          setStream(status.stream ?? null);
           if (status.note) setNote(status.note);
           else if (!sink && status.stream === "streaming") {
             setNote("This browser cannot play Opus audio on this address.");
@@ -212,6 +214,7 @@ export function useDeviceAudio(serial: string | null, enabled: boolean) {
 
   return {
     note,
+    stream,
     resume: () => sinkRef.current?.resume(),
   };
 }

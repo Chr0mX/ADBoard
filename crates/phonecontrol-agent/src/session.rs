@@ -5,14 +5,14 @@
 //! - When scrcpy-server + ADB are ready and source is `auto|scrcpy`: start standalone
 //!   scrcpy-server with `raw_stream=true`, demux Annex-B AUs into the video hub
 //!   (`backend: scrcpy`).
-//! - Touch and swipe: scrcpy control-socket messages (the same ones scrcpy uses).
+//! - Touch, swipe, typing, and keycodes: scrcpy control-socket messages.
 //! - Nav keys: `adb shell input keyevent` when ADB is available; otherwise stub.
 
 use crate::audio::AudioHub;
 use crate::scrcpy_control::ControlSender;
 use crate::scrcpy_video::{
     cleanup_forward, scrcpy_server_jar, scrcpy_video_ready, start_scrcpy_audio_capture,
-    start_scrcpy_raw_capture, video_launch_for, ServerLog,
+    start_scrcpy_raw_capture, video_launch_for, AudioCapture, ServerLog,
 };
 use crate::video::{
     h264_status_for_session, should_use_testpattern, start_scrcpy_fixture_pump,
@@ -383,62 +383,40 @@ impl SessionManager {
                         Err(e) => note.push_str(&format!(" | screen off failed: {e}")),
                     }
                 }
-                let (audio_child, audio_port) = if prefs.audio {
-                    match start_scrcpy_audio_capture(
+                self.watch_clipboard(serial, control.clone());
+                // Publish the picture and the control socket before audio.
+                // A failed audio server must not hold touch or the H264 pipe.
+                let info = self
+                    .install_live_scrcpy(
+                        serial,
+                        pump,
+                        server_child,
+                        port,
+                        server_log,
+                        control,
+                        note,
+                    )
+                    .await;
+                info!(serial, "scrcpy session streaming (real H264 pipe)");
+                if prefs.audio {
+                    self.audio_hub
+                        .publish_status(opus_frame(
+                            serial,
+                            StreamState::Starting,
+                            "Starting the Opus stream.",
+                        ))
+                        .await;
+                    let audio = start_scrcpy_audio_capture(
                         self.audio_hub.clone(),
                         &adb,
                         &server,
                         self.scrcpy_path.as_deref(),
                         serial,
                     )
-                    .await
-                    {
-                        Ok(audio) => {
-                            note.push_str(" | audio opus");
-                            (Some(audio.child), Some(audio.local_port))
-                        }
-                        Err(e) => {
-                            note.push_str(&format!(" | audio failed: {e}"));
-                            (None, None)
-                        }
-                    }
-                } else {
-                    (None, None)
-                };
-                self.watch_clipboard(serial, control.clone());
-                let mut guard = self.sessions.write().await;
-                let live = guard
-                    .entry(serial.to_string())
-                    .or_insert_with(|| LiveSession {
-                        info: SessionStatus {
-                            serial: serial.to_string(),
-                            stream: StreamState::Starting,
-                            note: String::new(),
-                            backend: "scrcpy".into(),
-                        },
-                        child: None,
-                        video: None,
-                        forward_port: None,
-                        server_log: None,
-                        control: None,
-                        audio_child: None,
-                        audio_port: None,
-                    });
-                live.video = Some(pump);
-                live.child = Some(server_child);
-                live.forward_port = Some(port);
-                live.server_log = Some(server_log);
-                live.control = Some(control);
-                live.audio_child = audio_child;
-                live.audio_port = audio_port;
-                live.info.stream = StreamState::Streaming;
-                live.info.note = note;
-                live.info.backend = "scrcpy".into();
-                info!(serial, "scrcpy session streaming (real H264 pipe)");
-                let info = live.info.clone();
-                drop(guard);
-                self.publish_video_status(&info).await;
-                info
+                    .await;
+                    self.finish_audio(serial, audio).await;
+                }
+                self.get_session(serial).await.unwrap_or(info)
             }
             Err(e) => {
                 warn!(serial, error = %e, "scrcpy raw capture failed");
@@ -518,8 +496,8 @@ impl SessionManager {
                         forward_port: None,
                         server_log: None,
                         control: None,
-                audio_child: None,
-                audio_port: None,
+                        audio_child: None,
+                        audio_port: None,
                     });
                 live.video = Some(pump);
                 live.info.stream = StreamState::Streaming;
@@ -646,12 +624,9 @@ impl SessionManager {
         let mut power = Vec::new();
         if quality_changed || audio_changed {
             for serial in serials {
-                let streaming = self
-                    .get_session(serial)
-                    .await
-                    .is_some_and(|s| {
-                        matches!(s.stream, StreamState::Streaming | StreamState::Starting)
-                    });
+                let streaming = self.get_session(serial).await.is_some_and(|s| {
+                    matches!(s.stream, StreamState::Streaming | StreamState::Starting)
+                });
                 if streaming {
                     let _ = self.restart(serial).await;
                     restarted.push(serial.clone());
@@ -691,6 +666,36 @@ impl SessionManager {
         sender.set_clipboard(text, paste).await
     }
 
+    pub async fn inject_text(&self, serial: &str, text: &str) -> Result<(), String> {
+        let sender = self.control_sender(serial).await;
+        let Some(sender) = sender else {
+            return Err("scrcpy control is not connected".into());
+        };
+        sender.inject_text(text).await
+    }
+
+    pub async fn inject_keycode(
+        &self,
+        serial: &str,
+        action: u8,
+        keycode: u32,
+        repeat: u32,
+        metastate: u32,
+    ) -> Result<(), String> {
+        let sender = self.control_sender(serial).await;
+        let Some(sender) = sender else {
+            return Err("scrcpy control is not connected".into());
+        };
+        sender
+            .inject_keycode(action, keycode, repeat, metastate)
+            .await
+    }
+
+    async fn control_sender(&self, serial: &str) -> Option<ControlSender> {
+        let guard = self.sessions.read().await;
+        guard.get(serial).and_then(|live| live.control.clone())
+    }
+
     pub async fn pull_clipboard(&self, serial: &str) -> Result<String, String> {
         let sender = {
             let guard = self.sessions.read().await;
@@ -708,36 +713,101 @@ impl SessionManager {
         }
         let prefs = self.prefs.read().await.clone();
         if !prefs.audio {
-            return AudioStatusFrame {
-                serial: serial.into(),
-                stream: StreamState::Idle,
-                note: "Audio forwarding is off.".into(),
-                codec: "opus".into(),
-                sample_rate: 48_000,
-                channels: 2,
-                framing: "opus-pts".into(),
-                description: None,
-            };
+            return opus_frame(serial, StreamState::Idle, "Audio forwarding is off.");
         }
-        let note = if self.scrcpy_ready() {
-            "Waiting for the Opus stream.".into()
+        if self.scrcpy_ready() {
+            opus_frame(serial, StreamState::Starting, "Starting the Opus stream.")
         } else {
-            "Audio forwarding needs scrcpy-server and ADB. This session has no device audio."
-                .into()
-        };
-        AudioStatusFrame {
-            serial: serial.into(),
-            stream: if self.scrcpy_ready() {
-                StreamState::Starting
-            } else {
-                StreamState::Error
-            },
-            note,
-            codec: "opus".into(),
-            sample_rate: 48_000,
-            channels: 2,
-            framing: "opus-pts".into(),
-            description: None,
+            opus_frame(
+                serial,
+                StreamState::Error,
+                "Audio forwarding needs scrcpy-server and ADB. This session has no device audio.",
+            )
+        }
+    }
+
+    async fn install_live_scrcpy(
+        &self,
+        serial: &str,
+        pump: VideoPump,
+        server_child: Child,
+        port: u16,
+        server_log: ServerLog,
+        control: ControlSender,
+        note: String,
+    ) -> SessionStatus {
+        let mut guard = self.sessions.write().await;
+        let live = guard
+            .entry(serial.to_string())
+            .or_insert_with(|| LiveSession {
+                info: SessionStatus {
+                    serial: serial.to_string(),
+                    stream: StreamState::Starting,
+                    note: String::new(),
+                    backend: "scrcpy".into(),
+                },
+                child: None,
+                video: None,
+                forward_port: None,
+                server_log: None,
+                control: None,
+                audio_child: None,
+                audio_port: None,
+            });
+        live.video = Some(pump);
+        live.child = Some(server_child);
+        live.forward_port = Some(port);
+        live.server_log = Some(server_log);
+        live.control = Some(control);
+        live.info.stream = StreamState::Streaming;
+        live.info.note = note;
+        live.info.backend = "scrcpy".into();
+        let info = live.info.clone();
+        drop(guard);
+        self.publish_video_status(&info).await;
+        info
+    }
+
+    async fn finish_audio(&self, serial: &str, audio: Result<AudioCapture, String>) {
+        match audio {
+            Ok(audio) => {
+                let mut orphan = None;
+                let info = {
+                    let mut guard = self.sessions.write().await;
+                    if let Some(live) = guard.get_mut(serial) {
+                        live.audio_child = Some(audio.child);
+                        live.audio_port = Some(audio.local_port);
+                        live.info.note.push_str(" | audio opus");
+                        Some(live.info.clone())
+                    } else {
+                        orphan = Some(audio.child);
+                        None
+                    }
+                };
+                if let Some(mut child) = orphan {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                }
+                if let Some(info) = info {
+                    self.publish_video_status(&info).await;
+                }
+            }
+            Err(error) => {
+                let shown = clip_note(&error);
+                let info = {
+                    let mut guard = self.sessions.write().await;
+                    guard.get_mut(serial).map(|live| {
+                        live.info.note.push_str(" | audio failed");
+                        live.info.clone()
+                    })
+                };
+                self.audio_hub
+                    .publish_status(opus_frame(serial, StreamState::Error, shown))
+                    .await;
+                if let Some(info) = info {
+                    self.publish_video_status(&info).await;
+                }
+            }
         }
     }
 
@@ -966,6 +1036,7 @@ impl SessionManager {
         let mut changed = Vec::new();
         let mut finished_video = Vec::new();
         let mut stale_forwards = Vec::new();
+        let mut audio_failed: Vec<(String, String)> = Vec::new();
         {
             let mut guard = self.sessions.write().await;
             for live in guard.values_mut() {
@@ -998,11 +1069,21 @@ impl SessionManager {
                 if let Some(ref mut audio) = live.audio_child {
                     match audio.try_wait() {
                         Ok(None) => {}
-                        Ok(Some(_)) | Err(_) => {
+                        Ok(Some(status)) => {
+                            let serial = live.info.serial.clone();
                             live.audio_child = None;
                             if let Some(port) = live.audio_port.take() {
-                                stale_forwards.push((live.info.serial.clone(), port));
+                                stale_forwards.push((serial.clone(), port));
                             }
+                            audio_failed.push((serial, format!("Audio server exited ({status}).")));
+                        }
+                        Err(e) => {
+                            let serial = live.info.serial.clone();
+                            live.audio_child = None;
+                            if let Some(port) = live.audio_port.take() {
+                                stale_forwards.push((serial.clone(), port));
+                            }
+                            audio_failed.push((serial, format!("Audio server wait error: {e}")));
                         }
                     }
                 }
@@ -1036,7 +1117,36 @@ impl SessionManager {
         for session in &changed {
             self.publish_video_status(session).await;
         }
+        for (serial, note) in audio_failed {
+            self.audio_hub
+                .publish_status(opus_frame(&serial, StreamState::Error, note))
+                .await;
+        }
         changed
+    }
+}
+
+fn opus_frame(serial: &str, stream: StreamState, note: impl Into<String>) -> AudioStatusFrame {
+    AudioStatusFrame {
+        serial: serial.into(),
+        stream,
+        note: note.into(),
+        codec: "opus".into(),
+        sample_rate: 48_000,
+        channels: 2,
+        framing: "opus-pts".into(),
+        description: None,
+    }
+}
+
+fn clip_note(message: &str) -> String {
+    let line = message.lines().next().unwrap_or(message).trim();
+    if line.len() <= 180 {
+        line.to_string()
+    } else {
+        let mut out = line.chars().take(177).collect::<String>();
+        out.push_str("...");
+        out
     }
 }
 

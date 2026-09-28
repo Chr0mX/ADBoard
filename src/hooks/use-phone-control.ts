@@ -12,6 +12,44 @@ import type {
   SessionStatus,
   TapBroadcast,
 } from "@/lib/devices/types";
+import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
+import {
+  isTypingTarget,
+  keyDownInject,
+  keyUpInject,
+  type KeyInject,
+} from "@/lib/scrcpy/keyboard";
+
+const DEVICE_KEY = "phonecontrol-active-device";
+
+function readSavedDevice(): string | null {
+  try {
+    return localStorage.getItem(DEVICE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedDevice(id: string) {
+  try {
+    localStorage.setItem(DEVICE_KEY, id);
+  } catch {
+    // private mode
+  }
+}
+
+function storedMode(value: string | null): ControlMode {
+  if (value === "all" || value === "multi" || value === "selected") return value;
+  return "selected";
+}
+
+function readControlMode(): string | null {
+  try {
+    return localStorage.getItem("phonecontrol-control-mode");
+  } catch {
+    return null;
+  }
+}
 
 export type SelectionEvent = {
   deviceId: string;
@@ -34,8 +72,13 @@ export function usePhoneControl() {
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [controlMode, setControlMode] = useState<ControlMode>("all");
-  const [keyboardOn, setKeyboardOn] = useState(false);
+  const [storedControlMode, writeControlMode] = useStoredString("phonecontrol-control-mode");
+  const controlMode = storedMode(storedControlMode);
+  const setControlMode = useCallback(
+    (mode: ControlMode) => writeControlMode(mode),
+    [writeControlMode],
+  );
+  const [keyboardOn, setKeyboardOn] = useStoredFlag("phonecontrol-keyboard", true);
   const [mouseOn, setMouseOn] = useState(true);
   const [lastTap, setLastTap] = useState<TapBroadcast | null>(null);
   const [tapLog, setTapLog] = useState<TapBroadcast[]>([]);
@@ -47,11 +90,15 @@ export function usePhoneControl() {
     setDevices(next);
     setActiveId((prev) => {
       if (prev && next.some((d) => d.id === prev)) return prev;
+      const saved = readSavedDevice();
+      if (saved && next.some((d) => d.id === saved)) return saved;
       return initialActiveId(next);
     });
     setSelectedIds((prev) => {
       const still = [...prev].filter((id) => next.some((d) => d.id === id));
       if (still.length > 0) return new Set(still);
+      const saved = readSavedDevice();
+      if (saved && next.some((d) => d.id === saved)) return new Set([saved]);
       const id = initialActiveId(next);
       return id ? new Set([id]) : new Set();
     });
@@ -138,6 +185,7 @@ export function usePhoneControl() {
     const multi = ctrlKey || metaKey || shiftKey;
 
     setActiveId(deviceId);
+    writeSavedDevice(deviceId);
 
     if (multi) {
       setSelectedIds((prev) => {
@@ -149,12 +197,12 @@ export function usePhoneControl() {
         }
         return next;
       });
-      setControlMode((mode) => (mode === "selected" ? "multi" : mode));
+      if (storedMode(readControlMode()) === "selected") setControlMode("multi");
     } else {
       setSelectedIds(new Set([deviceId]));
-      setControlMode((mode) => (mode === "multi" ? "selected" : mode));
+      if (storedMode(readControlMode()) === "multi") setControlMode("selected");
     }
-  }, []);
+  }, [setControlMode]);
 
   const broadcastTargets = useMemo(() => {
     const online = controllable(devices);
@@ -284,6 +332,95 @@ export function usePhoneControl() {
     },
     [broadcastTargets, controlMode],
   );
+
+  const keyQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const targetsRef = useRef(broadcastTargets);
+  const modeRef = useRef(controlMode);
+  useEffect(() => {
+    targetsRef.current = broadcastTargets;
+    modeRef.current = controlMode;
+  }, [broadcastTargets, controlMode]);
+
+  useEffect(() => {
+    if (!keyboardOn) return;
+
+    const post = (inject: KeyInject) => {
+      const targets = targetsRef.current;
+      const mode = modeRef.current;
+      if (targets.length === 0) return;
+      const run = async () => {
+        try {
+          const result =
+            inject.kind === "text"
+              ? await devicesClient.sendText(mode, targets, inject.text)
+              : await devicesClient.sendKey(mode, targets, {
+                  action: "down",
+                  keycode: inject.keycode,
+                  repeat: inject.repeat,
+                  metastate: inject.metastate,
+                });
+          const failed = result.results.find((row) => !row.ok);
+          if (failed?.error) {
+            setError((prev) => (prev === failed.error ? prev : failed.error ?? prev));
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Key failed";
+          setError((prev) => (prev === message ? prev : message));
+        }
+      };
+      const next = keyQueue.current.then(run, run);
+      keyQueue.current = next.then(
+        () => undefined,
+        () => undefined,
+      );
+    };
+
+    const onDown = (event: KeyboardEvent) => {
+      if (event.isComposing || isTypingTarget(event.target)) return;
+      const inject = keyDownInject(event);
+      if (!inject) return;
+      event.preventDefault();
+      post(inject);
+    };
+    const onUp = (event: KeyboardEvent) => {
+      if (event.isComposing || isTypingTarget(event.target)) return;
+      const inject = keyUpInject(event);
+      if (!inject || inject.kind !== "key") return;
+      event.preventDefault();
+      const targets = targetsRef.current;
+      const mode = modeRef.current;
+      if (targets.length === 0) return;
+      const run = async () => {
+        try {
+          const result = await devicesClient.sendKey(mode, targets, {
+            action: "up",
+            keycode: inject.keycode,
+            repeat: 0,
+            metastate: inject.metastate,
+          });
+          const failed = result.results.find((row) => !row.ok);
+          if (failed?.error) {
+            setError((prev) => (prev === failed.error ? prev : failed.error ?? prev));
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Key failed";
+          setError((prev) => (prev === message ? prev : message));
+        }
+      };
+      const next = keyQueue.current.then(run, run);
+      keyQueue.current = next.then(
+        () => undefined,
+        () => undefined,
+      );
+    };
+
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, [keyboardOn]);
 
   return {
     devices,

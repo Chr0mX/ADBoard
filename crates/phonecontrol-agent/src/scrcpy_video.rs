@@ -21,7 +21,7 @@
 //! is actually there. Everything after that byte is Annex-B H264.
 
 use crate::audio::{spawn_opus_pump, AudioHub};
-use crate::scrcpy_control::{open_audio_socket, open_video_and_control, ControlSender};
+use crate::scrcpy_control::{open_video_and_control, ControlSender};
 use crate::video::{
     start_annexb_reader_pump, AnnexBPumpMeta, VideoHub, VideoPump, SCRCPY_DEFAULT_CODEC_STRING,
 };
@@ -119,10 +119,7 @@ impl ServerLog {
     }
 
     pub fn tail(&self) -> String {
-        self.lines
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.lines.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -297,9 +294,10 @@ pub fn build_server_shell_command(
 
 /// Audio-only server. No `raw_stream`, so codec id + packet headers stay on.
 /// Socket name is `scrcpy_{scid:08x}` (scid=-1 would steal the video socket).
+/// `scid` is hex: `Options.parse` uses `Integer.parseInt(value, 16)`.
 pub fn build_audio_server_command(remote_jar: &str, version: &str, scid: u32) -> String {
     let opts = [
-        format!("scid={scid}"),
+        format!("scid={scid:x}"),
         "log_level=info".to_string(),
         "tunnel_forward=true".to_string(),
         "video=false".to_string(),
@@ -321,7 +319,11 @@ pub fn audio_scid(serial: &str) -> u32 {
         hash = hash.wrapping_mul(31).wrapping_add(u32::from(b));
     }
     let id = hash & 0x7fff_fffe;
-    if id == 0 { 1 } else { id }
+    if id == 0 {
+        1
+    } else {
+        id
+    }
 }
 
 pub fn audio_socket_name(scid: u32) -> String {
@@ -548,10 +550,7 @@ where
 /// A bare connect is not enough: `adb forward` accepts on 127.0.0.1 before
 /// `localabstract:scrcpy` exists, and that socket then EOFs.
 #[cfg_attr(not(test), allow(dead_code))]
-async fn connect_until_handshake(
-    addr: SocketAddr,
-    budget: Duration,
-) -> Result<TcpStream, String> {
+async fn connect_until_handshake(addr: SocketAddr, budget: Duration) -> Result<TcpStream, String> {
     let start = std::time::Instant::now();
     let mut last = "scrcpy-server did not send the handshake byte".to_string();
     while start.elapsed() < budget {
@@ -597,18 +596,8 @@ pub async fn start_scrcpy_audio_capture(
     let socket = audio_socket_name(scid);
     let local_port = audio_port_for_serial(serial);
 
-    run_adb(
-        adb,
-        &[
-            "-s",
-            serial,
-            "push",
-            server_jar.to_str().ok_or("server path not utf-8")?,
-            REMOTE_SERVER_PATH,
-        ],
-    )
-    .await?;
-
+    // The video start already pushed the jar. A second push shares the adb
+    // connection with the live forward and stalls the picture.
     let _ = adb_forward_remove(adb, serial, local_port).await;
     run_adb(
         adb,
@@ -641,10 +630,13 @@ pub async fn start_scrcpy_audio_capture(
     }
 
     // Audio-only server accepts one socket, then writes the dummy byte.
+    // Stop as soon as the process exits. A bad scid used to burn the full
+    // handshake budget while the picture and the control socket waited.
     let addr = SocketAddr::from(([127, 0, 0, 1], local_port));
-    let stream = match open_audio_socket(addr, Duration::from_secs(10)).await {
+    let stream = match open_audio_until_exit(&mut server, addr, Duration::from_secs(8)).await {
         Ok(stream) => stream,
         Err(e) => {
+            tokio::time::sleep(Duration::from_millis(40)).await;
             let _ = server.kill().await;
             let _ = server.wait().await;
             let _ = adb_forward_remove(adb, serial, local_port).await;
@@ -660,6 +652,51 @@ pub async fn start_scrcpy_audio_capture(
         child: server,
         local_port,
     })
+}
+
+/// Audio handshake. A server that has already exited returns immediately.
+async fn open_audio_until_exit(
+    server: &mut Child,
+    addr: SocketAddr,
+    budget: Duration,
+) -> Result<TcpStream, String> {
+    let start = std::time::Instant::now();
+    let mut last = "scrcpy audio server did not send the handshake byte".to_string();
+    while start.elapsed() < budget {
+        match server.try_wait() {
+            Ok(Some(status)) => {
+                return Err(format!("scrcpy audio server exited ({status})"));
+            }
+            Err(e) => return Err(format!("scrcpy audio server wait error: {e}")),
+            Ok(None) => {}
+        }
+        match TcpStream::connect(addr).await {
+            Ok(mut stream) => {
+                let mut byte = [0u8; 1];
+                match tokio::time::timeout(Duration::from_millis(250), stream.read_exact(&mut byte))
+                    .await
+                {
+                    Ok(Ok(_)) => {
+                        let _ = stream.set_nodelay(true);
+                        return Ok(stream);
+                    }
+                    Ok(Err(e)) => {
+                        last = format!("audio socket closed before handshake: {e}");
+                    }
+                    Err(_) => {
+                        last =
+                            "scrcpy audio server accepted TCP but did not send the handshake byte"
+                                .into();
+                    }
+                }
+            }
+            Err(e) => {
+                last = format!("audio TCP connect failed: {e}");
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+    Err(last)
 }
 
 /// Remove a previously installed adb forward (best-effort helper for session stop).
@@ -726,7 +763,14 @@ mod tests {
         let scid = audio_scid("R5CR50AR96VZ");
         assert_ne!(scid, 0);
         let cmd = build_audio_server_command(REMOTE_SERVER_PATH, "3.3.1", scid);
-        assert!(cmd.contains(&format!("scid={scid}")));
+        let hex = format!("{scid:x}");
+        assert!(cmd.contains(&format!("scid={hex}")));
+        assert_ne!(
+            hex,
+            scid.to_string(),
+            "fixture scid must not look like decimal"
+        );
+        assert!(i32::from_str_radix(&hex, 16).is_ok());
         assert!(cmd.contains("video=false"));
         assert!(cmd.contains("audio=true"));
         assert!(cmd.contains("audio_codec=opus"));
@@ -734,10 +778,31 @@ mod tests {
         assert!(cmd.contains("send_dummy_byte=true"));
         assert!(!cmd.contains("raw_stream"));
         assert!(!cmd.contains("send_frame_meta"));
+        assert!(!cmd.contains(&format!("scid={scid}")));
         assert_eq!(audio_socket_name(scid), format!("scrcpy_{scid:08x}"));
         let video_port = local_port_for_serial("R5CR50AR96VZ");
         let audio_port = audio_port_for_serial("R5CR50AR96VZ");
         assert_ne!(video_port, audio_port);
+    }
+
+    #[test]
+    fn audio_scid_is_hex_so_integer_parse_accepts_it() {
+        // Redmi 2312DRAABC: decimal scid "1297390910" crashed Options.parse
+        // (`Integer.parseInt(value, 16)` — 10 hex digits overflow a signed int).
+        let scid = 1_297_390_910u32;
+        let cmd = build_audio_server_command(REMOTE_SERVER_PATH, "3.3.1", scid);
+        let hex = format!("{scid:x}");
+        assert!(cmd.contains(&format!("scid={hex} ")), "{cmd}");
+        assert!(!cmd.contains("scid=1297390910"), "{cmd}");
+        let parsed = i32::from_str_radix(&hex, 16).expect("scid fits a signed 32-bit hex int");
+        assert_eq!(parsed as u32, scid);
+
+        let live = audio_scid("s8mfpbxwf6pnpr8x");
+        let live_hex = format!("{live:x}");
+        assert!(live_hex.len() <= 8);
+        assert!(i32::from_str_radix(&live_hex, 16).is_ok());
+        let socket = audio_socket_name(live);
+        assert_eq!(socket, format!("scrcpy_{live:08x}"));
     }
 
     #[test]
@@ -774,7 +839,9 @@ mod tests {
             let (mut sock, _) = listener.accept().await.unwrap();
             let _ = sock.shutdown().await;
             let (mut sock, _) = listener.accept().await.unwrap();
-            sock.write_all(&[0x00, 0x00, 0x00, 0x00, 0x01]).await.unwrap();
+            sock.write_all(&[0x00, 0x00, 0x00, 0x00, 0x01])
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(2)).await;
         });
 

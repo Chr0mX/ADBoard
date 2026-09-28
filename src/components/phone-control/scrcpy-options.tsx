@@ -194,6 +194,7 @@ export function ScrcpyOptions({
 
   const audioNote =
     options.audio && audio.note && audio.note !== "opus" ? audio.note : null;
+  const audioError = options.audio && audio.stream === "error" ? audioNote : null;
 
   return (
     <div className="flex w-full shrink-0 flex-col items-center gap-1" data-scrcpy-options>
@@ -272,9 +273,9 @@ export function ScrcpyOptions({
           From phone
         </Button>
       </div>
-      {(note || audioNote) && (
+      {(audioError || note || audioNote) && (
         <p data-scrcpy-note className="max-w-lg truncate text-center font-mono text-[10px] text-[var(--pc-muted)]">
-          {note || audioNote}
+          {audioError || note || audioNote}
         </p>
       )}
     </div>

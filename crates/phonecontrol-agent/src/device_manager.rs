@@ -8,9 +8,10 @@ use crate::video::VideoHub;
 use phonecontrol_protocol::{
     map_to_devices, AdbAvailability, ClipboardPullRequest, ClipboardResponse, ClipboardSetRequest,
     ControlMode, Device, DeviceCommandRequest, DeviceCommandResponse, DeviceOpResult, DeviceStatus,
-    HostInfo, InjectMode, InjectStatus, InstallBroadcast, MappedTap, NavActionType, NavBroadcast,
-    NavTargetResult, NormalizedPoint, PointerPhase, Role, ScrcpyAvailability, ScrcpyOptionsRequest,
-    ScrcpyOptionsResponse, ServerEvent, SessionAction, SessionStatus, StreamState, TapBroadcast,
+    HostInfo, InjectMode, InjectStatus, InstallBroadcast, KeyInjectRequest, MappedTap,
+    NavActionType, NavBroadcast, NavTargetResult, NormalizedPoint, PointerPhase, Role,
+    ScrcpyAvailability, ScrcpyOptionsRequest, ScrcpyOptionsResponse, ServerEvent, SessionAction,
+    SessionStatus, StreamState, TapBroadcast, TextInjectRequest,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -816,12 +817,23 @@ impl AppState {
 
         let mut results = Vec::new();
         for device in local_group {
-            results.push(self.command_one(&device, &op, request.arg.as_deref(), request.arg2.as_deref()).await);
+            results.push(
+                self.command_one(
+                    &device,
+                    &op,
+                    request.arg.as_deref(),
+                    request.arg2.as_deref(),
+                )
+                .await,
+            );
         }
         for (host_id, group) in by_remote {
             if self.inner.role != Role::Controller {
                 for device in group {
-                    results.push(op_error(&device, format!("cannot reach remote host {host_id}")));
+                    results.push(op_error(
+                        &device,
+                        format!("cannot reach remote host {host_id}"),
+                    ));
                 }
                 continue;
             }
@@ -942,7 +954,10 @@ impl AppState {
                             .inject_normalized(&device.serial, PointerPhase::Move, x, y)
                             .await;
                         if moved.status == InjectStatus::Error {
-                            return op_error(device, moved.detail.unwrap_or_else(|| "swipe failed".into()));
+                            return op_error(
+                                device,
+                                moved.detail.unwrap_or_else(|| "swipe failed".into()),
+                            );
                         }
                     }
                     self.inner
@@ -956,7 +971,10 @@ impl AppState {
             }
         };
         match result.status {
-            InjectStatus::Error => op_error(device, result.detail.unwrap_or_else(|| "gesture failed".into())),
+            InjectStatus::Error => op_error(
+                device,
+                result.detail.unwrap_or_else(|| "gesture failed".into()),
+            ),
             _ => op_ok(device, result.detail.unwrap_or_else(|| "ok".into())),
         }
     }
@@ -971,12 +989,8 @@ impl AppState {
         };
         let url = format!("{}/api/device/command", base.trim_end_matches('/'));
         let body = serde_json::to_vec(request).map_err(|e| e.to_string())?;
-        let (status, text) = http_post_bytes(
-            &url,
-            &[("Content-Type", "application/json")],
-            &body,
-        )
-        .await?;
+        let (status, text) =
+            http_post_bytes(&url, &[("Content-Type", "application/json")], &body).await?;
         if !(200..300).contains(&status) {
             return Err(if text.trim().is_empty() {
                 format!("command proxy HTTP {status}")
@@ -1004,7 +1018,8 @@ impl AppState {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("upload.bin");
-        let local = std::env::temp_dir().join(format!("phonecontrol-push-{}", uuid::Uuid::new_v4()));
+        let local =
+            std::env::temp_dir().join(format!("phonecontrol-push-{}", uuid::Uuid::new_v4()));
         tokio::fs::write(&local, bytes)
             .await
             .map_err(|e| format!("failed to store upload: {e}"))?;
@@ -1039,21 +1054,32 @@ impl AppState {
         })
     }
 
-    pub async fn pull_file(&self, device_id: &str, remote: &str) -> Result<(String, Vec<u8>), String> {
-        let devices = self.resolve_targets(std::slice::from_ref(&device_id.to_string())).await?;
+    pub async fn pull_file(
+        &self,
+        device_id: &str,
+        remote: &str,
+    ) -> Result<(String, Vec<u8>), String> {
+        let devices = self
+            .resolve_targets(std::slice::from_ref(&device_id.to_string()))
+            .await?;
         let Some(device) = devices.into_iter().next() else {
             return Err("device is not online".into());
         };
         let Some(adb) = self.inner.adb_path.clone() else {
             return Err("adb is not available".into());
         };
-        let local = std::env::temp_dir().join(format!("phonecontrol-pull-{}", uuid::Uuid::new_v4()));
+        let local =
+            std::env::temp_dir().join(format!("phonecontrol-pull-{}", uuid::Uuid::new_v4()));
         crate::device_ops::adb_pull(&adb, &device.serial, remote, &local).await?;
         let bytes = tokio::fs::read(&local)
             .await
             .map_err(|e| format!("failed to read pulled file: {e}"))?;
         let _ = tokio::fs::remove_file(&local).await;
-        let name = remote.rsplit('/').next().unwrap_or("download.bin").to_string();
+        let name = remote
+            .rsplit('/')
+            .next()
+            .unwrap_or("download.bin")
+            .to_string();
         Ok((name, bytes))
     }
 
@@ -1276,6 +1302,140 @@ impl AppState {
         Ok(ClipboardResponse { results })
     }
 
+    pub async fn handle_text(&self, body: TextInjectRequest) -> Result<ClipboardResponse, String> {
+        if body.text.is_empty() {
+            return Err("empty text".into());
+        }
+        if body.text.len() > 300 {
+            return Err("text is too long for one scrcpy inject".into());
+        }
+        let (local, by_remote) = self.split_targets(&body.target_ids).await?;
+        let mut results = Vec::new();
+        for device in local {
+            match self
+                .inner
+                .sessions
+                .inject_text(&device.serial, &body.text)
+                .await
+            {
+                Ok(()) => results.push(DeviceOpResult {
+                    device_id: device.id.clone(),
+                    device_name: device.name.clone(),
+                    ok: true,
+                    output: None,
+                    error: None,
+                }),
+                Err(e) => results.push(op_error(&device, e)),
+            }
+        }
+        for (host_id, group) in by_remote {
+            let forward = TextInjectRequest {
+                mode: ControlMode::Selected,
+                target_ids: group.iter().map(|d| d.id.clone()).collect(),
+                text: body.text.clone(),
+            };
+            match self
+                .proxy_json::<TextInjectRequest, ClipboardResponse>(
+                    &host_id,
+                    "/api/input/text",
+                    &forward,
+                )
+                .await
+            {
+                Ok(remote) => results.extend(remote.results),
+                Err(e) => {
+                    for device in group {
+                        results.push(op_error(&device, e.clone()));
+                    }
+                }
+            }
+        }
+        Ok(ClipboardResponse { results })
+    }
+
+    pub async fn handle_key(&self, body: KeyInjectRequest) -> Result<ClipboardResponse, String> {
+        let action = match body.action.as_str() {
+            "down" => 0u8,
+            "up" => 1,
+            _ => return Err("key action must be down or up".into()),
+        };
+        let (local, by_remote) = self.split_targets(&body.target_ids).await?;
+        let mut results = Vec::new();
+        for device in local {
+            match self
+                .inner
+                .sessions
+                .inject_keycode(
+                    &device.serial,
+                    action,
+                    body.keycode,
+                    body.repeat,
+                    body.metastate,
+                )
+                .await
+            {
+                Ok(()) => results.push(DeviceOpResult {
+                    device_id: device.id.clone(),
+                    device_name: device.name.clone(),
+                    ok: true,
+                    output: None,
+                    error: None,
+                }),
+                Err(e) => results.push(op_error(&device, e)),
+            }
+        }
+        for (host_id, group) in by_remote {
+            let forward = KeyInjectRequest {
+                mode: ControlMode::Selected,
+                target_ids: group.iter().map(|d| d.id.clone()).collect(),
+                action: body.action.clone(),
+                keycode: body.keycode,
+                repeat: body.repeat,
+                metastate: body.metastate,
+            };
+            match self
+                .proxy_json::<KeyInjectRequest, ClipboardResponse>(
+                    &host_id,
+                    "/api/input/key",
+                    &forward,
+                )
+                .await
+            {
+                Ok(remote) => results.extend(remote.results),
+                Err(e) => {
+                    for device in group {
+                        results.push(op_error(&device, e.clone()));
+                    }
+                }
+            }
+        }
+        Ok(ClipboardResponse { results })
+    }
+
+    async fn split_targets(
+        &self,
+        target_ids: &[String],
+    ) -> Result<(Vec<Device>, HashMap<String, Vec<Device>>), String> {
+        let devices = self.resolve_targets(target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online targets".into());
+        }
+        let local_serials = self.local_serial_set().await;
+        let mut local = Vec::new();
+        let mut by_remote: HashMap<String, Vec<Device>> = HashMap::new();
+        for device in devices {
+            if local_serials.contains(&device.serial) {
+                local.push(device);
+            } else {
+                by_remote
+                    .entry(device.effective_host_id().to_string())
+                    .or_default()
+                    .push(device);
+            }
+        }
+        Ok((local, by_remote))
+    }
+
     async fn proxy_json<T, R>(&self, host_id: &str, path: &str, body: &T) -> Result<R, String>
     where
         T: serde::Serialize,
@@ -1294,8 +1454,8 @@ impl AppState {
             path.trim_start_matches('/')
         );
         let bytes = serde_json::to_vec(body).map_err(|e| e.to_string())?;
-        let (status, text) = http_post_bytes(&url, &[("Content-Type", "application/json")], &bytes)
-            .await?;
+        let (status, text) =
+            http_post_bytes(&url, &[("Content-Type", "application/json")], &bytes).await?;
         if status != 200 {
             return Err(if text.trim().is_empty() {
                 format!("remote {path} returned {status}")

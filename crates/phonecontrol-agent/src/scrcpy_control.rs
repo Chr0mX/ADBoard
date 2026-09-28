@@ -15,8 +15,14 @@ use tokio::net::tcp::OwnedReadHalf;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 
+/// `SC_CONTROL_MSG_TYPE_INJECT_KEYCODE`
+const INJECT_KEYCODE: u8 = 0;
+/// `SC_CONTROL_MSG_TYPE_INJECT_TEXT`
+const INJECT_TEXT: u8 = 1;
 /// `SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT`
 const INJECT_TOUCH_EVENT: u8 = 2;
+/// scrcpy rejects text longer than this in one message.
+const MAX_INJECT_TEXT: usize = 300;
 /// `SC_CONTROL_MSG_TYPE_GET_CLIPBOARD`
 const GET_CLIPBOARD: u8 = 8;
 /// `SC_CONTROL_MSG_TYPE_SET_CLIPBOARD`
@@ -92,6 +98,23 @@ impl ControlSender {
         self.send_raw(encode_display_power(on).to_vec()).await
     }
 
+    /// Printable text. Scrcpy types it into the focused field.
+    pub async fn inject_text(&self, text: &str) -> Result<(), String> {
+        self.send_raw(encode_inject_text(text)?).await
+    }
+
+    /// Android keycode. `action` is 0 (down) or 1 (up), matching `AKEY_EVENT_ACTION_*`.
+    pub async fn inject_keycode(
+        &self,
+        action: u8,
+        keycode: u32,
+        repeat: u32,
+        metastate: u32,
+    ) -> Result<(), String> {
+        self.send_raw(encode_inject_keycode(action, keycode, repeat, metastate)?.to_vec())
+            .await
+    }
+
     /// Copy `text` to the phone clipboard. `paste` also injects it into the focused field.
     pub async fn set_clipboard(&self, text: &str, paste: bool) -> Result<(), String> {
         if text.len() > MAX_CLIPBOARD {
@@ -114,6 +137,39 @@ impl ControlSender {
             Err(_) => Err("phone did not send its clipboard".into()),
         }
     }
+}
+
+pub fn encode_inject_text(text: &str) -> Result<Vec<u8>, String> {
+    let bytes = text.as_bytes();
+    if bytes.is_empty() {
+        return Err("empty text".into());
+    }
+    if bytes.len() > MAX_INJECT_TEXT {
+        return Err("text is too long for one scrcpy inject".into());
+    }
+    let mut buf = Vec::with_capacity(5 + bytes.len());
+    buf.push(INJECT_TEXT);
+    buf.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    buf.extend_from_slice(bytes);
+    Ok(buf)
+}
+
+pub fn encode_inject_keycode(
+    action: u8,
+    keycode: u32,
+    repeat: u32,
+    metastate: u32,
+) -> Result<[u8; 14], String> {
+    if action > 1 {
+        return Err("key action must be down or up".into());
+    }
+    let mut buf = [0u8; 14];
+    buf[0] = INJECT_KEYCODE;
+    buf[1] = action;
+    buf[2..6].copy_from_slice(&keycode.to_be_bytes());
+    buf[6..10].copy_from_slice(&repeat.to_be_bytes());
+    buf[10..14].copy_from_slice(&metastate.to_be_bytes());
+    Ok(buf)
 }
 
 pub fn encode_display_power(on: bool) -> [u8; 2] {
@@ -230,8 +286,9 @@ pub async fn open_audio_socket(addr: SocketAddr, budget: Duration) -> Result<Tcp
                         last = format!("audio socket closed before handshake: {e}");
                     }
                     Err(_) => {
-                        last = "scrcpy audio server accepted TCP but did not send the handshake byte"
-                            .into();
+                        last =
+                            "scrcpy audio server accepted TCP but did not send the handshake byte"
+                                .into();
                     }
                 }
             }
@@ -335,6 +392,27 @@ pub async fn open_video_and_control(
 mod tests {
     use super::*;
     use tokio::net::TcpListener;
+
+    #[test]
+    fn inject_text_and_keycode_match_scrcpy_layout() {
+        let text = encode_inject_text("Hi").unwrap();
+        assert_eq!(text[0], 1);
+        assert_eq!(&text[1..5], &2u32.to_be_bytes());
+        assert_eq!(&text[5..], b"Hi");
+        assert!(encode_inject_text("").is_err());
+
+        let down = encode_inject_keycode(0, 66, 0, 0x1).unwrap();
+        assert_eq!(down.len(), 14);
+        assert_eq!(down[0], 0);
+        assert_eq!(down[1], 0);
+        assert_eq!(&down[2..6], &66u32.to_be_bytes());
+        assert_eq!(&down[6..10], &0u32.to_be_bytes());
+        assert_eq!(&down[10..14], &0x1u32.to_be_bytes());
+        let up = encode_inject_keycode(1, 67, 0, 0).unwrap();
+        assert_eq!(up[1], 1);
+        assert_eq!(&up[2..6], &67u32.to_be_bytes());
+        assert!(encode_inject_keycode(2, 66, 0, 0).is_err());
+    }
 
     #[test]
     fn touch_down_matches_scrcpy_layout() {

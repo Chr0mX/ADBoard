@@ -41,6 +41,16 @@ export interface DevicesClient {
     targets: Device[],
     action: NavAction,
   ): Promise<NavBroadcast | void>;
+  sendText(
+    mode: ControlMode,
+    targets: Device[],
+    text: string,
+  ): Promise<ControlInjectResult>;
+  sendKey(
+    mode: ControlMode,
+    targets: Device[],
+    key: { action: "down" | "up"; keycode: number; repeat: number; metastate: number },
+  ): Promise<ControlInjectResult>;
   installApk(
     mode: ControlMode,
     targets: Device[],
@@ -64,6 +74,15 @@ export interface DevicesClient {
     onDevices: (devices: Device[]) => void,
     onSession?: (session: SessionStatus) => void,
   ): () => void;
+}
+
+export interface ControlInjectResult {
+  results: Array<{
+    deviceId: string;
+    deviceName: string;
+    ok: boolean;
+    error?: string | null;
+  }>;
 }
 
 function delay(ms: number): Promise<void> {
@@ -136,6 +155,30 @@ export function createMockDevicesClient(): DevicesClient {
       };
       console.info("[mock-control] nav", broadcast);
       return broadcast;
+    },
+
+    async sendText(mode, targets, text) {
+      console.info("[mock-control] text", mode, text);
+      return {
+        results: targets.map((device) => ({
+          deviceId: device.id,
+          deviceName: device.name,
+          ok: false,
+          error: "scrcpy control is not connected",
+        })),
+      };
+    },
+
+    async sendKey(mode, targets, key) {
+      console.info("[mock-control] key", mode, key);
+      return {
+        results: targets.map((device) => ({
+          deviceId: device.id,
+          deviceName: device.name,
+          ok: false,
+          error: "scrcpy control is not connected",
+        })),
+      };
     },
 
     async installApk(mode, targets, file) {
@@ -287,6 +330,43 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         throw new Error(text || `agent sendNav failed: ${res.status}`);
       }
       return (await res.json()) as NavBroadcast;
+    },
+
+    async sendText(mode, targets, text) {
+      const res = await fetch(`${base}/api/input/text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode,
+          targetIds: targets.map((t) => t.id),
+          text,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(body || `agent sendText failed: ${res.status}`);
+      }
+      return (await res.json()) as ControlInjectResult;
+    },
+
+    async sendKey(mode, targets, key) {
+      const res = await fetch(`${base}/api/input/key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode,
+          targetIds: targets.map((t) => t.id),
+          action: key.action,
+          keycode: key.keycode,
+          repeat: key.repeat,
+          metastate: key.metastate,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(body || `agent sendKey failed: ${res.status}`);
+      }
+      return (await res.json()) as ControlInjectResult;
     },
 
     async installApk(mode, targets, file) {

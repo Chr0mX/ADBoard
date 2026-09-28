@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 const listeners = new Map<string, Set<() => void>>();
 
@@ -48,4 +48,32 @@ export function useStoredFlag(key: string, defaultOn: boolean) {
   };
 
   return [on, setOn] as const;
+}
+
+function readString(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function useStoredString(key: string) {
+  const value = useSyncExternalStore(
+    (onChange) => subscribe(key, onChange),
+    () => readString(key),
+    () => null,
+  );
+
+  const setValue = useCallback((next: string | null) => {
+    try {
+      if (next == null) localStorage.removeItem(key);
+      else localStorage.setItem(key, next);
+    } catch {
+      // private mode
+    }
+    listeners.get(key)?.forEach((listener) => listener());
+  }, [key]);
+
+  return [value, setValue] as const;
 }

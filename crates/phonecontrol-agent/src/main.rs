@@ -83,6 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  POST /api/scrcpy/options");
     info!("  POST /api/input/clipboard");
     info!("  POST /api/input/clipboard/pull");
+    info!("  POST /api/input/text");
+    info!("  POST /api/input/key");
     info!("  WS   /ws/devices/{{serial}}/audio");
     info!("  POST /api/device/command");
     info!("  POST /api/device/push");
