@@ -5,7 +5,7 @@
 //! Touch coordinates are in the encoded video size. A different screen size is
 //! ignored by scrcpy.
 
-use phonecontrol_protocol::PointerPhase;
+use phonecontrol_protocol::{PointerPhase, PointerTool};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -29,6 +29,16 @@ const GET_CLIPBOARD: u8 = 8;
 const SET_CLIPBOARD: u8 = 9;
 /// `SC_CONTROL_MSG_TYPE_SET_DISPLAY_POWER`
 const SET_DISPLAY_POWER: u8 = 10;
+/// `SC_CONTROL_MSG_TYPE_RESET_VIDEO` — ask the encoder for a fresh keyframe.
+const RESET_VIDEO: u8 = 17;
+/// `AMOTION_EVENT_ACTION_HOVER_MOVE`
+const ACTION_HOVER_MOVE: u8 = 7;
+/// `AMOTION_EVENT_ACTION_HOVER_EXIT`
+const ACTION_HOVER_EXIT: u8 = 10;
+/// `AMOTION_EVENT_BUTTON_PRIMARY`
+const BUTTON_PRIMARY: u32 = 1;
+/// `SC_POINTER_ID_MOUSE` (`-1`). Hover and clicks from a PC mouse use this id.
+const POINTER_ID_MOUSE: u64 = u64::MAX;
 /// `SC_SCREEN_POWER_MODE_OFF`
 const POWER_OFF: u8 = 0;
 /// `SC_SCREEN_POWER_MODE_NORMAL`
@@ -84,13 +94,19 @@ impl ControlSender {
     pub async fn touch(
         &self,
         phase: PointerPhase,
+        tool: PointerTool,
         x: u32,
         y: u32,
         width: u32,
         height: u32,
     ) -> Result<(), String> {
-        let msg = encode_touch(phase, x, y, width, height)?.to_vec();
+        let msg = encode_pointer(phase, tool, x, y, width, height)?.to_vec();
         self.send_raw(msg).await
+    }
+
+    /// Scrcpy `RESET_VIDEO`. The server emits a new keyframe without exiting.
+    pub async fn reset_video(&self) -> Result<(), String> {
+        self.send_raw(vec![RESET_VIDEO]).await
     }
 
     /// `on == false` is scrcpy's "turn device screen off" (mode 0). Mode 2 turns it back on.
@@ -302,8 +318,25 @@ pub async fn open_audio_socket(addr: SocketAddr, budget: Duration) -> Result<Tcp
     Err(last)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn encode_touch(
     phase: PointerPhase,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Result<[u8; 32], String> {
+    encode_pointer(phase, PointerTool::Finger, x, y, width, height)
+}
+
+/// Same 32-byte layout as scrcpy's `INJECT_TOUCH_EVENT`.
+///
+/// A mouse uses pointer id -1. Moving it with no button down is
+/// `ACTION_HOVER_MOVE`, which is how scrcpy keeps the cursor inside the device
+/// screen. A finger uses pointer id -2 and has no hover.
+pub fn encode_pointer(
+    phase: PointerPhase,
+    tool: PointerTool,
     x: u32,
     y: u32,
     width: u32,
@@ -317,26 +350,41 @@ pub fn encode_touch(
     }
     let x = x.min(u32::from(width.saturating_sub(1)));
     let y = y.min(u32::from(height.saturating_sub(1)));
-    let action = match phase {
-        PointerPhase::Down => 0u8,
-        PointerPhase::Up => 1,
-        PointerPhase::Move => 2,
-        PointerPhase::Cancel => 3,
-    };
-    let pressure: u16 = match phase {
-        PointerPhase::Up | PointerPhase::Cancel => 0,
-        PointerPhase::Down | PointerPhase::Move => 0xffff,
+    let (action, pressure, action_button, buttons, pointer_id) = match tool {
+        PointerTool::Finger => {
+            let action = match phase {
+                PointerPhase::Down => 0u8,
+                PointerPhase::Up => 1,
+                PointerPhase::Move | PointerPhase::Hover => 2,
+                PointerPhase::Cancel | PointerPhase::Leave => 3,
+            };
+            let pressure: u16 = match phase {
+                PointerPhase::Up | PointerPhase::Cancel | PointerPhase::Leave => 0,
+                PointerPhase::Down | PointerPhase::Move | PointerPhase::Hover => 0xffff,
+            };
+            (action, pressure, 0u32, 0u32, POINTER_ID_FINGER)
+        }
+        PointerTool::Mouse => match phase {
+            PointerPhase::Hover => (ACTION_HOVER_MOVE, 0, 0, 0, POINTER_ID_MOUSE),
+            PointerPhase::Leave => (ACTION_HOVER_EXIT, 0, 0, 0, POINTER_ID_MOUSE),
+            PointerPhase::Down => (0, 0xffff, BUTTON_PRIMARY, BUTTON_PRIMARY, POINTER_ID_MOUSE),
+            PointerPhase::Move => (2, 0xffff, 0, BUTTON_PRIMARY, POINTER_ID_MOUSE),
+            PointerPhase::Up => (1, 0, BUTTON_PRIMARY, 0, POINTER_ID_MOUSE),
+            PointerPhase::Cancel => (3, 0, 0, 0, POINTER_ID_MOUSE),
+        },
     };
 
     let mut buf = [0u8; 32];
     buf[0] = INJECT_TOUCH_EVENT;
     buf[1] = action;
-    buf[2..10].copy_from_slice(&POINTER_ID_FINGER.to_be_bytes());
+    buf[2..10].copy_from_slice(&pointer_id.to_be_bytes());
     buf[10..14].copy_from_slice(&(x as i32).to_be_bytes());
     buf[14..18].copy_from_slice(&(y as i32).to_be_bytes());
     buf[18..20].copy_from_slice(&width.to_be_bytes());
     buf[20..22].copy_from_slice(&height.to_be_bytes());
     buf[22..24].copy_from_slice(&pressure.to_be_bytes());
+    buf[24..28].copy_from_slice(&action_button.to_be_bytes());
+    buf[28..32].copy_from_slice(&buttons.to_be_bytes());
     Ok(buf)
 }
 
@@ -430,6 +478,30 @@ mod tests {
     }
 
     #[test]
+    fn mouse_hover_uses_scrcpy_pointer_id() {
+        let hover = encode_pointer(PointerPhase::Hover, PointerTool::Mouse, 4, 8, 1080, 2400)
+            .unwrap();
+        assert_eq!(hover[0], 2);
+        assert_eq!(hover[1], 7);
+        assert_eq!(&hover[2..10], &u64::MAX.to_be_bytes());
+        assert_eq!(&hover[22..24], &0u16.to_be_bytes());
+        assert_eq!(&hover[24..32], &[0u8; 8]);
+
+        let down =
+            encode_pointer(PointerPhase::Down, PointerTool::Mouse, 4, 8, 1080, 2400).unwrap();
+        assert_eq!(down[1], 0);
+        assert_eq!(&down[2..10], &u64::MAX.to_be_bytes());
+        assert_eq!(&down[22..24], &0xffffu16.to_be_bytes());
+        assert_eq!(&down[24..28], &1u32.to_be_bytes());
+        assert_eq!(&down[28..32], &1u32.to_be_bytes());
+
+        let leave =
+            encode_pointer(PointerPhase::Leave, PointerTool::Mouse, 4, 8, 1080, 2400).unwrap();
+        assert_eq!(leave[1], 10);
+        assert_eq!(&leave[2..10], &u64::MAX.to_be_bytes());
+    }
+
+    #[test]
     fn touch_up_clears_pressure_and_clamps_to_frame() {
         let buf = encode_touch(PointerPhase::Up, 9999, 9999, 576, 1280).unwrap();
         assert_eq!(buf[1], 1);
@@ -473,7 +545,7 @@ mod tests {
         let stream = TcpStream::connect(addr).await.unwrap();
         let sender = ControlSender::spawn(stream);
         sender
-            .touch(PointerPhase::Move, 10, 20, 576, 1280)
+            .touch(PointerPhase::Move, PointerTool::Finger, 10, 20, 576, 1280)
             .await
             .unwrap();
         let buf = reader.await.unwrap();

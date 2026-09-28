@@ -58,7 +58,7 @@ impl AudioHub {
         if let Some(ch) = guard.get(serial) {
             return ch.clone();
         }
-        let (tx, _) = broadcast::channel(32);
+        let (tx, _) = broadcast::channel(180);
         let ch = Arc::new(AudioChannel {
             tx,
             last_status: Mutex::new(None),

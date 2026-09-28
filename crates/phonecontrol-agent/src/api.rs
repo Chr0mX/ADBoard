@@ -13,7 +13,7 @@ use phonecontrol_protocol::{
     AgentToController, ClientCommand, ClipboardPullRequest, ClipboardResponse, ClipboardSetRequest,
     ControlMode, ControllerToAgent, DeviceCommandRequest, HealthResponse, HostFileEntry,
     InstallBroadcast, KeyInjectRequest, NavRequest, PointerRequest, Role, ScrcpyOptionsRequest,
-    ScrcpyOptionsResponse, ServerEvent, SessionStatus, TapRequest, TextInjectRequest,
+    ScrcpyOptionsResponse, ServerEvent, SessionStatus, TapRequest,     TextInjectRequest, VideoRefreshRequest,
     VideoStatusFrame,
 };
 use std::path::PathBuf;
@@ -41,6 +41,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/sessions/{serial}/restart", post(restart_session))
         .route("/api/input/tap", post(input_tap))
         .route("/api/input/pointer", post(input_pointer))
+        .route("/api/input/refresh", post(input_refresh))
         .route("/api/input/nav", post(input_nav))
         .route(
             "/api/input/install",
@@ -220,10 +221,22 @@ async fn input_pointer(
             body.mode,
             &body.target_ids,
             body.phase,
+            body.tool,
             body.normalized,
             body.frame_width,
             body.frame_height,
         )
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+async fn input_refresh(
+    State(state): State<AppState>,
+    Json(body): Json<VideoRefreshRequest>,
+) -> Result<Json<ClipboardResponse>, (StatusCode, String)> {
+    state
+        .handle_video_refresh(body)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
@@ -664,6 +677,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         req.mode,
                                         &req.target_ids,
                                         req.phase,
+                                        req.tool,
                                         req.normalized,
                                         req.frame_width,
                                         req.frame_height,

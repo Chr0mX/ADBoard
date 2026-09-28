@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import type { StreamStats } from "@/lib/devices/types";
 import { ControlHeader } from "@/components/phone-control/control-header";
 import { ControlModes } from "@/components/phone-control/control-modes";
 import { DeviceGrid } from "@/components/phone-control/device-grid";
@@ -56,17 +57,21 @@ export function PhoneControlApp() {
     if (on) setDevicesOpen(false);
   };
 
+  const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
+
   const onPointer = async (event: {
-    phase: "down" | "move" | "up" | "cancel";
+    phase: "down" | "move" | "up" | "cancel" | "hover" | "leave";
     point: { x: number; y: number };
     frameWidth: number;
     frameHeight: number;
+    tool: "finger" | "mouse";
   }) => {
     await handlePointer(
       event.phase,
       event.point,
       event.frameWidth,
       event.frameHeight,
+      event.tool,
     );
   };
 
@@ -142,6 +147,7 @@ export function PhoneControlApp() {
                 onKeyboardChange={setKeyboardOn}
                 onMouseChange={setMouseOn}
                 onPointer={onPointer}
+                onStats={setStreamStats}
                 onNav={handleNav}
                 onInstall={handleInstall}
                 lastTap={lastTap}
@@ -232,9 +238,7 @@ export function PhoneControlApp() {
         )}
       </main>
 
-      {!fillWindow && (
-        <StatusBar device={activeDevice} session={activeSession} />
-      )}
+      <StatusBar device={activeDevice} session={activeSession} stats={streamStats} />
     </div>
   );
 }

@@ -57,6 +57,16 @@ export async function postClipboard(
   return (await res.json()) as ClipboardResult;
 }
 
+export async function postVideoRefresh(targetIds: string[]): Promise<ClipboardResult> {
+  const res = await fetch(`${agentBase()}/api/input/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "selected", targetIds }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "video refresh failed"));
+  return (await res.json()) as ClipboardResult;
+}
+
 export async function pullClipboard(targetIds: string[]): Promise<ClipboardResult> {
   const res = await fetch(`${agentBase()}/api/input/clipboard/pull`, {
     method: "POST",

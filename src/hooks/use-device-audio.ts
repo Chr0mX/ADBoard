@@ -164,6 +164,7 @@ export function useDeviceAudio(serial: string | null, enabled: boolean) {
   const [note, setNote] = useState<string | null>(null);
   const [stream, setStream] = useState<string | null>(null);
   const sinkRef = useRef<Sink | null>(null);
+  const descRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!serial || !enabled) {
@@ -185,13 +186,20 @@ export function useDeviceAudio(serial: string | null, enabled: boolean) {
           } catch {
             return;
           }
-          sinkRef.current?.close();
-          const sink = status.codec === "opus" && status.stream === "streaming" ? openSink(status) : null;
-          sinkRef.current = sink;
-          sink?.resume();
+          const playing = status.codec === "opus" && status.stream === "streaming";
+          const desc = status.description ?? "";
+          if (playing && sinkRef.current && descRef.current === desc) {
+            sinkRef.current.resume();
+          } else {
+            sinkRef.current?.close();
+            const sink = playing ? openSink(status) : null;
+            sinkRef.current = sink;
+            descRef.current = playing ? desc : null;
+            sink?.resume();
+          }
           setStream(status.stream ?? null);
           if (status.note) setNote(status.note);
-          else if (!sink && status.stream === "streaming") {
+          else if (!sinkRef.current && status.stream === "streaming") {
             setNote("This browser cannot play Opus audio on this address.");
           }
           return;
@@ -204,11 +212,17 @@ export function useDeviceAudio(serial: string | null, enabled: boolean) {
       };
     };
     connect();
+    const resume = () => sinkRef.current?.resume();
+    window.addEventListener("pointerdown", resume);
+    window.addEventListener("keydown", resume);
     return () => {
       closed = true;
+      window.removeEventListener("pointerdown", resume);
+      window.removeEventListener("keydown", resume);
       socket?.close();
       sinkRef.current?.close();
       sinkRef.current = null;
+      descRef.current = null;
     };
   }, [serial, enabled]);
 

@@ -1,13 +1,22 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Keyboard, Maximize2, Minimize2, MousePointer2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Keyboard, Maximize2, Minimize2, MousePointer2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { normalizePoint } from "@/lib/devices/coords";
-import type { Device, NavAction, PointerPhase, SessionStatus, TapBroadcast } from "@/lib/devices/types";
+import type {
+  Device,
+  NavAction,
+  PointerPhase,
+  PointerTool,
+  SessionStatus,
+  StreamStats,
+  TapBroadcast,
+} from "@/lib/devices/types";
 import { useDeviceVideo } from "@/hooks/use-device-video";
+import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 
 interface PhoneScreenProps {
@@ -28,7 +37,9 @@ interface PhoneScreenProps {
     point: { x: number; y: number };
     frameWidth: number;
     frameHeight: number;
+    tool: PointerTool;
   }) => void;
+  onStats?: (stats: StreamStats) => void;
   onNav: (action: NavAction["type"]) => void;
   onInstall: (file: File) => Promise<string>;
   lastTap: TapBroadcast | null;
@@ -50,6 +61,7 @@ export function PhoneScreen({
   onKeyboardChange,
   onMouseChange,
   onPointer,
+  onStats,
   onNav,
   onInstall,
   lastTap,
@@ -57,17 +69,28 @@ export function PhoneScreen({
   targetIds,
 }: PhoneScreenProps) {
   const screenRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ id: number; lastX: number; lastY: number; lastSent: number } | null>(
-    null,
-  );
+  const dragRef = useRef<{
+    id: number;
+    lastX: number;
+    lastY: number;
+    lastSent: number;
+    tool: PointerTool;
+  } | null>(null);
+  const hoverAt = useRef(0);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(
     null,
   );
   const [installNote, setInstallNote] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
 
-  const { canvasRef, status, decodeState, error: videoError, configured, frameSize, frameSizeRef } =
-    useDeviceVideo(device?.serial);
+  const { canvasRef, status, decodeState, error: videoError, configured, frameSize, frameSizeRef, stats } =
+    useDeviceVideo(device?.serial, refreshToken);
+
+  useEffect(() => {
+    onStats?.(stats);
+  }, [onStats, stats]);
 
   const offline = !device || device.status !== "online";
   const showingVideo =
@@ -102,22 +125,39 @@ export function PhoneScreen({
   const pointerFailed = lastTap?.targets.some((t) => t.inject === "error") ?? false;
   const installFailed = !!installNote && !installNote.startsWith("Installed");
 
-  const emitPointer = (phase: PointerPhase, clientX: number, clientY: number) => {
+  const emitPointer = (
+    phase: PointerPhase,
+    clientX: number,
+    clientY: number,
+    tool: PointerTool,
+  ) => {
     if (!screenRef.current) return;
     const rect = screenRef.current.getBoundingClientRect();
     const point = normalizePoint(clientX, clientY, rect);
-    setRipple((prev) => ({
-      x: point.x * 100,
-      y: point.y * 100,
-      key: phase === "down" ? Date.now() : (prev?.key ?? Date.now()),
-    }));
+    if (phase === "down") {
+      setRipple({ x: point.x * 100, y: point.y * 100, key: Date.now() });
+    }
     const size = frameSizeRef.current;
     onPointer({
       phase,
       point,
       frameWidth: size?.width ?? 0,
       frameHeight: size?.height ?? 0,
+      tool,
     });
+  };
+
+  const refreshVideo = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      if (targetIds.length > 0) await postVideoRefresh(targetIds);
+    } catch {
+      // The player still drops its decoder and waits for the next keyframe.
+    } finally {
+      setRefreshToken((token) => token + 1);
+      setRefreshing(false);
+    }
   };
 
   const pickApk = async (file: File) => {
@@ -132,27 +172,41 @@ export function PhoneScreen({
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (offline || !mouseOn || e.button !== 0) return;
     e.preventDefault();
+    const tool: PointerTool = e.pointerType === "touch" ? "finger" : "mouse";
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = {
       id: e.pointerId,
       lastX: e.clientX,
       lastY: e.clientY,
       lastSent: performance.now(),
+      tool,
     };
-    emitPointer("down", e.clientX, e.clientY);
+    emitPointer("down", e.clientX, e.clientY, tool);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    if (!drag || drag.id !== e.pointerId) return;
+    if (drag && drag.id === e.pointerId) {
+      const now = performance.now();
+      const dx = e.clientX - drag.lastX;
+      const dy = e.clientY - drag.lastY;
+      if (now - drag.lastSent < 16 && dx * dx + dy * dy < 4) return;
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
+      drag.lastSent = now;
+      emitPointer("move", e.clientX, e.clientY, drag.tool);
+      return;
+    }
+    if (offline || !mouseOn || e.pointerType === "touch" || e.buttons !== 0) return;
     const now = performance.now();
-    const dx = e.clientX - drag.lastX;
-    const dy = e.clientY - drag.lastY;
-    if (now - drag.lastSent < 16 && dx * dx + dy * dy < 4) return;
-    drag.lastX = e.clientX;
-    drag.lastY = e.clientY;
-    drag.lastSent = now;
-    emitPointer("move", e.clientX, e.clientY);
+    if (now - hoverAt.current < 16) return;
+    hoverAt.current = now;
+    emitPointer("hover", e.clientX, e.clientY, "mouse");
+  };
+
+  const handlePointerLeave = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current || offline || !mouseOn || e.pointerType === "touch") return;
+    emitPointer("leave", e.clientX, e.clientY, "mouse");
   };
 
   const finishPointer = (e: React.PointerEvent<HTMLDivElement>, phase: "up" | "cancel") => {
@@ -162,7 +216,7 @@ export function PhoneScreen({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    emitPointer(phase, e.clientX, e.clientY);
+    emitPointer(phase, e.clientX, e.clientY, drag.tool);
   };
 
   return (
@@ -185,8 +239,13 @@ export function PhoneScreen({
             ref={screenRef}
             role="application"
             aria-label="Phone screen"
+            onPointerEnter={(e) => {
+              if (offline || !mouseOn || e.pointerType === "touch" || e.buttons !== 0) return;
+              emitPointer("hover", e.clientX, e.clientY, "mouse");
+            }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
+            onPointerLeave={handlePointerLeave}
             onPointerUp={(e) => finishPointer(e, "up")}
             onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
@@ -348,6 +407,19 @@ export function PhoneScreen({
               </Button>
             ))}
             {fillWindow && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={offline || refreshing}
+                onClick={() => void refreshVideo()}
+                aria-label="Refresh video"
+                data-video-refresh
+                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs text-[var(--pc-ink)]"
+              >
+                <RefreshCw className="size-4" />
+              </Button>
+            )}
+            {fillWindow && (
               <Toggle
                 pressed={keyboardOn}
                 onPressedChange={onKeyboardChange}
@@ -406,6 +478,18 @@ export function PhoneScreen({
             <MousePointer2 className="size-4" />
             <span className="hidden sm:inline">Touch</span>
           </Toggle>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={offline || refreshing}
+            onClick={() => void refreshVideo()}
+            aria-label="Refresh video"
+            data-video-refresh
+            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3"
+          >
+            <RefreshCw className="size-4" />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
           <ApkFileButton disabled={offline || installing} onFile={pickApk} />
           <Toggle
             pressed={fillWindow}

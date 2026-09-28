@@ -209,6 +209,19 @@ pub enum PointerPhase {
     Move,
     Up,
     Cancel,
+    /// Mouse moved over the picture with no button down. Scrcpy `ACTION_HOVER_MOVE`.
+    Hover,
+    /// Mouse left the picture. Scrcpy `ACTION_HOVER_EXIT`.
+    Leave,
+}
+
+/// Finger touches use pointer id -2. A PC mouse uses id -1 so Android tracks a cursor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PointerTool {
+    #[default]
+    Finger,
+    Mouse,
 }
 
 /// POST /api/input/pointer
@@ -224,6 +237,17 @@ pub struct PointerRequest {
     pub frame_width: u32,
     #[serde(default)]
     pub frame_height: u32,
+    /// `mouse` hovers with pointer id -1. Missing means a finger, so older clients still tap.
+    #[serde(default)]
+    pub tool: PointerTool,
+}
+
+/// POST /api/input/refresh — scrcpy `RESET_VIDEO` (a new keyframe, not a new server).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoRefreshRequest {
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
 }
 
 /// POST /api/input/nav
@@ -480,6 +504,8 @@ pub enum ControllerToAgent {
         frame_width: u32,
         #[serde(default)]
         frame_height: u32,
+        #[serde(default)]
+        tool: PointerTool,
     },
     Nav {
         request_id: String,

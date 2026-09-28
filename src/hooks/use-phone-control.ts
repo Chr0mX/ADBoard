@@ -9,6 +9,7 @@ import type {
   NavAction,
   NormalizedPoint,
   PointerPhase,
+  PointerTool,
   SessionStatus,
   TapBroadcast,
 } from "@/lib/devices/types";
@@ -222,8 +223,15 @@ export function usePhoneControl() {
   const pointerQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   const handlePointer = useCallback(
-    (phase: PointerPhase, point: NormalizedPoint, frameWidth: number, frameHeight: number) => {
+    (
+      phase: PointerPhase,
+      point: NormalizedPoint,
+      frameWidth: number,
+      frameHeight: number,
+      tool: PointerTool = "finger",
+    ) => {
       if (!mouseOn || broadcastTargets.length === 0) return Promise.resolve(null);
+      const quiet = phase === "move" || phase === "hover" || phase === "leave";
       const run = async () => {
         try {
           const result = await devicesClient.sendPointer(
@@ -233,10 +241,11 @@ export function usePhoneControl() {
             point,
             frameWidth,
             frameHeight,
+            tool,
           );
           const failed = result.targets.find((t) => t.inject === "error");
-          if (phase === "move") {
-            if (failed) setLastTap(result);
+          if (quiet) {
+            if (failed && phase === "move") setLastTap(result);
             return result;
           }
           setLastTap(result);
@@ -244,7 +253,7 @@ export function usePhoneControl() {
           return result;
         } catch (err) {
           console.error("[phone-control] sendPointer failed", err);
-          setError(err instanceof Error ? err.message : "Touch failed");
+          if (!quiet) setError(err instanceof Error ? err.message : "Touch failed");
           return null;
         }
       };

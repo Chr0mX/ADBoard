@@ -9,9 +9,9 @@ use phonecontrol_protocol::{
     map_to_devices, AdbAvailability, ClipboardPullRequest, ClipboardResponse, ClipboardSetRequest,
     ControlMode, Device, DeviceCommandRequest, DeviceCommandResponse, DeviceOpResult, DeviceStatus,
     HostInfo, InjectMode, InjectStatus, InstallBroadcast, KeyInjectRequest, MappedTap,
-    NavActionType, NavBroadcast, NavTargetResult, NormalizedPoint, PointerPhase, Role,
+    NavActionType, NavBroadcast, NavTargetResult, NormalizedPoint, PointerPhase, PointerTool, Role,
     ScrcpyAvailability, ScrcpyOptionsRequest, ScrcpyOptionsResponse, ServerEvent, SessionAction,
-    SessionStatus, StreamState, TapBroadcast, TextInjectRequest,
+    SessionStatus, StreamState, TapBroadcast, TextInjectRequest, VideoRefreshRequest,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -435,6 +435,7 @@ impl AppState {
         mode: ControlMode,
         target_ids: &[String],
         phase: PointerPhase,
+        tool: PointerTool,
         point: NormalizedPoint,
         frame_width: u32,
         frame_height: u32,
@@ -461,8 +462,15 @@ impl AppState {
         let mut mapped: Vec<MappedTap> = Vec::new();
         if !local_group.is_empty() {
             mapped.extend(
-                self.inject_pointer_group(&local_group, phase, point, frame_width, frame_height)
-                    .await,
+                self.inject_pointer_group(
+                    &local_group,
+                    phase,
+                    tool,
+                    point,
+                    frame_width,
+                    frame_height,
+                )
+                .await,
             );
         }
 
@@ -474,7 +482,16 @@ impl AppState {
             match self
                 .inner
                 .mesh
-                .proxy_pointer(&host_id, mode, ids, phase, point, frame_width, frame_height)
+                .proxy_pointer(
+                    &host_id,
+                    mode,
+                    ids,
+                    phase,
+                    tool,
+                    point,
+                    frame_width,
+                    frame_height,
+                )
                 .await
             {
                 Ok(remote) => mapped.extend(remote),
@@ -490,7 +507,10 @@ impl AppState {
         }
 
         let broadcast = TapBroadcast::new(mode, point, mapped);
-        if phase != PointerPhase::Move {
+        if !matches!(
+            phase,
+            PointerPhase::Move | PointerPhase::Hover | PointerPhase::Leave
+        ) {
             self.publish(ServerEvent::TapResult {
                 broadcast: broadcast.clone(),
             });
@@ -503,6 +523,7 @@ impl AppState {
         mode: ControlMode,
         target_ids: &[String],
         phase: PointerPhase,
+        tool: PointerTool,
         point: NormalizedPoint,
         frame_width: u32,
         frame_height: u32,
@@ -512,7 +533,7 @@ impl AppState {
             return Err("no online local targets for pointer".into());
         }
         let mapped = self
-            .inject_pointer_group(&devices, phase, point, frame_width, frame_height)
+            .inject_pointer_group(&devices, phase, tool, point, frame_width, frame_height)
             .await;
         Ok(TapBroadcast::new(mode, point, mapped))
     }
@@ -521,6 +542,7 @@ impl AppState {
         &self,
         devices: &[Device],
         phase: PointerPhase,
+        tool: PointerTool,
         point: NormalizedPoint,
         frame_width: u32,
         frame_height: u32,
@@ -544,7 +566,15 @@ impl AppState {
             let result = self
                 .inner
                 .sessions
-                .inject_pointer(&device.serial, phase, tap.x, tap.y, tap.width, tap.height)
+                .inject_pointer(
+                    &device.serial,
+                    phase,
+                    tool,
+                    tap.x,
+                    tap.y,
+                    tap.width,
+                    tap.height,
+                )
                 .await;
             tap.inject = result.status;
             tap.inject_detail = result.detail;
@@ -1302,6 +1332,50 @@ impl AppState {
         Ok(ClipboardResponse { results })
     }
 
+    /// Ask each device's scrcpy server for a new video keyframe. The H264 process stays up.
+    pub async fn handle_video_refresh(
+        &self,
+        body: VideoRefreshRequest,
+    ) -> Result<ClipboardResponse, String> {
+        let (local, by_remote) = self.split_targets(&body.target_ids).await?;
+        let mut results = Vec::new();
+        for device in local {
+            match self.inner.sessions.reset_video(&device.serial).await {
+                Ok(()) => results.push(DeviceOpResult {
+                    device_id: device.id.clone(),
+                    device_name: device.name.clone(),
+                    ok: true,
+                    output: None,
+                    error: None,
+                }),
+                Err(e) => results.push(op_error(&device, e)),
+            }
+        }
+        for (host_id, group) in by_remote {
+            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+            let forward = VideoRefreshRequest {
+                mode: ControlMode::Selected,
+                target_ids: ids,
+            };
+            match self
+                .proxy_json::<VideoRefreshRequest, ClipboardResponse>(
+                    &host_id,
+                    "/api/input/refresh",
+                    &forward,
+                )
+                .await
+            {
+                Ok(remote) => results.extend(remote.results),
+                Err(e) => {
+                    for device in group {
+                        results.push(op_error(&device, e.clone()));
+                    }
+                }
+            }
+        }
+        Ok(ClipboardResponse { results })
+    }
+
     pub async fn handle_text(&self, body: TextInjectRequest) -> Result<ClipboardResponse, String> {
         if body.text.is_empty() {
             return Err("empty text".into());
@@ -1819,6 +1893,7 @@ mod tests {
                 ControlMode::Selected,
                 &[id.clone()],
                 PointerPhase::Down,
+                PointerTool::Finger,
                 point,
                 0,
                 0,
@@ -1840,6 +1915,7 @@ mod tests {
                 ControlMode::Selected,
                 &[id],
                 PointerPhase::Down,
+                PointerTool::Finger,
                 point,
                 360,
                 640,

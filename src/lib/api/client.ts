@@ -7,6 +7,7 @@ import type {
   NavBroadcast,
   NormalizedPoint,
   PointerPhase,
+  PointerTool,
   DeviceCommandResponse,
   HostFileEntry,
   InstallBroadcast,
@@ -35,6 +36,7 @@ export interface DevicesClient {
     point: NormalizedPoint,
     frameWidth: number,
     frameHeight: number,
+    tool?: PointerTool,
   ): Promise<TapBroadcast>;
   sendNav(
     mode: ControlMode,
@@ -113,7 +115,7 @@ export function createMockDevicesClient(): DevicesClient {
       return broadcast;
     },
 
-    async sendPointer(mode, targets, _phase, point, frameWidth, frameHeight) {
+    async sendPointer(mode, targets, _phase, point, frameWidth, frameHeight, _tool) {
       await delay(8);
       const width = frameWidth || targets[0]?.resolution.width || 0;
       const height = frameHeight || targets[0]?.resolution.height || 0;
@@ -295,7 +297,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       return (await res.json()) as TapBroadcast;
     },
 
-    async sendPointer(mode, targets, phase, point, frameWidth, frameHeight) {
+    async sendPointer(mode, targets, phase, point, frameWidth, frameHeight, tool = "finger") {
       const res = await fetch(`${base}/api/input/pointer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -306,6 +308,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
           normalized: point,
           frameWidth,
           frameHeight,
+          tool,
         }),
       });
       if (!res.ok) {

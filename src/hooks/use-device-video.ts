@@ -11,6 +11,7 @@ import {
   spsDimensions,
 } from "@/lib/video/h264";
 import { MseH264Player } from "@/lib/video/mse-player";
+import type { StreamStats } from "@/lib/devices/types";
 
 export type VideoStreamState = "idle" | "starting" | "streaming" | "error";
 
@@ -89,9 +90,18 @@ export interface UseDeviceVideoResult {
  * Subscribe to `/ws/devices/{serial}/video`, decode Annex-B H264 via WebCodecs
  * (AVCC + avcC), paint onto a canvas. Unsubscribe does not stop the agent session.
  */
+const EMPTY_STATS: StreamStats = {
+  fps: 0,
+  bitrateKbps: 0,
+  width: 0,
+  height: 0,
+  codec: "h264",
+};
+
 export function useDeviceVideo(
   serial: string | null | undefined,
-): UseDeviceVideoResult {
+  refreshToken = 0,
+): UseDeviceVideoResult & { stats: StreamStats } {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<VideoStatusMessage | null>(null);
   const [decodeState, setDecodeState] = useState<VideoDecodeState>("idle");
@@ -105,6 +115,8 @@ export function useDeviceVideo(
     source: "sps" | "status" | "frame";
   } | null>(null);
   const configured = agentBaseUrl() !== null;
+  const [stats, setStats] = useState<StreamStats>(EMPTY_STATS);
+  const meter = useRef({ t: 0, frames: 0, bytes: 0 });
 
   const publishSize = useCallback(
     (width: number, height: number, source: "sps" | "status" | "frame") => {
@@ -322,6 +334,10 @@ export function useDeviceVideo(
 
         const buf = new Uint8Array(event.data as ArrayBuffer);
         if (buf.byteLength === 0) return;
+        const sample = meter.current;
+        if (sample.t === 0) sample.t = performance.now();
+        sample.frames += 1;
+        sample.bytes += buf.byteLength;
 
         // LAN http:// has no WebCodecs. MSE plays the same Annex-B access units.
         if (mse) {
@@ -406,7 +422,34 @@ export function useDeviceVideo(
       mse?.close();
       socket?.close();
     };
-  }, [serial, paintFrame, publishSize]);
+  }, [serial, refreshToken, paintFrame, publishSize]);
+
+  useEffect(() => {
+    meter.current = { t: performance.now(), frames: 0, bytes: 0 };
+    const timer = setInterval(() => {
+      const now = performance.now();
+      const sample = meter.current;
+      const seconds = Math.max(0.001, (now - sample.t) / 1000);
+      const size = frameSizeRef.current;
+      const next = {
+        fps: sample.frames / seconds,
+        bitrateKbps: (sample.bytes * 8) / 1000 / seconds,
+        width: size?.width ?? 0,
+        height: size?.height ?? 0,
+        codec: "h264",
+      };
+      setStats((prev) =>
+        Math.round(prev.fps) === Math.round(next.fps) &&
+        Math.round(prev.bitrateKbps) === Math.round(next.bitrateKbps) &&
+        prev.width === next.width &&
+        prev.height === next.height
+          ? prev
+          : next,
+      );
+      meter.current = { t: now, frames: 0, bytes: 0 };
+    }, 500);
+    return () => clearInterval(timer);
+  }, [serial, refreshToken]);
 
   return {
     canvasRef,
@@ -416,5 +459,6 @@ export function useDeviceVideo(
     configured,
     frameSize,
     frameSizeRef,
+    stats,
   };
 }

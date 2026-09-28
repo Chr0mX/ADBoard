@@ -45,7 +45,16 @@ export interface NormalizedPoint {
   y: number;
 }
 
-export type PointerPhase = "down" | "move" | "up" | "cancel";
+export type PointerPhase = "down" | "move" | "up" | "cancel" | "hover" | "leave";
+export type PointerTool = "finger" | "mouse";
+
+export interface StreamStats {
+  fps: number;
+  bitrateKbps: number;
+  width: number;
+  height: number;
+  codec: string;
+}
 
 export interface MappedTap {
   deviceId: string;

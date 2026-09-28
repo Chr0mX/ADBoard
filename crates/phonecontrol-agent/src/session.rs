@@ -21,7 +21,8 @@ use crate::video::{
 };
 use phonecontrol_protocol::{
     adb_install_args, adb_keyevent_args, adb_tap_args, nav_keycode, AudioStatusFrame, InjectMode,
-    InjectStatus, MappedTap, NavActionType, PointerPhase, ScrcpyAvailability, SessionStatus,
+    InjectStatus, MappedTap, NavActionType, PointerPhase, PointerTool, ScrcpyAvailability,
+    SessionStatus,
     StreamState, VideoStatusFrame,
 };
 use std::collections::HashMap;
@@ -29,8 +30,8 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::{Child, Command};
-use tokio::sync::{broadcast, RwLock};
-use tracing::{info, warn};
+use tokio::sync::{broadcast, Mutex, RwLock};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct InjectResult {
@@ -89,6 +90,8 @@ pub struct SessionManager {
     video_source: VideoSourceKind,
     prefs: RwLock<ScrcpyPrefs>,
     clipboard_tx: broadcast::Sender<(String, String)>,
+    /// One audio start or stop at a time, so a reload cannot launch a second server.
+    audio_gate: Mutex<()>,
 }
 
 impl SessionManager {
@@ -135,6 +138,7 @@ impl SessionManager {
             video_source,
             prefs: RwLock::new(ScrcpyPrefs::default()),
             clipboard_tx,
+            audio_gate: Mutex::new(()),
         })
     }
 
@@ -399,22 +403,7 @@ impl SessionManager {
                     .await;
                 info!(serial, "scrcpy session streaming (real H264 pipe)");
                 if prefs.audio {
-                    self.audio_hub
-                        .publish_status(opus_frame(
-                            serial,
-                            StreamState::Starting,
-                            "Starting the Opus stream.",
-                        ))
-                        .await;
-                    let audio = start_scrcpy_audio_capture(
-                        self.audio_hub.clone(),
-                        &adb,
-                        &server,
-                        self.scrcpy_path.as_deref(),
-                        serial,
-                    )
-                    .await;
-                    self.finish_audio(serial, audio).await;
+                    let _ = self.start_audio_if_needed(serial).await;
                 }
                 self.get_session(serial).await.unwrap_or(info)
             }
@@ -602,7 +591,8 @@ impl SessionManager {
         }
     }
 
-    /// Store prefs. Quality and audio restart a live session. Screen power is a control message.
+    /// Store prefs. Quality restarts the video server. Audio starts or stops beside it.
+    /// Screen power is a control message.
     pub async fn apply_options(
         &self,
         incoming: ScrcpyPrefs,
@@ -622,7 +612,7 @@ impl SessionManager {
 
         let mut restarted = Vec::new();
         let mut power = Vec::new();
-        if quality_changed || audio_changed {
+        if quality_changed {
             for serial in serials {
                 let streaming = self.get_session(serial).await.is_some_and(|s| {
                     matches!(s.stream, StreamState::Streaming | StreamState::Starting)
@@ -632,13 +622,115 @@ impl SessionManager {
                     restarted.push(serial.clone());
                 }
             }
-        } else if screen_changed {
-            let on = !next.screen_off;
+        } else {
+            // Audio must not tear down the H264 server. A second capture is what
+            // made the picture glitch, and a reload used to restart it again and
+            // drop the Opus process. A dead audio child is started again here.
             for serial in serials {
-                power.push((serial.clone(), self.set_display_power(serial, on).await));
+                if next.audio {
+                    let _ = self.start_audio_if_needed(serial).await;
+                } else if audio_changed {
+                    self.stop_audio_only(serial).await;
+                }
+            }
+            if screen_changed {
+                let on = !next.screen_off;
+                for serial in serials {
+                    power.push((serial.clone(), self.set_display_power(serial, on).await));
+                }
             }
         }
         Ok(OptionsApplied { restarted, power })
+    }
+
+    /// Start Opus if the video session is up and no audio server is still running.
+    async fn start_audio_if_needed(&self, serial: &str) -> Result<(), String> {
+        let _gate = self.audio_gate.lock().await;
+        if !self.prefs.read().await.audio {
+            return Ok(());
+        }
+        let streaming = self.get_session(serial).await.is_some_and(|s| {
+            matches!(s.stream, StreamState::Streaming | StreamState::Starting)
+        });
+        if !streaming {
+            return Ok(());
+        }
+        let dead_port = {
+            let mut guard = self.sessions.write().await;
+            let Some(live) = guard.get_mut(serial) else {
+                return Ok(());
+            };
+            if let Some(child) = live.audio_child.as_mut() {
+                match child.try_wait() {
+                    Ok(None) => return Ok(()),
+                    Ok(Some(_)) | Err(_) => {
+                        live.audio_child = None;
+                        live.audio_port.take()
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        if let (Some(adb), Some(port)) = (self.adb_path.as_ref(), dead_port) {
+            cleanup_forward(adb, serial, port).await;
+        }
+        let (Some(adb), Some(server)) = (self.adb_path.clone(), self.scrcpy_server.clone()) else {
+            let note = "Audio forwarding needs scrcpy-server and ADB.";
+            self.audio_hub
+                .publish_status(opus_frame(serial, StreamState::Error, note))
+                .await;
+            return Err(note.into());
+        };
+        self.audio_hub
+            .publish_status(opus_frame(
+                serial,
+                StreamState::Starting,
+                "Starting the Opus stream.",
+            ))
+            .await;
+        let audio = start_scrcpy_audio_capture(
+            self.audio_hub.clone(),
+            &adb,
+            &server,
+            self.scrcpy_path.as_deref(),
+            serial,
+        )
+        .await;
+        self.finish_audio(serial, audio).await;
+        Ok(())
+    }
+
+    async fn stop_audio_only(&self, serial: &str) {
+        let _gate = self.audio_gate.lock().await;
+        let (child, port) = {
+            let mut guard = self.sessions.write().await;
+            let Some(live) = guard.get_mut(serial) else {
+                return;
+            };
+            (live.audio_child.take(), live.audio_port.take())
+        };
+        if let Some(mut child) = child {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+        }
+        if let (Some(adb), Some(port)) = (self.adb_path.as_ref(), port) {
+            cleanup_forward(adb, serial, port).await;
+        }
+        self.audio_hub
+            .publish_status(opus_frame(
+                serial,
+                StreamState::Idle,
+                "Audio forwarding is off.",
+            ))
+            .await;
+    }
+
+    pub async fn reset_video(&self, serial: &str) -> Result<(), String> {
+        let Some(sender) = self.control_sender(serial).await else {
+            return Err("scrcpy control is not connected".into());
+        };
+        sender.reset_video().await
     }
 
     pub async fn set_display_power(&self, serial: &str, on: bool) -> Result<(), String> {
@@ -914,7 +1006,7 @@ impl SessionManager {
         };
         let px = (x.clamp(0.0, 1.0) * f64::from(width.saturating_sub(1))).round() as u32;
         let py = (y.clamp(0.0, 1.0) * f64::from(height.saturating_sub(1))).round() as u32;
-        self.inject_pointer(serial, phase, px, py, width, height)
+        self.inject_pointer(serial, phase, PointerTool::Finger, px, py, width, height)
             .await
     }
 
@@ -923,6 +1015,7 @@ impl SessionManager {
         &self,
         serial: &str,
         phase: PointerPhase,
+        tool: PointerTool,
         x: u32,
         y: u32,
         width: u32,
@@ -938,17 +1031,16 @@ impl SessionManager {
                 detail: Some("scrcpy control is not connected".into()),
             };
         };
-        match sender.touch(phase, x, y, width, height).await {
+        match sender.touch(phase, tool, x, y, width, height).await {
             Ok(()) => {
-                info!(
-                    serial,
-                    ?phase,
-                    x,
-                    y,
-                    width,
-                    height,
-                    "[scrcpy-control] touch"
-                );
+                if matches!(
+                    phase,
+                    PointerPhase::Hover | PointerPhase::Leave | PointerPhase::Move
+                ) {
+                    debug!(serial, ?phase, ?tool, x, y, "[scrcpy-control] pointer");
+                } else {
+                    info!(serial, ?phase, ?tool, x, y, width, height, "[scrcpy-control] pointer");
+                }
                 InjectResult {
                     status: InjectStatus::Ok,
                     detail: Some("scrcpy".into()),

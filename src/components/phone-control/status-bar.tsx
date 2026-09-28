@@ -1,14 +1,21 @@
 "use client";
 
 import { formatResolution } from "@/lib/devices/coords";
-import type { Device, SessionStatus } from "@/lib/devices/types";
+import type { Device, SessionStatus, StreamStats } from "@/lib/devices/types";
 
 interface StatusBarProps {
   device: Device | null;
   session?: SessionStatus | null;
+  stats?: StreamStats | null;
 }
 
-export function StatusBar({ device, session }: StatusBarProps) {
+function formatRate(kbps: number): string {
+  if (!(kbps > 0)) return "—";
+  if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`;
+  return `${Math.round(kbps)} kbps`;
+}
+
+export function StatusBar({ device, session, stats }: StatusBarProps) {
   if (!device) {
     return (
       <footer className="border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 py-1 font-mono text-[11px] text-[var(--pc-muted)]">
@@ -24,12 +31,27 @@ export function StatusBar({ device, session }: StatusBarProps) {
         ? session.note || "stream error"
         : null;
 
+  const width = stats && stats.width > 0 ? stats.width : device.resolution.width;
+  const height = stats && stats.height > 0 ? stats.height : device.resolution.height;
+  const fps = stats && stats.fps > 0 ? `${Math.round(stats.fps)} fps` : "— fps";
+  const rate = formatRate(stats?.bitrateKbps ?? 0);
+  const codec = stats?.codec || "h264";
+
   return (
-    <footer className="border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1 backdrop-blur-sm">
+    <footer
+      data-stream-stats
+      className="border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1 backdrop-blur-sm"
+    >
       <p className="truncate font-mono text-[11px] text-[var(--pc-ink)]">
         {device.name}
         {" · "}
-        {formatResolution(device.resolution.width, device.resolution.height)}
+        {formatResolution(width, height)}
+        {" · "}
+        {fps}
+        {" · "}
+        {rate}
+        {" · "}
+        {codec}
         {problem ? ` · ${problem}` : ""}
       </p>
     </footer>
