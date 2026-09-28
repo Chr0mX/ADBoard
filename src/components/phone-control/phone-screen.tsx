@@ -27,6 +27,8 @@ interface PhoneScreenProps {
   keyboardOn: boolean;
   mouseOn: boolean;
   fillWindow: boolean;
+  /** Narrow viewport with fill on: the picture uses the window and controls overlay it. */
+  compactFill?: boolean;
   onFillWindowChange: (on: boolean) => void;
   showDevicesButton?: boolean;
   onOpenDevices?: () => void;
@@ -55,6 +57,7 @@ export function PhoneScreen({
   keyboardOn,
   mouseOn,
   fillWindow,
+  compactFill = false,
   onFillWindowChange,
   showDevicesButton,
   onOpenDevices,
@@ -253,7 +256,7 @@ export function PhoneScreen({
       data-fill={fillWindow ? "1" : "0"}
       data-device-id={device?.id ?? ""}
       data-device-name={device?.name ?? ""}
-      className="flex min-h-0 flex-1 flex-col gap-2"
+      className={cn("relative flex min-h-0 flex-1 flex-col", compactFill ? "gap-0" : "gap-2")}
     >
       {!fillWindow && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
         <p className="truncate text-center font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
@@ -266,7 +269,10 @@ export function PhoneScreen({
           <div
             ref={stageRef}
             data-screen-stage
-            className="flex min-h-0 w-full flex-1 items-center justify-center px-1.5 [container-type:size]"
+            className={cn(
+              "flex min-h-0 w-full flex-1 items-center justify-center [container-type:size]",
+              compactFill ? "px-0" : "px-1.5",
+            )}
           >
           <div
             ref={screenRef}
@@ -415,6 +421,7 @@ export function PhoneScreen({
           </div>
           </div>
 
+          {!compactFill && (
           <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
             {(
               [
@@ -495,10 +502,49 @@ export function PhoneScreen({
               </Button>
             )}
           </div>
+          )}
         </div>
       </div>
 
-      <AppShortcuts />
+      {compactFill && (
+        <div
+          data-fill-chrome
+          className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex justify-center px-2"
+        >
+          <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/85 px-1 py-1 backdrop-blur-sm">
+            {(
+              [
+                ["back", "Back"],
+                ["home", "Home"],
+                ["recent", "Recent"],
+              ] as const
+            ).map(([action, name]) => (
+              <Button
+                key={action}
+                type="button"
+                variant="ghost"
+                disabled={offline}
+                onClick={() => onNav(action)}
+                aria-label={name}
+                className="h-11 min-w-11 shrink-0 rounded-full px-3 font-mono text-xs text-[var(--pc-ink)]"
+              >
+                {name}
+              </Button>
+            ))}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onFillWindowChange(false)}
+              aria-label="Exit fill"
+              className="h-11 min-w-11 shrink-0 rounded-full px-3 text-[var(--pc-ink)]"
+            >
+              <Minimize2 className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!compactFill && <AppShortcuts />}
 
       {!fillWindow && (
         <div className="flex flex-wrap items-center justify-center gap-1.5">
@@ -564,11 +610,13 @@ export function PhoneScreen({
           )}
         </div>
       )}
-      <ScrcpyOptions
-        targetIds={targetIds}
-        serial={device?.serial ?? null}
-        disabled={offline}
-      />
+      {!compactFill && (
+        <ScrcpyOptions
+          targetIds={targetIds}
+          serial={device?.serial ?? null}
+          disabled={offline}
+        />
+      )}
       {installNote && (
         <p
           data-install-note

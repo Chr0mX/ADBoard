@@ -207,6 +207,7 @@ export function PhoneControlApp() {
                 keyboardOn={keyboardOn}
                 mouseOn={mouseOn}
                 fillWindow={fillWindow}
+                compactFill={fillWindow && !wide}
                 onFillWindowChange={setFill}
                 showDevicesButton={!fillWindow && !wide}
                 onOpenDevices={() => {
@@ -313,7 +314,7 @@ export function PhoneControlApp() {
         )}
       </main>
 
-      {section === "control" && (
+      {section === "control" && !(fillWindow && !wide) && (
         <StatusBar device={activeDevice} session={activeSession} stats={streamStats} />
       )}
     </div>
