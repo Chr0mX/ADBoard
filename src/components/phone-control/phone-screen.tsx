@@ -19,6 +19,7 @@ import { useDeviceVideo } from "@/hooks/use-device-video";
 import { fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
+import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
 
 interface PhoneScreenProps {
   device: Device | null;
@@ -496,6 +497,8 @@ export function PhoneScreen({
           </div>
         </div>
       </div>
+
+      <AppShortcuts />
 
       {!fillWindow && (
         <div className="flex flex-wrap items-center justify-center gap-1.5">
