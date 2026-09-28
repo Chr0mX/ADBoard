@@ -509,38 +509,47 @@ export function PhoneScreen({
       {compactFill && (
         <div
           data-fill-chrome
-          className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex justify-center px-2"
+          className="flex shrink-0 flex-wrap items-center justify-center gap-2 px-1.5 py-1.5"
         >
-          <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/85 px-1 py-1 backdrop-blur-sm">
-            {(
-              [
-                ["back", "Back"],
-                ["home", "Home"],
-                ["recent", "Recent"],
-              ] as const
-            ).map(([action, name]) => (
-              <Button
-                key={action}
-                type="button"
-                variant="ghost"
-                disabled={offline}
-                onClick={() => onNav(action)}
-                aria-label={name}
-                className="h-11 min-w-11 shrink-0 rounded-full px-3 font-mono text-xs text-[var(--pc-ink)]"
-              >
-                {name}
-              </Button>
-            ))}
+          {(
+            [
+              ["back", "Back"],
+              ["home", "Home"],
+              ["recent", "Recent"],
+              ["volume_down", "Vol−"],
+              ["volume_up", "Vol+"],
+              ["power", "Power"],
+            ] as const
+          ).map(([action, name]) => (
             <Button
+              key={action}
               type="button"
               variant="ghost"
-              onClick={() => onFillWindowChange(false)}
-              aria-label="Exit fill"
-              className="h-11 min-w-11 shrink-0 rounded-full px-3 text-[var(--pc-ink)]"
+              disabled={offline}
+              onClick={() => onNav(action)}
+              aria-label={
+                action === "volume_up"
+                  ? "Volume up"
+                  : action === "volume_down"
+                    ? "Volume down"
+                    : action === "power"
+                      ? "Power"
+                      : name
+              }
+              className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
             >
-              <Minimize2 className="size-4" />
+              {name}
             </Button>
-          </div>
+          ))}
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => onFillWindowChange(false)}
+            aria-label="Exit fill"
+            className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)]"
+          >
+            <Minimize2 className="size-4" />
+          </Button>
         </div>
       )}
 
