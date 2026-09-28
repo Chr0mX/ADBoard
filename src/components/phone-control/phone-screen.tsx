@@ -69,6 +69,15 @@ export function PhoneScreen({
     decodeState === "decoding" &&
     (status?.stream === "streaming" || session?.stream === "streaming");
 
+  const awaitingPicture =
+    !showingVideo &&
+    configured &&
+    !offline &&
+    (status?.stream === "streaming" ||
+      status?.stream === "starting" ||
+      session?.stream === "streaming" ||
+      session?.stream === "starting");
+
   const streamLabel = (() => {
     if (!device) return "No device";
     if (!configured) return `${device.name} · local mock`;
@@ -148,8 +157,14 @@ export function PhoneScreen({
               />
             )}
 
+            {awaitingPicture && (
+              <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 font-mono text-[10px] uppercase tracking-wider text-white/70">
+                {videoError || status?.note || "Waiting for keyframe…"}
+              </p>
+            )}
+
             {/* Placeholder / mock chrome when not decoding live video */}
-            {!offline && device && !showingVideo && (
+            {!offline && device && !showingVideo && !awaitingPicture && (
               <>
                 <div className="pointer-events-none absolute inset-0 opacity-40">
                   <div

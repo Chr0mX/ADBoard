@@ -227,17 +227,20 @@ export function useDeviceVideo(
         }
 
         const buf = new Uint8Array(event.data as ArrayBuffer);
-        if (buf.byteLength === 0 || !annexBHasVcl(buf)) return;
+        if (buf.byteLength === 0) return;
 
+        // SPS/PPS often arrive in their own access unit, before the IDR.
         const paramSets = extractSpsPps(buf);
         if (paramSets) {
           description = buildAvcDecoderConfig(paramSets.sps, paramSets.pps);
           codecString = codecStringFromSps(paramSets.sps);
         }
 
+        if (!annexBHasVcl(buf)) return;
+
         const isKey = annexBIsIdr(buf);
-        // Prefer keyframes that carry SPS/PPS so avcC stays in sync.
-        const isConfigKey = isKey && !!paramSets;
+        // An earlier SPS/PPS AU is enough; the IDR does not have to repeat it.
+        const isConfigKey = isKey && description != null;
 
         if (!description) {
           return; // wait for SPS/PPS

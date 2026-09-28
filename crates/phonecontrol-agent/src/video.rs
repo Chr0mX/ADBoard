@@ -60,6 +60,11 @@ pub enum VideoPacket {
 
 struct SerialChannel {
     tx: broadcast::Sender<VideoPacket>,
+    last_status: Option<VideoStatusFrame>,
+    /// Latest access unit that carries SPS/PPS. May be the keyframe itself.
+    last_sps: Option<Vec<u8>>,
+    /// Latest IDR access unit. Late subscribers need this or they wait forever.
+    last_keyframe: Option<Vec<u8>>,
 }
 
 /// Fan-out hub: one producer per serial, many WS subscribers.
@@ -82,7 +87,12 @@ impl VideoHub {
         let (tx, _) = broadcast::channel(VIDEO_CHANNEL_CAP);
         guard.insert(
             serial.to_string(),
-            SerialChannel { tx: tx.clone() },
+            SerialChannel {
+                tx: tx.clone(),
+                last_status: None,
+                last_sps: None,
+                last_keyframe: None,
+            },
         );
         tx
     }
@@ -92,8 +102,47 @@ impl VideoHub {
     }
 
     pub async fn publish(&self, serial: &str, packet: VideoPacket) {
-        let tx = self.ensure_channel(serial).await;
-        let _ = tx.send(packet);
+        let mut guard = self.channels.write().await;
+        if !guard.contains_key(serial) {
+            let (tx, _) = broadcast::channel(VIDEO_CHANNEL_CAP);
+            guard.insert(
+                serial.to_string(),
+                SerialChannel {
+                    tx,
+                    last_status: None,
+                    last_sps: None,
+                    last_keyframe: None,
+                },
+            );
+        }
+        let ch = guard.get_mut(serial).expect("channel just inserted");
+        match &packet {
+            VideoPacket::Status(frame) => ch.last_status = Some(frame.clone()),
+            VideoPacket::AnnexB(au) => {
+                if annexb_has_sps(au) {
+                    ch.last_sps = Some(au.clone());
+                }
+                if annexb_is_keyframe(au) {
+                    ch.last_keyframe = Some(au.clone());
+                }
+            }
+        }
+        let _ = ch.tx.send(packet);
+    }
+
+    /// SPS/PPS and the latest IDR, so a browser that connects mid-stream can decode
+    /// without waiting for the encoder to emit another keyframe.
+    pub async fn replay_access_units(&self, serial: &str) -> Vec<Vec<u8>> {
+        let guard = self.channels.read().await;
+        let Some(ch) = guard.get(serial) else {
+            return Vec::new();
+        };
+        match (&ch.last_sps, &ch.last_keyframe) {
+            (Some(sps), Some(key)) if sps != key => vec![sps.clone(), key.clone()],
+            (_, Some(key)) => vec![key.clone()],
+            (Some(sps), None) => vec![sps.clone()],
+            (None, None) => Vec::new(),
+        }
     }
 
     pub async fn publish_status(&self, serial: &str, frame: VideoStatusFrame) {
@@ -648,6 +697,11 @@ fn append_annexb_nal(buf: &mut Vec<u8>, nal: &[u8]) {
     buf.extend_from_slice(nal);
 }
 
+/// True when an Annex-B AU contains SPS (type 7).
+pub fn annexb_has_sps(au: &[u8]) -> bool {
+    split_annexb_nals(au).iter().any(|nal| nal_unit_type(nal) == 7)
+}
+
 /// True when an Annex-B AU contains an IDR (keyframe).
 pub fn annexb_is_keyframe(au: &[u8]) -> bool {
     for nal in split_annexb_nals(au) {
@@ -808,6 +862,21 @@ mod tests {
         assert!(!should_use_testpattern(VideoSourceKind::Auto, true));
         assert!(!should_use_testpattern(VideoSourceKind::Scrcpy, false));
         assert!(!should_use_testpattern(VideoSourceKind::Off, false));
+    }
+
+    #[tokio::test]
+    async fn late_subscriber_replays_cached_keyframe() {
+        let hub = VideoHub::new();
+        let sps = vec![0, 0, 0, 1, 0x67, 0x42, 0x00];
+        let key = vec![0, 0, 0, 1, 0x65, 0x88, 0x80];
+        hub.publish_annexb("SER", sps.clone()).await;
+        hub.publish_annexb("SER", key.clone()).await;
+        let replay = hub.replay_access_units("SER").await;
+        assert_eq!(replay, vec![sps, key]);
+
+        let combined = vec![0, 0, 0, 1, 0x67, 0x42, 0, 0, 0, 1, 0x65, 0x88];
+        hub.publish_annexb("ONE", combined.clone()).await;
+        assert_eq!(hub.replay_access_units("ONE").await, vec![combined]);
     }
 
     #[tokio::test]

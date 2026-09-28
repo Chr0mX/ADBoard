@@ -567,10 +567,22 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
 
     let hub = state.video_hub();
     let mut video_rx = hub.subscribe(&serial).await;
+    let replay = hub.replay_access_units(&serial).await;
+    let hub_lag = hub.clone();
     let mut events = state.subscribe();
     let serial_filter = serial.clone();
+    let serial_lag = serial.clone();
 
     let mut send_task = tokio::spawn(async move {
+        for au in replay {
+            if sender
+                .send(Message::Binary(au.into()))
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
         loop {
             tokio::select! {
                 packet = video_rx.recv() => {
@@ -591,6 +603,20 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                             debug!(lagged = n, "video subscriber lagged");
+                            let mut failed = false;
+                            for au in hub_lag.replay_access_units(&serial_lag).await {
+                                if sender
+                                    .send(Message::Binary(au.into()))
+                                    .await
+                                    .is_err()
+                                {
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                            if failed {
+                                break;
+                            }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
