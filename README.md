@@ -200,8 +200,8 @@ http://127.0.0.1:3848
 
 | Value | Use when |
 |---|---|
-| `127.0.0.1` (script default) | Browser UI on this Windows PC only |
-| `0.0.0.0` | Remote Linux LXC agent (or LAN browser) must reach `/ws/agent` — open firewall TCP 3848 |
+| `127.0.0.1` | Browser UI on this Windows PC only |
+| `0.0.0.0` (`run.bat`) | LAN browser or a remote agent can open port 3848. Allow TCP 3848 in Windows Firewall. |
 
 ```powershell
 .\Start-PhoneControl.ps1 -Bind 0.0.0.0

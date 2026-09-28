@@ -68,8 +68,8 @@ NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848
 
 | Bind | When |
 |---|---|
-| `127.0.0.1` (script default) | Browser UI runs on **this** Windows PC. Safest — not reachable from the LAN. |
-| `0.0.0.0` | A **remote** Linux LXC agent (or another machine’s browser) must reach this controller’s `/ws/agent` / HTTP. Open the firewall for TCP **3848**. |
+| `127.0.0.1` | Browser UI runs on this Windows PC. Not reachable from the LAN. |
+| `0.0.0.0` (`run.bat`) | Another machine’s browser, or a remote agent, can open this controller. Allow TCP 3848 in Windows Firewall. |
 
 Set via `PHONECONTROL_BIND` (also accepts any IPv4 literal).
 
