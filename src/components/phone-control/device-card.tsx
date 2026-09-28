@@ -67,7 +67,7 @@ export function DeviceCard({
         className="block w-full pr-12 text-left"
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-display text-sm font-semibold leading-5 text-[var(--pc-ink)]">
+          <span data-card-name className="min-w-0 break-words font-display text-sm font-semibold leading-5 text-[var(--pc-ink)]">
             {device.name}
           </span>
           {isSelected && !isActive && (
@@ -76,10 +76,10 @@ export function DeviceCard({
             </span>
           )}
         </span>
-        <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs leading-4 text-[var(--pc-muted)]">
+        <span className="mt-1 flex min-w-0 flex-col items-start gap-0.5 text-xs leading-4 text-[var(--pc-muted)]">
           <span
             className={cn(
-              "inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase",
+              "inline-flex items-center gap-1 font-mono text-[10px] uppercase",
               device.status === "online"
                 ? "text-[var(--pc-signal)]"
                 : device.status === "unauthorized"
@@ -99,19 +99,24 @@ export function DeviceCard({
             />
             {statusLabel(device.status)}
           </span>
-          <span className="min-w-0 truncate">
+          <span data-card-model className="max-w-full break-words">
             {device.model}
-            {" · "}
+          </span>
+          <span data-card-resolution className="max-w-full break-words font-mono text-[10px]">
             {formatResolution(device.resolution.width, device.resolution.height)}
           </span>
-          {device.battery != null && (
-            <span data-card-battery className="shrink-0 font-mono text-[10px]">
-              {device.battery}%
-            </span>
-          )}
-          {device.temperatureC != null && (
-            <span data-card-temperature className="shrink-0 font-mono text-[10px]">
-              {device.temperatureC.toFixed(1)}°C
+          {(device.battery != null || device.temperatureC != null) && (
+            <span className="flex flex-wrap gap-x-2">
+              {device.battery != null && (
+                <span data-card-battery className="font-mono text-[10px]">
+                  {device.battery}%
+                </span>
+              )}
+              {device.temperatureC != null && (
+                <span data-card-temperature className="font-mono text-[10px]">
+                  {device.temperatureC.toFixed(1)}°C
+                </span>
+              )}
             </span>
           )}
         </span>
