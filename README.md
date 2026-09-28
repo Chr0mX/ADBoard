@@ -54,10 +54,10 @@ When **ADB** and **scrcpy-server** are available and `PHONECONTROL_VIDEO_SOURCE=
 CLASSPATH=/data/local/tmp/phonecontrol-scrcpy-server.jar \
   app_process / com.genymobile.scrcpy.Server <version> \
   tunnel_forward=true audio=false control=false cleanup=false \
-  raw_stream=true video_codec=h264 max_size=1280
+  raw_stream=true send_dummy_byte=true video_codec=h264 max_size=1280
 ```
 
-4. TCP-connects to `127.0.0.1:PORT`, splits the elementary stream into **Annex-B access units**, and publishes them on the video hub (`backend: scrcpy`).
+4. TCP-connects to `127.0.0.1:PORT` and reads the one-byte handshake (`adb forward` accepts before the device is listening). The bytes after that are **Annex-B access units**, published on the video hub (`backend: scrcpy`).
 
 `raw_stream=true` is the current scrcpy-supported way to get a bare H264 socket (the client no longer supports `--record-format=h264`). Override version with `SCRCPY_SERVER_VERSION` if the jar filename does not include `vX.Y.Z`.
 

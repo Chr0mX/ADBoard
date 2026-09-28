@@ -13,9 +13,10 @@
 //! # then TCP connect 127.0.0.1:PORT → raw Annex-B H264
 //! ```
 //!
-//! `raw_stream=true` forces:
-//! `send_device_meta=false`, `send_frame_meta=false`, `send_dummy_byte=false`,
-//! `send_stream_meta=false` — so the socket is a pure H264 elementary stream.
+//! `raw_stream=true` forces device/frame/stream metadata off. `send_dummy_byte`
+//! is turned back on afterwards: `adb forward` accepts TCP before the device
+//! socket is listening, so the first byte is the only way to know the server
+//! is actually there. Everything after that byte is Annex-B H264.
 
 use crate::video::{
     start_annexb_reader_pump, AnnexBPumpMeta, VideoHub, VideoPump, SCRCPY_DEFAULT_CODEC_STRING,
@@ -23,8 +24,9 @@ use crate::video::{
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tracing::{info, warn};
@@ -32,16 +34,52 @@ use tracing::{info, warn};
 const REMOTE_SERVER_PATH: &str = "/data/local/tmp/phonecontrol-scrcpy-server.jar";
 const DEFAULT_MAX_SIZE: u32 = 1280;
 
+/// Last lines printed by scrcpy-server (stdout and stderr).
+#[derive(Clone, Default)]
+pub struct ServerLog {
+    lines: Arc<Mutex<String>>,
+}
+
+impl ServerLog {
+    pub fn push_line(&self, line: &str) {
+        let line = line.trim();
+        if line.is_empty() {
+            return;
+        }
+        let mut guard = self.lines.lock().unwrap_or_else(|e| e.into_inner());
+        if !guard.is_empty() {
+            guard.push_str(" | ");
+        }
+        guard.push_str(line);
+        const MAX: usize = 400;
+        if guard.len() > MAX {
+            let mut cut = guard.len() - MAX;
+            while cut < guard.len() && !guard.is_char_boundary(cut) {
+                cut += 1;
+            }
+            *guard = guard[cut..].trim_start().to_string();
+        }
+    }
+
+    pub fn tail(&self) -> String {
+        self.lines
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+}
+
 /// Owns the adb-forwarded TCP pump + server shell process for one serial.
 pub struct ScrcpyRawCapture {
     pub pump: VideoPump,
     server: Child,
     local_port: u16,
+    pub server_log: ServerLog,
 }
 
 impl ScrcpyRawCapture {
-    pub fn into_parts(self) -> (VideoPump, Child, u16) {
-        (self.pump, self.server, self.local_port)
+    pub fn into_parts(self) -> (VideoPump, Child, u16, ServerLog) {
+        (self.pump, self.server, self.local_port, self.server_log)
     }
 }
 
@@ -160,13 +198,19 @@ pub fn build_server_shell_command(
     max_size: u32,
     extra_opts: &[String],
 ) -> String {
+    // `raw_stream` clears send_dummy_byte. Put send_dummy_byte after it so
+    // the handshake byte comes back. adb forward accepts TCP before the
+    // device is listening; without that byte the reader sees EOF immediately.
     let mut opts = vec![
-        format!("tunnel_forward=true"),
-        format!("audio=false"),
-        format!("control=false"),
-        format!("cleanup=false"),
-        format!("raw_stream=true"),
-        format!("video_codec=h264"),
+        "scid=-1".to_string(),
+        "log_level=info".to_string(),
+        "tunnel_forward=true".to_string(),
+        "audio=false".to_string(),
+        "control=false".to_string(),
+        "cleanup=false".to_string(),
+        "raw_stream=true".to_string(),
+        "send_dummy_byte=true".to_string(),
+        "video_codec=h264".to_string(),
         format!("max_size={max_size}"),
     ];
     opts.extend(extra_opts.iter().cloned());
@@ -307,29 +351,36 @@ pub async fn start_scrcpy_raw_capture(
         .spawn()
         .map_err(|e| format!("spawn scrcpy-server shell: {e}"))?;
 
-    // Give the server a moment to listen, then connect (connection starts the stream).
+    let server_log = ServerLog::default();
+    if let Some(out) = server.stdout.take() {
+        spawn_server_log(out, serial.clone(), server_log.clone());
+    }
+    if let Some(err) = server.stderr.take() {
+        spawn_server_log(err, serial.clone(), server_log.clone());
+    }
+
+    // adb forward accepts localhost immediately, even when scrcpy-server is
+    // not listening yet. Read the dummy byte before treating the socket as H264.
     let addr = SocketAddr::from(([127, 0, 0, 1], local_port));
-    let stream = match connect_with_retry(addr, Duration::from_secs(5)).await {
+    let stream = match connect_until_handshake(addr, Duration::from_secs(10)).await {
         Ok(s) => s,
         Err(e) => {
             let _ = server.kill().await;
+            let _ = server.wait().await;
             let _ = adb_forward_remove(&adb, &serial, local_port).await;
-            // Surface server stderr if it died immediately.
-            if let Ok(Some(status)) = server.try_wait() {
-                return Err(format!(
-                    "scrcpy-server exited before TCP connect ({status}): {e}"
-                ));
-            }
-            return Err(format!("TCP connect to scrcpy-server failed: {e}"));
+            return Err(with_server_log(
+                &format!("scrcpy-server handshake failed: {e}"),
+                &server_log,
+            ));
         }
     };
 
-    // Quick check — server still alive after accept.
     tokio::time::sleep(Duration::from_millis(100)).await;
     if let Ok(Some(status)) = server.try_wait() {
         let _ = adb_forward_remove(&adb, &serial, local_port).await;
-        return Err(format!(
-            "scrcpy-server exited right after connect ({status}) — check version match / device auth"
+        return Err(with_server_log(
+            &format!("scrcpy-server exited right after connect ({status})"),
+            &server_log,
         ));
     }
 
@@ -341,27 +392,74 @@ pub async fn start_scrcpy_raw_capture(
         pump,
         server,
         local_port,
+        server_log,
     })
 }
 
-async fn connect_with_retry(
-    addr: SocketAddr,
-    budget: Duration,
-) -> Result<TcpStream, std::io::Error> {
-    let start = std::time::Instant::now();
-    let mut last_err = None;
-    while start.elapsed() < budget {
-        match TcpStream::connect(addr).await {
-            Ok(s) => return Ok(s),
-            Err(e) => {
-                last_err = Some(e);
-                tokio::time::sleep(Duration::from_millis(100)).await;
+fn with_server_log(message: &str, log: &ServerLog) -> String {
+    let tail = log.tail();
+    if tail.is_empty() {
+        message.to_string()
+    } else {
+        format!("{message} | {tail}")
+    }
+}
+
+fn spawn_server_log<R>(reader: R, serial: String, log: ServerLog)
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(reader).lines();
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    info!(%serial, "scrcpy-server: {line}");
+                    log.push_line(&line);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    warn!(%serial, error = %e, "scrcpy-server log read failed");
+                    break;
+                }
             }
         }
+    });
+}
+
+/// TCP-connect and read the one-byte scrcpy handshake.
+///
+/// A bare connect is not enough: `adb forward` accepts on 127.0.0.1 before
+/// `localabstract:scrcpy` exists, and that socket then EOFs.
+async fn connect_until_handshake(
+    addr: SocketAddr,
+    budget: Duration,
+) -> Result<TcpStream, String> {
+    let start = std::time::Instant::now();
+    let mut last = "scrcpy-server did not send the handshake byte".to_string();
+    while start.elapsed() < budget {
+        match TcpStream::connect(addr).await {
+            Ok(mut stream) => {
+                let mut byte = [0u8; 1];
+                match tokio::time::timeout(Duration::from_millis(250), stream.read_exact(&mut byte))
+                    .await
+                {
+                    Ok(Ok(_)) => return Ok(stream),
+                    Ok(Err(e)) => {
+                        last = format!("socket closed before handshake: {e}");
+                    }
+                    Err(_) => {
+                        last = "adb accepted TCP but scrcpy-server was not listening".into();
+                    }
+                }
+            }
+            Err(e) => {
+                last = format!("TCP connect failed: {e}");
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err(last_err.unwrap_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::TimedOut, "connect budget exhausted")
-    }))
+    Err(last)
 }
 
 /// Remove a previously installed adb forward (best-effort helper for session stop).
@@ -384,6 +482,7 @@ mod tests {
             &["max_fps=15".into()],
         );
         assert!(cmd.contains("com.genymobile.scrcpy.Server 3.3.1"));
+        assert!(cmd.contains("scid=-1"));
         assert!(cmd.contains("raw_stream=true"));
         assert!(cmd.contains("tunnel_forward=true"));
         assert!(cmd.contains("audio=false"));
@@ -391,7 +490,10 @@ mod tests {
         assert!(cmd.contains("video_codec=h264"));
         assert!(cmd.contains("max_size=1280"));
         assert!(cmd.contains("max_fps=15"));
-        assert!(!cmd.contains("send_frame_meta")); // folded into raw_stream
+        assert!(!cmd.contains("send_frame_meta"));
+        let raw = cmd.find("raw_stream=true").unwrap();
+        let dummy = cmd.find("send_dummy_byte=true").unwrap();
+        assert!(dummy > raw, "dummy byte must override raw_stream");
     }
 
     #[test]
@@ -415,6 +517,29 @@ mod tests {
             Some(Path::new("/adb")),
             Some(Path::new("/server"))
         ));
+    }
+
+    #[tokio::test]
+    async fn handshake_skips_accept_that_closes_immediately() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let _ = sock.shutdown().await;
+            let (mut sock, _) = listener.accept().await.unwrap();
+            sock.write_all(&[0x00, 0x00, 0x00, 0x00, 0x01]).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        });
+
+        let mut stream = connect_until_handshake(addr, Duration::from_secs(3))
+            .await
+            .expect("handshake");
+        let mut rest = [0u8; 4];
+        stream.read_exact(&mut rest).await.unwrap();
+        assert_eq!(rest, [0x00, 0x00, 0x00, 0x01]);
     }
 
     #[test]

@@ -8,7 +8,7 @@
 //! - Inject v1: `adb shell input tap` / `keyevent` when ADB is available; otherwise stub.
 
 use crate::scrcpy_video::{
-    cleanup_forward, scrcpy_server_jar, scrcpy_video_ready, start_scrcpy_raw_capture,
+    cleanup_forward, scrcpy_server_jar, scrcpy_video_ready, start_scrcpy_raw_capture, ServerLog,
 };
 use crate::video::{
     h264_status_for_session, should_use_testpattern, start_scrcpy_fixture_pump,
@@ -40,6 +40,8 @@ struct LiveSession {
     video: Option<VideoPump>,
     /// Local TCP port used for `adb forward` (removed on stop).
     forward_port: Option<u16>,
+    /// Recent scrcpy-server stdout/stderr, when a real server was started.
+    server_log: Option<ServerLog>,
 }
 
 pub struct SessionManager {
@@ -169,6 +171,7 @@ impl SessionManager {
                 child: None,
                 video: None,
                 forward_port: None,
+                server_log: None,
             },
         );
         info
@@ -311,7 +314,7 @@ impl SessionManager {
         .await
         {
             Ok(capture) => {
-                let (pump, server_child, port) = capture.into_parts();
+                let (pump, server_child, port, server_log) = capture.into_parts();
                 let mut guard = self.sessions.write().await;
                 let live = guard.entry(serial.to_string()).or_insert_with(|| LiveSession {
                     info: SessionStatus {
@@ -323,10 +326,12 @@ impl SessionManager {
                     child: None,
                     video: None,
                     forward_port: None,
+                    server_log: None,
                 });
                 live.video = Some(pump);
                 live.child = Some(server_child);
                 live.forward_port = Some(port);
+                live.server_log = Some(server_log);
                 live.info.stream = StreamState::Streaming;
                 live.info.note =
                     "scrcpy-server raw_stream=true → Annex-B AUs on video WS".into();
@@ -368,6 +373,7 @@ impl SessionManager {
             child: None,
             video: None,
             forward_port: None,
+            server_log: None,
         });
         live.video = Some(pump);
         live.info.stream = StreamState::Streaming;
@@ -405,6 +411,7 @@ impl SessionManager {
                     child: None,
                     video: None,
                     forward_port: None,
+                    server_log: None,
                 });
                 live.video = Some(pump);
                 live.info.stream = StreamState::Streaming;
@@ -483,6 +490,7 @@ impl SessionManager {
             child: None,
             video: None,
             forward_port: None,
+            server_log: None,
         });
         entry.info.stream = stream;
         entry.info.note = note;
@@ -593,7 +601,10 @@ impl SessionManager {
                                 stale_forwards.push((live.info.serial.clone(), port));
                             }
                             live.info.stream = StreamState::Error;
-                            live.info.note = format!("scrcpy-server process exited ({status})");
+                            live.info.note = session_failure_note(
+                                &format!("scrcpy-server process exited ({status})"),
+                                live.server_log.as_ref(),
+                            );
                             changed.push(live.info.clone());
                         }
                         Ok(None) => {}
@@ -621,7 +632,10 @@ impl SessionManager {
                     }
                     if live.info.stream == StreamState::Streaming {
                         live.info.stream = StreamState::Error;
-                        live.info.note = "video pump exited unexpectedly".into();
+                        live.info.note = session_failure_note(
+                            "video socket closed before H264 arrived",
+                            live.server_log.as_ref(),
+                        );
                         changed.push(live.info.clone());
                     }
                 }
@@ -636,6 +650,13 @@ impl SessionManager {
             self.publish_video_status(session).await;
         }
         changed
+    }
+}
+
+fn session_failure_note(base: &str, log: Option<&ServerLog>) -> String {
+    match log.map(ServerLog::tail).filter(|t| !t.is_empty()) {
+        Some(tail) => format!("{base} | {tail}"),
+        None => base.to_string(),
     }
 }
 
