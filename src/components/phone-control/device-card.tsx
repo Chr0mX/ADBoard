@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { formatResolution } from "@/lib/devices/coords";
 import type { Device } from "@/lib/devices/types";
 import type { SelectionEvent } from "@/hooks/use-phone-control";
+import { DeviceMenu } from "@/components/phone-control/device-menu";
 
 interface DeviceCardProps {
   device: Device;
@@ -32,18 +34,14 @@ export function DeviceCard({
   onSelect,
 }: DeviceCardProps) {
   const offline = device.status !== "online";
+  const [menu, setMenu] = useState(false);
 
   return (
-    <button
-      type="button"
-      onClick={(e) =>
-        onSelect({
-          deviceId: device.id,
-          ctrlKey: e.ctrlKey,
-          shiftKey: e.shiftKey,
-          metaKey: e.metaKey,
-        })
-      }
+    <div
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu(true);
+      }}
       className={cn(
         "group relative w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
         "min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pc-accent)]",
@@ -55,7 +53,18 @@ export function DeviceCard({
         offline && "opacity-70",
       )}
     >
-      <div className="flex items-center justify-between gap-2">
+      <button
+        type="button"
+        onClick={(e) =>
+          onSelect({
+            deviceId: device.id,
+            ctrlKey: e.ctrlKey,
+            shiftKey: e.shiftKey,
+            metaKey: e.metaKey,
+          })
+        }
+        className="flex w-full items-center justify-between gap-2 pr-10 text-left"
+      >
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="truncate font-display text-sm font-semibold text-[var(--pc-ink)]">
@@ -96,7 +105,21 @@ export function DeviceCard({
           />
           {statusLabel(device.status)}
         </span>
-      </div>
+      </button>
+      <button
+        type="button"
+        aria-label={`Actions for ${device.name}`}
+        aria-haspopup="menu"
+        aria-expanded={menu}
+        className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-lg text-lg text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)]"
+        onClick={(event) => {
+          event.stopPropagation();
+          setMenu((open) => !open);
+        }}
+      >
+        ⋯
+      </button>
+      {menu && <DeviceMenu device={device} onClose={() => setMenu(false)} />}
 
       {offline && (
         <p className="mt-1.5 text-[11px] text-[var(--pc-warn)]">
@@ -105,6 +128,6 @@ export function DeviceCard({
             : "Device unreachable."}
         </p>
       )}
-    </button>
+    </div>
   );
 }

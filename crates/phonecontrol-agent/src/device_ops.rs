@@ -132,6 +132,13 @@ pub async fn run_adb_op(
         }
         "screenshot" => capture_screenshot(adb, serial, arg, files_root).await,
         "recordStart" => start_record(adb, serial, arg, arg2).await,
+        "copy" => {
+            let from = device_path(arg.unwrap_or(""))?;
+            let to = device_path(arg2.unwrap_or(""))?;
+            let command = format!("cp -r {} {}", sh_quote(from), sh_quote(to));
+            adb_text(adb, &adb_args(serial, &["shell", &command])).await?;
+            Ok(format!("copied to {to}"))
+        }
         "recordStop" => {
             adb_text(adb, &adb_args(serial, &["shell", "pkill -2 screenrecord"])).await?;
             Ok("recording stopped".into())
@@ -215,21 +222,7 @@ pub async fn run_adb_op(
             .await?;
             Ok("typed".into())
         }
-        "info" => {
-            let model = adb_text(adb, &adb_args(serial, &["shell", "getprop ro.product.model"]))
-                .await
-                .unwrap_or_default();
-            let release = adb_text(
-                adb,
-                &adb_args(serial, &["shell", "getprop ro.build.version.release"]),
-            )
-            .await
-            .unwrap_or_default();
-            let battery = adb_text(adb, &adb_args(serial, &["shell", "dumpsys battery"]))
-                .await
-                .unwrap_or_default();
-            Ok(format!("model: {model}\nandroid: {release}\n{battery}"))
-        }
+        "info" => device_info(adb, serial).await,
         "push" => Err("use the file upload".into()),
         other => Err(format!("unknown device operation: {other}")),
     }
@@ -262,6 +255,32 @@ async fn capture_screenshot(
     Ok(rel)
 }
 
+/// `arg2` is `1280x720`, `/sdcard/Movies`, or `1280x720|/sdcard/Movies`.
+pub fn split_record_arg(raw: Option<&str>) -> Result<(Option<&str>, Option<&str>), String> {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok((None, None));
+    };
+    if let Some((size, dest)) = raw.split_once('|') {
+        let size = if size.is_empty() { None } else { Some(size) };
+        let dest = if dest.is_empty() { None } else { Some(dest) };
+        return Ok((size, dest));
+    }
+    if raw.starts_with('/') {
+        return Ok((None, Some(raw)));
+    }
+    Ok((Some(raw), None))
+}
+
+fn valid_record_size(size: &str) -> bool {
+    let Some((w, h)) = size.split_once('x') else {
+        return false;
+    };
+    !w.is_empty()
+        && !h.is_empty()
+        && w.chars().all(|c| c.is_ascii_digit())
+        && h.chars().all(|c| c.is_ascii_digit())
+}
+
 async fn start_record(
     adb: &Path,
     serial: &str,
@@ -272,17 +291,30 @@ async fn start_record(
     if !bitrate.chars().all(|c| c.is_ascii_digit()) {
         return Err("bitrate must be a number".into());
     }
-    let remote = format!("/sdcard/Movies/phonecontrol-{}.mp4", now_ms());
-    let mut command = format!("screenrecord --bit-rate {bitrate} --time-limit 180");
+    let (size, dest) = split_record_arg(size)?;
     if let Some(size) = size {
-        if !size.chars().all(|c| c.is_ascii_digit() || c == 'x') || !size.contains('x') {
+        if !valid_record_size(size) {
             return Err("size must look like 1280x720".into());
         }
+    }
+    let remote = match dest {
+        Some(dir) => {
+            let dir = device_path(dir)?;
+            format!(
+                "{}/phonecontrol-{}.mp4",
+                dir.trim_end_matches('/'),
+                now_ms()
+            )
+        }
+        None => format!("/sdcard/Movies/phonecontrol-{}.mp4", now_ms()),
+    };
+    let mut command = format!("screenrecord --bit-rate {bitrate} --time-limit 180");
+    if let Some(size) = size {
         command.push_str(" --size ");
         command.push_str(size);
     }
     command.push(' ');
-    command.push_str(&remote);
+    command.push_str(&sh_quote(&remote));
     let adb = adb.to_path_buf();
     let serial = serial.to_string();
     tokio::spawn(async move {
@@ -311,6 +343,130 @@ pub async fn adb_pull(adb: &Path, serial: &str, remote: &str, local: &Path) -> R
     Ok(())
 }
 
+pub fn split_activity(raw: &str) -> (&str, &str) {
+    match raw.split_once(' ') {
+        Some((activity, extra)) => (activity, extra.trim()),
+        None => (raw, ""),
+    }
+}
+
+fn safe_am_extra(extra: &str) -> bool {
+    !extra.is_empty()
+        && extra.len() < 300
+        && extra
+            .chars()
+            .all(|c| c.is_ascii_graphic() || c == ' ')
+        && !extra
+            .chars()
+            .any(|c| matches!(c, ';' | '|' | '&' | '$' | '`' | '\\' | '\'' | '"' | '\n'))
+}
+
+async fn device_info(adb: &Path, serial: &str) -> Result<String, String> {
+    let model = adb_text(adb, &adb_args(serial, &["shell", "getprop ro.product.model"]))
+        .await
+        .unwrap_or_default();
+    let release = adb_text(
+        adb,
+        &adb_args(serial, &["shell", "getprop ro.build.version.release"]),
+    )
+    .await
+    .unwrap_or_default();
+    let battery = adb_text(adb, &adb_args(serial, &["shell", "dumpsys battery"]))
+        .await
+        .unwrap_or_default();
+    let ram = adb_text(
+        adb,
+        &adb_args(serial, &["shell", "grep MemTotal /proc/meminfo"]),
+    )
+    .await
+    .unwrap_or_default();
+    let storage = adb_text(adb, &adb_args(serial, &["shell", "df /data"]))
+        .await
+        .unwrap_or_default();
+    let storage_line = storage.lines().last().unwrap_or("").trim();
+    Ok(format!(
+        "model: {model}\nandroid: {release}\nram: {ram}\nstorage: {storage_line}\n{battery}"
+    ))
+}
+
+const PLACEHOLDER_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x50,
+    0x0f, 0x00, 0x04, 0x85, 0x01, 0x80, 0x84, 0xa9, 0x8c, 0x21, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+    0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+/// PC-side capture used when ADB cannot read the framebuffer.
+pub fn write_placeholder_screenshot(root: &Path, serial: &str) -> Result<String, String> {
+    let rel = format!("Screenshots/{serial}/{}.png", now_ms());
+    let path = host_path(root, &rel)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, PLACEHOLDER_PNG).map_err(|e| e.to_string())?;
+    Ok(rel)
+}
+
+pub fn apply_host_op(root: &Path, op: &str, path: &str, dest: &str) -> Result<String, String> {
+    match op {
+        "mkdir" => {
+            let dir = require_child(root, path)?;
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            Ok(path.trim_matches('/').to_string())
+        }
+        "rename" | "move" => {
+            let from = require_child(root, path)?;
+            let to = require_child(root, dest)?;
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::rename(&from, &to).map_err(|e| e.to_string())?;
+            Ok(dest.trim_matches('/').to_string())
+        }
+        "copy" => {
+            let from = require_child(root, path)?;
+            let to = require_child(root, dest)?;
+            copy_path(&from, &to)?;
+            Ok(dest.trim_matches('/').to_string())
+        }
+        other => Err(format!("unknown file operation: {other}")),
+    }
+}
+
+fn require_child(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    if rel.trim().is_empty() {
+        return Err("path is required".into());
+    }
+    let path = host_path(root, rel)?;
+    if path == root {
+        return Err("refusing to change the file root".into());
+    }
+    Ok(path)
+}
+
+fn copy_path(from: &Path, to: &Path) -> Result<(), String> {
+    let meta = std::fs::symlink_metadata(from).map_err(|e| e.to_string())?;
+    if meta.file_type().is_symlink() {
+        return Err("refusing to copy a symlink".into());
+    }
+    if meta.is_dir() {
+        std::fs::create_dir_all(to).map_err(|e| e.to_string())?;
+        for entry in std::fs::read_dir(from).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            copy_path(&entry.path(), &to.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::copy(from, to)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
 fn now_ms() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -328,23 +484,28 @@ async fn launch_app(
     if !valid_package(package) {
         return Err("package name is not valid".into());
     }
-    if let Some(activity) = activity.filter(|a| !a.is_empty()) {
+    if let Some(raw) = activity.filter(|a| !a.is_empty()) {
+        let (activity, extra) = split_activity(raw);
         if !activity
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '/')
         {
             return Err("activity name is not valid".into());
         }
+        if !extra.is_empty() && !safe_am_extra(extra) {
+            return Err("activity arguments are not valid".into());
+        }
         let component = if activity.contains('/') {
             activity.to_string()
         } else {
             format!("{package}/{activity}")
         };
-        adb_text(
-            adb,
-            &adb_args(serial, &["shell", &format!("am start -n {component}")]),
-        )
-        .await?;
+        let mut command = format!("am start -n {component}");
+        if !extra.is_empty() {
+            command.push(' ');
+            command.push_str(extra);
+        }
+        adb_text(adb, &adb_args(serial, &["shell", &command])).await?;
         Ok(format!("launched {component}"))
     } else {
         adb_text(
@@ -375,5 +536,28 @@ mod tests {
         assert!(device_path("/sdcard/../data").is_err());
         assert!(shell_line("pm list packages").is_ok());
         assert!(shell_line("one\ntwo").is_err());
+        assert_eq!(
+            split_activity("com.example.game.MainActivity --es user bob"),
+            ("com.example.game.MainActivity", "--es user bob")
+        );
+        assert!(safe_am_extra("--es user bob"));
+        assert!(!safe_am_extra("x; rm"));
+        let (size, dest) = split_record_arg(Some("1280x720|/sdcard/Movies")).unwrap();
+        assert_eq!(size, Some("1280x720"));
+        assert_eq!(dest, Some("/sdcard/Movies"));
+    }
+
+    #[test]
+    fn host_file_ops_stay_inside_the_root() {
+        let root = std::env::temp_dir().join(format!("pc-files-{}", now_ms()));
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(apply_host_op(&root, "mkdir", "Downloads/APKs", "").is_ok());
+        assert!(root.join("Downloads/APKs").is_dir());
+        std::fs::write(root.join("Downloads/APKs/app.txt"), b"apk").unwrap();
+        assert!(apply_host_op(&root, "copy", "Downloads/APKs/app.txt", "Downloads/app.txt").is_ok());
+        assert_eq!(std::fs::read(root.join("Downloads/app.txt")).unwrap(), b"apk");
+        assert!(apply_host_op(&root, "mkdir", "../escape", "").is_err());
+        assert!(apply_host_op(&root, "rename", "", "Downloads/x").is_err());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

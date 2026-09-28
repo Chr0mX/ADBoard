@@ -453,5 +453,6 @@ export function usePhoneControl() {
     handleInstall,
     lastTap,
     tapLog,
+    sessions,
   };
 }

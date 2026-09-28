@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { StreamStats } from "@/lib/devices/types";
 import { ControlHeader } from "@/components/phone-control/control-header";
 import { ControlModes } from "@/components/phone-control/control-modes";
@@ -8,9 +8,20 @@ import { DeviceGrid } from "@/components/phone-control/device-grid";
 import { PhoneScreen } from "@/components/phone-control/phone-screen";
 import { ScreenGrid } from "@/components/phone-control/screen-grid";
 import { StatusBar } from "@/components/phone-control/status-bar";
+import { AppsPanel } from "@/components/phone-control/desk/apps-panel";
+import { AutomatePanel } from "@/components/phone-control/desk/automate-panel";
+import {
+  DeskProvider,
+  asSection,
+  type DeskSection,
+} from "@/components/phone-control/desk/desk-context";
+import { DeveloperPanel } from "@/components/phone-control/desk/developer-panel";
+import { FilesPanel } from "@/components/phone-control/desk/files-panel";
+import { HostsPanel } from "@/components/phone-control/desk/hosts-panel";
+import { ManagePanel } from "@/components/phone-control/desk/manage-panel";
 import { Button } from "@/components/ui/button";
 import { usePhoneControl } from "@/hooks/use-phone-control";
-import { useStoredFlag } from "@/hooks/use-stored-flag";
+import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { cn } from "@/lib/utils";
 
 function subscribeWide(onChange: () => void) {
@@ -41,6 +52,7 @@ export function PhoneControlApp() {
     handleNav,
     handleInstall,
     lastTap,
+    sessions,
   } = usePhoneControl();
 
   const [fillWindow, setFillWindow] = useStoredFlag("phonecontrol-fill-window", false);
@@ -58,6 +70,36 @@ export function PhoneControlApp() {
   };
 
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
+  const [storedSection, setStoredSection] = useStoredString("phonecontrol-section");
+  const section = asSection(storedSection);
+  const [focusTool, setFocusTool] = useState<string | null>(null);
+  const [lastSeen, setLastSeen] = useState<Record<string, number>>({});
+  const seenRef = useRef<Record<string, number>>({});
+  const statusRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    const now = Date.now();
+    let changed = false;
+    for (const device of devices) {
+      const before = statusRef.current.get(device.id);
+      if (device.status === "online") {
+        seenRef.current[device.id] = now;
+        if (before !== "online") changed = true;
+      } else if (before === "online") {
+        changed = true;
+      }
+      statusRef.current.set(device.id, device.status);
+    }
+    if (changed) setLastSeen({ ...seenRef.current });
+  }, [devices]);
+
+  const open = (next: DeskSection, tool?: string, deviceId?: string) => {
+    if (deviceId) {
+      selectDevice({ deviceId, ctrlKey: false, shiftKey: false, metaKey: false });
+    }
+    setFocusTool(tool ?? null);
+    setStoredSection(next);
+  };
 
   const onPointer = async (event: {
     phase: "down" | "move" | "up" | "cancel" | "hover" | "leave";
@@ -79,11 +121,31 @@ export function PhoneControlApp() {
   const dockedScreens = wide && !fillWindow;
   const screenSheet = screensOpen && !dockedScreens;
 
+  const showHeader = !fillWindow || section !== "control";
+
   return (
+    <DeskProvider
+      value={{
+        section,
+        focusTool,
+        devices,
+        activeDevice,
+        targets: broadcastTargets,
+        sessions,
+        lastSeen,
+        open,
+        selectDevice,
+      }}
+    >
     <div className="pc-shell relative flex h-dvh max-h-dvh flex-col overflow-hidden">
       <div className="pc-atmosphere" aria-hidden />
-      {!fillWindow && (
-        <ControlHeader onlineCount={onlineCount} totalCount={devices.length} />
+      {showHeader && (
+        <ControlHeader
+          onlineCount={onlineCount}
+          totalCount={devices.length}
+          section={section}
+          onSection={(next) => open(next)}
+        />
       )}
 
       <main
@@ -104,7 +166,18 @@ export function PhoneControlApp() {
           </div>
         )}
 
-        {!loading && devices.length > 0 && (
+        {!loading && devices.length > 0 && section !== "control" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {section === "manage" && <ManagePanel />}
+            {section === "apps" && <AppsPanel />}
+            {section === "files" && <FilesPanel />}
+            {section === "automate" && <AutomatePanel />}
+            {section === "developer" && <DeveloperPanel />}
+            {section === "hosts" && <HostsPanel />}
+          </div>
+        )}
+
+        {!loading && devices.length > 0 && section === "control" && (
           <>
             {error && !fillWindow && (
               <p className="mb-1 shrink-0 truncate px-1 font-mono text-[10px] text-[var(--pc-warn)]">
@@ -238,7 +311,10 @@ export function PhoneControlApp() {
         )}
       </main>
 
-      <StatusBar device={activeDevice} session={activeSession} stats={streamStats} />
+      {section === "control" && (
+        <StatusBar device={activeDevice} session={activeSession} stats={streamStats} />
+      )}
     </div>
+    </DeskProvider>
   );
 }

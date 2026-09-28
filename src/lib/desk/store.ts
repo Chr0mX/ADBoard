@@ -7,24 +7,48 @@ export interface AppShortcut {
   name: string;
   packageName: string;
   activity: string;
+  /** Extra `am start` arguments, such as `--es user bob`. */
+  arguments?: string;
+  /** Emoji or short label shown on the launcher tile. */
+  icon?: string;
   group: string;
 }
 
+export type MacroStepKind =
+  | "launch"
+  | "forceStop"
+  | "reboot"
+  | "shutdown"
+  | "wait"
+  | "waitDevice"
+  | "waitApp"
+  | "waitScreen"
+  | "timeout"
+  | "tap"
+  | "doubleTap"
+  | "longPress"
+  | "swipe"
+  | "scroll"
+  | "drag"
+  | "pinch"
+  | "text"
+  | "nav"
+  | "shell"
+  | "screenshot"
+  | "recordStart"
+  | "recordStop"
+  | "upload"
+  | "download"
+  | "deleteFile"
+  | "install";
+
 export interface MacroStep {
   id: string;
-  kind:
-    | "launch"
-    | "wait"
-    | "tap"
-    | "swipe"
-    | "text"
-    | "nav"
-    | "shell"
-    | "screenshot"
-    | "forceStop";
+  kind: MacroStepKind;
   packageName?: string;
   activity?: string;
   ms?: number;
+  /** Percent of the picture, 0–100. */
   x?: number;
   y?: number;
   x2?: number;
@@ -32,6 +56,25 @@ export interface MacroStep {
   text?: string;
   nav?: "back" | "home" | "recent" | "volume_up" | "volume_down" | "power";
   command?: string;
+  bitrate?: string;
+  size?: string;
+  dest?: string;
+  hostPath?: string;
+}
+
+export interface CoordOverride {
+  x?: number;
+  y?: number;
+  x2?: number;
+  y2?: number;
+}
+
+export interface DeviceProfile {
+  coordinateProfile: string;
+  overrides: Record<string, CoordOverride>;
+  preferredResolution: string;
+  preferredFps: string;
+  assignedMacros: string[];
 }
 
 export interface SavedMacro {
@@ -47,6 +90,20 @@ export interface DeviceGroup {
   deviceIds: string[];
 }
 
+export interface MacroRunRecord {
+  id: string;
+  macroId: string;
+  macroName: string;
+  at: number;
+  parallel: boolean;
+  results: Array<{
+    deviceId: string;
+    deviceName: string;
+    status: string;
+    detail?: string;
+  }>;
+}
+
 export interface DeskLibrary {
   apps: AppShortcut[];
   macros: SavedMacro[];
@@ -54,10 +111,27 @@ export interface DeskLibrary {
   deviceVariables: Record<string, Record<string, string>>;
   tags: Record<string, string[]>;
   groups: DeviceGroup[];
+  profiles: Record<string, DeviceProfile>;
+  history: MacroRunRecord[];
 }
 
 const KEY = "phonecontrol-desk";
 const listeners = new Set<() => void>();
+let cachedRaw: string | null | undefined;
+let cached: DeskLibrary | null = null;
+
+export const APP_GROUPS = ["Games", "Media", "Tools", "Custom"] as const;
+export const MACRO_FOLDERS = ["Testing", "Games", "Custom"] as const;
+
+export function emptyProfile(): DeviceProfile {
+  return {
+    coordinateProfile: "relative",
+    overrides: {},
+    preferredResolution: "",
+    preferredFps: "",
+    assignedMacros: [],
+  };
+}
 
 const empty = (): DeskLibrary => ({
   apps: [],
@@ -66,17 +140,45 @@ const empty = (): DeskLibrary => ({
   deviceVariables: {},
   tags: {},
   groups: [],
+  profiles: {},
+  history: [],
 });
 
+const SERVER_LIBRARY = empty();
+
+function normalize(parsed: Partial<DeskLibrary>): DeskLibrary {
+  return {
+    ...empty(),
+    ...parsed,
+    profiles: parsed.profiles ?? {},
+    history: parsed.history ?? [],
+    tags: parsed.tags ?? {},
+    groups: parsed.groups ?? [],
+    variables: parsed.variables ?? {},
+    deviceVariables: parsed.deviceVariables ?? {},
+  };
+}
+
 function read(): DeskLibrary {
-  if (typeof window === "undefined") return empty();
+  if (typeof window === "undefined") return SERVER_LIBRARY;
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return empty();
-    return { ...empty(), ...JSON.parse(raw) };
+    raw = localStorage.getItem(KEY);
   } catch {
-    return empty();
+    raw = null;
   }
+  if (cached && raw === cachedRaw) return cached;
+  cachedRaw = raw;
+  if (!raw) {
+    cached = empty();
+    return cached;
+  }
+  try {
+    cached = normalize(JSON.parse(raw) as Partial<DeskLibrary>);
+  } catch {
+    cached = empty();
+  }
+  return cached;
 }
 
 export function getLibrary(): DeskLibrary {
@@ -84,7 +186,10 @@ export function getLibrary(): DeskLibrary {
 }
 
 export function saveLibrary(next: DeskLibrary) {
-  localStorage.setItem(KEY, JSON.stringify(next));
+  const raw = JSON.stringify(next);
+  cached = next;
+  cachedRaw = raw;
+  localStorage.setItem(KEY, raw);
   listeners.forEach((listener) => listener());
 }
 
@@ -99,10 +204,14 @@ export function useLibrary(): DeskLibrary {
       return () => listeners.delete(onChange);
     },
     read,
-    empty,
+    () => SERVER_LIBRARY,
   );
 }
 
 export function newId(prefix: string) {
-  return `${prefix}-${Date.now().toString(36)}`;
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+export function profileFor(library: DeskLibrary, deviceId: string): DeviceProfile {
+  return library.profiles[deviceId] ?? emptyProfile();
 }

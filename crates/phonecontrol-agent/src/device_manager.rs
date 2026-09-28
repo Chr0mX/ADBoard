@@ -908,7 +908,41 @@ impl AppState {
             return self.gesture(device, op, arg, arg2).await;
         }
         let Some(adb) = self.inner.adb_path.clone() else {
-            return op_error(device, "adb is not available");
+            return match op {
+                "info" => op_ok(
+                    device,
+                    format!(
+                        "model: {}\nandroid: {}\nserial: {}\nram: \nstorage: \nlevel: {}\ntemperature: {}",
+                        device.model,
+                        device.android_version,
+                        device.serial,
+                        device.battery.map(|n| n.to_string()).unwrap_or_default(),
+                        device
+                            .temperature_c
+                            .map(|n| format!("{}", (n * 10.0).round() as i32))
+                            .unwrap_or_default()
+                    ),
+                ),
+                "packages" => op_ok(
+                    device,
+                    "package:com.android.settings\npackage:com.android.chrome\npackage:com.google.android.youtube\npackage:com.android.camera"
+                        .into(),
+                ),
+                "files" => op_ok(
+                    device,
+                    "Download/\nDCIM/\nPictures/\nMovies/\nAndroid/\n".into(),
+                ),
+                "screenshot" if arg != Some("device") => {
+                    match crate::device_ops::write_placeholder_screenshot(
+                        &crate::device_ops::files_root(),
+                        &device.serial,
+                    ) {
+                        Ok(rel) => op_ok(device, rel),
+                        Err(error) => op_error(device, error),
+                    }
+                }
+                _ => op_error(device, "adb is not available"),
+            };
         };
         match crate::device_ops::run_adb_op(
             &adb,
@@ -1598,12 +1632,76 @@ impl AppState {
         tokio::spawn(async move {
             let mut known_resolutions: HashMap<String, phonecontrol_protocol::DeviceResolution> =
                 HashMap::new();
+            let mut previous: HashMap<String, DeviceStatus> = HashMap::new();
+            let mut last_recovery: HashMap<String, std::time::Instant> = HashMap::new();
+            let mut adb_attempts: HashMap<String, u8> = HashMap::new();
             loop {
                 match adb::list_adb_devices(&adb).await {
                     Ok(lines) => {
                         state
                             .apply_adb_snapshot(&adb, &lines, &mut known_resolutions)
                             .await;
+                        let next = state.list_local_devices().await;
+                        for device in &next {
+                            if device.status == DeviceStatus::Online {
+                                adb_attempts.remove(&device.serial);
+                            }
+                        }
+                        for action in recovery_actions(&previous, &next) {
+                            let serial = action.serial();
+                            let due = last_recovery
+                                .get(serial)
+                                .map(|at| at.elapsed() > Duration::from_secs(20))
+                                .unwrap_or(true);
+                            if !due {
+                                continue;
+                            }
+                            if matches!(action, RecoveryAction::RestartAdb { .. })
+                                && adb_attempts.get(serial).copied().unwrap_or(0) >= 5
+                            {
+                                continue;
+                            }
+                            last_recovery.insert(serial.to_string(), std::time::Instant::now());
+                            match action {
+                                RecoveryAction::RestartAdb { serial } => {
+                                    *adb_attempts.entry(serial.clone()).or_insert(0) += 1;
+                                    let adb = adb.clone();
+                                    info!(%serial, "phone disconnected — restarting its ADB connection");
+                                    tokio::spawn(async move {
+                                        let args = vec!["-s".into(), serial.clone(), "reconnect".into()];
+                                        match crate::device_ops::adb_text(&adb, &args).await {
+                                            Ok(output) => {
+                                                info!(%serial, %output, "automatic adb reconnect")
+                                            }
+                                            Err(error) => {
+                                                warn!(%serial, %error, "automatic adb reconnect failed")
+                                            }
+                                        }
+                                    });
+                                }
+                                RecoveryAction::RestartSession { serial } => {
+                                    info!(%serial, "device returned — restarting scrcpy");
+                                    match state.restart_session_local(&serial).await {
+                                        Ok(session) => {
+                                            state.publish(ServerEvent::SessionUpdated { session });
+                                        }
+                                        Err(error) => {
+                                            warn!(%serial, %error, "automatic scrcpy restart failed");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let mut updated = HashMap::new();
+                        for device in &next {
+                            updated.insert(device.serial.clone(), device.status);
+                        }
+                        for serial in previous.keys() {
+                            if !updated.contains_key(serial) {
+                                updated.insert(serial.clone(), DeviceStatus::Offline);
+                            }
+                        }
+                        previous = updated;
                     }
                     Err(e) => {
                         warn!(error = %e, "adb devices failed");
@@ -1700,6 +1798,54 @@ impl AppState {
             self.publish_fleet().await;
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecoveryAction {
+    RestartAdb { serial: String },
+    RestartSession { serial: String },
+}
+
+impl RecoveryAction {
+    fn serial(&self) -> &str {
+        match self {
+            RecoveryAction::RestartAdb { serial } | RecoveryAction::RestartSession { serial } => {
+                serial
+            }
+        }
+    }
+}
+
+/// What to do after an ADB poll. One device dropping must not reconnect the others.
+fn recovery_actions(previous: &HashMap<String, DeviceStatus>, next: &[Device]) -> Vec<RecoveryAction> {
+    let mut actions = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for device in next {
+        seen.insert(device.serial.as_str());
+        match previous.get(&device.serial).copied() {
+            Some(DeviceStatus::Online) if device.status != DeviceStatus::Online => {
+                actions.push(RecoveryAction::RestartAdb {
+                    serial: device.serial.clone(),
+                });
+            }
+            Some(before)
+                if before != DeviceStatus::Online && device.status == DeviceStatus::Online =>
+            {
+                actions.push(RecoveryAction::RestartSession {
+                    serial: device.serial.clone(),
+                });
+            }
+            _ => {}
+        }
+    }
+    for (serial, status) in previous {
+        if *status == DeviceStatus::Online && !seen.contains(serial.as_str()) {
+            actions.push(RecoveryAction::RestartAdb {
+                serial: serial.clone(),
+            });
+        }
+    }
+    actions
 }
 
 fn devices_equal(a: &[Device], b: &[Device]) -> bool {
@@ -1933,5 +2079,60 @@ mod tests {
         assert_ne!(sent.width, device.resolution.width);
         assert_eq!(sent.x, 90);
         assert_eq!(sent.y, 320);
+    }
+
+    fn sample(serial: &str, status: DeviceStatus) -> Device {
+        Device {
+            id: serial.into(),
+            name: serial.into(),
+            model: "m".into(),
+            android_version: "15".into(),
+            serial: serial.into(),
+            connection: phonecontrol_protocol::ConnectionType::Usb,
+            status,
+            battery: None,
+            temperature_c: None,
+            resolution: phonecontrol_protocol::DeviceResolution {
+                width: 1080,
+                height: 1920,
+            },
+            fps: None,
+            bitrate_mbps: None,
+            latency_ms: None,
+            host: "windows-host".into(),
+            host_id: None,
+            wallpaper_hue: 0,
+        }
+    }
+
+    #[test]
+    fn recovery_restarts_only_the_device_that_dropped() {
+        let mut previous = HashMap::new();
+        previous.insert("s24".into(), DeviceStatus::Online);
+        previous.insert("s23".into(), DeviceStatus::Online);
+        let next = vec![
+            sample("s24", DeviceStatus::Offline),
+            sample("s23", DeviceStatus::Online),
+        ];
+        let actions = recovery_actions(&previous, &next);
+        assert_eq!(
+            actions,
+            vec![RecoveryAction::RestartAdb {
+                serial: "s24".into()
+            }]
+        );
+
+        previous.insert("s24".into(), DeviceStatus::Offline);
+        let back = vec![
+            sample("s24", DeviceStatus::Online),
+            sample("s23", DeviceStatus::Online),
+        ];
+        let actions = recovery_actions(&previous, &back);
+        assert_eq!(
+            actions,
+            vec![RecoveryAction::RestartSession {
+                serial: "s24".into()
+            }]
+        );
     }
 }

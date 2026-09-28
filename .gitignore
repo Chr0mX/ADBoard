@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# agent host-file root (screenshots, uploads)
+/data/
+
 # production
 /build
 

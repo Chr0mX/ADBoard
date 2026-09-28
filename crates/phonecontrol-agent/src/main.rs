@@ -90,6 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  POST /api/device/push");
     info!("  GET  /api/device/pull");
     info!("  GET  /api/host/files");
+    info!("  POST /api/host/files/op");
     info!("  WS   /ws");
     info!("  WS   /ws/agent   (controller: agent registration)");
     info!("  WS   /ws/devices/{{serial}}/video");

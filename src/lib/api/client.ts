@@ -69,7 +69,13 @@ export interface DevicesClient {
   deleteHostFile(path: string): Promise<void>;
   hostFileUrl(path: string): string;
   pushToDevices(targets: Device[], file: File, dest: string): Promise<DeviceCommandResponse>;
-  listHosts?(): Promise<import("@/lib/devices/types").HostInfo[]>;
+  pullFromDevice(deviceId: string, path: string): Promise<Blob>;
+  hostFileOp(
+    op: "mkdir" | "rename" | "move" | "copy",
+    path: string,
+    dest?: string,
+  ): Promise<HostFileEntry>;
+  listHosts(): Promise<import("@/lib/devices/types").HostInfo[]>;
   listSessions?(): Promise<SessionStatus[]>;
   /** Optional live device events from the agent WebSocket. */
   subscribeDevices?(
@@ -246,6 +252,36 @@ export function createMockDevicesClient(): DevicesClient {
           error: "adb is not available",
         })),
       };
+    },
+
+    async pullFromDevice() {
+      throw new Error("adb is not available");
+    },
+
+    async hostFileOp(op, path, dest) {
+      const name = (dest || path).split("/").pop() || path;
+      return { name, path: dest || path, dir: op === "mkdir", size: 0 };
+    },
+
+    async listHosts() {
+      return [
+        {
+          hostId: "windows-host",
+          name: "Windows PC",
+          os: "windows",
+          status: "online",
+          deviceCount: 2,
+          local: true,
+        },
+        {
+          hostId: "lxc-agent-01",
+          name: "Proxmox LXC",
+          os: "linux",
+          status: "online",
+          deviceCount: 2,
+          local: false,
+        },
+      ];
     },
   };
 }
@@ -455,6 +491,24 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       });
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as DeviceCommandResponse;
+    },
+
+    async pullFromDevice(deviceId, path) {
+      const res = await fetch(
+        `${base}/api/device/pull?deviceId=${encodeURIComponent(deviceId)}&path=${encodeURIComponent(path)}`,
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return res.blob();
+    },
+
+    async hostFileOp(op, path, dest) {
+      const res = await fetch(`${base}/api/host/files/op`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op, path, dest: dest ?? "" }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as HostFileEntry;
     },
 
     async listHosts() {

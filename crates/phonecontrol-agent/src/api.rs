@@ -61,6 +61,7 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
         )
         .route("/api/host/files/raw", get(host_file_raw))
+        .route("/api/host/files/op", post(host_file_op))
         .route(
             "/api/scrcpy/options",
             get(scrcpy_options_get).post(scrcpy_options_set),
@@ -510,6 +511,35 @@ async fn host_file_upload(
         path: rel,
         dir: false,
         size: body.len() as u64,
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct HostFileOpBody {
+    op: String,
+    path: String,
+    #[serde(default)]
+    dest: String,
+}
+
+async fn host_file_op(
+    Json(body): Json<HostFileOpBody>,
+) -> Result<Json<phonecontrol_protocol::HostFileEntry>, (StatusCode, String)> {
+    let root = crate::device_ops::files_root();
+    let rel = crate::device_ops::apply_host_op(&root, &body.op, &body.path, &body.dest)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let full = crate::device_ops::host_path(&root, &rel).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let meta = std::fs::metadata(&full).ok();
+    let name = full
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&rel)
+        .to_string();
+    Ok(Json(phonecontrol_protocol::HostFileEntry {
+        name,
+        path: rel,
+        dir: meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+        size: meta.map(|m| m.len()).unwrap_or(0),
     }))
 }
 
