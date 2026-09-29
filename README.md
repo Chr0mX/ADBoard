@@ -75,7 +75,19 @@ cargo run -p phonecontrol-agent
 
 Without phones in this VM, CI uses the Annex-B reader + fixture path (`PHONECONTROL_SCRCPY_FIXTURE=1` forces `backend: scrcpy` with the embedded H264 loop).
 
-## Run locally (single process)
+## Run on Windows (operator)
+
+Copy `dist/windows/` to the USB host, drop ADB + scrcpy into `vendor/`, then double-click `run.bat`. The same process serves the control page:
+
+```text
+http://127.0.0.1:3848/
+```
+
+Details: [`dist/windows/README.md`](dist/windows/README.md). Architecture: [`docs/architecture.md`](docs/architecture.md).
+
+When the bind is not loopback, set `PHONECONTROL_TOKEN` so only clients that know the secret can call the API.
+
+## Run locally (developer, two processes)
 
 ```bash
 # Terminal 1 — controller (mock + synthetic video)

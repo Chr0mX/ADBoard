@@ -7,7 +7,7 @@ import { useDesk } from "@/components/phone-control/desk/desk-context";
 import { useDeviceAudio } from "@/hooks/use-device-audio";
 import { devicesClient } from "@/lib/api/client";
 import {
-  eventsWsUrl,
+  eventsWsUrlAsync,
   postClipboard,
   postScrcpyOptions,
   pullClipboard,
@@ -124,20 +124,35 @@ export function ScrcpyOptions({
     let socket: WebSocket | null = null;
     const connect = () => {
       if (closed) return;
-      socket = new WebSocket(eventsWsUrl());
-      socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(String(event.data)) as { type?: string; serial?: string; text?: string };
-          if (msg.type === "clipboard" && msg.serial === serial && typeof msg.text === "string") {
-            setClip(msg.text);
-          }
-        } catch {
-          // ignore
-        }
-      };
-      socket.onclose = () => {
-        if (!closed) setTimeout(connect, 2000);
-      };
+      void eventsWsUrlAsync()
+        .then((url) => {
+          if (closed) return;
+          socket = new WebSocket(url);
+          socket.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(String(event.data)) as {
+                type?: string;
+                serial?: string;
+                text?: string;
+              };
+              if (
+                msg.type === "clipboard" &&
+                msg.serial === serial &&
+                typeof msg.text === "string"
+              ) {
+                setClip(msg.text);
+              }
+            } catch {
+              // ignore
+            }
+          };
+          socket.onclose = () => {
+            if (!closed) setTimeout(connect, 2000);
+          };
+        })
+        .catch(() => {
+          if (!closed) setTimeout(connect, 2000);
+        });
     };
     connect();
     return () => {

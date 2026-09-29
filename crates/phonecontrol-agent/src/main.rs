@@ -3,6 +3,7 @@ mod api;
 mod audio;
 mod device_manager;
 mod device_ops;
+mod host_files;
 mod mesh;
 mod mesh_client;
 mod mock;
@@ -71,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     info!("  GET  /          (control UI)");
     info!("  GET  /health");
+    info!("  GET  /api/bootstrap");
     info!("  GET  /api/devices");
     info!("  POST /api/devices/wireless");
     info!("  POST /api/devices/wireless/qr");

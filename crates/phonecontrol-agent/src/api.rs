@@ -4,34 +4,37 @@ use crate::device_manager::AppState;
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use axum::extract::Request;
 use futures_util::{SinkExt, StreamExt};
 use phonecontrol_protocol::{
     AgentToController, ClientCommand, ClipboardPullRequest, ClipboardResponse, ClipboardSetRequest,
-    ControlMode, ControllerToAgent, DeviceCommandRequest, HealthResponse, HostFileEntry,
+    ControlMode, ControllerToAgent, DeviceCommandRequest, HealthResponse,
     InstallBroadcast, KeyInjectRequest, NavRequest, PointerRequest, Role, ScrcpyOptionsRequest,
-    ScrcpyOptionsResponse, ServerEvent, SessionStatus, TapRequest,     TextInjectRequest, VideoRefreshRequest,
-    VideoStatusFrame,
+    ScrcpyOptionsResponse, ServerEvent, SessionStatus, TapRequest, TextInjectRequest,
+    VideoRefreshRequest, VideoStatusFrame,
 };
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tokio::sync::mpsc;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, warn};
 
+const TOKEN_HEADER: &str = "x-phonecontrol-token";
+
 pub fn router(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = build_cors_layer();
 
     let mut router = Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
+        .route("/api/bootstrap", get(bootstrap))
         .route("/api/devices", get(list_devices))
         .route(
             "/api/devices/wireless",
@@ -64,13 +67,13 @@ pub fn router(state: AppState) -> Router {
         .route("/api/device/pull", get(device_pull))
         .route(
             "/api/host/files",
-            get(host_files)
-                .delete(host_file_delete)
-                .post(host_file_upload)
+            get(crate::host_files::list_files)
+                .delete(crate::host_files::delete_file)
+                .post(crate::host_files::upload_file)
                 .layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
         )
-        .route("/api/host/files/raw", get(host_file_raw))
-        .route("/api/host/files/op", post(host_file_op))
+        .route("/api/host/files/raw", get(crate::host_files::raw_file))
+        .route("/api/host/files/op", post(crate::host_files::apply_op))
         .route(
             "/api/scrcpy/options",
             get(scrcpy_options_get).post(scrcpy_options_set),
@@ -94,9 +97,182 @@ pub fn router(state: AppState) -> Router {
     }
 
     router
+        .layer(middleware::from_fn_with_state(state.clone(), require_api_token))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+fn build_cors_layer() -> CorsLayer {
+    let origins = allowed_dev_origins();
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::DELETE,
+            Method::OPTIONS,
+            Method::PUT,
+        ])
+        .allow_headers([
+            header::CONTENT_TYPE,
+            HeaderName::from_static(TOKEN_HEADER),
+            HeaderName::from_static("x-phonecontrol-mode"),
+            HeaderName::from_static("x-phonecontrol-targets"),
+            HeaderName::from_static("x-phonecontrol-filename"),
+            HeaderName::from_static("x-phonecontrol-dest"),
+            HeaderName::from_static("x-phonecontrol-dir"),
+        ])
+}
+
+fn allowed_dev_origins() -> Vec<HeaderValue> {
+    static ORIGINS: OnceLock<Vec<HeaderValue>> = OnceLock::new();
+    ORIGINS
+        .get_or_init(|| {
+            let raw = std::env::var("PHONECONTROL_DEV_ORIGINS").unwrap_or_else(|_| {
+                "http://127.0.0.1:3847,http://localhost:3847".into()
+            });
+            raw.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .filter_map(|s| HeaderValue::from_str(s).ok())
+                .collect()
+        })
+        .clone()
+}
+
+fn path_is_open(path: &str) -> bool {
+    matches!(path, "/health" | "/api/health" | "/api/bootstrap")
+}
+
+fn path_is_static_ui(path: &str) -> bool {
+    !path.starts_with("/api/") && !path.starts_with("/ws/") && path != "/ws"
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2])) {
+                out.push((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+        }
+        if bytes[i] == b'+' {
+            out.push(b' ');
+        } else {
+            out.push(bytes[i]);
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn from_hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn token_from_request(headers: &HeaderMap, uri: &axum::http::Uri) -> Option<String> {
+    if let Some(value) = headers
+        .get(TOKEN_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(value.to_string());
+    }
+    uri.query().and_then(|q| {
+        q.split('&').find_map(|pair| {
+            let (key, value) = pair.split_once('=')?;
+            if key == "token" {
+                let decoded = percent_decode(value);
+                if decoded.is_empty() {
+                    None
+                } else {
+                    Some(decoded)
+                }
+            } else {
+                None
+            }
+        })
+    })
+}
+
+fn origin_allowed_for_bootstrap(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
+        // Same-origin navigations and non-browser clients omit Origin.
+        return true;
+    };
+    if origin_matches_host(origin, headers) {
+        return true;
+    }
+    allowed_dev_origins()
+        .iter()
+        .any(|allowed| allowed.as_bytes() == origin.as_bytes())
+}
+
+fn origin_matches_host(origin: &str, headers: &HeaderMap) -> bool {
+    let Some(host) = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return false;
+    };
+    let Ok(url) = origin.parse::<axum::http::Uri>() else {
+        return false;
+    };
+    let Some(origin_host) = url.host() else {
+        return false;
+    };
+    let origin_authority = match url.port_u16() {
+        Some(port) => format!("{origin_host}:{port}"),
+        None => origin_host.to_string(),
+    };
+    origin_authority.eq_ignore_ascii_case(host)
+        || origin_host.eq_ignore_ascii_case(host)
+}
+
+async fn require_api_token(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let path = request.uri().path().to_string();
+    if path_is_open(&path) || path_is_static_ui(&path) {
+        return Ok(next.run(request).await);
+    }
+    let provided = token_from_request(request.headers(), request.uri());
+    match provided {
+        Some(token) if token == state.api_token() => Ok(next.run(request).await),
+        _ => Err(StatusCode::UNAUTHORIZED),
+    }
+}
+
+#[derive(serde::Serialize)]
+struct BootstrapBody {
+    token: String,
+}
+
+async fn bootstrap(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<BootstrapBody>, StatusCode> {
+    if !origin_allowed_for_bootstrap(&headers) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(Json(BootstrapBody {
+        token: state.api_token().to_string(),
+    }))
 }
 
 fn ui_dir() -> Option<PathBuf> {
@@ -556,139 +732,6 @@ struct PullQuery {
     #[serde(rename = "deviceId")]
     device_id: String,
     path: String,
-}
-
-#[derive(serde::Deserialize)]
-struct HostPathQuery {
-    #[serde(default)]
-    path: String,
-}
-
-async fn host_files(
-    Query(query): Query<HostPathQuery>,
-) -> Result<Json<Vec<HostFileEntry>>, (StatusCode, String)> {
-    let root = crate::device_ops::files_root();
-    let dir = crate::device_ops::host_path(&root, &query.path)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let mut entries = Vec::new();
-    let read = std::fs::read_dir(&dir).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    for item in read.flatten() {
-        let name = item.file_name().to_string_lossy().to_string();
-        let meta = item.metadata().ok();
-        let rel = if query.path.is_empty() {
-            name.clone()
-        } else {
-            format!("{}/{}", query.path.trim_matches('/'), name)
-        };
-        entries.push(HostFileEntry {
-            name,
-            path: rel,
-            dir: meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
-            size: meta.map(|m| m.len()).unwrap_or(0),
-        });
-    }
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(Json(entries))
-}
-
-async fn host_file_delete(
-    Query(query): Query<HostPathQuery>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    if query.path.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "path is required".into()));
-    }
-    let root = crate::device_ops::files_root();
-    let path = crate::device_ops::host_path(&root, &query.path)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    if path == root {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "refusing to delete the file root".into(),
-        ));
-    }
-    if path.is_dir() {
-        std::fs::remove_dir_all(&path).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    } else {
-        std::fs::remove_file(&path).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    }
-    Ok(StatusCode::NO_CONTENT)
-}
-
-async fn host_file_upload(
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<HostFileEntry>, (StatusCode, String)> {
-    let filename =
-        header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
-    let dir = header_value(&headers, "x-phonecontrol-dir").unwrap_or_else(|| "Downloads".into());
-    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
-        return Err((StatusCode::BAD_REQUEST, "invalid filename".into()));
-    }
-    let root = crate::device_ops::files_root();
-    let rel = format!("{}/{}", dir.trim_matches('/'), filename);
-    let path =
-        crate::device_ops::host_path(&root, &rel).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    }
-    tokio::fs::write(&path, &body)
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    Ok(Json(HostFileEntry {
-        name: filename,
-        path: rel,
-        dir: false,
-        size: body.len() as u64,
-    }))
-}
-
-#[derive(serde::Deserialize)]
-struct HostFileOpBody {
-    op: String,
-    path: String,
-    #[serde(default)]
-    dest: String,
-}
-
-async fn host_file_op(
-    Json(body): Json<HostFileOpBody>,
-) -> Result<Json<phonecontrol_protocol::HostFileEntry>, (StatusCode, String)> {
-    let root = crate::device_ops::files_root();
-    let rel = crate::device_ops::apply_host_op(&root, &body.op, &body.path, &body.dest)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let full = crate::device_ops::host_path(&root, &rel).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let meta = std::fs::metadata(&full).ok();
-    let name = full
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&rel)
-        .to_string();
-    Ok(Json(phonecontrol_protocol::HostFileEntry {
-        name,
-        path: rel,
-        dir: meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
-        size: meta.map(|m| m.len()).unwrap_or(0),
-    }))
-}
-
-async fn host_file_raw(
-    Query(query): Query<HostPathQuery>,
-) -> Result<Response, (StatusCode, String)> {
-    let root = crate::device_ops::files_root();
-    let path = crate::device_ops::host_path(&root, &query.path)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let bytes = tokio::fs::read(&path)
-        .await
-        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-    Response::builder()
-        .header("content-type", "application/octet-stream")
-        .header(
-            "content-disposition",
-            format!("attachment; filename=\"{name}\""),
-        )
-        .body(axum::body::Body::from(bytes))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -1414,13 +1457,14 @@ mod tests {
     use phonecontrol_protocol::Role;
     use tower::ServiceExt;
 
-    fn apk_request(filename: &str, targets: &str, bytes: &'static [u8]) -> Request<Body> {
+    fn apk_request(filename: &str, targets: &str, bytes: &'static [u8], token: &str) -> Request<Body> {
         Request::builder()
             .method("POST")
             .uri("/api/input/install")
             .header("x-phonecontrol-mode", "selected")
             .header("x-phonecontrol-targets", targets)
             .header("x-phonecontrol-filename", filename)
+            .header(TOKEN_HEADER, token)
             .body(Body::from(bytes))
             .unwrap()
     }
@@ -1439,6 +1483,7 @@ mod tests {
             0,
             None,
         );
+        let token = state.api_token().to_string();
         let devices = state.list_devices().await;
         let id = devices
             .iter()
@@ -1450,7 +1495,7 @@ mod tests {
 
         let rejected = app
             .clone()
-            .oneshot(apk_request("notes.txt", &id, b"PK\x03\x04nope"))
+            .oneshot(apk_request("notes.txt", &id, b"PK\x03\x04nope", &token))
             .await
             .unwrap();
         assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
@@ -1465,7 +1510,7 @@ mod tests {
         assert!(not_zip.1.contains("apk"), "got {}", not_zip.1);
 
         let response = app
-            .oneshot(apk_request("demo.apk", &id, b"PK\x03\x04fake-apk"))
+            .oneshot(apk_request("demo.apk", &id, b"PK\x03\x04fake-apk", &token))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -1486,6 +1531,7 @@ mod tests {
             0,
             None,
         );
+        let token = state.api_token().to_string();
         let devices = state.list_devices().await;
         let id = devices
             .iter()
@@ -1500,6 +1546,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/device/command")
                     .header("content-type", "application/json")
+                    .header(TOKEN_HEADER, &token)
                     .body(Body::from(format!(
                         "{{\"targetIds\":[\"{id}\"],\"op\":\"shell\",\"arg\":\"pm list packages\"}}"
                     )))
@@ -1514,6 +1561,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_rejects_missing_token_and_serves_bootstrap() {
+        let state = AppState::new(
+            Role::Controller,
+            "token-test".into(),
+            "token-test".into(),
+            0,
+            None,
+        );
+        let token = state.api_token().to_string();
+        let app = router(state);
+
+        let denied = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/device/command")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"targetIds":["s24"],"op":"shell","arg":"id"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+
+        let boot = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/bootstrap")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(boot.status(), StatusCode::OK);
+        let boot_text = body_text(boot).await;
+        assert!(boot_text.contains(&token), "{boot_text}");
+
+        let forbidden = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/bootstrap")
+                    .header("origin", "https://evil.example")
+                    .header("host", "127.0.0.1:3848")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+        let health = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(health.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn scrcpy_options_and_clipboard_on_a_mock_device() {
         let state = AppState::new(
             Role::Controller,
@@ -1522,6 +1635,7 @@ mod tests {
             0,
             None,
         );
+        let token = state.api_token().to_string();
         let devices = state.list_devices().await;
         let id = devices
             .iter()
@@ -1538,6 +1652,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/scrcpy/options")
                     .header("content-type", "application/json")
+                    .header(TOKEN_HEADER, &token)
                     .body(Body::from(format!(
                         r#"{{"mode":"selected","targetIds":["{id}"],"quality":"high","audio":true,"screenOff":false}}"#
                     )))
@@ -1557,6 +1672,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/scrcpy/options")
                     .header("content-type", "application/json")
+                    .header(TOKEN_HEADER, &token)
                     .body(Body::from(format!(
                         r#"{{"mode":"selected","targetIds":["{id}"],"quality":"high","audio":true,"screenOff":true}}"#
                     )))
@@ -1577,6 +1693,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/api/scrcpy/options")
+                    .header(TOKEN_HEADER, &token)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1592,6 +1709,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/input/clipboard")
                     .header("content-type", "application/json")
+                    .header(TOKEN_HEADER, &token)
                     .body(Body::from(format!(
                         r#"{{"mode":"selected","targetIds":["{id}"],"text":"hello","paste":true}}"#
                     )))
@@ -1611,6 +1729,7 @@ mod tests {
     #[tokio::test]
     async fn keyboard_routes_use_the_control_socket() {
         let state = AppState::new(Role::Controller, "keys".into(), "keys".into(), 0, None);
+        let token = state.api_token().to_string();
         let devices = state.list_devices().await;
         let id = devices
             .iter()
@@ -1627,6 +1746,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/input/text")
                     .header("content-type", "application/json")
+                    .header(TOKEN_HEADER, &token)
                     .body(Body::from(format!(
                         r#"{{"mode":"selected","targetIds":["{id}"],"text":"a"}}"#
                     )))
@@ -1647,6 +1767,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/input/key")
                     .header("content-type", "application/json")
+                    .header(TOKEN_HEADER, &token)
                     .body(Body::from(format!(
                         r#"{{"mode":"selected","targetIds":["{id}"],"action":"down","keycode":66,"repeat":0,"metastate":0}}"#
                     )))
@@ -1670,9 +1791,10 @@ mod tests {
             0,
             None,
         );
+        let token = state.api_token().to_string();
         let app = router(state);
         let response = app
-            .oneshot(apk_request("demo.apk", id, b"this is not a zip"))
+            .oneshot(apk_request("demo.apk", id, b"this is not a zip", &token))
             .await
             .unwrap();
         let status = response.status();

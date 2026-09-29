@@ -15,6 +15,13 @@ import type {
   TapBroadcast,
 } from "@/lib/devices/types";
 import { mapToDevices } from "@/lib/devices/coords";
+import {
+  agentBaseUrl,
+  agentFetch,
+  agentWsUrl,
+  ensureAgentToken,
+  withAgentToken,
+} from "@/lib/api/auth";
 
 /**
  * Thin client API shape for the control plane.
@@ -339,30 +346,12 @@ export function createMockDevicesClient(): DevicesClient {
   };
 }
 
-function agentBaseUrl(): string | null {
-  const raw = process.env.NEXT_PUBLIC_AGENT_URL?.trim();
-  if (!raw) return null;
-  // Packaged UI is served by the agent itself.
-  if (raw === "same" || raw === "same-origin") return "";
-  return raw.replace(/\/$/, "");
-}
-
-function httpToWs(base: string): string {
-  if (!base && typeof window !== "undefined") {
-    const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
-    return `${proto}${window.location.host}`;
-  }
-  if (base.startsWith("https://")) return `wss://${base.slice("https://".length)}`;
-  if (base.startsWith("http://")) return `ws://${base.slice("http://".length)}`;
-  return base;
-}
-
 export function createAgentDevicesClient(baseUrl: string): DevicesClient {
   const base = baseUrl.replace(/\/$/, "");
 
   return {
     async listDevices() {
-      const res = await fetch(`${base}/api/devices`, { cache: "no-store" });
+      const res = await agentFetch(`${base}/api/devices`, { cache: "no-store" });
       if (!res.ok) {
         throw new Error(`agent listDevices failed: ${res.status}`);
       }
@@ -370,7 +359,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async sendTap(mode, targets, point) {
-      const res = await fetch(`${base}/api/input/tap`, {
+      const res = await agentFetch(`${base}/api/input/tap`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -387,7 +376,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async sendPointer(mode, targets, phase, point, frameWidth, frameHeight, tool = "finger") {
-      const res = await fetch(`${base}/api/input/pointer`, {
+      const res = await agentFetch(`${base}/api/input/pointer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -408,7 +397,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async sendNav(mode, targets, action) {
-      const res = await fetch(`${base}/api/input/nav`, {
+      const res = await agentFetch(`${base}/api/input/nav`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -425,7 +414,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async sendText(mode, targets, text) {
-      const res = await fetch(`${base}/api/input/text`, {
+      const res = await agentFetch(`${base}/api/input/text`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -442,7 +431,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async sendKey(mode, targets, key) {
-      const res = await fetch(`${base}/api/input/key`, {
+      const res = await agentFetch(`${base}/api/input/key`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -465,7 +454,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       if (!file.name.toLowerCase().endsWith(".apk")) {
         throw new Error("only .apk files can be installed");
       }
-      const res = await fetch(`${base}/api/input/install`, {
+      const res = await agentFetch(`${base}/api/input/install`, {
         method: "POST",
         headers: {
           "Content-Type": "application/vnd.android.package-archive",
@@ -483,7 +472,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async runCommand(targets, op, arg, arg2) {
-      const res = await fetch(`${base}/api/device/command`, {
+      const res = await agentFetch(`${base}/api/device/command`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -501,7 +490,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async listHostFiles(path = "") {
-      const res = await fetch(`${base}/api/host/files?path=${encodeURIComponent(path)}`, {
+      const res = await agentFetch(`${base}/api/host/files?path=${encodeURIComponent(path)}`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error(await res.text());
@@ -509,7 +498,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async uploadHostFile(file, dir) {
-      const res = await fetch(`${base}/api/host/files`, {
+      const res = await agentFetch(`${base}/api/host/files`, {
         method: "POST",
         headers: {
           "X-Phonecontrol-Filename": file.name,
@@ -522,18 +511,20 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async deleteHostFile(path) {
-      const res = await fetch(`${base}/api/host/files?path=${encodeURIComponent(path)}`, {
+      const res = await agentFetch(`${base}/api/host/files?path=${encodeURIComponent(path)}`, {
         method: "DELETE",
       });
       if (!res.ok && res.status !== 204) throw new Error(await res.text());
     },
 
     hostFileUrl(path) {
-      return `${base}/api/host/files/raw?path=${encodeURIComponent(path)}`;
+      return withAgentToken(
+        `${base}/api/host/files/raw?path=${encodeURIComponent(path)}`,
+      );
     },
 
     async pushToDevices(targets, file, dest) {
-      const res = await fetch(`${base}/api/device/push`, {
+      const res = await agentFetch(`${base}/api/device/push`, {
         method: "POST",
         headers: {
           "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
@@ -547,7 +538,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async pullFromDevice(deviceId, path) {
-      const res = await fetch(
+      const res = await agentFetch(
         `${base}/api/device/pull?deviceId=${encodeURIComponent(deviceId)}&path=${encodeURIComponent(path)}`,
       );
       if (!res.ok) throw new Error(await res.text());
@@ -555,7 +546,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async hostFileOp(op, path, dest) {
-      const res = await fetch(`${base}/api/host/files/op`, {
+      const res = await agentFetch(`${base}/api/host/files/op`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ op, path, dest: dest ?? "" }),
@@ -565,7 +556,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async connectWireless(input) {
-      const res = await fetch(`${base}/api/devices/wireless`, {
+      const res = await agentFetch(`${base}/api/devices/wireless`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -582,14 +573,14 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async listWireless() {
-      const res = await fetch(`${base}/api/devices/wireless`, { cache: "no-store" });
+      const res = await agentFetch(`${base}/api/devices/wireless`, { cache: "no-store" });
       if (!res.ok) throw new Error(await res.text());
       const body = (await res.json()) as { endpoints?: string[] };
       return body.endpoints ?? [];
     },
 
     async startWirelessQr() {
-      const res = await fetch(`${base}/api/devices/wireless/qr`, { method: "POST" });
+      const res = await agentFetch(`${base}/api/devices/wireless/qr`, { method: "POST" });
       if (!res.ok) {
         throw new Error((await res.text()) || `QR pairing failed: ${res.status}`);
       }
@@ -597,7 +588,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async wirelessQrStatus(id) {
-      const res = await fetch(`${base}/api/devices/wireless/qr/${encodeURIComponent(id)}`, {
+      const res = await agentFetch(`${base}/api/devices/wireless/qr/${encodeURIComponent(id)}`, {
         cache: "no-store",
       });
       if (!res.ok) {
@@ -607,7 +598,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async cancelWirelessQr(id) {
-      const res = await fetch(`${base}/api/devices/wireless/qr/${encodeURIComponent(id)}`, {
+      const res = await agentFetch(`${base}/api/devices/wireless/qr/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       if (!res.ok && res.status !== 204) {
@@ -616,7 +607,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async disconnectWireless(address) {
-      const res = await fetch(`${base}/api/devices/wireless`, {
+      const res = await agentFetch(`${base}/api/devices/wireless`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address }),
@@ -628,13 +619,13 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async listHosts() {
-      const res = await fetch(`${base}/api/hosts`, { cache: "no-store" });
+      const res = await agentFetch(`${base}/api/hosts`, { cache: "no-store" });
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as import("@/lib/devices/types").HostInfo[];
     },
 
     async listSessions() {
-      const res = await fetch(`${base}/api/sessions`, { cache: "no-store" });
+      const res = await agentFetch(`${base}/api/sessions`, { cache: "no-store" });
       if (!res.ok) {
         throw new Error(`agent listSessions failed: ${res.status}`);
       }
@@ -642,50 +633,57 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     subscribeDevices(onDevices, onSession) {
-      const wsUrl = `${httpToWs(base)}/ws`;
       let closed = false;
       let socket: WebSocket | null = null;
       let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
       const connect = () => {
         if (closed) return;
-        socket = new WebSocket(wsUrl);
-        socket.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(String(event.data)) as {
-              type?: string;
-              devices?: Device[];
-              device?: Device;
-              session?: SessionStatus;
+        void agentWsUrl("/ws")
+          .then((wsUrl) => {
+            if (closed) return;
+            socket = new WebSocket(wsUrl);
+            socket.onmessage = (event) => {
+              try {
+                const msg = JSON.parse(String(event.data)) as {
+                  type?: string;
+                  devices?: Device[];
+                  device?: Device;
+                  session?: SessionStatus;
+                };
+                if (msg.type === "devices" && Array.isArray(msg.devices)) {
+                  onDevices(msg.devices);
+                } else if (msg.type === "device_updated" && msg.device) {
+                  void agentFetch(`${base}/api/devices`, { cache: "no-store" })
+                    .then((r) => r.json())
+                    .then((devices: Device[]) => {
+                      if (!closed) onDevices(devices);
+                    })
+                    .catch(() => {});
+                } else if (msg.type === "session_updated" && msg.session) {
+                  onSession?.(msg.session);
+                }
+              } catch {
+                // ignore malformed frames
+              }
             };
-            if (msg.type === "devices" && Array.isArray(msg.devices)) {
-              onDevices(msg.devices);
-            } else if (msg.type === "device_updated" && msg.device) {
-              // Soft refresh: re-list so the hook stays simple.
-              void fetch(`${base}/api/devices`, { cache: "no-store" })
-                .then((r) => r.json())
-                .then((devices: Device[]) => {
-                  if (!closed) onDevices(devices);
-                })
-                .catch(() => {});
-            } else if (msg.type === "session_updated" && msg.session) {
-              onSession?.(msg.session);
+            socket.onclose = () => {
+              if (!closed) {
+                retryTimer = setTimeout(connect, 2000);
+              }
+            };
+            socket.onerror = () => {
+              socket?.close();
+            };
+          })
+          .catch(() => {
+            if (!closed) {
+              retryTimer = setTimeout(connect, 2000);
             }
-          } catch {
-            // ignore malformed frames
-          }
-        };
-        socket.onclose = () => {
-          if (!closed) {
-            retryTimer = setTimeout(connect, 2000);
-          }
-        };
-        socket.onerror = () => {
-          socket?.close();
-        };
+          });
       };
 
-      connect();
+      void ensureAgentToken().finally(connect);
 
       return () => {
         closed = true;

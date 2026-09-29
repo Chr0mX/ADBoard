@@ -14,6 +14,7 @@ const RECONNECT_SECS: u64 = 3;
 
 /// Run forever: connect to controller, register, forward devices, handle proxies.
 pub async fn run_agent_client(state: AppState, url: String) {
+    let url = append_token_query(&url, state.api_token());
     loop {
         info!(%url, "agent connecting to controller");
         match connect_async(&url).await {
@@ -311,4 +312,27 @@ where
     sink.send(Message::Text(text.into()))
         .await
         .map_err(|e| e.to_string())
+}
+
+fn append_token_query(url: &str, token: &str) -> String {
+    if token.is_empty() {
+        return url.to_string();
+    }
+    if url.contains("token=") {
+        return url.to_string();
+    }
+    let encoded: String = token
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect();
+    if url.contains('?') {
+        format!("{url}&token={encoded}")
+    } else {
+        format!("{url}?token={encoded}")
+    }
 }

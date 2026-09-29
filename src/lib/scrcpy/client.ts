@@ -1,3 +1,5 @@
+import { agentBaseUrl, agentFetch, agentWsUrl, withAgentToken } from "@/lib/api/auth";
+
 export interface ScrcpyOptionsPayload {
   quality: string;
   audio: boolean;
@@ -14,9 +16,7 @@ export interface ClipboardResult {
 }
 
 function agentBase(): string {
-  const raw = process.env.NEXT_PUBLIC_AGENT_URL?.trim();
-  if (!raw || raw === "same" || raw === "same-origin") return "";
-  return raw.replace(/\/$/, "");
+  return agentBaseUrl() ?? "";
 }
 
 async function readError(res: Response, fallback: string): Promise<string> {
@@ -28,7 +28,7 @@ export async function postScrcpyOptions(
   targetIds: string[],
   options: ScrcpyOptionsPayload,
 ): Promise<ScrcpyOptionsResult> {
-  const res = await fetch(`${agentBase()}/api/scrcpy/options`, {
+  const res = await agentFetch(`${agentBase()}/api/scrcpy/options`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -48,7 +48,7 @@ export async function postClipboard(
   text: string,
   paste: boolean,
 ): Promise<ClipboardResult> {
-  const res = await fetch(`${agentBase()}/api/input/clipboard`, {
+  const res = await agentFetch(`${agentBase()}/api/input/clipboard`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "selected", targetIds, text, paste }),
@@ -58,7 +58,7 @@ export async function postClipboard(
 }
 
 export async function postVideoRefresh(targetIds: string[]): Promise<ClipboardResult> {
-  const res = await fetch(`${agentBase()}/api/input/refresh`, {
+  const res = await agentFetch(`${agentBase()}/api/input/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "selected", targetIds }),
@@ -68,7 +68,7 @@ export async function postVideoRefresh(targetIds: string[]): Promise<ClipboardRe
 }
 
 export async function pullClipboard(targetIds: string[]): Promise<ClipboardResult> {
-  const res = await fetch(`${agentBase()}/api/input/clipboard/pull`, {
+  const res = await agentFetch(`${agentBase()}/api/input/clipboard/pull`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "selected", targetIds }),
@@ -78,26 +78,52 @@ export async function pullClipboard(targetIds: string[]): Promise<ClipboardResul
 }
 
 export function scrcpyWsUrl(serial: string, channel: "audio" | "" = "audio"): string {
-  const base = agentBase();
-  const proto =
-    typeof window !== "undefined" && window.location.protocol === "https:" ? "wss://" : "ws://";
-  if (!base && typeof window !== "undefined") {
-    return `${proto}${window.location.host}/ws/devices/${encodeURIComponent(serial)}/${channel}`;
+  const path = `/ws/devices/${encodeURIComponent(serial)}/${channel}`;
+  // Sync helper for hooks that already awaited ensureAgentToken / agentWsUrl.
+  // Prefer agentWsUrl() when opening a socket.
+  if (typeof window === "undefined") return path;
+  try {
+    // Fire-and-forget path used only after token bootstrap elsewhere.
+    return withAgentToken(
+      // Absolute URL built like before for sync callers.
+      (() => {
+        const base = agentBase();
+        const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
+        if (!base) return `${proto}${window.location.host}${path}`;
+        const ws = base.startsWith("https://")
+          ? `wss://${base.slice("https://".length)}`
+          : base.startsWith("http://")
+            ? `ws://${base.slice("http://".length)}`
+            : base;
+        return `${ws}${path}`;
+      })(),
+    );
+  } catch {
+    return path;
   }
-  const ws = base.startsWith("https://")
-    ? `wss://${base.slice("https://".length)}`
-    : base.startsWith("http://")
-      ? `ws://${base.slice("http://".length)}`
-      : base;
-  return `${ws}/ws/devices/${encodeURIComponent(serial)}/${channel}`;
+}
+
+export async function scrcpyWsUrlAsync(
+  serial: string,
+  channel: "audio" | "" = "audio",
+): Promise<string> {
+  return agentWsUrl(`/ws/devices/${encodeURIComponent(serial)}/${channel}`);
 }
 
 export function eventsWsUrl(): string {
+  if (typeof window === "undefined") return "/ws";
   const base = agentBase();
-  const proto =
-    typeof window !== "undefined" && window.location.protocol === "https:" ? "wss://" : "ws://";
-  if (!base && typeof window !== "undefined") return `${proto}${window.location.host}/ws`;
-  if (base.startsWith("https://")) return `wss://${base.slice("https://".length)}/ws`;
-  if (base.startsWith("http://")) return `ws://${base.slice("http://".length)}/ws`;
-  return `${base}/ws`;
+  const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
+  const url = !base
+    ? `${proto}${window.location.host}/ws`
+    : base.startsWith("https://")
+      ? `wss://${base.slice("https://".length)}/ws`
+      : base.startsWith("http://")
+        ? `ws://${base.slice("http://".length)}/ws`
+        : `${base}/ws`;
+  return withAgentToken(url);
+}
+
+export async function eventsWsUrlAsync(): Promise<string> {
+  return agentWsUrl("/ws");
 }

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Syne, Figtree, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { RegisterSw } from "@/components/pwa/register-sw";
 import "./globals.css";
 
 const syne = Syne({
@@ -26,6 +27,21 @@ export const metadata: Metadata = {
   title: "Phone Control",
   description:
     "Multi-device Android control center — scrcpy/ADB transport with a unified Web UI.",
+  applicationName: "Phone Control",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Phone Control",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
@@ -33,6 +49,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
+  themeColor: "#0e141b",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -41,10 +58,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${syne.variable} ${figtree.variable} ${jetbrains.variable} dark h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans">
+      <body className="flex min-h-dvh flex-col font-sans">
         <TooltipProvider>
           {children}
           <Toaster position="bottom-right" richColors closeButton />
+          <RegisterSw />
         </TooltipProvider>
       </body>
     </html>

@@ -1376,6 +1376,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stopped_session_stays_idle_after_reap() {
+        let hub = VideoHub::new();
+        let mgr =
+            SessionManager::new_with_source(None, None, hub, VideoSourceKind::TestPattern);
+        let started = mgr.start("SERIAL").await;
+        assert_eq!(started.stream, StreamState::Streaming);
+        let stopped = mgr.stop("SERIAL").await;
+        assert_eq!(stopped.stream, StreamState::Idle);
+        let changed = mgr.reap().await;
+        assert!(
+            changed.iter().all(|session| session.serial != "SERIAL"),
+            "a stopped session must not be reported as Error by reap"
+        );
+        let after = mgr.get_session("SERIAL").await.expect("session");
+        assert_eq!(after.stream, StreamState::Idle);
+    }
+
+    #[tokio::test]
     async fn start_off_stays_idle() {
         let hub = VideoHub::new();
         let mgr = SessionManager::new_with_source(None, None, hub, VideoSourceKind::Off);

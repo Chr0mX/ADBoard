@@ -1,0 +1,29 @@
+name: test
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cargo test
+        run: cargo test --workspace
+
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: node --experimental-strip-types --test src/lib/video/fit-box.test.ts src/lib/desk/gesture.test.ts src/lib/ui/floating-clamp.test.ts
+      - name: Typecheck
+        run: npx tsc --noEmit
