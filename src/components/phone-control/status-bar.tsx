@@ -42,9 +42,9 @@ export function StatusBar({ device, session, stats }: StatusBarProps) {
   return (
     <footer
       data-stream-stats
-      className="shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-2 backdrop-blur-sm"
+      className="shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1.5 backdrop-blur-sm"
     >
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
+      <p className="flex items-center gap-x-2 overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-4 text-[var(--pc-ink)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <span>{device.name}</span>
         <span>{formatResolution(width, height)}</span>
         <span data-battery>{battery}</span>

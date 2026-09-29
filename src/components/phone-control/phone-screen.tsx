@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   House,
   Keyboard,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   Minus,
@@ -12,6 +13,7 @@ import {
   Plus,
   Power,
   RefreshCw,
+  Smartphone,
   Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -701,24 +703,27 @@ export function PhoneScreen({
       {!compactFill && <AppShortcuts />}
 
       {!fillWindow && (
-        <div className="flex flex-wrap items-center justify-center gap-1.5">
+        <div
+          data-tool-row
+          className="flex w-full flex-nowrap items-center justify-center gap-1.5 overflow-x-auto"
+        >
           <Toggle
             pressed={keyboardOn}
             onPressedChange={onKeyboardChange}
             aria-label="Toggle keyboard injection"
-            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+            className="h-11 shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
           >
             <Keyboard className="size-4" />
-            <span className="hidden sm:inline">Keyboard</span>
+            <span className="hidden lg:inline">Keyboard</span>
           </Toggle>
           <Toggle
             pressed={mouseOn}
             onPressedChange={onMouseChange}
             aria-label="Toggle touch"
-            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+            className="h-11 shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
           >
             <MousePointer2 className="size-4" />
-            <span className="hidden sm:inline">Touch</span>
+            <span className="hidden lg:inline">Touch</span>
           </Toggle>
           <Button
             type="button"
@@ -727,39 +732,43 @@ export function PhoneScreen({
             onClick={() => void refreshVideo()}
             aria-label="Refresh video"
             data-video-refresh
-            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3"
+            className="h-11 shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3"
           >
             <RefreshCw className="size-4" />
-            <span className="hidden sm:inline">Refresh</span>
+            <span className="hidden lg:inline">Refresh</span>
           </Button>
           <ApkFileButton disabled={offline || installing} onFile={pickApk} />
           <Toggle
             pressed={fillWindow}
             onPressedChange={onFillWindowChange}
             aria-label="Fill window"
-            className="h-11 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+            className="h-11 shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
           >
             <Maximize2 className="size-4" />
-            Fill
+            <span className="hidden lg:inline">Fill</span>
           </Toggle>
           {showScreensButton && (
             <Button
               type="button"
               variant="outline"
-              className="h-11"
+              aria-label="Screens"
+              className="h-11 shrink-0 gap-1.5 px-3"
               onClick={onOpenScreens}
             >
-              Screens
+              <LayoutGrid className="size-4 lg:hidden" />
+              <span className="hidden lg:inline">Screens</span>
             </Button>
           )}
           {showDevicesButton && (
             <Button
               type="button"
               variant="outline"
-              className="h-11"
+              aria-label="Devices"
+              className="h-11 shrink-0 gap-1.5 px-3"
               onClick={onOpenDevices}
             >
-              Devices
+              <Smartphone className="size-4 lg:hidden" />
+              <span className="hidden lg:inline">Devices</span>
             </Button>
           )}
         </div>

@@ -11,8 +11,8 @@ interface ControlHeaderProps {
 
 export function ControlHeader({ onlineCount, totalCount, section, onSection }: ControlHeaderProps) {
   return (
-    <header className="relative z-10 flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1.5 sm:px-4">
-      <h1 className="font-display text-base font-bold tracking-tight text-[var(--pc-ink)]">
+    <header className="relative z-10 flex shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1.5 sm:px-4">
+      <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]">
         Phone Control
       </h1>
       <nav aria-label="Sections" className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
@@ -33,7 +33,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
           </button>
         ))}
       </nav>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <span
           className={`inline-block h-2 w-2 rounded-full ${
             onlineCount > 0 ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-warn)]"

@@ -314,7 +314,7 @@ export function PhoneControlApp() {
         )}
       </main>
 
-      {section === "control" && !(fillWindow && !wide) && (
+      {section === "control" && (
         <StatusBar device={activeDevice} session={activeSession} stats={streamStats} />
       )}
     </div>
