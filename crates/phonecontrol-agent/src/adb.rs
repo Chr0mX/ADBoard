@@ -669,6 +669,192 @@ pub fn forget_wireless(endpoint: &WirelessEndpoint) -> Result<(), String> {
     save_wireless(&list)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MdnsKind {
+    Pairing,
+    Connect,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MdnsService {
+    pub name: String,
+    pub kind: MdnsKind,
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct QrMaterial {
+    pub name: String,
+    pub password: String,
+    pub payload: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct QrPairProgress {
+    pub paired_host: Option<String>,
+}
+
+/// `WIFI:T:ADB;S:<name>;P:<10 digits>;;` — the phone's camera starts a pairing server named `<name>`.
+pub fn generate_qr_material() -> QrMaterial {
+    let name = format!("studio-{}", random_chars(b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 10));
+    let password = random_chars(b"0123456789", 10);
+    let payload = format!("WIFI:T:ADB;S:{name};P:{password};;");
+    QrMaterial {
+        name,
+        password,
+        payload,
+    }
+}
+
+pub fn qr_svg(payload: &str) -> Result<String, String> {
+    let code = qrcode::QrCode::new(payload.as_bytes()).map_err(|error| error.to_string())?;
+    Ok(code
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(220, 220)
+        .dark_color(qrcode::render::svg::Color("#000000"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .quiet_zone(true)
+        .build())
+}
+
+pub fn parse_mdns_services(stdout: &str) -> Vec<MdnsService> {
+    let mut services = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("List of") {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let addr = parts[parts.len() - 1];
+        let kind_text = parts[parts.len() - 2];
+        let Some((host, port_text)) = addr.rsplit_once(':') else {
+            continue;
+        };
+        let Ok(port) = port_text.parse::<u16>() else {
+            continue;
+        };
+        if host.is_empty() || port == 0 {
+            continue;
+        }
+        let kind = if kind_text.contains("_adb-tls-pairing") {
+            MdnsKind::Pairing
+        } else if kind_text.contains("_adb-tls-connect") {
+            MdnsKind::Connect
+        } else {
+            MdnsKind::Other
+        };
+        services.push(MdnsService {
+            name: parts[..parts.len() - 2].join(" "),
+            kind,
+            host: host.to_string(),
+            port,
+        });
+    }
+    services
+}
+
+/// One poll of `adb mdns services`. `Ok(None)` means the phone has not finished yet.
+pub async fn qr_pair_once(
+    adb: &Path,
+    name: &str,
+    password: &str,
+    progress: &mut QrPairProgress,
+) -> Result<Option<WirelessEndpoint>, String> {
+    let listed = adb_output_timeout(adb, &["mdns", "services"], 8).await?;
+    let services = parse_mdns_services(&listed);
+    if progress.paired_host.is_none() {
+        if let Some(service) = services
+            .iter()
+            .find(|service| service.kind == MdnsKind::Pairing && service.name == name)
+        {
+            let target = format!("{}:{}", service.host, service.port);
+            let output = adb_output_timeout(adb, &["pair", &target, password], 20).await?;
+            if wireless_failed(&output) {
+                return Err(if output.is_empty() {
+                    "pairing failed".into()
+                } else {
+                    output
+                });
+            }
+            progress.paired_host = Some(service.host.clone());
+        }
+    }
+    let Some(host) = progress.paired_host.clone() else {
+        return Ok(None);
+    };
+    if let Some(service) = services
+        .iter()
+        .find(|service| service.kind == MdnsKind::Connect && service.host == host)
+    {
+        let endpoint = WirelessEndpoint {
+            host: host.clone(),
+            port: service.port,
+        };
+        let output = adb_output_timeout(adb, &["connect", &endpoint.display()], 15).await?;
+        if wireless_failed(&output) {
+            return Err(if output.is_empty() {
+                format!("could not connect to {}", endpoint.display())
+            } else {
+                output
+            });
+        }
+        return Ok(Some(endpoint));
+    }
+    let devices = adb_output_timeout(adb, &["devices", "-l"], 8).await.unwrap_or_default();
+    if let Some(endpoint) = network_endpoint_for_host(&devices, &host) {
+        return Ok(Some(endpoint));
+    }
+    Ok(None)
+}
+
+fn network_endpoint_for_host(stdout: &str, host: &str) -> Option<WirelessEndpoint> {
+    let prefix = format!("{host}:");
+    for line in parse_adb_devices_l(stdout) {
+        let Some(port_text) = line.serial.strip_prefix(&prefix) else {
+            continue;
+        };
+        let port = port_text.parse::<u16>().ok()?;
+        if port == 0 {
+            continue;
+        }
+        return Some(WirelessEndpoint {
+            host: host.to_string(),
+            port,
+        });
+    }
+    None
+}
+
+fn random_chars(alphabet: &[u8], len: usize) -> String {
+    let mut out = String::with_capacity(len);
+    while out.len() < len {
+        for byte in uuid::Uuid::new_v4().into_bytes() {
+            out.push(alphabet[(byte as usize) % alphabet.len()] as char);
+            if out.len() == len {
+                break;
+            }
+        }
+    }
+    out
+}
+
+async fn adb_output_timeout(adb: &Path, args: &[&str], secs: u64) -> Result<String, String> {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(secs),
+        adb_output(adb, args),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err("timed out talking to adb".into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -812,6 +998,68 @@ OFFLINE1               offline usb:1-3 transport_id:4
             None => std::env::remove_var("PHONECONTROL_WIRELESS"),
         }
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn qr_payload_is_an_adb_wifi_code() {
+        let material = generate_qr_material();
+        assert!(material.name.starts_with("studio-"));
+        assert_eq!(material.name.len(), "studio-".len() + 10);
+        assert_eq!(material.password.len(), 10);
+        assert!(material.password.chars().all(|c| c.is_ascii_digit()));
+        assert_eq!(
+            material.payload,
+            format!("WIFI:T:ADB;S:{};P:{};;", material.name, material.password)
+        );
+        let svg = qr_svg(&material.payload).unwrap();
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("#000000"));
+    }
+
+    #[test]
+    fn parses_adb_mdns_services() {
+        let sample = "List of discovered mdns services\n\
+studio-ABCDEFGHJK   _adb-tls-pairing._tcp   192.168.1.20:41000\n\
+adb-guid            _adb-tls-connect._tcp    192.168.1.20:41001\n\
+legacy              _adb._tcp                192.168.1.20:5555\n";
+        let parsed = parse_mdns_services(sample);
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].kind, MdnsKind::Pairing);
+        assert_eq!(parsed[0].name, "studio-ABCDEFGHJK");
+        assert_eq!(parsed[0].port, 41000);
+        assert_eq!(parsed[1].kind, MdnsKind::Connect);
+        assert_eq!(parsed[2].kind, MdnsKind::Other);
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn qr_pair_once_pairs_then_connects() {
+        let dir = std::env::temp_dir().join(format!("pc-qr-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("args.txt");
+        let script = dir.join("adb");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\ncase \"$1\" in\n  mdns)\n    echo 'List of discovered mdns services'\n    echo 'studio-TESTNAME _adb-tls-pairing._tcp 10.1.2.3:41000'\n    echo 'adb-guid _adb-tls-connect._tcp 10.1.2.3:41001'\n    ;;\n  pair) echo \"Successfully paired to $2\" ;;\n  connect) echo \"connected to $2\" ;;\n  *) echo unexpected >&2; exit 1 ;;\nesac\n",
+                super::shell_quote(&log)
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut progress = QrPairProgress::default();
+        let endpoint = qr_pair_once(&script, "studio-TESTNAME", "1234567890", &mut progress)
+            .await
+            .unwrap()
+            .expect("pairing and connect services were both listed");
+        assert_eq!(endpoint.display(), "10.1.2.3:41001");
+        let args = std::fs::read_to_string(&log).unwrap();
+        assert!(args.contains("mdns services\n"), "{args}");
+        assert!(args.contains("pair 10.1.2.3:41000 1234567890\n"), "{args}");
+        assert!(args.contains("connect 10.1.2.3:41001\n"), "{args}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

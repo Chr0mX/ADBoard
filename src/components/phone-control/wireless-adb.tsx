@@ -16,6 +16,9 @@ export function WirelessAdb({ initialOpen = false }: { initialOpen?: boolean }) 
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string[]>([]);
+  const [qr, setQr] = useState<{ id: string; svg: string } | null>(null);
+  const [qrMessage, setQrMessage] = useState<string | null>(null);
+  const [qrFailed, setQrFailed] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -30,6 +33,32 @@ export function WirelessAdb({ initialOpen = false }: { initialOpen?: boolean }) 
       cancel = true;
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!qr) return;
+    let cancel = false;
+    const timer = setInterval(() => {
+      void devicesClient.wirelessQrStatus(qr.id).then((status) => {
+        if (cancel) return;
+        setQrMessage(status.message);
+        setQrFailed(status.state === "failed");
+        if (status.state === "paired" || status.state === "failed") {
+          clearInterval(timer);
+          if (status.state === "paired") {
+            void devicesClient.listWireless().then(setSaved).catch(() => {});
+          }
+        }
+      }).catch((error: unknown) => {
+        if (cancel) return;
+        setQrFailed(true);
+        setQrMessage(error instanceof Error ? error.message : "Could not check QR pairing");
+      });
+    }, 1000);
+    return () => {
+      cancel = true;
+      clearInterval(timer);
+    };
+  }, [qr]);
 
   async function refreshSaved() {
     try {
@@ -68,6 +97,23 @@ export function WirelessAdb({ initialOpen = false }: { initialOpen?: boolean }) 
     }
   }
 
+  async function onQr() {
+    setBusy(true);
+    setQrMessage(null);
+    setQrFailed(false);
+    try {
+      const session = await devicesClient.startWirelessQr();
+      setQr({ id: session.id, svg: session.svg });
+      setQrMessage("Waiting for the phone to scan.");
+    } catch (error) {
+      setQr(null);
+      setQrFailed(true);
+      setQrMessage(error instanceof Error ? error.message : "Could not start QR pairing");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onRemove(endpoint: string) {
     setBusy(true);
     try {
@@ -101,10 +147,55 @@ export function WirelessAdb({ initialOpen = false }: { initialOpen?: boolean }) 
           onSubmit={(event) => void onSubmit(event)}
         >
           <p className="text-xs leading-snug text-[var(--pc-muted)]">
-            On the phone, open Developer options and turn on Wireless debugging. Enter the IP
-            address and port shown there. For a pairing code, enter the pairing port and the code
-            as well.
+            On the phone, open Developer options and turn on Wireless debugging. Pair with a QR
+            code, or enter the IP address and port. For a pairing code, enter the pairing port and
+            the code as well.
           </p>
+          <button
+            type="button"
+            data-wireless-qr
+            disabled={busy}
+            className="h-11 rounded-lg border border-[var(--pc-line)] px-3 text-sm text-[var(--pc-ink)] disabled:opacity-50"
+            onClick={() => void onQr()}
+          >
+            Pair with QR code
+          </button>
+          {qr && (
+            <div className="flex flex-col items-center gap-2">
+              <img
+                data-wireless-qr-image
+                alt="QR code for wireless debugging"
+                src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(qr.svg)}`}
+                className="h-auto w-[220px] rounded-lg bg-white p-2"
+              />
+              <p className="text-center text-xs leading-snug text-[var(--pc-muted)]">
+                On the phone, open Wireless debugging and tap Pair device with QR code.
+              </p>
+              <button
+                type="button"
+                data-wireless-qr-cancel
+                className="h-9 rounded-lg border border-[var(--pc-line)] px-3 text-xs text-[var(--pc-ink)]"
+                onClick={() => {
+                  void devicesClient.cancelWirelessQr(qr.id).catch(() => {});
+                  setQr(null);
+                  setQrMessage(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {qrMessage && (
+            <p
+              data-wireless-qr-status
+              className={cn(
+                "font-mono text-[10px] leading-snug",
+                qrFailed ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]",
+              )}
+            >
+              {qrMessage}
+            </p>
+          )}
           <label className="text-sm text-[var(--pc-ink)]">
             Address
             <input

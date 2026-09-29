@@ -37,6 +37,11 @@ pub fn router(state: AppState) -> Router {
             "/api/devices/wireless",
             get(list_wireless).post(add_wireless).delete(remove_wireless),
         )
+        .route("/api/devices/wireless/qr", post(start_qr_pair))
+        .route(
+            "/api/devices/wireless/qr/{id}",
+            get(qr_pair_status).delete(cancel_qr_pair),
+        )
         .route("/api/hosts", get(list_hosts))
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/{serial}", get(get_session))
@@ -190,6 +195,64 @@ async fn add_wireless(
         .await
         .map(|(endpoint, message)| Json(WirelessResult { endpoint, message }))
         .map_err(|error| (StatusCode::BAD_REQUEST, error))
+}
+
+#[derive(serde::Serialize)]
+struct QrPairBody {
+    id: String,
+    payload: String,
+    svg: String,
+}
+
+#[derive(serde::Serialize)]
+struct QrPairStatusBody {
+    id: String,
+    state: String,
+    message: String,
+    endpoint: Option<String>,
+}
+
+async fn start_qr_pair(
+    State(state): State<AppState>,
+) -> Result<Json<QrPairBody>, (StatusCode, String)> {
+    state
+        .start_qr_pair()
+        .map(|info| {
+            Json(QrPairBody {
+                id: info.id,
+                payload: info.payload,
+                svg: info.svg,
+            })
+        })
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))
+}
+
+async fn qr_pair_status(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<QrPairStatusBody>, (StatusCode, String)> {
+    state
+        .qr_pair_status(&id)
+        .map(|status| {
+            Json(QrPairStatusBody {
+                id: status.id,
+                state: status.state,
+                message: status.message,
+                endpoint: status.endpoint,
+            })
+        })
+        .ok_or((StatusCode::NOT_FOUND, "QR pairing session was not found".into()))
+}
+
+async fn cancel_qr_pair(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    if state.cancel_qr_pair(&id) {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err((StatusCode::NOT_FOUND, "QR pairing session was not found".into()))
+    }
 }
 
 async fn remove_wireless(

@@ -79,6 +79,9 @@ export interface DevicesClient {
   connectWireless(input: WirelessConnectInput): Promise<WirelessConnectResult>;
   listWireless(): Promise<string[]>;
   disconnectWireless(address: string): Promise<WirelessConnectResult>;
+  startWirelessQr(): Promise<WirelessQrSession>;
+  wirelessQrStatus(id: string): Promise<WirelessQrStatus>;
+  cancelWirelessQr(id: string): Promise<void>;
   listSessions?(): Promise<SessionStatus[]>;
   /** Optional live device events from the agent WebSocket. */
   subscribeDevices?(
@@ -97,6 +100,19 @@ export interface WirelessConnectInput {
 export interface WirelessConnectResult {
   endpoint: string;
   message: string;
+}
+
+export interface WirelessQrSession {
+  id: string;
+  payload: string;
+  svg: string;
+}
+
+export interface WirelessQrStatus {
+  id: string;
+  state: "waiting" | "paired" | "failed" | string;
+  message: string;
+  endpoint?: string | null;
 }
 
 export interface ControlInjectResult {
@@ -289,6 +305,16 @@ export function createMockDevicesClient(): DevicesClient {
     async disconnectWireless() {
       throw new Error("adb is not available");
     },
+
+    async startWirelessQr() {
+      throw new Error("adb is not available");
+    },
+
+    async wirelessQrStatus(id) {
+      return { id, state: "failed", message: "adb is not available", endpoint: null };
+    },
+
+    async cancelWirelessQr() {},
 
     async listHosts() {
       return [
@@ -560,6 +586,33 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       if (!res.ok) throw new Error(await res.text());
       const body = (await res.json()) as { endpoints?: string[] };
       return body.endpoints ?? [];
+    },
+
+    async startWirelessQr() {
+      const res = await fetch(`${base}/api/devices/wireless/qr`, { method: "POST" });
+      if (!res.ok) {
+        throw new Error((await res.text()) || `QR pairing failed: ${res.status}`);
+      }
+      return (await res.json()) as WirelessQrSession;
+    },
+
+    async wirelessQrStatus(id) {
+      const res = await fetch(`${base}/api/devices/wireless/qr/${encodeURIComponent(id)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        throw new Error((await res.text()) || `QR status failed: ${res.status}`);
+      }
+      return (await res.json()) as WirelessQrStatus;
+    },
+
+    async cancelWirelessQr(id) {
+      const res = await fetch(`${base}/api/devices/wireless/qr/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok && res.status !== 204) {
+        throw new Error((await res.text()) || `QR cancel failed: ${res.status}`);
+      }
     },
 
     async disconnectWireless(address) {
