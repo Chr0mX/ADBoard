@@ -38,6 +38,18 @@ pub fn shell_line(command: &str) -> Result<&str, String> {
     Ok(command)
 }
 
+pub fn safe_input_text(text: &str) -> bool {
+    !text.is_empty()
+        && !text.contains('\n')
+        && !text.contains('\0')
+        && !text.chars().any(|c| {
+            matches!(
+                c,
+                ';' | '|' | '&' | '`' | '$' | '(' | ')' | '<' | '>' | '\'' | '"' | '\\' | '\r'
+            )
+        })
+}
+
 pub fn files_root() -> PathBuf {
     let base = std::env::var("PHONECONTROL_FILES")
         .map(PathBuf::from)
@@ -58,7 +70,37 @@ pub fn host_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
         return Err("invalid path".into());
     }
     let rel = rel.trim_start_matches(['/', '\\']);
-    Ok(root.join(rel))
+    let joined = root.join(rel);
+    let canonical_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    // Walk up until an existing ancestor can be canonicalized (uploads create the leaf).
+    let mut probe = joined.clone();
+    let mut suffix = Vec::new();
+    while !probe.exists() {
+        match probe.file_name() {
+            Some(name) => {
+                suffix.push(name.to_os_string());
+                probe = probe
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .ok_or_else(|| "invalid path".to_string())?;
+            }
+            None => return Err("invalid path".into()),
+        }
+    }
+    let mut canonical = std::fs::canonicalize(&probe).map_err(|e| e.to_string())?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err("path escapes the file root".into());
+    }
+    let creating = !suffix.is_empty();
+    for part in suffix.into_iter().rev() {
+        canonical.push(part);
+    }
+    if !canonical.starts_with(&canonical_root) {
+        return Err("path escapes the file root".into());
+    }
+    // Keep the logical joined path for create operations after the existing
+    // ancestor proved it stays under the root.
+    Ok(if creating { joined } else { canonical })
 }
 
 pub async fn adb_text(adb: &Path, args: &[String]) -> Result<String, String> {
@@ -212,8 +254,8 @@ pub async fn run_adb_op(
         }
         "text" => {
             let text = arg.unwrap_or("").replace(' ', "%s");
-            if text.is_empty() || text.contains('\n') {
-                return Err("text must be one line".into());
+            if !safe_input_text(&text) {
+                return Err("text has characters that input text cannot type safely".into());
             }
             adb_text(
                 adb,
@@ -550,6 +592,8 @@ mod tests {
         assert!(device_path("/sdcard/../data").is_err());
         assert!(shell_line("pm list packages").is_ok());
         assert!(shell_line("one\ntwo").is_err());
+        assert!(safe_input_text("hello%sworld"));
+        assert!(!safe_input_text("hello;reboot"));
         assert_eq!(
             split_activity("com.example.game.MainActivity --es user bob"),
             ("com.example.game.MainActivity", "--es user bob")
@@ -573,5 +617,20 @@ mod tests {
         assert!(apply_host_op(&root, "mkdir", "../escape", "").is_err());
         assert!(apply_host_op(&root, "rename", "", "Downloads/x").is_err());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn host_path_rejects_a_symlink_escape() {
+        let root = std::env::temp_dir().join(format!("pc-link-{}", now_ms()));
+        let outside = std::env::temp_dir().join(format!("pc-out-{}", now_ms()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), b"nope").unwrap();
+        let link = root.join("leak");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        assert!(host_path(&root, "leak/secret.txt").is_err());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }

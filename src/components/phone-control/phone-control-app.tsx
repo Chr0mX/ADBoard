@@ -163,13 +163,7 @@ export function PhoneControlApp() {
           </div>
         )}
 
-        {error && !loading && devices.length === 0 && (
-          <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-[var(--pc-warn)]">
-            {error}
-          </div>
-        )}
-
-        {!loading && devices.length > 0 && section !== "control" && (
+        {!loading && section !== "control" && (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {section === "manage" && <ManagePanel />}
             {section === "apps" && <AppsPanel />}
@@ -180,7 +174,7 @@ export function PhoneControlApp() {
           </div>
         )}
 
-        {!loading && devices.length > 0 && section === "control" && (
+        {!loading && section === "control" && (
           <>
             {error && !fillWindow && (
               <p className="mb-1 shrink-0 truncate px-1 font-mono text-[10px] text-[var(--pc-warn)]">
