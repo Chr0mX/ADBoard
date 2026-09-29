@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
+import { useDesk } from "@/components/phone-control/desk/desk-context";
 import { useDeviceAudio } from "@/hooks/use-device-audio";
+import { devicesClient } from "@/lib/api/client";
 import {
   eventsWsUrl,
   postClipboard,
@@ -13,6 +15,12 @@ import {
 } from "@/lib/scrcpy/client";
 
 const STORAGE_KEY = "phonecontrol-scrcpy";
+const SIZE_KEY = "phonecontrol-display-size";
+const DISPLAY_SIZES = [
+  { id: "native", label: "Each phone", arg: "reset" },
+  { id: "1080x1920", label: "16:9", arg: "1080x1920" },
+  { id: "1080x2400", label: "20:9", arg: "1080x2400" },
+] as const;
 const QUALITIES = ["low", "balanced", "high", "original"] as const;
 const DEFAULTS: ScrcpyOptionsPayload = {
   quality: "balanced",
@@ -89,6 +97,17 @@ export function ScrcpyOptions({
   );
   const [note, setNote] = useState<string | null>(null);
   const [clip, setClip] = useState("");
+  const [displaySize, setDisplaySize] = useState(() => {
+    try {
+      const stored = localStorage.getItem(SIZE_KEY);
+      if (stored && DISPLAY_SIZES.some((item) => item.id === stored)) return stored;
+    } catch {
+      // private mode
+    }
+    return "native";
+  });
+  const [sizing, setSizing] = useState(false);
+  const desk = useDesk();
   const audio = useDeviceAudio(serial, options.audio && !disabled);
   const ids = targetIds.join(",");
   const syncedIds = useRef("");
@@ -141,6 +160,33 @@ export function ScrcpyOptions({
       } else setNote(null);
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Could not update scrcpy");
+    }
+  };
+
+  const matchSize = async (id: string) => {
+    const choice = DISPLAY_SIZES.find((item) => item.id === id) ?? DISPLAY_SIZES[0];
+    setDisplaySize(choice.id);
+    try {
+      localStorage.setItem(SIZE_KEY, choice.id);
+    } catch {
+      // private mode
+    }
+    const online = desk.devices.filter((device) => device.status === "online");
+    if (online.length === 0) {
+      setNote("No online phones to resize.");
+      return;
+    }
+    setSizing(true);
+    try {
+      const result = await devicesClient.runCommand(online, "displaySize", choice.arg);
+      const error = firstError(result.results);
+      if (error) setNote(error);
+      else if (choice.id === "native") setNote("Each phone is back to its own screen.");
+      else setNote(`Every online phone is ${choice.label}. Streams restart on the new size.`);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Could not set the screen size");
+    } finally {
+      setSizing(false);
     }
   };
 
@@ -219,6 +265,27 @@ export function ScrcpyOptions({
             <option value="original">Original</option>
           </select>
         </label>
+        <label className="flex h-11 items-center gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
+          <span className="font-mono text-[10px] uppercase tracking-wide text-[var(--pc-muted)]">
+            Size
+          </span>
+          <select
+            aria-label="Match screen size"
+            data-display-size
+            disabled={disabled || sizing || desk.devices.every((device) => device.status !== "online")}
+            value={displaySize}
+            onChange={(event) => {
+              void matchSize(event.target.value);
+            }}
+            className="h-8 bg-transparent font-mono text-xs text-[var(--pc-ink)] outline-none"
+          >
+            {DISPLAY_SIZES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.id === "native" ? item.label : `${item.label} ${item.arg.replace("x", "×")}`}
+              </option>
+            ))}
+          </select>
+        </label>
         <Toggle
           pressed={options.audio}
           onPressedChange={(on) => {
@@ -273,9 +340,9 @@ export function ScrcpyOptions({
           From phone
         </Button>
       </div>
-      {(audioError || note || audioNote) && (
+      {(note || audioError || audioNote) && (
         <p data-scrcpy-note className="max-w-lg truncate text-center font-mono text-[10px] text-[var(--pc-muted)]">
-          {audioError || note || audioNote}
+          {note || audioError || audioNote}
         </p>
       )}
     </div>

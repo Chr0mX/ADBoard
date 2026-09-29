@@ -13,9 +13,9 @@ use phonecontrol_protocol::{
     ScrcpyAvailability, ScrcpyOptionsRequest, ScrcpyOptionsResponse, ServerEvent, SessionAction,
     SessionStatus, StreamState, TapBroadcast, TextInjectRequest, VideoRefreshRequest,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -42,6 +42,8 @@ pub struct InnerState {
     pub sessions: Arc<SessionManager>,
     /// Present on controller (and unused on pure agent for remote merge).
     pub mesh: Arc<MeshRegistry>,
+    /// Serials whose `wm size` changed and must be read again on the next poll.
+    pub resolution_refresh: Mutex<HashSet<String>>,
 }
 
 impl AppState {
@@ -112,6 +114,7 @@ impl AppState {
                 events,
                 sessions,
                 mesh,
+                resolution_refresh: Mutex::new(HashSet::new()),
             }),
         };
         let events = app.inner.events.clone();
@@ -935,6 +938,9 @@ impl AppState {
                 Err(error) => op_error(device, error),
             };
         }
+        if op == "displaySize" {
+            return self.apply_display_size(device, arg).await;
+        }
         if matches!(op, "tap" | "swipe" | "longPress") {
             return self.gesture(device, op, arg, arg2).await;
         }
@@ -988,6 +994,44 @@ impl AppState {
             Ok(output) => op_ok(device, output),
             Err(error) => op_error(device, error),
         }
+    }
+
+    async fn apply_display_size(&self, device: &Device, arg: Option<&str>) -> DeviceOpResult {
+        let spec = arg.unwrap_or("").trim();
+        if let Err(error) = adb::display_size_command(spec) {
+            return op_error(device, error);
+        }
+        let Some(adb) = self.inner.adb_path.clone() else {
+            return op_error(device, "adb is not available");
+        };
+        let output = match crate::device_ops::set_display_size(&adb, &device.serial, spec).await {
+            Ok(output) => output,
+            Err(error) => return op_error(device, error),
+        };
+        self.inner
+            .resolution_refresh
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(device.serial.clone());
+        let session = self.inner.sessions.get_session(&device.serial).await;
+        let live = session
+            .as_ref()
+            .map(|status| {
+                matches!(
+                    status.stream,
+                    StreamState::Streaming | StreamState::Starting | StreamState::Error
+                )
+            })
+            .unwrap_or(false);
+        if live {
+            if let Err(error) = self.restart_session(&device.serial).await {
+                return op_error(
+                    device,
+                    format!("{output}, but the stream did not restart: {error}"),
+                );
+            }
+        }
+        op_ok(device, output)
     }
 
     async fn gesture(
@@ -1784,8 +1828,19 @@ impl AppState {
     ) {
         let host_id = &self.inner.host_id;
         let host_name = &self.inner.host_name;
+        let refresh = {
+            let mut guard = self
+                .inner
+                .resolution_refresh
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            std::mem::take(&mut *guard)
+        };
         let mut next = Vec::with_capacity(lines.len());
         for line in lines {
+            if refresh.contains(&line.serial) {
+                known_resolutions.remove(&line.serial);
+            }
             let resolution = if let Some(res) = known_resolutions.get(&line.serial) {
                 res.clone()
             } else if line.status == DeviceStatus::Online {

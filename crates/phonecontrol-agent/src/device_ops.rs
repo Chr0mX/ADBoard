@@ -223,8 +223,22 @@ pub async fn run_adb_op(
             Ok("typed".into())
         }
         "info" => device_info(adb, serial).await,
+        "displaySize" => set_display_size(adb, serial, arg.unwrap_or("")).await,
         "push" => Err("use the file upload".into()),
         other => Err(format!("unknown device operation: {other}")),
+    }
+}
+
+pub async fn set_display_size(adb: &Path, serial: &str, spec: &str) -> Result<String, String> {
+    let wm = crate::adb::display_size_command(spec)?;
+    let mut rest = vec!["shell".to_string()];
+    rest.extend(wm);
+    let refs: Vec<&str> = rest.iter().map(String::as_str).collect();
+    adb_text(adb, &adb_args(serial, &refs)).await?;
+    if spec.trim() == "reset" || spec.trim() == "native" {
+        Ok("display size reset to the panel".into())
+    } else {
+        Ok(format!("display size {}", spec.trim()))
     }
 }
 

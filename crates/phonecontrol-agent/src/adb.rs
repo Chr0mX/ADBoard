@@ -191,22 +191,62 @@ pub async fn query_resolution(adb: &PathBuf, serial: &str) -> DeviceResolution {
 }
 
 fn parse_wm_size(text: &str) -> Option<DeviceResolution> {
-    // Physical size: 1080x2400
+    // Physical size: 1440x3200
+    // Override size: 1080x1920
+    // The override is the size Android is actually composing, so it wins.
+    let mut physical = None;
+    let mut override_size = None;
     for line in text.lines() {
-        if let Some(rest) = line.split(':').nth(1) {
-            let dims = rest.trim();
-            let mut it = dims.split('x');
-            let w: u32 = it.next()?.trim().parse().ok()?;
-            let h: u32 = it.next()?.trim().parse().ok()?;
-            if w > 0 && h > 0 {
-                return Some(DeviceResolution {
-                    width: w,
-                    height: h,
-                });
-            }
+        let Some(rest) = line.split(':').nth(1) else {
+            continue;
+        };
+        let mut it = rest.trim().split('x');
+        let Ok(width) = it.next().unwrap_or("").trim().parse::<u32>() else {
+            continue;
+        };
+        let Ok(height) = it.next().unwrap_or("").trim().parse::<u32>() else {
+            continue;
+        };
+        if width == 0 || height == 0 {
+            continue;
+        }
+        let resolution = DeviceResolution { width, height };
+        if line.to_ascii_lowercase().contains("override") {
+            override_size = Some(resolution);
+        } else if physical.is_none() {
+            physical = Some(resolution);
         }
     }
-    None
+    override_size.or(physical)
+}
+
+/// `wm size` arguments. `reset` / `native` clears the override. A size is
+/// `WIDTHxHEIGHT` in the display's natural orientation, 240–4096 on each side.
+pub fn display_size_command(spec: &str) -> Result<Vec<String>, String> {
+    let spec = spec.trim();
+    if spec == "reset" || spec == "native" {
+        return Ok(vec!["wm".into(), "size".into(), "reset".into()]);
+    }
+    let Some((width, height)) = spec.split_once('x') else {
+        return Err("size must look like 1080x1920, or reset".into());
+    };
+    if width.is_empty()
+        || height.is_empty()
+        || !width.chars().all(|c| c.is_ascii_digit())
+        || !height.chars().all(|c| c.is_ascii_digit())
+    {
+        return Err("size must look like 1080x1920, or reset".into());
+    }
+    let width: u32 = width
+        .parse()
+        .map_err(|_| "size must look like 1080x1920, or reset")?;
+    let height: u32 = height
+        .parse()
+        .map_err(|_| "size must look like 1080x1920, or reset")?;
+    if !(240..=4096).contains(&width) || !(240..=4096).contains(&height) {
+        return Err("size must be between 240 and 4096 on each side".into());
+    }
+    Ok(vec!["wm".into(), "size".into(), format!("{width}x{height}")])
 }
 
 pub fn adb_line_to_device(
@@ -298,6 +338,27 @@ OFFLINE1               offline usb:1-3 transport_id:4
         let res = parse_wm_size("Physical size: 1080x2400\n").unwrap();
         assert_eq!(res.width, 1080);
         assert_eq!(res.height, 2400);
+        let overridden = parse_wm_size(
+            "Physical size: 1440x3200\nOverride size: 1080x1920\n",
+        )
+        .unwrap();
+        assert_eq!(overridden.width, 1080);
+        assert_eq!(overridden.height, 1920);
+    }
+
+    #[test]
+    fn display_size_command_accepts_a_shared_size_or_reset() {
+        assert_eq!(
+            display_size_command("1080x1920").unwrap(),
+            vec!["wm", "size", "1080x1920"]
+        );
+        assert_eq!(
+            display_size_command("reset").unwrap(),
+            vec!["wm", "size", "reset"]
+        );
+        assert!(display_size_command("1080x1920; reboot").is_err());
+        assert!(display_size_command("10x10").is_err());
+        assert!(display_size_command("").is_err());
     }
 
     #[test]
