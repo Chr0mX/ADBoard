@@ -975,6 +975,30 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
     let hub = state.video_hub();
     let mut video_rx = hub.subscribe(&serial).await;
     let replay = hub.replay_access_units(&serial).await;
+    // A cached IDR is from earlier in the GOP. Predicted frames after it were
+    // not encoded from that IDR, and the browser paints them solid green until
+    // Refresh (`RESET_VIDEO`). Hold this socket on the next IDR and ask for one.
+    let scrcpy_live = frame.backend == "scrcpy";
+    if scrcpy_live {
+        let sessions = state.inner.sessions.clone();
+        let serial_reset = serial.clone();
+        tokio::spawn(async move {
+            for attempt in 0..8 {
+                match sessions.reset_video(&serial_reset).await {
+                    Ok(()) => {
+                        debug!(%serial_reset, "requested a fresh video keyframe");
+                        break;
+                    }
+                    Err(e) => {
+                        if attempt == 7 {
+                            debug!(%serial_reset, error = %e, "fresh keyframe request failed");
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                    }
+                }
+            }
+        });
+    }
     let hub_lag = hub.clone();
     let mut events = state.subscribe();
     let serial_filter = serial.clone();
@@ -986,8 +1010,9 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
                 return;
             }
         }
-        // Set after a gap. P-frames must not follow the replayed IDR.
-        let mut wait_for_key = false;
+        // Scrcpy sockets always wait: the replayed IDR must not be followed by
+        // later P-frames. The keyframe requested above ends the wait.
+        let mut wait_for_key = scrcpy_live;
         loop {
             tokio::select! {
                 packet = video_rx.recv() => {

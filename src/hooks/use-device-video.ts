@@ -12,6 +12,7 @@ import {
 } from "@/lib/video/h264";
 import { MseH264Player } from "@/lib/video/mse-player";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
+import { postVideoRefresh } from "@/lib/scrcpy/client";
 import type { StreamStats } from "@/lib/devices/types";
 
 export type VideoStreamState = "idle" | "starting" | "streaming" | "error";
@@ -199,6 +200,10 @@ export function useDeviceVideo(
     let waitingForKeyframeConfig = false;
     let lastResetAt = 0;
     let mse: MseH264Player | null = null;
+    // Drop bytes that arrived before Refresh's keyframe. Those P-frames
+    // decode against an older IDR and the canvas stays green.
+    let acceptVideo = false;
+    let refreshAsked = false;
 
     const openMse = () => {
       mse?.close();
@@ -296,6 +301,14 @@ export function useDeviceVideo(
           try {
             const msg = JSON.parse(event.data) as VideoStatusMessage;
             setStatus(msg);
+            if (msg.backend === "scrcpy" && !refreshAsked) {
+              refreshAsked = true;
+              void postVideoRefresh([serial]).finally(() => {
+                acceptVideo = true;
+              });
+            } else if (msg.backend && msg.backend !== "scrcpy") {
+              acceptVideo = true;
+            }
             if (msg.codecString) codecString = msg.codecString;
             if (msg.width && msg.height && msg.width > 0 && msg.height > 0) {
               publishSize(msg.width, msg.height, "status");
@@ -314,6 +327,7 @@ export function useDeviceVideo(
           return;
         }
 
+        if (!acceptVideo) return;
         const buf = new Uint8Array(event.data as ArrayBuffer);
         if (buf.byteLength === 0) return;
         const sample = meter.current;
