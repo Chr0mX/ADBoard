@@ -173,6 +173,12 @@ export function PhoneScreen({
   const sideControls = !fillWindow;
   const railClass =
     "h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]";
+  // Mobile bottom rows share one square. The column is flexible so nine
+  // controls stay inside a phone width; lg: restores the labeled desktop buttons.
+  const toolControlClass =
+    "aspect-square h-auto w-full min-w-0 max-w-9 justify-self-center gap-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 p-0 text-[var(--pc-ink)] lg:aspect-auto lg:h-11 lg:w-auto lg:max-w-none lg:shrink-0 lg:gap-1.5 lg:px-3";
+  const fillControlClass =
+    "aspect-square h-auto w-full min-w-0 max-w-9 justify-self-center rounded-full border-transparent bg-transparent p-0 text-[var(--pc-ink)]";
 
   useLayoutEffect(() => {
     const node = stageRef.current;
@@ -371,35 +377,69 @@ export function PhoneScreen({
     emitPointer(phase, e.clientX, e.clientY, drag.tool);
   };
 
-  const gestureButtons = (
-    <>
-      <Toggle
-        pressed={recording}
-        onPressedChange={(on) => {
-          if (on) startRecording();
-          else stopRecording();
-        }}
-        aria-label={recording ? "Stop recording" : "Record touches"}
-        data-gesture-record
-        className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 p-0 aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)] lg:w-auto lg:gap-1.5 lg:rounded-lg lg:px-3"
-      >
-        {recording ? <Square className="size-4" /> : <Circle className="size-4" />}
-        <span className="hidden lg:inline">{recording ? "Stop" : "Record"}</span>
-      </Toggle>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={recording || replaying || !activeGestureId}
-        onClick={() => void replayRecording()}
-        aria-label="Replay touches"
-        data-gesture-replay
-        className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 p-0 lg:w-auto lg:gap-1.5 lg:rounded-lg lg:px-3"
-      >
-        <Play className="size-4" />
-        <span className="hidden lg:inline">{replaying ? "Playing" : "Replay"}</span>
-      </Button>
-    </>
-  );
+  const gestureButtons = (variant: "fill" | "side" | "nav" | "tool") => {
+    const recordClass =
+      variant === "fill"
+        ? cn(
+            fillControlClass,
+            "aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
+          )
+        : variant === "side"
+          ? "h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]"
+          : variant === "nav"
+            ? "h-11 w-auto shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]"
+            : cn(
+                toolControlClass,
+                "aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
+              );
+    const replayClass =
+      variant === "fill"
+        ? fillControlClass
+        : variant === "side"
+          ? "h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)]"
+          : variant === "nav"
+            ? "h-11 w-auto shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)]"
+            : toolControlClass;
+    const iconClass = variant === "fill" || variant === "side" ? "size-5" : "size-4";
+    const showLabel = variant === "nav" || variant === "tool";
+    return (
+      <>
+        <Toggle
+          pressed={recording}
+          onPressedChange={(on) => {
+            if (on) startRecording();
+            else stopRecording();
+          }}
+          aria-label={recording ? "Stop recording" : "Record touches"}
+          data-gesture-record
+          className={recordClass}
+        >
+          {recording ? <Square className={iconClass} /> : <Circle className={iconClass} />}
+          {showLabel && (
+            <span className={variant === "tool" ? "hidden lg:inline" : undefined}>
+              {recording ? "Stop" : "Record"}
+            </span>
+          )}
+        </Toggle>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={recording || replaying || !activeGestureId}
+          onClick={() => void replayRecording()}
+          aria-label="Replay touches"
+          data-gesture-replay
+          className={replayClass}
+        >
+          <Play className={iconClass} />
+          {showLabel && (
+            <span className={variant === "tool" ? "hidden lg:inline" : undefined}>
+              {replaying ? "Playing" : "Replay"}
+            </span>
+          )}
+        </Button>
+      </>
+    );
+  };
 
   return (
     <section
@@ -691,7 +731,7 @@ export function PhoneScreen({
                 Screens
               </Button>
             )}
-            {fillWindow && gestureButtons}
+            {fillWindow && gestureButtons("nav")}
             {fillWindow && (
               <Button
                 type="button"
@@ -762,7 +802,7 @@ export function PhoneScreen({
                   <Icon className="size-5" />
                 </Button>
               ))}
-              {gestureButtons}
+              {gestureButtons("side")}
               <Button
                 type="button"
                 variant="ghost"
@@ -780,7 +820,7 @@ export function PhoneScreen({
         <div
           data-fill-chrome
           data-fill-layout="bottom"
-          className="absolute inset-x-0 bottom-0 z-20 flex h-[52px] items-center justify-center gap-1 overflow-x-auto bg-[var(--pc-paper)]/90 px-1"
+          className="absolute inset-x-0 bottom-0 z-20 grid h-[52px] w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 bg-[var(--pc-paper)]/90 px-1"
         >
           {(
             [
@@ -799,18 +839,18 @@ export function PhoneScreen({
               disabled={offline}
               onClick={() => onNav(action)}
               aria-label={label}
-              className="h-11 w-11 shrink-0 rounded-full p-0 text-[var(--pc-ink)]"
+              className={fillControlClass}
             >
               <Icon className="size-5" />
             </Button>
           ))}
-          {gestureButtons}
+          {gestureButtons("fill")}
           <Button
             type="button"
             variant="ghost"
             onClick={() => onFillWindowChange(false)}
             aria-label="Exit fill"
-            className="h-11 w-11 shrink-0 rounded-full p-0 text-[var(--pc-ink)]"
+            className={fillControlClass}
           >
             <Minimize2 className="size-5" />
           </Button>
@@ -819,16 +859,34 @@ export function PhoneScreen({
 
       {!compactFill && <AppShortcuts />}
 
+      {!fillWindow && gestures.length > 1 && (
+        <select
+          aria-label="Recorded touch"
+          data-gesture-pick
+          value={activeGestureId ?? ""}
+          onChange={(event) => setGestureId(event.target.value)}
+          className="h-9 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 font-mono text-xs text-[var(--pc-ink)] lg:mx-auto lg:h-11 lg:w-auto lg:max-w-[9rem]"
+        >
+          {gestures.map((macro) => (
+            <option key={macro.id} value={macro.id}>
+              {macro.name}
+            </option>
+          ))}
+        </select>
+      )}
       {!fillWindow && (
         <div
           data-tool-row
-          className="flex w-full flex-nowrap items-center justify-center gap-1.5 overflow-x-auto"
+          className="grid w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 lg:flex lg:flex-wrap lg:justify-center lg:gap-1.5"
         >
           <Toggle
             pressed={keyboardOn}
             onPressedChange={onKeyboardChange}
             aria-label="Toggle keyboard injection"
-            className="h-11 shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+            className={cn(
+              toolControlClass,
+              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+            )}
           >
             <Keyboard className="size-4" />
             <span className="hidden lg:inline">Keyboard</span>
@@ -837,29 +895,20 @@ export function PhoneScreen({
             pressed={mouseOn}
             onPressedChange={onMouseChange}
             aria-label="Toggle touch"
-            className="h-11 shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+            className={cn(
+              toolControlClass,
+              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+            )}
           >
             <MousePointer2 className="size-4" />
             <span className="hidden lg:inline">Touch</span>
           </Toggle>
-          {gestureButtons}
-          {gestures.length > 1 && (
-            <select
-              aria-label="Recorded touch"
-              data-gesture-pick
-              value={activeGestureId ?? ""}
-              onChange={(event) => setGestureId(event.target.value)}
-              className="h-11 max-w-[9rem] shrink-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 font-mono text-xs text-[var(--pc-ink)]"
-            >
-              {gestures.map((macro) => (
-                <option key={macro.id} value={macro.id}>
-                  {macro.name}
-                </option>
-              ))}
-            </select>
-          )}
+          {gestureButtons("tool")}
           {recording && (
-            <span data-gesture-count className="font-mono text-[10px] text-[var(--pc-warn)]">
+            <span
+              data-gesture-count
+              className="hidden font-mono text-[10px] text-[var(--pc-warn)] lg:inline"
+            >
               {recordedCount}
             </span>
           )}
@@ -870,17 +919,24 @@ export function PhoneScreen({
             onClick={() => void refreshVideo()}
             aria-label="Refresh video"
             data-video-refresh
-            className="h-11 shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3"
+            className={toolControlClass}
           >
             <RefreshCw className="size-4" />
             <span className="hidden lg:inline">Refresh</span>
           </Button>
-          <ApkFileButton disabled={offline || installing} onFile={pickApk} />
+          <ApkFileButton
+            disabled={offline || installing}
+            onFile={pickApk}
+            className={cn(toolControlClass, "font-mono text-[10px] leading-none lg:text-xs")}
+          />
           <Toggle
             pressed={fillWindow}
             onPressedChange={onFillWindowChange}
             aria-label="Fill window"
-            className="h-11 shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+            className={cn(
+              toolControlClass,
+              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+            )}
           >
             <Maximize2 className="size-4" />
             <span className="hidden lg:inline">Fill</span>
@@ -888,9 +944,9 @@ export function PhoneScreen({
           {showScreensButton && (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               aria-label="Screens"
-              className="h-11 shrink-0 gap-1.5 px-3"
+              className={toolControlClass}
               onClick={onOpenScreens}
             >
               <LayoutGrid className="size-4 lg:hidden" />
@@ -900,9 +956,9 @@ export function PhoneScreen({
           {showDevicesButton && (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               aria-label="Devices"
-              className="h-11 shrink-0 gap-1.5 px-3"
+              className={toolControlClass}
               onClick={onOpenDevices}
             >
               <Smartphone className="size-4 lg:hidden" />
@@ -947,14 +1003,17 @@ export function PhoneScreen({
 function ApkFileButton({
   disabled,
   onFile,
+  className,
 }: {
   disabled: boolean;
   onFile: (file: File) => void;
+  className?: string;
 }) {
   return (
     <label
       className={cn(
         "inline-flex h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 font-mono text-xs text-[var(--pc-ink)]",
+        className,
         disabled && "pointer-events-none opacity-50",
       )}
     >
