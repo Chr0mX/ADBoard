@@ -15,6 +15,7 @@ export interface FloatingLayerProps {
   stats?: StreamStats | null;
   statsMode?: MobileStatsMode;
   onStatsModeChange?: (mode: MobileStatsMode) => void;
+  targetIds: string[];
   offline: boolean;
   fillWindow: boolean;
   keyboardOn: boolean;
@@ -56,6 +57,8 @@ export function FloatingLayer(props: FloatingLayerProps) {
       )}
       <ControlPanelFloat
         offline={props.offline}
+        serial={props.device?.serial ?? null}
+        targetIds={props.targetIds}
         statsMode={props.statsMode ?? "float"}
         onStatsModeChange={props.onStatsModeChange}
         fillWindow={props.fillWindow}

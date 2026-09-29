@@ -998,6 +998,7 @@ export function PhoneScreen({
           stats={stats}
           statsMode={statsMode}
           onStatsModeChange={onStatsModeChange}
+          targetIds={targetIds}
           offline={offline}
           fillWindow={fillWindow}
           keyboardOn={keyboardOn}

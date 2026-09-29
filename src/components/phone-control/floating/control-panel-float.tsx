@@ -6,6 +6,7 @@ import {
   Keyboard,
   LayoutGrid,
   Maximize2,
+  MonitorOff,
   MousePointer2,
   PanelBottom,
   PanelsTopLeft,
@@ -13,12 +14,15 @@ import {
   Play,
   RefreshCw,
   Smartphone,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { FloatingPanel } from "@/components/phone-control/floating/floating-panel";
 import { DESK_SECTIONS } from "@/components/phone-control/desk/desk-context";
 import type { DeskSection } from "@/components/phone-control/desk/desk-context";
+import { useScrcpyOptions } from "@/hooks/use-scrcpy-options";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +31,8 @@ const HIT =
 
 interface ControlPanelFloatProps {
   offline: boolean;
+  serial: string | null;
+  targetIds: string[];
   statsMode: MobileStatsMode;
   onStatsModeChange?: (mode: MobileStatsMode) => void;
   fillWindow: boolean;
@@ -50,6 +56,8 @@ interface ControlPanelFloatProps {
 
 export function ControlPanelFloat({
   offline,
+  serial,
+  targetIds,
   statsMode,
   onStatsModeChange,
   fillWindow,
@@ -71,15 +79,80 @@ export function ControlPanelFloat({
   onOpenDesk,
 }: ControlPanelFloatProps) {
   const [deskOpen, setDeskOpen] = useState(false);
+  const { options, apply, note, audioNote, audioError } = useScrcpyOptions({
+    targetIds,
+    serial,
+    disabled: offline,
+  });
+  const streamHint = note || audioError || audioNote;
 
   return (
     <FloatingPanel
       storageKey="pc-float-controls"
       kind="controls"
-      defaultSize={{ width: 220, height: 200 }}
-      className="w-[min(240px,calc(100vw-24px))]"
+      defaultSize={{ width: 240, height: 280 }}
+      className="w-[min(260px,calc(100vw-24px))]"
     >
       <div data-control-panel-float className="flex flex-col gap-2">
+        <div
+          data-scrcpy-options-float
+          className="flex flex-col gap-1.5 border-b border-[var(--pc-line)] pb-2"
+        >
+          <label className="flex h-12 min-h-12 items-center gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3">
+            <span className="font-mono text-[10px] uppercase tracking-wide text-[var(--pc-muted)]">
+              Quality
+            </span>
+            <select
+              aria-label="Stream quality"
+              data-scrcpy-quality
+              disabled={offline}
+              value={options.quality}
+              onChange={(event) => {
+                void apply({ ...options, quality: event.target.value });
+              }}
+              className="min-w-0 flex-1 bg-transparent font-mono text-xs text-[var(--pc-ink)] outline-none disabled:opacity-40"
+            >
+              <option value="low">Low</option>
+              <option value="balanced">Balanced</option>
+              <option value="high">High</option>
+              <option value="original">Original</option>
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            <Toggle
+              pressed={options.audio}
+              onPressedChange={(on) => {
+                void apply({ ...options, audio: on });
+              }}
+              disabled={offline}
+              aria-label="Audio forwarding"
+              data-scrcpy-audio
+              className={HIT}
+            >
+              {options.audio ? <Volume2 className="size-5" /> : <VolumeX className="size-5" />}
+            </Toggle>
+            <Toggle
+              pressed={options.screenOff}
+              onPressedChange={(on) => {
+                void apply({ ...options, screenOff: on });
+              }}
+              disabled={offline}
+              aria-label="Screen off"
+              data-scrcpy-screen
+              className={HIT}
+            >
+              <MonitorOff className="size-5" />
+            </Toggle>
+          </div>
+          {streamHint && (
+            <p
+              data-scrcpy-note
+              className="truncate font-mono text-[10px] text-[var(--pc-muted)]"
+            >
+              {streamHint}
+            </p>
+          )}
+        </div>
         <div className="flex flex-wrap gap-1.5">
           <Toggle
             pressed={keyboardOn}

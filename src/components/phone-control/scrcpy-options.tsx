@@ -1,82 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { useDesk } from "@/components/phone-control/desk/desk-context";
-import { useDeviceAudio } from "@/hooks/use-device-audio";
 import { devicesClient } from "@/lib/api/client";
 import {
   eventsWsUrlAsync,
   postClipboard,
-  postScrcpyOptions,
   pullClipboard,
-  type ScrcpyOptionsPayload,
 } from "@/lib/scrcpy/client";
+import { firstError, useScrcpyOptions } from "@/hooks/use-scrcpy-options";
 
-const STORAGE_KEY = "phonecontrol-scrcpy";
 const SIZE_KEY = "phonecontrol-display-size";
 const DISPLAY_SIZES = [
   { id: "native", label: "Each phone", arg: "reset" },
   { id: "1080x1920", label: "16:9", arg: "1080x1920" },
   { id: "1080x2400", label: "20:9", arg: "1080x2400" },
 ] as const;
-const QUALITIES = ["low", "balanced", "high", "original"] as const;
-const DEFAULTS: ScrcpyOptionsPayload = {
-  quality: "balanced",
-  audio: false,
-  screenOff: false,
-};
-
-const listeners = new Set<() => void>();
-let cachedRaw = "\0";
-let cachedOpts = DEFAULTS;
-
-function parseOpts(raw: string | null): ScrcpyOptionsPayload {
-  if (!raw) return DEFAULTS;
-  try {
-    const value = JSON.parse(raw) as Partial<ScrcpyOptionsPayload>;
-    const quality = QUALITIES.includes(value.quality as (typeof QUALITIES)[number])
-      ? (value.quality as string)
-      : "balanced";
-    return {
-      quality,
-      audio: value.audio === true,
-      screenOff: value.screenOff === true,
-    };
-  } catch {
-    return DEFAULTS;
-  }
-}
-
-function readOpts(): ScrcpyOptionsPayload {
-  let raw = "";
-  try {
-    raw = localStorage.getItem(STORAGE_KEY) ?? "";
-  } catch {
-    raw = "";
-  }
-  if (raw === cachedRaw) return cachedOpts;
-  cachedRaw = raw;
-  cachedOpts = parseOpts(raw || null);
-  return cachedOpts;
-}
-
-function writeOpts(next: ScrcpyOptionsPayload) {
-  const raw = JSON.stringify(next);
-  try {
-    localStorage.setItem(STORAGE_KEY, raw);
-  } catch {
-    // private mode
-  }
-  cachedRaw = raw;
-  cachedOpts = next;
-  listeners.forEach((listener) => listener());
-}
-
-function firstError(results: { ok: boolean; error?: string | null }[] | undefined) {
-  return results?.find((result) => !result.ok)?.error || "";
-}
 
 export function ScrcpyOptions({
   targetIds,
@@ -87,15 +28,11 @@ export function ScrcpyOptions({
   serial: string | null;
   disabled?: boolean;
 }) {
-  const options = useSyncExternalStore(
-    (onChange) => {
-      listeners.add(onChange);
-      return () => listeners.delete(onChange);
-    },
-    readOpts,
-    () => DEFAULTS,
-  );
-  const [note, setNote] = useState<string | null>(null);
+  const { options, apply, note, setNote, audioNote, audioError } = useScrcpyOptions({
+    targetIds,
+    serial,
+    disabled,
+  });
   const [clip, setClip] = useState("");
   const [displaySize, setDisplaySize] = useState(() => {
     try {
@@ -108,15 +45,6 @@ export function ScrcpyOptions({
   });
   const [sizing, setSizing] = useState(false);
   const desk = useDesk();
-  const audio = useDeviceAudio(serial, options.audio && !disabled);
-  const ids = targetIds.join(",");
-  const syncedIds = useRef("");
-
-  useEffect(() => {
-    if (!ids || syncedIds.current === ids) return;
-    syncedIds.current = ids;
-    void postScrcpyOptions(ids.split(","), options).catch(() => {});
-  }, [ids, options]);
 
   useEffect(() => {
     if (!serial) return;
@@ -160,23 +88,6 @@ export function ScrcpyOptions({
       socket?.close();
     };
   }, [serial]);
-
-  const apply = async (next: ScrcpyOptionsPayload) => {
-    writeOpts(next);
-    if (targetIds.length === 0) return;
-    try {
-      const result = await postScrcpyOptions(targetIds, next);
-      const error = firstError(result.results);
-      if (error) setNote(error);
-      else if (result.restarted && result.restarted.length > 0) {
-        setNote("Stream restarted for the new setting.");
-      } else if (next.screenOff !== options.screenOff) {
-        setNote(next.screenOff ? "Device screen off. The mirror stays on." : "Device screen on.");
-      } else setNote(null);
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : "Could not update scrcpy");
-    }
-  };
 
   const matchSize = async (id: string) => {
     const choice = DISPLAY_SIZES.find((item) => item.id === id) ?? DISPLAY_SIZES[0];
@@ -253,10 +164,6 @@ export function ScrcpyOptions({
     }
   };
 
-  const audioNote =
-    options.audio && audio.note && audio.note !== "opus" ? audio.note : null;
-  const audioError = options.audio && audio.stream === "error" ? audioNote : null;
-
   return (
     <div className="flex w-full shrink-0 flex-col items-center gap-1" data-scrcpy-options>
       <div className="flex w-full flex-nowrap items-center justify-start gap-1.5 overflow-x-auto lg:flex-wrap lg:justify-center">
@@ -313,19 +220,19 @@ export function ScrcpyOptions({
         >
           Audio
         </Toggle>
+        <Toggle
+          pressed={options.screenOff}
+          onPressedChange={(on) => {
+            void apply({ ...options, screenOff: on });
+          }}
+          disabled={disabled}
+          aria-label="Screen off"
+          data-scrcpy-screen
+          className="h-11 shrink-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+        >
+          Screen off
+        </Toggle>
         <div className="max-lg:hidden lg:contents">
-          <Toggle
-            pressed={options.screenOff}
-            onPressedChange={(on) => {
-              void apply({ ...options, screenOff: on });
-            }}
-            disabled={disabled}
-            aria-label="Screen off"
-            data-scrcpy-screen
-            className="h-11 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
-          >
-            Screen off
-          </Toggle>
           <input
             aria-label="Clipboard"
             data-scrcpy-clipboard
