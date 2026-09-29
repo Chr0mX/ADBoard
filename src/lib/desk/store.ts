@@ -40,7 +40,8 @@ export type MacroStepKind =
   | "upload"
   | "download"
   | "deleteFile"
-  | "install";
+  | "install"
+  | "gesture";
 
 export interface MacroStep {
   id: string;
@@ -60,6 +61,18 @@ export interface MacroStep {
   size?: string;
   dest?: string;
   hostPath?: string;
+  /** Pointer path recorded on the control screen. Times are milliseconds from the first event. */
+  samples?: GestureSample[];
+  frameWidth?: number;
+  frameHeight?: number;
+}
+
+export interface GestureSample {
+  t: number;
+  phase: "down" | "move" | "up" | "cancel";
+  x: number;
+  y: number;
+  tool: "finger" | "mouse";
 }
 
 export interface CoordOverride {

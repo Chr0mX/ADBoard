@@ -759,6 +759,7 @@ function summarize(step: MacroStep) {
   if (step.kind === "text" || step.kind === "shell") return step.text || step.command || "";
   if (step.kind === "wait") return `${step.ms ?? 0} ms`;
   if (step.kind === "nav") return step.nav ?? "home";
+  if (step.kind === "gesture") return `${step.samples?.length ?? 0} pointer events`;
   if (step.packageName) return step.packageName;
   return step.kind;
 }

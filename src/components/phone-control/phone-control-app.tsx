@@ -108,6 +108,7 @@ export function PhoneControlApp() {
     frameWidth: number;
     frameHeight: number;
     tool: "finger" | "mouse";
+    replay?: boolean;
   }) => {
     await handlePointer(
       event.phase,
@@ -115,6 +116,7 @@ export function PhoneControlApp() {
       event.frameWidth,
       event.frameHeight,
       event.tool,
+      event.replay,
     );
   };
 

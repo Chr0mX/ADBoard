@@ -1,4 +1,5 @@
 import { devicesClient } from "@/lib/api/client";
+import { replayGesture } from "@/lib/desk/gesture";
 import type { DeviceProfile, MacroStep, SavedMacro } from "@/lib/desk/store";
 import type { Device, NavAction } from "@/lib/devices/types";
 
@@ -84,6 +85,21 @@ async function runStep(
         );
       });
       return;
+    case "gesture": {
+      const samples = step.samples ?? [];
+      await replayGesture(samples, (sample) =>
+        devicesClient.sendPointer(
+          "selected",
+          [device],
+          sample.phase,
+          { x: sample.x, y: sample.y },
+          step.frameWidth ?? 0,
+          step.frameHeight ?? 0,
+          sample.tool,
+        ),
+      );
+      return;
+    }
     case "tap":
     case "doubleTap": {
       const point = `${percent(step, profile, "x", 50)},${percent(step, profile, "y", 50)}`;

@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
+  Circle,
   House,
   Keyboard,
   LayoutGrid,
@@ -10,6 +11,7 @@ import {
   Minimize2,
   Minus,
   MousePointer2,
+  Play,
   Plus,
   Power,
   RefreshCw,
@@ -34,6 +36,9 @@ import { fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
+import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
+import { updateLibrary, useLibrary } from "@/lib/desk/store";
+import type { GestureSample } from "@/lib/desk/store";
 
 interface PhoneScreenProps {
   device: Device | null;
@@ -56,7 +61,8 @@ interface PhoneScreenProps {
     frameWidth: number;
     frameHeight: number;
     tool: PointerTool;
-  }) => void;
+    replay?: boolean;
+  }) => void | Promise<unknown>;
   onStats?: (stats: StreamStats) => void;
   onNav: (action: NavAction["type"]) => void;
   onInstall: (file: File) => Promise<string>;
@@ -194,6 +200,19 @@ export function PhoneScreen({
 
   const pointerFailed = lastTap?.targets.some((t) => t.inject === "error") ?? false;
   const installFailed = !!installNote && !installNote.startsWith("Installed");
+  const library = useLibrary();
+  const gestures = recordedMacros(library.macros);
+  const [gestureId, setGestureId] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [replaying, setReplaying] = useState(false);
+  const [recordedCount, setRecordedCount] = useState(0);
+  const recordingRef = useRef(false);
+  const samplesRef = useRef<GestureSample[]>([]);
+  const recordStartRef = useRef(0);
+  const replayStopRef = useRef(false);
+  const activeGestureId = gestureId && gestures.some((macro) => macro.id === gestureId)
+    ? gestureId
+    : (gestures.at(-1)?.id ?? null);
 
   const emitPointer = (
     phase: PointerPhase,
@@ -206,6 +225,14 @@ export function PhoneScreen({
     const point = normalizePoint(clientX, clientY, rect);
     if (phase === "down") {
       setRipple({ x: point.x * 100, y: point.y * 100, key: Date.now() });
+    }
+    if (
+      recordingRef.current &&
+      (phase === "down" || phase === "move" || phase === "up" || phase === "cancel")
+    ) {
+      const t = Math.max(0, Math.round(performance.now() - recordStartRef.current));
+      samplesRef.current.push({ t, phase, x: point.x, y: point.y, tool });
+      setRecordedCount(samplesRef.current.length);
     }
     const size = frameSizeRef.current;
     onPointer({
@@ -239,8 +266,63 @@ export function PhoneScreen({
     }
   };
 
+  const startRecording = () => {
+    replayStopRef.current = true;
+    samplesRef.current = [];
+    recordStartRef.current = performance.now();
+    recordingRef.current = true;
+    setRecordedCount(0);
+    setRecording(true);
+    setReplaying(false);
+    if (!mouseOn) onMouseChange(true);
+  };
+
+  const stopRecording = () => {
+    recordingRef.current = false;
+    setRecording(false);
+    const samples = samplesRef.current;
+    samplesRef.current = [];
+    if (samples.length === 0) return;
+    const size = frameSizeRef.current;
+    const created = makeRecordedMacro(
+      samples,
+      `Touch ${gestures.length + 1}`,
+      size?.width ?? 0,
+      size?.height ?? 0,
+    );
+    updateLibrary((current) => ({ ...current, macros: [...current.macros, created] }));
+    setGestureId(created.id);
+  };
+
+  const replayRecording = async () => {
+    if (recordingRef.current || replaying) return;
+    const macro = gestures.find((item) => item.id === activeGestureId) ?? gestures.at(-1);
+    const step = gestureStep(macro);
+    const samples = step?.samples;
+    if (!samples || samples.length === 0) return;
+    replayStopRef.current = false;
+    setReplaying(true);
+    try {
+      await replayGesture(
+        samples,
+        (sample) =>
+          onPointer({
+            phase: sample.phase,
+            point: { x: sample.x, y: sample.y },
+            frameWidth: step.frameWidth || frameSizeRef.current?.width || 0,
+            frameHeight: step.frameHeight || frameSizeRef.current?.height || 0,
+            tool: sample.tool,
+            replay: true,
+          }),
+        { shouldStop: () => replayStopRef.current },
+      );
+    } finally {
+      if (!replayStopRef.current) setReplaying(false);
+    }
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (offline || !mouseOn || e.button !== 0) return;
+    if (offline || !mouseOn || e.button !== 0 || replaying) return;
     e.preventDefault();
     const tool: PointerTool = e.pointerType === "touch" ? "finger" : "mouse";
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -289,9 +371,40 @@ export function PhoneScreen({
     emitPointer(phase, e.clientX, e.clientY, drag.tool);
   };
 
+  const gestureButtons = (
+    <>
+      <Toggle
+        pressed={recording}
+        onPressedChange={(on) => {
+          if (on) startRecording();
+          else stopRecording();
+        }}
+        aria-label={recording ? "Stop recording" : "Record touches"}
+        data-gesture-record
+        className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 p-0 aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)] lg:w-auto lg:gap-1.5 lg:rounded-lg lg:px-3"
+      >
+        {recording ? <Square className="size-4" /> : <Circle className="size-4" />}
+        <span className="hidden lg:inline">{recording ? "Stop" : "Record"}</span>
+      </Toggle>
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={recording || replaying || !activeGestureId}
+        onClick={() => void replayRecording()}
+        aria-label="Replay touches"
+        data-gesture-replay
+        className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 p-0 lg:w-auto lg:gap-1.5 lg:rounded-lg lg:px-3"
+      >
+        <Play className="size-4" />
+        <span className="hidden lg:inline">{replaying ? "Playing" : "Replay"}</span>
+      </Button>
+    </>
+  );
+
   return (
     <section
       data-fill={fillWindow ? "1" : "0"}
+      data-recording={recording ? "1" : "0"}
       data-side-controls={sideControls ? "1" : "0"}
       data-device-id={device?.id ?? ""}
       data-device-name={device?.name ?? ""}
@@ -356,6 +469,7 @@ export function PhoneScreen({
             onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
               "relative shrink-0 touch-none overflow-hidden select-none",
+              recording && "ring-2 ring-[var(--pc-warn)]",
               fillBottomChrome && fillBottomGap < 52 && "self-start",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
@@ -577,6 +691,7 @@ export function PhoneScreen({
                 Screens
               </Button>
             )}
+            {fillWindow && gestureButtons}
             {fillWindow && (
               <Button
                 type="button"
@@ -647,6 +762,7 @@ export function PhoneScreen({
                   <Icon className="size-5" />
                 </Button>
               ))}
+              {gestureButtons}
               <Button
                 type="button"
                 variant="ghost"
@@ -688,6 +804,7 @@ export function PhoneScreen({
               <Icon className="size-5" />
             </Button>
           ))}
+          {gestureButtons}
           <Button
             type="button"
             variant="ghost"
@@ -725,6 +842,27 @@ export function PhoneScreen({
             <MousePointer2 className="size-4" />
             <span className="hidden lg:inline">Touch</span>
           </Toggle>
+          {gestureButtons}
+          {gestures.length > 1 && (
+            <select
+              aria-label="Recorded touch"
+              data-gesture-pick
+              value={activeGestureId ?? ""}
+              onChange={(event) => setGestureId(event.target.value)}
+              className="h-11 max-w-[9rem] shrink-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 font-mono text-xs text-[var(--pc-ink)]"
+            >
+              {gestures.map((macro) => (
+                <option key={macro.id} value={macro.id}>
+                  {macro.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {recording && (
+            <span data-gesture-count className="font-mono text-[10px] text-[var(--pc-warn)]">
+              {recordedCount}
+            </span>
+          )}
           <Button
             type="button"
             variant="ghost"

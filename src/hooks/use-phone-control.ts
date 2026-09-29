@@ -233,8 +233,9 @@ export function usePhoneControl() {
       frameWidth: number,
       frameHeight: number,
       tool: PointerTool = "finger",
+      replay = false,
     ) => {
-      if (!mouseOn || broadcastTargets.length === 0) return Promise.resolve(null);
+      if ((!mouseOn && !replay) || broadcastTargets.length === 0) return Promise.resolve(null);
       const quiet = phase === "move" || phase === "hover" || phase === "leave";
       const run = async () => {
         try {
