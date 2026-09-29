@@ -11,9 +11,14 @@ import {
 } from "react";
 import { ChevronDown, ChevronUp, Pin } from "lucide-react";
 import {
+  EDGE_PEEK,
   clampFloatingRect,
   defaultFloatPosition,
+  edgePeekRect,
   readSafeInsets,
+  resolveCollapsedEdge,
+  type FloatEdge,
+  type FloatingBounds,
   type FloatingRect,
 } from "@/lib/ui/floating-clamp";
 import { cn } from "@/lib/utils";
@@ -34,11 +39,26 @@ function viewportSize() {
   };
 }
 
+function currentBounds(): FloatingBounds {
+  const vp = viewportSize();
+  const insets = readSafeInsets(getComputedStyle(document.documentElement));
+  return {
+    viewportWidth: vp.width,
+    viewportHeight: vp.height,
+    insetTop: insets.top,
+    insetRight: insets.right,
+    insetBottom: insets.bottom,
+    insetLeft: insets.left,
+    margin: 8,
+  };
+}
+
 interface PanelPrefs {
   x: number;
   y: number;
   pinned: boolean;
   collapsed: boolean;
+  edge: FloatEdge | null;
 }
 
 function readPrefs(key: string): PanelPrefs | null {
@@ -47,11 +67,13 @@ function readPrefs(key: string): PanelPrefs | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PanelPrefs>;
     if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return null;
+    const edge = parsed.edge === "left" || parsed.edge === "right" ? parsed.edge : null;
     return {
       x: parsed.x,
       y: parsed.y,
       pinned: parsed.pinned === true,
       collapsed: parsed.collapsed === true,
+      edge,
     };
   } catch {
     return null;
@@ -96,8 +118,22 @@ export function FloatingPanel({
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [pinned, setPinned] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [edge, setEdge] = useState<FloatEdge | null>(null);
   const [dragging, setDragging] = useState(false);
   const prefsHydrated = useRef(false);
+  const edgeRef = useRef<FloatEdge | null>(null);
+  const collapsedRef = useRef(false);
+  const pinnedRef = useRef(false);
+  edgeRef.current = edge;
+  collapsedRef.current = collapsed;
+  pinnedRef.current = pinned;
+
+  const persist = useCallback(
+    (next: PanelPrefs) => {
+      writePrefs(storageKey, next);
+    },
+    [storageKey],
+  );
 
   useLayoutEffect(() => {
     if (prefsHydrated.current) return;
@@ -105,31 +141,33 @@ export function FloatingPanel({
     const prefs = readPrefs(storageKey);
     if (prefs?.pinned) setPinned(true);
     if (prefs?.collapsed) setCollapsed(true);
-  }, [storageKey]);
-
-  const persist = useCallback(
-    (next: { x: number; y: number; pinned: boolean; collapsed: boolean }) => {
-      writePrefs(storageKey, next);
-    },
-    [storageKey],
-  );
+    if (prefs?.edge) setEdge(prefs.edge);
+    // Recover panels stuck off-screen from the old wide-panel edge math.
+    if (prefs?.edge && prefs.collapsed) {
+      const peek = edgePeekRect(prefs.edge, defaultSize.height, currentBounds(), prefs.y);
+      writePrefs(storageKey, {
+        x: peek.x,
+        y: peek.y,
+        pinned: prefs.pinned,
+        collapsed: true,
+        edge: prefs.edge,
+      });
+      setPos({ x: peek.x, y: peek.y });
+    }
+  }, [defaultSize.height, storageKey]);
 
   const clampToViewport = useCallback(
-    (x: number, y: number, width: number, height: number): FloatingRect => {
-      const vp = viewportSize();
-      const root = document.documentElement;
-      const insets = readSafeInsets(getComputedStyle(root));
+    (
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      allowEdgeHide: boolean,
+    ): FloatingRect => {
       return clampFloatingRect(
         { x, y, width, height },
-        {
-          viewportWidth: vp.width,
-          viewportHeight: vp.height,
-          insetTop: insets.top,
-          insetRight: insets.right,
-          insetBottom: insets.bottom,
-          insetLeft: insets.left,
-          margin: 8,
-        },
+        currentBounds(),
+        { allowEdgeHide },
       );
     },
     [],
@@ -144,6 +182,14 @@ export function FloatingPanel({
       const vp = viewportSize();
       const landscape = vp.width > vp.height;
       const stored = readPrefs(storageKey);
+      const bounds = currentBounds();
+      const isCollapsed = stored?.collapsed ?? collapsedRef.current;
+      const isPinned = stored?.pinned ?? pinnedRef.current;
+      let nextEdge = stored?.edge ?? edgeRef.current;
+
+      // Expanding clears an edge dock — panel returns fully on-screen.
+      if (!isCollapsed) nextEdge = null;
+
       const base =
         prev ??
         (stored ? { x: stored.x, y: stored.y } : null) ??
@@ -151,29 +197,30 @@ export function FloatingPanel({
           const d = defaultFloatPosition(kind, vp.width, vp.height, { width, height }, landscape);
           return { x: d.x, y: d.y };
         })();
-      const next = clampToViewport(base.x, base.y, width, height);
+
+      let next: FloatingRect;
+      if (isCollapsed && nextEdge) {
+        next = edgePeekRect(nextEdge, height, bounds, base.y);
+      } else {
+        next = clampToViewport(base.x, base.y, width, height, Boolean(isCollapsed));
+        nextEdge = null;
+      }
+
+      if (edgeRef.current !== nextEdge) setEdge(nextEdge);
       persist({
         x: next.x,
         y: next.y,
-        pinned: stored?.pinned ?? pinned,
-        collapsed: stored?.collapsed ?? collapsed,
+        pinned: isPinned,
+        collapsed: isCollapsed,
+        edge: nextEdge,
       });
       return { x: next.x, y: next.y };
     });
-  }, [
-    clampToViewport,
-    collapsed,
-    defaultSize.height,
-    defaultSize.width,
-    kind,
-    persist,
-    pinned,
-    storageKey,
-  ]);
+  }, [clampToViewport, defaultSize.height, defaultSize.width, kind, persist, storageKey]);
 
   useLayoutEffect(() => {
     reclamp();
-  }, [reclamp, collapsed]);
+  }, [reclamp, collapsed, edge]);
 
   useEffect(() => {
     const onOrient = () => reclamp();
@@ -205,6 +252,8 @@ export function FloatingPanel({
       originY: pos.y,
     };
     setDragging(true);
+    // Pulling an edge peek starts a drag back into the screen.
+    if (edge) setEdge(null);
   };
 
   const onHandlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
@@ -219,6 +268,7 @@ export function FloatingPanel({
       drag.originY + (event.clientY - drag.startY),
       width,
       height,
+      collapsed,
     );
     setPos({ x: next.x, y: next.y });
   };
@@ -234,17 +284,46 @@ export function FloatingPanel({
       // already released
     }
     const node = panelRef.current;
-    if (node && pos) {
-      const next = clampToViewport(pos.x, pos.y, node.offsetWidth, node.offsetHeight);
-      setPos({ x: next.x, y: next.y });
-      persist({ x: next.x, y: next.y, pinned, collapsed });
+    if (!node || !pos) return;
+    const width = node.offsetWidth || defaultSize.width;
+    const height = node.offsetHeight || defaultSize.height;
+    const bounds = currentBounds();
+
+    if (collapsed) {
+      const snapped = resolveCollapsedEdge(
+        { x: pos.x, y: pos.y, width, height },
+        bounds,
+      );
+      setEdge(snapped.edge);
+      setPos({ x: snapped.x, y: snapped.y });
+      persist({
+        x: snapped.x,
+        y: snapped.y,
+        pinned,
+        collapsed: true,
+        edge: snapped.edge,
+      });
+      return;
     }
+
+    const next = clampToViewport(pos.x, pos.y, width, height, false);
+    setEdge(null);
+    setPos({ x: next.x, y: next.y });
+    persist({ x: next.x, y: next.y, pinned, collapsed: false, edge: null });
   };
 
   const togglePinned = () => {
     setPinned((value) => {
       const next = !value;
-      if (pos) persist({ x: pos.x, y: pos.y, pinned: next, collapsed });
+      if (pos) {
+        persist({
+          x: pos.x,
+          y: pos.y,
+          pinned: next,
+          collapsed,
+          edge: collapsed ? edge : null,
+        });
+      }
       return next;
     });
   };
@@ -252,13 +331,84 @@ export function FloatingPanel({
   const toggleCollapsed = () => {
     setCollapsed((value) => {
       const next = !value;
-      if (pos) persist({ x: pos.x, y: pos.y, pinned, collapsed: next });
-      return next;
+      if (!next) {
+        setEdge(null);
+        // Bring fully on-screen when expanding from an edge dock.
+        const node = panelRef.current;
+        if (node && pos) {
+          const fully = clampToViewport(
+            pos.x,
+            pos.y,
+            node.offsetWidth || defaultSize.width,
+            node.offsetHeight || defaultSize.height,
+            false,
+          );
+          setPos({ x: fully.x, y: fully.y });
+          persist({
+            x: fully.x,
+            y: fully.y,
+            pinned,
+            collapsed: false,
+            edge: null,
+          });
+        }
+        return false;
+      }
+      if (pos) persist({ x: pos.x, y: pos.y, pinned, collapsed: true, edge });
+      return true;
     });
+  };
+
+  const revealFromEdge = () => {
+    const node = panelRef.current;
+    const width = node?.offsetWidth || defaultSize.width;
+    const height = node?.offsetHeight || defaultSize.height;
+    const bounds = currentBounds();
+    const fully = clampFloatingRect(
+      { x: bounds.margin ?? 8, y: pos?.y ?? bounds.margin ?? 8, width, height },
+      bounds,
+    );
+    setEdge(null);
+    setPos({ x: fully.x, y: fully.y });
+    persist({
+      x: fully.x,
+      y: fully.y,
+      pinned,
+      collapsed: true,
+      edge: null,
+    });
+  };
+
+  const peekDragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+
+  const onPeekPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pinned) return;
+    event.preventDefault();
+    peekDragRef.current = { x: event.clientX, y: event.clientY, moved: false };
+  };
+
+  const onPeekPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = peekDragRef.current;
+    if (!start) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.hypot(dx, dy) > 10) start.moved = true;
+    const towardCenter =
+      (edge === "left" && dx > 18) || (edge === "right" && dx < -18);
+    if (start.moved && towardCenter) revealFromEdge();
+  };
+
+  const onPeekPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = peekDragRef.current;
+    peekDragRef.current = null;
+    if (!start || start.moved) return;
+    event.preventDefault();
+    revealFromEdge();
   };
 
   const vp = typeof window !== "undefined" ? viewportSize() : { offsetLeft: 0, offsetTop: 0 };
   const label = title ?? PANEL_LABEL[kind];
+  const edgeHidden = collapsed && edge != null && !dragging;
 
   return (
     <div
@@ -267,66 +417,106 @@ export function FloatingPanel({
       data-dragging={dragging ? "1" : "0"}
       data-pinned={pinned ? "1" : "0"}
       data-collapsed={collapsed ? "1" : "0"}
+      data-edge={edge ?? ""}
       className={cn(
-        "pointer-events-auto absolute touch-none select-none rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/90 shadow-lg backdrop-blur-md",
+        "pointer-events-auto absolute touch-none select-none rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/90 shadow-lg backdrop-blur-md transition-[border-radius] duration-150",
         dragging && "cursor-grabbing",
         pinned && "border-[var(--pc-accent)]/50",
+        edgeHidden && "rounded-none shadow-md",
+        edgeHidden && edge === "left" && "rounded-r-2xl border-l-0",
+        edgeHidden && edge === "right" && "rounded-l-2xl border-r-0",
         className,
       )}
       style={{
         left: (pos?.x ?? 0) + (typeof window !== "undefined" ? vp.offsetLeft : 0),
         top: (pos?.y ?? 0) + (typeof window !== "undefined" ? vp.offsetTop : 0),
         visibility: pos ? "visible" : "hidden",
-        zIndex: 20,
+        zIndex: edgeHidden ? 25 : 20,
+        width: edgeHidden ? EDGE_PEEK : undefined,
+        height: edgeHidden ? Math.max(EDGE_PEEK * 2, 56) : undefined,
+        overflow: edgeHidden ? "hidden" : undefined,
       }}
     >
-      <div className="flex items-center gap-1 px-1 pt-1">
-        <div
-          data-float-handle
-          role="separator"
-          aria-label={pinned ? "Panel pinned" : "Drag panel"}
-          aria-disabled={pinned || undefined}
-          className={cn(
-            "flex h-11 min-h-11 min-w-0 flex-1 items-center justify-center rounded-xl",
-            pinned ? "cursor-default opacity-60" : "cursor-grab active:cursor-grabbing",
-          )}
-          onPointerDown={onHandlePointerDown}
-          onPointerMove={onHandlePointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-        >
-          <span className="h-1 w-8 rounded-full bg-[var(--pc-line)]" aria-hidden />
-          {collapsed && (
-            <span className="ml-2 truncate font-mono text-[11px] text-[var(--pc-muted)]">
-              {label}
-            </span>
-          )}
-        </div>
+      {edgeHidden ? (
         <button
           type="button"
-          data-float-collapse
-          aria-label={collapsed ? `Expand ${label}` : `Collapse ${label}`}
-          aria-pressed={collapsed}
-          className="inline-flex h-11 min-h-11 w-11 min-w-11 touch-auto items-center justify-center rounded-xl text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
-          onClick={toggleCollapsed}
+          data-float-edge-peek
+          aria-label={`Show ${label}. Tap or swipe toward the screen.`}
+          className="flex h-full w-full touch-auto items-center justify-center bg-[var(--pc-accent-fill)] text-white active:brightness-110"
+          onPointerDown={onPeekPointerDown}
+          onPointerMove={onPeekPointerMove}
+          onPointerUp={onPeekPointerUp}
+          onPointerCancel={() => {
+            peekDragRef.current = null;
+          }}
         >
-          {collapsed ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+          <span
+            className="font-mono text-[10px] font-semibold tracking-wide text-white"
+            style={{
+              writingMode: "vertical-rl",
+              transform: edge === "left" ? "rotate(180deg)" : undefined,
+            }}
+          >
+            {label}
+          </span>
         </button>
-        <button
-          type="button"
-          data-float-pin
-          aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
-          aria-pressed={pinned}
-          className={cn(
-            "inline-flex h-11 min-h-11 w-11 min-w-11 touch-auto items-center justify-center rounded-xl text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)]",
-            pinned && "text-[var(--pc-accent)]",
-          )}
-          onClick={togglePinned}
-        >
-          <Pin className={cn("size-4", pinned && "fill-current")} />
-        </button>
-      </div>
-      {!collapsed && <div className="touch-auto px-2 pb-2">{children}</div>}
+      ) : (
+        <>
+          <div className="flex items-center gap-1 px-1 pt-1">
+            <div
+              data-float-handle
+              role="separator"
+              aria-label={
+                pinned
+                  ? "Panel pinned"
+                  : collapsed
+                    ? "Drag to screen edge to hide"
+                    : "Drag panel"
+              }
+              aria-disabled={pinned || undefined}
+              className={cn(
+                "flex h-11 min-h-11 min-w-0 flex-1 items-center justify-center rounded-xl",
+                pinned ? "cursor-default opacity-60" : "cursor-grab active:cursor-grabbing",
+              )}
+              onPointerDown={onHandlePointerDown}
+              onPointerMove={onHandlePointerMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+            >
+              <span className="h-1 w-8 rounded-full bg-[var(--pc-line)]" aria-hidden />
+              {collapsed && (
+                <span className="ml-2 truncate font-mono text-[11px] text-[var(--pc-muted)]">
+                  {label}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              data-float-collapse
+              aria-label={collapsed ? `Expand ${label}` : `Collapse ${label}`}
+              aria-pressed={collapsed}
+              className="inline-flex h-11 min-h-11 w-11 min-w-11 touch-auto items-center justify-center rounded-xl text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+              onClick={toggleCollapsed}
+            >
+              {collapsed ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            </button>
+            <button
+              type="button"
+              data-float-pin
+              aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
+              aria-pressed={pinned}
+              className={cn(
+                "inline-flex h-11 min-h-11 w-11 min-w-11 touch-auto items-center justify-center rounded-xl text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)]",
+                pinned && "text-[var(--pc-accent)]",
+              )}
+              onClick={togglePinned}
+            >
+              <Pin className={cn("size-4", pinned && "fill-current")} />
+            </button>
+          </div>
+          {!collapsed && <div className="touch-auto px-2 pb-2">{children}</div>}
+        </>
+      )}
     </div>
   );
 }
