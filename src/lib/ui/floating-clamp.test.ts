@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { clampFloatingRect, defaultFloatPosition } from "./floating-clamp.ts";
+import {
+  EDGE_PEEK,
+  clampFloatingRect,
+  defaultFloatPosition,
+  resolveCollapsedEdge,
+} from "./floating-clamp.ts";
 
 describe("clampFloatingRect", () => {
   it("keeps a panel inside the viewport", () => {
@@ -36,6 +41,46 @@ describe("clampFloatingRect", () => {
     );
     assert.equal(next.width, 375 - 16);
     assert.equal(next.x, 8);
+  });
+
+  it("allows off-screen X when edge-hide is enabled, keeping a peek", () => {
+    const next = clampFloatingRect(
+      { x: -200, y: 100, width: 160, height: 48 },
+      { viewportWidth: 390, viewportHeight: 844, margin: 8 },
+      { allowEdgeHide: true },
+    );
+    assert.equal(next.x, 8 - (160 - EDGE_PEEK));
+    assert.equal(next.x + next.width, 8 + EDGE_PEEK);
+  });
+});
+
+describe("resolveCollapsedEdge", () => {
+  it("snaps near the left edge", () => {
+    const next = resolveCollapsedEdge(
+      { x: 10, y: 200, width: 140, height: 48 },
+      { viewportWidth: 390, viewportHeight: 844, margin: 8 },
+    );
+    assert.equal(next.edge, "left");
+    assert.equal(next.x, 8 - (140 - EDGE_PEEK));
+  });
+
+  it("snaps near the right edge", () => {
+    const next = resolveCollapsedEdge(
+      { x: 300, y: 200, width: 140, height: 48 },
+      { viewportWidth: 390, viewportHeight: 844, margin: 8 },
+    );
+    assert.equal(next.edge, "right");
+    assert.equal(next.x, 390 - 8 - EDGE_PEEK);
+  });
+
+  it("keeps a centered collapsed chip on-screen", () => {
+    const next = resolveCollapsedEdge(
+      { x: 120, y: 200, width: 140, height: 48 },
+      { viewportWidth: 390, viewportHeight: 844, margin: 8 },
+    );
+    assert.equal(next.edge, null);
+    assert.ok(next.x >= 8);
+    assert.ok(next.x + 140 <= 390 - 8);
   });
 });
 

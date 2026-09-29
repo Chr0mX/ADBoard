@@ -1,5 +1,5 @@
 /* Phone Control app-shell service worker. Version bump to refresh caches. */
-const CACHE_VERSION = "pc-shell-v3";
+const CACHE_VERSION = "pc-shell-v4";
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {

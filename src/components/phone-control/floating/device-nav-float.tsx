@@ -3,7 +3,6 @@
 import {
   ChevronLeft,
   House,
-  Minimize2,
   Minus,
   Plus,
   Power,
@@ -18,17 +17,10 @@ const HIT =
 
 interface DeviceNavFloatProps {
   offline: boolean;
-  fillWindow: boolean;
   onNav: (action: NavAction["type"]) => void;
-  onFillWindowChange: (on: boolean) => void;
 }
 
-export function DeviceNavFloat({
-  offline,
-  fillWindow,
-  onNav,
-  onFillWindowChange,
-}: DeviceNavFloatProps) {
+export function DeviceNavFloat({ offline, onNav }: DeviceNavFloatProps) {
   return (
     <FloatingPanel
       storageKey="pc-float-nav"
@@ -62,17 +54,6 @@ export function DeviceNavFloat({
             <Icon className="size-5" />
           </Button>
         ))}
-        {fillWindow && (
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label="Exit fill"
-            className={HIT}
-            onClick={() => onFillWindowChange(false)}
-          >
-            <Minimize2 className="size-5" />
-          </Button>
-        )}
       </div>
     </FloatingPanel>
   );

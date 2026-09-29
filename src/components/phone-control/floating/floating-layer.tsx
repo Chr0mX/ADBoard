@@ -67,12 +67,7 @@ export function FloatingLayer(props: FloatingLayerProps) {
         onOpenScreens={props.onOpenScreens}
         onOpenDesk={props.onOpenDesk}
       />
-      <DeviceNavFloat
-        offline={props.offline}
-        fillWindow={props.fillWindow}
-        onNav={props.onNav}
-        onFillWindowChange={props.onFillWindowChange}
-      />
+      <DeviceNavFloat offline={props.offline} onNav={props.onNav} />
     </div>,
     document.body,
   );
