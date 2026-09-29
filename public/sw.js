@@ -1,10 +1,24 @@
 /* Phone Control app-shell service worker. Version bump to refresh caches. */
-const CACHE_VERSION = "pc-shell-v1";
-const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
+const CACHE_VERSION = "pc-shell-v2";
+const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()),
+    (async () => {
+      const cache = await caches.open(CACHE_VERSION);
+      // Add individually so one missing path (e.g. /index.html on next dev)
+      // does not fail the whole install.
+      await Promise.all(
+        SHELL.map(async (url) => {
+          try {
+            await cache.add(url);
+          } catch {
+            // optional shell asset
+          }
+        }),
+      );
+      await self.skipWaiting();
+    })(),
   );
 });
 
@@ -16,7 +30,6 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/* Unused helper retained for clarity; network-only paths skip respondWith. */
 function isNetworkOnly(url) {
   const path = url.pathname;
   if (path.startsWith("/api/") || path.startsWith("/ws")) return true;
@@ -49,7 +62,12 @@ self.addEventListener("fetch", (event) => {
   }
 
   // App shell: network falling back to cache
-  if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname.startsWith("/icons/") || url.pathname === "/manifest.webmanifest") {
+  if (
+    url.pathname === "/" ||
+    url.pathname === "/index.html" ||
+    url.pathname.startsWith("/icons/") ||
+    url.pathname === "/manifest.webmanifest"
+  ) {
     event.respondWith(
       fetch(request)
         .then((response) => {
@@ -57,7 +75,7 @@ self.addEventListener("fetch", (event) => {
           void caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
           return response;
         })
-        .catch(() => caches.match(request).then((hit) => hit || caches.match("/index.html"))),
+        .catch(() => caches.match(request).then((hit) => hit || caches.match("/"))),
     );
   }
 });
