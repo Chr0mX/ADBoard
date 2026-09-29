@@ -7,16 +7,19 @@ import {
   LayoutGrid,
   Maximize2,
   MousePointer2,
+  PanelBottom,
+  PanelsTopLeft,
+  PictureInPicture2,
   Play,
   RefreshCw,
   Smartphone,
-  PanelsTopLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { FloatingPanel } from "@/components/phone-control/floating/floating-panel";
 import { DESK_SECTIONS } from "@/components/phone-control/desk/desk-context";
 import type { DeskSection } from "@/components/phone-control/desk/desk-context";
+import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { cn } from "@/lib/utils";
 
 const HIT =
@@ -24,6 +27,8 @@ const HIT =
 
 interface ControlPanelFloatProps {
   offline: boolean;
+  statsMode: MobileStatsMode;
+  onStatsModeChange?: (mode: MobileStatsMode) => void;
   fillWindow: boolean;
   keyboardOn: boolean;
   mouseOn: boolean;
@@ -45,6 +50,8 @@ interface ControlPanelFloatProps {
 
 export function ControlPanelFloat({
   offline,
+  statsMode,
+  onStatsModeChange,
   fillWindow,
   keyboardOn,
   mouseOn,
@@ -148,6 +155,30 @@ export function ControlPanelFloat({
           >
             <Maximize2 className="size-5" />
           </Toggle>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label={
+              statsMode === "bar"
+                ? "Stats: bottom bar (tap for floating widget)"
+                : "Stats: floating widget (tap for bottom bar)"
+            }
+            aria-pressed={statsMode === "bar"}
+            data-stats-mode={statsMode}
+            className={cn(
+              HIT,
+              statsMode === "bar" && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
+            )}
+            onClick={() =>
+              onStatsModeChange?.(statsMode === "bar" ? "float" : "bar")
+            }
+          >
+            {statsMode === "bar" ? (
+              <PanelBottom className="size-5" />
+            ) : (
+              <PictureInPicture2 className="size-5" />
+            )}
+          </Button>
           <Button
             type="button"
             variant="ghost"

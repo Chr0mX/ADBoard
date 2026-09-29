@@ -36,14 +36,13 @@ import { fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
+import { DeviceNavBar } from "@/components/phone-control/device-nav-bar";
 import { FloatingLayer } from "@/components/phone-control/floating/floating-layer";
+import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
 import { updateLibrary, useLibrary } from "@/lib/desk/store";
 import type { GestureSample } from "@/lib/desk/store";
-
-/** Bottom reservation for the default mobile DeviceNav float. */
-const FLOAT_NAV_RESERVE = 72;
 
 interface PhoneScreenProps {
   device: Device | null;
@@ -55,6 +54,8 @@ interface PhoneScreenProps {
   compactFill?: boolean;
   /** Mobile Control: docked chrome is replaced by FloatingLayer. */
   floatingChrome?: boolean;
+  statsMode?: MobileStatsMode;
+  onStatsModeChange?: (mode: MobileStatsMode) => void;
   onFillWindowChange: (on: boolean) => void;
   showDevicesButton?: boolean;
   onOpenDevices?: () => void;
@@ -86,6 +87,8 @@ export function PhoneScreen({
   fillWindow,
   compactFill = false,
   floatingChrome = false,
+  statsMode = "float",
+  onStatsModeChange,
   onFillWindowChange,
   showDevicesButton,
   onOpenDevices,
@@ -167,17 +170,8 @@ export function PhoneScreen({
   const fillBottomGap = Math.max(0, Math.floor((stageSize.height - openFit.height) / 2));
   const fillSideChrome = !floatingChrome && compactFill && fillSideGutter >= 72;
   const fillBottomChrome = !floatingChrome && compactFill && !fillSideChrome;
-  const floatReserve =
-    floatingChrome && fillBottomGap < FLOAT_NAV_RESERVE ? FLOAT_NAV_RESERVE : 0;
   const fitted =
-    floatReserve > 0
-      ? fitVideoBox(
-          stageSize.width,
-          Math.max(0, stageSize.height - floatReserve),
-          videoWidth,
-          videoHeight,
-        )
-      : fillBottomChrome && fillBottomGap < 52
+    fillBottomChrome && fillBottomGap < 52
         ? fitVideoBox(
             stageSize.width,
             Math.max(0, stageSize.height - 52),
@@ -531,7 +525,6 @@ export function PhoneScreen({
               "relative shrink-0 touch-none overflow-hidden select-none",
               recording && "ring-2 ring-[var(--pc-warn)]",
               fillBottomChrome && fillBottomGap < 52 && "self-start",
-              floatReserve > 0 && "self-start",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
@@ -767,6 +760,9 @@ export function PhoneScreen({
           </div>
           )}
         </div>
+        {floatingChrome && (
+          <DeviceNavBar offline={offline} onNav={onNav} className="w-full max-w-full" />
+        )}
       </div>
 
       {showDockedChrome && fillSideChrome && (
@@ -1000,6 +996,8 @@ export function PhoneScreen({
           device={device}
           session={session}
           stats={stats}
+          statsMode={statsMode}
+          onStatsModeChange={onStatsModeChange}
           offline={offline}
           fillWindow={fillWindow}
           keyboardOn={keyboardOn}
@@ -1008,7 +1006,6 @@ export function PhoneScreen({
           replaying={replaying}
           refreshing={refreshing}
           installing={installing}
-          onNav={onNav}
           onFillWindowChange={onFillWindowChange}
           onKeyboardChange={onKeyboardChange}
           onMouseChange={onMouseChange}

@@ -1,7 +1,7 @@
 /** One-shot recovery for floats saved with old off-screen edge geometry. */
 export function repairEdgeDockedFloatPrefs(defaultChipHeight = 56): number {
   if (typeof window === "undefined") return 0;
-  const keys = ["pc-float-stats", "pc-float-controls", "pc-float-nav"];
+  const keys = ["pc-float-stats", "pc-float-controls"];
   let repaired = 0;
   for (const key of keys) {
     try {

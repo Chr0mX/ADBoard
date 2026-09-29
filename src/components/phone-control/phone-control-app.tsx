@@ -22,6 +22,7 @@ import { ManagePanel } from "@/components/phone-control/desk/manage-panel";
 import { Button } from "@/components/ui/button";
 import { usePhoneControl } from "@/hooks/use-phone-control";
 import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
+import { parseMobileStatsMode, type MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { cn } from "@/lib/utils";
 
 function subscribeWide(onChange: () => void) {
@@ -81,6 +82,10 @@ export function PhoneControlApp() {
     setFillWindow(on);
     if (on) setDevicesOpen(false);
   };
+
+  const [storedStatsMode, setStoredStatsMode] = useStoredString("phonecontrol-mobile-stats-mode");
+  const mobileStatsMode = parseMobileStatsMode(storedStatsMode);
+  const setMobileStatsMode = (mode: MobileStatsMode) => setStoredStatsMode(mode);
 
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
   const [storedSection, setStoredSection] = useStoredString("phonecontrol-section");
@@ -218,6 +223,8 @@ export function PhoneControlApp() {
                 fillWindow={fillWindow}
                 compactFill={fillWindow && !wide && !mobileControl}
                 floatingChrome={mobileControl}
+                statsMode={mobileStatsMode}
+                onStatsModeChange={setMobileStatsMode}
                 onFillWindowChange={setFill}
                 showDevicesButton={!fillWindow && !wide}
                 onOpenDevices={() => {
@@ -324,7 +331,7 @@ export function PhoneControlApp() {
         )}
       </main>
 
-      {section === "control" && wide && (
+      {section === "control" && (wide || (mobileControl && mobileStatsMode === "bar")) && (
         <StatusBar device={activeDevice} session={activeSession} stats={streamStats} />
       )}
     </div>
