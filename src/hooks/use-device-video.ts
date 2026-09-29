@@ -13,6 +13,7 @@ import {
 import { MseH264Player } from "@/lib/video/mse-player";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
+import { agentBaseUrl, agentWsUrl } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
 
 export type VideoStreamState = "idle" | "starting" | "streaming" | "error";
@@ -36,23 +37,6 @@ export type VideoDecodeState =
   | "unsupported"
   | "error"
   | "idle";
-
-function agentBaseUrl(): string | null {
-  const raw = process.env.NEXT_PUBLIC_AGENT_URL?.trim();
-  if (!raw) return null;
-  if (raw === "same" || raw === "same-origin") return "";
-  return raw.replace(/\/$/, "");
-}
-
-function httpToWs(base: string): string {
-  if (!base && typeof window !== "undefined") {
-    const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
-    return `${proto}${window.location.host}`;
-  }
-  if (base.startsWith("https://")) return `wss://${base.slice("https://".length)}`;
-  if (base.startsWith("http://")) return `ws://${base.slice("http://".length)}`;
-  return base;
-}
 
 function webCodecsSupported(): boolean {
   return (
@@ -287,7 +271,19 @@ export function useDeviceVideo(
       setDecodeState("connecting");
       description = null;
       waitingForKeyframeConfig = false;
-      const url = `${httpToWs(base)}/ws/devices/${encodeURIComponent(serial)}/video`;
+      void agentWsUrl(`/ws/devices/${encodeURIComponent(serial)}/video`)
+        .then((url) => {
+          if (closed) return;
+          bindSocket(url);
+        })
+        .catch(() => {
+          if (!closed) {
+            retryTimer = setTimeout(connect, 2000);
+          }
+        });
+    };
+
+    const bindSocket = (url: string) => {
       socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
 

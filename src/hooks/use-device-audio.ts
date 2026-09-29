@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { defaultOpusHead, readOpusHead, webmCluster, webmInit } from "@/lib/audio/opus-webm";
-import { scrcpyWsUrl } from "@/lib/scrcpy/client";
+import { scrcpyWsUrlAsync } from "@/lib/scrcpy/client";
 
 interface AudioStatus {
   stream?: string;
@@ -176,40 +176,47 @@ export function useDeviceAudio(serial: string | null, enabled: boolean) {
     let socket: WebSocket | null = null;
     const connect = () => {
       if (closed) return;
-      socket = new WebSocket(scrcpyWsUrl(serial, "audio"));
-      socket.binaryType = "arraybuffer";
-      socket.onmessage = (event) => {
-        if (typeof event.data === "string") {
-          let status: AudioStatus = {};
-          try {
-            status = JSON.parse(event.data) as AudioStatus;
-          } catch {
-            return;
-          }
-          const playing = status.codec === "opus" && status.stream === "streaming";
-          const desc = status.description ?? "";
-          if (playing && sinkRef.current && descRef.current === desc) {
-            sinkRef.current.resume();
-          } else {
-            sinkRef.current?.close();
-            const sink = playing ? openSink(status) : null;
-            sinkRef.current = sink;
-            descRef.current = playing ? desc : null;
-            sink?.resume();
-          }
-          setStream(status.stream ?? null);
-          if (status.note) setNote(status.note);
-          else if (!sinkRef.current && status.stream === "streaming") {
-            setNote("This browser cannot play Opus audio on this address.");
-          }
-          return;
-        }
-        const bytes = new Uint8Array(event.data as ArrayBuffer);
-        sinkRef.current?.push(bytes);
-      };
-      socket.onclose = () => {
-        if (!closed) setTimeout(connect, 1500);
-      };
+      void scrcpyWsUrlAsync(serial, "audio")
+        .then((url) => {
+          if (closed) return;
+          socket = new WebSocket(url);
+          socket.binaryType = "arraybuffer";
+          socket.onmessage = (event) => {
+            if (typeof event.data === "string") {
+              let status: AudioStatus = {};
+              try {
+                status = JSON.parse(event.data) as AudioStatus;
+              } catch {
+                return;
+              }
+              const playing = status.codec === "opus" && status.stream === "streaming";
+              const desc = status.description ?? "";
+              if (playing && sinkRef.current && descRef.current === desc) {
+                sinkRef.current.resume();
+              } else {
+                sinkRef.current?.close();
+                const sink = playing ? openSink(status) : null;
+                sinkRef.current = sink;
+                descRef.current = playing ? desc : null;
+                sink?.resume();
+              }
+              setStream(status.stream ?? null);
+              if (status.note) setNote(status.note);
+              else if (!sinkRef.current && status.stream === "streaming") {
+                setNote("This browser cannot play Opus audio on this address.");
+              }
+              return;
+            }
+            const bytes = new Uint8Array(event.data as ArrayBuffer);
+            sinkRef.current?.push(bytes);
+          };
+          socket.onclose = () => {
+            if (!closed) setTimeout(connect, 1500);
+          };
+        })
+        .catch(() => {
+          if (!closed) setTimeout(connect, 1500);
+        });
     };
     connect();
     const resume = () => sinkRef.current?.resume();

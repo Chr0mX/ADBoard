@@ -45,6 +45,8 @@ pub struct InnerState {
     /// Serials whose `wm size` changed and must be read again on the next poll.
     pub resolution_refresh: Mutex<HashSet<String>>,
     pub qr_pairs: Mutex<HashMap<String, QrPairSlot>>,
+    /// Shared secret for HTTP and WebSocket API calls (`PHONECONTROL_TOKEN`).
+    pub api_token: String,
 }
 
 pub struct QrPairSlot {
@@ -124,6 +126,7 @@ impl AppState {
         let video_hub = VideoHub::new();
         let sessions = SessionManager::new(adb_path.clone(), scrcpy, video_hub);
         let mesh = MeshRegistry::new(host_id.clone(), host_name.clone());
+        let api_token = resolve_api_token();
         let app = Self {
             inner: Arc::new(InnerState {
                 role,
@@ -137,6 +140,7 @@ impl AppState {
                 mesh,
                 resolution_refresh: Mutex::new(HashSet::new()),
                 qr_pairs: Mutex::new(HashMap::new()),
+                api_token,
             }),
         };
         let events = app.inner.events.clone();
@@ -184,6 +188,10 @@ impl AppState {
 
     pub fn host_name(&self) -> &str {
         &self.inner.host_name
+    }
+
+    pub fn api_token(&self) -> &str {
+        &self.inner.api_token
     }
 
     pub fn mesh(&self) -> Arc<MeshRegistry> {
@@ -2363,6 +2371,22 @@ async fn http_post_bytes(
         .parse::<u16>()
         .unwrap_or(0);
     Ok((code, resp_body.to_string()))
+}
+
+fn resolve_api_token() -> String {
+    match std::env::var("PHONECONTROL_TOKEN") {
+        Ok(value) if !value.trim().is_empty() => {
+            info!("PHONECONTROL_TOKEN is set — API calls require x-phonecontrol-token");
+            value
+        }
+        _ => {
+            let token = uuid::Uuid::new_v4().to_string();
+            info!(
+                "generated API token — same-origin UI reads it from GET /api/bootstrap; set PHONECONTROL_TOKEN when the bind is not loopback"
+            );
+            token
+        }
+    }
 }
 
 fn env_truthy(key: &str) -> bool {
