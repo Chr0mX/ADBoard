@@ -206,6 +206,80 @@ export function saveLibrary(next: DeskLibrary) {
   listeners.forEach((listener) => listener());
 }
 
+const MACRO_KINDS = new Set<string>([
+  "launch",
+  "forceStop",
+  "reboot",
+  "shutdown",
+  "wait",
+  "waitDevice",
+  "waitApp",
+  "waitScreen",
+  "timeout",
+  "tap",
+  "doubleTap",
+  "longPress",
+  "swipe",
+  "scroll",
+  "drag",
+  "pinch",
+  "text",
+  "nav",
+  "shell",
+  "screenshot",
+  "recordStart",
+  "recordStop",
+  "upload",
+  "download",
+  "deleteFile",
+  "install",
+  "gesture",
+]);
+
+/** Parse a desk export. Rejects junk so a bad import does not wipe the library. */
+export function parseDeskExport(raw: string): DeskLibrary {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Desk file is not valid JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Desk file must be an object");
+  }
+  const body = parsed as Partial<DeskLibrary>;
+  if (body.macros !== undefined && !Array.isArray(body.macros)) {
+    throw new Error("macros must be an array");
+  }
+  if (body.apps !== undefined && !Array.isArray(body.apps)) {
+    throw new Error("apps must be an array");
+  }
+  for (const macro of body.macros ?? []) {
+    if (!macro || typeof macro !== "object") {
+      throw new Error("each macro must be an object");
+    }
+    if (!Array.isArray(macro.steps)) {
+      throw new Error(`macro ${macro.name ?? macro.id ?? "?"} has no steps array`);
+    }
+    for (const step of macro.steps) {
+      if (!step || typeof step !== "object" || !MACRO_KINDS.has(String(step.kind))) {
+        throw new Error(`unknown macro step kind: ${String((step as MacroStep)?.kind)}`);
+      }
+    }
+  }
+  return normalize(body);
+}
+
+export function exportDeskJson(library: DeskLibrary = read()): string {
+  return `${JSON.stringify(library, null, 2)}\n`;
+}
+
+export function importDeskJson(raw: string): DeskLibrary {
+  const next = parseDeskExport(raw);
+  saveLibrary(next);
+  return next;
+}
+
 export function updateLibrary(change: (library: DeskLibrary) => DeskLibrary) {
   saveLibrary(change(read()));
 }

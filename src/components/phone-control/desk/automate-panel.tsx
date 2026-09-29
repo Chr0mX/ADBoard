@@ -5,6 +5,8 @@ import { runMacro, type MacroProgress } from "@/lib/desk/run-macro";
 import {
   MACRO_FOLDERS,
   emptyProfile,
+  exportDeskJson,
+  importDeskJson,
   newId,
   updateLibrary,
   useLibrary,
@@ -128,6 +130,44 @@ function MacroLibrary({
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        <Mini
+          label="Export desk"
+          onClick={() => {
+            const blob = new Blob([exportDeskJson(library)], {
+              type: "application/json",
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "phonecontrol-desk.json";
+            link.click();
+            URL.revokeObjectURL(url);
+          }}
+        />
+        <label className="inline-flex h-9 cursor-pointer items-center rounded-lg border border-[var(--pc-line)] px-2 text-xs text-[var(--pc-ink)]">
+          Import desk
+          <input
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              void file.text().then((text) => {
+                try {
+                  importDeskJson(text);
+                } catch (error) {
+                  window.alert(
+                    error instanceof Error ? error.message : "Could not import the desk file",
+                  );
+                }
+              });
+            }}
+          />
+        </label>
+      </div>
       {folders.map((folder) => (
         <section key={folder}>
           <h3 className="font-display text-sm font-semibold">📁 {folder}</h3>
