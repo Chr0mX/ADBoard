@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Keyboard, Maximize2, Minimize2, MousePointer2, RefreshCw } from "lucide-react";
+import {
+  ChevronLeft,
+  House,
+  Keyboard,
+  Maximize2,
+  Minimize2,
+  Minus,
+  MousePointer2,
+  Plus,
+  Power,
+  RefreshCw,
+  Square,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
@@ -130,7 +142,23 @@ export function PhoneScreen({
   // before the first frame; device wm size is not the stream aspect.
   const videoWidth = frameSize?.width || (configured ? 9 : device?.resolution.width || 9);
   const videoHeight = frameSize?.height || (configured ? 16 : device?.resolution.height || 16);
-  const fitted = fitVideoBox(stageSize.width, stageSize.height, videoWidth, videoHeight);
+  const openFit = fitVideoBox(stageSize.width, stageSize.height, videoWidth, videoHeight);
+  // Mobile fill keeps one short control bar. When the picture already leaves a
+  // gap (letterbox, or side space in landscape), the bar sits in that gap.
+  // When it would cover the picture, the fit gives up one bar of height.
+  const fillSideGutter = Math.max(0, Math.floor((stageSize.width - openFit.width) / 2));
+  const fillBottomGap = Math.max(0, Math.floor((stageSize.height - openFit.height) / 2));
+  const fillSideChrome = compactFill && fillSideGutter >= 72;
+  const fillBottomChrome = compactFill && !fillSideChrome;
+  const fitted =
+    fillBottomChrome && fillBottomGap < 52
+      ? fitVideoBox(
+          stageSize.width,
+          Math.max(0, stageSize.height - 52),
+          videoWidth,
+          videoHeight,
+        )
+      : openFit;
   const orientation = videoWidth >= videoHeight ? "landscape" : "portrait";
   // Non-fill keeps a rail on each side of the picture: volume on the left,
   // power on the right. Navigation stays in the row under the stream.
@@ -326,6 +354,7 @@ export function PhoneScreen({
             onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
               "relative shrink-0 touch-none overflow-hidden select-none",
+              fillBottomChrome && fillBottomGap < 52 && "self-start",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
@@ -562,39 +591,99 @@ export function PhoneScreen({
         </div>
       </div>
 
-      {compactFill && (
+      {fillSideChrome && (
+        <>
+          <div
+            data-fill-chrome
+            data-fill-layout="side"
+            className="pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center"
+            style={{ width: fillSideGutter }}
+          >
+            <div className="pointer-events-auto ml-auto flex flex-col gap-2 pr-2">
+              {(
+                [
+                  ["volume_up", "Volume up", Plus],
+                  ["volume_down", "Volume down", Minus],
+                ] as const
+              ).map(([action, label, Icon]) => (
+                <Button
+                  key={action}
+                  type="button"
+                  variant="ghost"
+                  disabled={offline}
+                  onClick={() => onNav(action)}
+                  aria-label={label}
+                  className="h-11 w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)]"
+                >
+                  <Icon className="size-5" />
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 z-20 flex items-center"
+            style={{ width: fillSideGutter }}
+          >
+            <div className="pointer-events-auto mr-auto flex max-h-full flex-col gap-2 overflow-y-auto pl-2">
+              {(
+                [
+                  ["back", "Back", ChevronLeft],
+                  ["home", "Home", House],
+                  ["recent", "Recent", Square],
+                  ["power", "Power", Power],
+                ] as const
+              ).map(([action, label, Icon]) => (
+                <Button
+                  key={action}
+                  type="button"
+                  variant="ghost"
+                  disabled={offline}
+                  onClick={() => onNav(action)}
+                  aria-label={label}
+                  className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)]"
+                >
+                  <Icon className="size-5" />
+                </Button>
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onFillWindowChange(false)}
+                aria-label="Exit fill"
+                className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)]"
+              >
+                <Minimize2 className="size-5" />
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+      {fillBottomChrome && (
         <div
           data-fill-chrome
-          className="flex shrink-0 flex-wrap items-center justify-center gap-2 px-1.5 py-1.5"
+          data-fill-layout="bottom"
+          className="absolute inset-x-0 bottom-0 z-20 flex h-[52px] items-center justify-center gap-1 overflow-x-auto bg-[var(--pc-paper)]/90 px-1"
         >
           {(
             [
-              ["back", "Back"],
-              ["home", "Home"],
-              ["recent", "Recent"],
-              ["volume_down", "Vol−"],
-              ["volume_up", "Vol+"],
-              ["power", "Power"],
+              ["back", "Back", ChevronLeft],
+              ["home", "Home", House],
+              ["recent", "Recent", Square],
+              ["volume_down", "Volume down", Minus],
+              ["volume_up", "Volume up", Plus],
+              ["power", "Power", Power],
             ] as const
-          ).map(([action, name]) => (
+          ).map(([action, label, Icon]) => (
             <Button
               key={action}
               type="button"
               variant="ghost"
               disabled={offline}
               onClick={() => onNav(action)}
-              aria-label={
-                action === "volume_up"
-                  ? "Volume up"
-                  : action === "volume_down"
-                    ? "Volume down"
-                    : action === "power"
-                      ? "Power"
-                      : name
-              }
-              className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+              aria-label={label}
+              className="h-11 w-11 shrink-0 rounded-full p-0 text-[var(--pc-ink)]"
             >
-              {name}
+              <Icon className="size-5" />
             </Button>
           ))}
           <Button
@@ -602,9 +691,9 @@ export function PhoneScreen({
             variant="ghost"
             onClick={() => onFillWindowChange(false)}
             aria-label="Exit fill"
-            className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)]"
+            className="h-11 w-11 shrink-0 rounded-full p-0 text-[var(--pc-ink)]"
           >
-            <Minimize2 className="size-4" />
+            <Minimize2 className="size-5" />
           </Button>
         </div>
       )}
