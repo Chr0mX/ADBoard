@@ -1687,6 +1687,71 @@ impl AppState {
         Ok(out)
     }
 
+    pub async fn add_wireless(
+        &self,
+        address: &str,
+        port: Option<u16>,
+        pairing_port: Option<u16>,
+        pairing_code: Option<&str>,
+    ) -> Result<(String, String), String> {
+        let endpoint = adb::parse_wireless_endpoint(address, port)?;
+        let pairing = adb::parse_pairing(pairing_port, pairing_code)?;
+        let Some(adb) = self.inner.adb_path.clone() else {
+            return Err("adb is not available".into());
+        };
+        let message = match tokio::time::timeout(
+            Duration::from_secs(12),
+            adb::connect_wireless(&adb, &endpoint, pairing.as_ref()),
+        )
+        .await
+        {
+            Ok(result) => result?,
+            Err(_) => return Err("timed out connecting to the phone".into()),
+        };
+        if let Err(error) = adb::remember_wireless(&endpoint) {
+            warn!(%error, "wireless device connected but was not saved");
+        }
+        Ok((endpoint.display(), message))
+    }
+
+    pub fn list_wireless(&self) -> Vec<String> {
+        adb::load_wireless()
+            .into_iter()
+            .map(|endpoint| endpoint.display())
+            .collect()
+    }
+
+    pub async fn remove_wireless(&self, address: &str) -> Result<(String, String), String> {
+        let endpoint = adb::parse_wireless_endpoint(address, None)?;
+        let message = if let Some(adb) = self.inner.adb_path.clone() {
+            match tokio::time::timeout(
+                Duration::from_secs(8),
+                adb::disconnect_wireless(&adb, &endpoint),
+            )
+            .await
+            {
+                Ok(Ok(message)) => message,
+                Ok(Err(error)) => {
+                    let lower = error.to_ascii_lowercase();
+                    if lower.contains("no such") || lower.contains("not connected") {
+                        format!("removed {}", endpoint.display())
+                    } else {
+                        let _ = adb::forget_wireless(&endpoint);
+                        return Err(error);
+                    }
+                }
+                Err(_) => {
+                    let _ = adb::forget_wireless(&endpoint);
+                    return Err("timed out disconnecting the phone".into());
+                }
+            }
+        } else {
+            "removed from the saved list".into()
+        };
+        adb::forget_wireless(&endpoint)?;
+        Ok((endpoint.display(), message))
+    }
+
     /// Background ADB poll loop (no-op when using mock fleet).
     pub fn spawn_adb_watcher(&self) {
         let Some(adb) = self.inner.adb_path.clone() else {
@@ -1705,6 +1770,24 @@ impl AppState {
         info!(path = %adb.display(), "ADB found — polling devices every {ADB_POLL_SECS}s");
         let state = self.clone();
         tokio::spawn(async move {
+            for endpoint in adb::load_wireless() {
+                match tokio::time::timeout(
+                    Duration::from_secs(8),
+                    adb::connect_wireless(&adb, &endpoint, None),
+                )
+                .await
+                {
+                    Ok(Ok(message)) => {
+                        info!(endpoint = %endpoint.display(), %message, "restored wireless device")
+                    }
+                    Ok(Err(error)) => {
+                        warn!(endpoint = %endpoint.display(), %error, "could not restore wireless device")
+                    }
+                    Err(_) => {
+                        warn!(endpoint = %endpoint.display(), "wireless restore timed out")
+                    }
+                }
+            }
             let mut known_resolutions: HashMap<String, phonecontrol_protocol::DeviceResolution> =
                 HashMap::new();
             let mut batteries: HashMap<String, CachedBattery> = HashMap::new();

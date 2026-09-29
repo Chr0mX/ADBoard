@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
+import { WirelessAdb } from "@/components/phone-control/wireless-adb";
 import type { Device } from "@/lib/devices/types";
 import { useDesk } from "@/components/phone-control/desk/desk-context";
 import {
@@ -21,6 +22,7 @@ const TABS = [
   { id: "screenshot", label: "Screenshot" },
   { id: "record", label: "Record" },
   { id: "info", label: "Information" },
+  { id: "wireless", label: "Wireless" },
 ] as const;
 
 export function ManagePanel() {
@@ -89,6 +91,7 @@ export function ManagePanel() {
           )}
           {tab === "record" && <RecordTools busy={busy} onRun={run} />}
           {tab === "info" && <InfoPanel device={targets[0] ?? desk.activeDevice} />}
+          {tab === "wireless" && <WirelessAdb initialOpen />}
           <ResultList rows={rows} />
           <RecoveryList />
         </div>

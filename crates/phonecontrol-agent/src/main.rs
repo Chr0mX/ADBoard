@@ -72,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  GET  /          (control UI)");
     info!("  GET  /health");
     info!("  GET  /api/devices");
+    info!("  POST /api/devices/wireless");
     info!("  GET  /api/hosts");
     info!("  GET  /api/sessions");
     info!("  POST /api/sessions/{{serial}}/start|stop|restart");

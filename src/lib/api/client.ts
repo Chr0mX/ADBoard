@@ -76,12 +76,27 @@ export interface DevicesClient {
     dest?: string,
   ): Promise<HostFileEntry>;
   listHosts(): Promise<import("@/lib/devices/types").HostInfo[]>;
+  connectWireless(input: WirelessConnectInput): Promise<WirelessConnectResult>;
+  listWireless(): Promise<string[]>;
+  disconnectWireless(address: string): Promise<WirelessConnectResult>;
   listSessions?(): Promise<SessionStatus[]>;
   /** Optional live device events from the agent WebSocket. */
   subscribeDevices?(
     onDevices: (devices: Device[]) => void,
     onSession?: (session: SessionStatus) => void,
   ): () => void;
+}
+
+export interface WirelessConnectInput {
+  address: string;
+  port?: number;
+  pairingPort?: number;
+  pairingCode?: string;
+}
+
+export interface WirelessConnectResult {
+  endpoint: string;
+  message: string;
 }
 
 export interface ControlInjectResult {
@@ -261,6 +276,18 @@ export function createMockDevicesClient(): DevicesClient {
     async hostFileOp(op, path, dest) {
       const name = (dest || path).split("/").pop() || path;
       return { name, path: dest || path, dir: op === "mkdir", size: 0 };
+    },
+
+    async connectWireless() {
+      throw new Error("adb is not available");
+    },
+
+    async listWireless() {
+      return [];
+    },
+
+    async disconnectWireless() {
+      throw new Error("adb is not available");
     },
 
     async listHosts() {
@@ -509,6 +536,42 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       });
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as HostFileEntry;
+    },
+
+    async connectWireless(input) {
+      const res = await fetch(`${base}/api/devices/wireless`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: input.address,
+          port: input.port,
+          pairingPort: input.pairingPort,
+          pairingCode: input.pairingCode,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error((await res.text()) || `wireless connect failed: ${res.status}`);
+      }
+      return (await res.json()) as WirelessConnectResult;
+    },
+
+    async listWireless() {
+      const res = await fetch(`${base}/api/devices/wireless`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text());
+      const body = (await res.json()) as { endpoints?: string[] };
+      return body.endpoints ?? [];
+    },
+
+    async disconnectWireless(address) {
+      const res = await fetch(`${base}/api/devices/wireless`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      if (!res.ok) {
+        throw new Error((await res.text()) || `wireless disconnect failed: ${res.status}`);
+      }
+      return (await res.json()) as WirelessConnectResult;
     },
 
     async listHosts() {

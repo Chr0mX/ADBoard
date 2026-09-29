@@ -3,7 +3,7 @@
 use phonecontrol_protocol::{
     ConnectionType, Device, DeviceResolution, DeviceStatus,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{debug, warn};
@@ -311,6 +311,364 @@ fn wallpaper_hue(serial: &str) -> u16 {
     (hash % 360) as u16
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WirelessEndpoint {
+    pub host: String,
+    pub port: u16,
+}
+
+impl WirelessEndpoint {
+    pub fn display(&self) -> String {
+        if self.host.contains(':') {
+            format!("[{}]:{}", self.host, self.port)
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WirelessPairing {
+    pub port: u16,
+    pub code: String,
+}
+
+/// `address` is `host`, `host:port`, or `[ipv6]:port`. An explicit `port` is
+/// used only when the address does not already include one. The default is 5555.
+pub fn parse_wireless_endpoint(address: &str, port: Option<u16>) -> Result<WirelessEndpoint, String> {
+    let address = address.trim();
+    if address.is_empty() {
+        return Err("enter the phone's IP address".into());
+    }
+    if address
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '`' | '$' | '\'' | '"' | '\\' | '<' | '>'))
+    {
+        return Err("address has invalid characters".into());
+    }
+    let (host, embedded) = split_host_port(address)?;
+    validate_host(&host)?;
+    let port = embedded.or(port).unwrap_or(5555);
+    if port == 0 {
+        return Err("port must be between 1 and 65535".into());
+    }
+    Ok(WirelessEndpoint { host, port })
+}
+
+/// Pairing is optional. A code requires the pairing port shown next to it.
+pub fn parse_pairing(port: Option<u16>, code: Option<&str>) -> Result<Option<WirelessPairing>, String> {
+    let code: String = code
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    if code.is_empty() {
+        if port.is_some() {
+            return Err("enter the pairing code shown on the phone".into());
+        }
+        return Ok(None);
+    }
+    if !code.chars().all(|c| c.is_ascii_digit()) || !(4..=8).contains(&code.len()) {
+        return Err("pairing code must be the digits shown on the phone".into());
+    }
+    let Some(port) = port.filter(|port| *port != 0) else {
+        return Err("enter the pairing port shown on the phone".into());
+    };
+    Ok(Some(WirelessPairing { port, code }))
+}
+
+pub async fn connect_wireless(
+    adb: &Path,
+    endpoint: &WirelessEndpoint,
+    pairing: Option<&WirelessPairing>,
+) -> Result<String, String> {
+    let mut notes = Vec::new();
+    if let Some(pair) = pairing {
+        let target = format!("{}:{}", endpoint.host_for_adb(), pair.port);
+        let output = adb_output(adb, &["pair", &target, &pair.code]).await?;
+        if wireless_failed(&output) {
+            return Err(if output.is_empty() {
+                "pairing failed".into()
+            } else {
+                output
+            });
+        }
+        notes.push(if output.is_empty() {
+            format!("paired {target}")
+        } else {
+            output
+        });
+    }
+    let target = endpoint.display();
+    let output = adb_output(adb, &["connect", &target]).await?;
+    if wireless_failed(&output) {
+        return Err(if output.is_empty() {
+            format!("could not connect to {target}")
+        } else {
+            output
+        });
+    }
+    notes.push(if output.is_empty() {
+        format!("connected to {target}")
+    } else {
+        output
+    });
+    Ok(notes.join("\n"))
+}
+
+pub async fn disconnect_wireless(adb: &Path, endpoint: &WirelessEndpoint) -> Result<String, String> {
+    let target = endpoint.display();
+    let output = adb_output(adb, &["disconnect", &target]).await?;
+    if wireless_failed(&output) {
+        return Err(if output.is_empty() {
+            format!("could not disconnect {target}")
+        } else {
+            output
+        });
+    }
+    Ok(if output.is_empty() {
+        format!("disconnected {target}")
+    } else {
+        output
+    })
+}
+
+impl WirelessEndpoint {
+    fn host_for_adb(&self) -> String {
+        if self.host.contains(':') {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        }
+    }
+}
+
+fn split_host_port(address: &str) -> Result<(String, Option<u16>), String> {
+    if let Some(rest) = address.strip_prefix('[') {
+        let Some((host, tail)) = rest.split_once(']') else {
+            return Err("wrap an IPv6 address in brackets, like [fe80::1]:5555".into());
+        };
+        if host.is_empty() {
+            return Err("address is not valid".into());
+        }
+        if tail.is_empty() {
+            return Ok((host.to_string(), None));
+        }
+        let Some(port) = tail.strip_prefix(':') else {
+            return Err("address is not valid".into());
+        };
+        return Ok((host.to_string(), Some(parse_port(port)?)));
+    }
+    if address.matches(':').count() > 1 {
+        return Err("wrap an IPv6 address in brackets, like [fe80::1]:5555".into());
+    }
+    if let Some((host, port)) = address.rsplit_once(':') {
+        if host.is_empty() {
+            return Err("address is not valid".into());
+        }
+        return Ok((host.to_string(), Some(parse_port(port)?)));
+    }
+    Ok((address.to_string(), None))
+}
+
+fn parse_port(text: &str) -> Result<u16, String> {
+    let port: u16 = text
+        .parse()
+        .map_err(|_| "port must be a number".to_string())?;
+    if port == 0 {
+        return Err("port must be between 1 and 65535".into());
+    }
+    Ok(port)
+}
+
+fn validate_host(host: &str) -> Result<(), String> {
+    if host.is_empty() || host.len() > 253 {
+        return Err("address is not valid".into());
+    }
+    if host.contains(':') {
+        let (addr, zone) = host.split_once('%').unwrap_or((host, ""));
+        let ok = !addr.is_empty()
+            && addr.chars().all(|c| c.is_ascii_hexdigit() || c == ':')
+            && (zone.is_empty()
+                || zone
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'));
+        return if ok {
+            Ok(())
+        } else {
+            Err("address is not valid".into())
+        };
+    }
+    if host.split('.').count() == 4 && host.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        let octets: Vec<_> = host.split('.').collect();
+        let valid = octets.iter().all(|octet| {
+            !octet.is_empty() && octet.len() <= 3 && octet.parse::<u8>().is_ok()
+        });
+        return if valid {
+            Ok(())
+        } else {
+            Err("address is not valid".into())
+        };
+    }
+    let valid = host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err("address is not valid".into())
+    }
+}
+
+fn wireless_failed(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("failed")
+        || lower.contains("cannot")
+        || lower.contains("unable")
+        || lower.contains("error")
+}
+
+async fn adb_output(adb: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new(adb)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn adb: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if stdout.is_empty() { stderr } else { stdout })
+    } else {
+        let detail = [stderr, stdout]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        Err(if detail.is_empty() {
+            format!("adb exited {}", output.status)
+        } else {
+            detail
+        })
+    }
+}
+
+fn wireless_store_path() -> PathBuf {
+    if let Ok(path) = std::env::var("PHONECONTROL_WIRELESS") {
+        return PathBuf::from(path);
+    }
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("data")
+        .join("wireless-adb.json")
+}
+
+fn store_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+pub fn load_wireless() -> Vec<WirelessEndpoint> {
+    let _guard = store_lock();
+    let Ok(text) = std::fs::read_to_string(wireless_store_path()) else {
+        return Vec::new();
+    };
+    #[derive(serde::Deserialize)]
+    struct Saved {
+        host: String,
+        port: u16,
+    }
+    serde_json::from_str::<Vec<Saved>>(&text)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|item| item.port != 0 && !item.host.is_empty())
+        .map(|item| WirelessEndpoint {
+            host: item.host,
+            port: item.port,
+        })
+        .collect()
+}
+
+fn save_wireless(list: &[WirelessEndpoint]) -> Result<(), String> {
+    let path = wireless_store_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| format!("could not save wireless devices: {error}"))?;
+    }
+    #[derive(serde::Serialize)]
+    struct Saved<'a> {
+        host: &'a str,
+        port: u16,
+    }
+    let saved: Vec<Saved> = list
+        .iter()
+        .map(|item| Saved {
+            host: &item.host,
+            port: item.port,
+        })
+        .collect();
+    let text = serde_json::to_string_pretty(&saved).map_err(|error| error.to_string())?;
+    std::fs::write(path, text).map_err(|error| format!("could not save wireless devices: {error}"))
+}
+
+pub fn remember_wireless(endpoint: &WirelessEndpoint) -> Result<(), String> {
+    let _guard = store_lock();
+    // load_wireless also locks. Read the file directly while holding the lock.
+    let path = wireless_store_path();
+    let mut list = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Vec<serde_json::Value>>(&text).ok())
+        .map(|values| {
+            values
+                .into_iter()
+                .filter_map(|value| {
+                    let host = value.get("host")?.as_str()?.to_string();
+                    let port = value.get("port")?.as_u64()? as u16;
+                    if host.is_empty() || port == 0 {
+                        None
+                    } else {
+                        Some(WirelessEndpoint { host, port })
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !list
+        .iter()
+        .any(|item| item.host == endpoint.host && item.port == endpoint.port)
+    {
+        list.push(endpoint.clone());
+    }
+    save_wireless(&list)
+}
+
+pub fn forget_wireless(endpoint: &WirelessEndpoint) -> Result<(), String> {
+    let _guard = store_lock();
+    let path = wireless_store_path();
+    let list = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Vec<serde_json::Value>>(&text).ok())
+        .map(|values| {
+            values
+                .into_iter()
+                .filter_map(|value| {
+                    let host = value.get("host")?.as_str()?.to_string();
+                    let port = value.get("port")?.as_u64()? as u16;
+                    Some(WirelessEndpoint { host, port })
+                })
+                .filter(|item| item.host != endpoint.host || item.port != endpoint.port)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    save_wireless(&list)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,4 +726,96 @@ OFFLINE1               offline usb:1-3 transport_id:4
         assert_eq!(parsed.level, Some(78));
         assert_eq!(parsed.temperature_c, Some(34.2));
     }
+
+    #[test]
+    fn wireless_address_accepts_ip_host_and_ipv6() {
+        let plain = parse_wireless_endpoint("192.168.1.20", None).unwrap();
+        assert_eq!(plain.display(), "192.168.1.20:5555");
+        let embedded = parse_wireless_endpoint("192.168.1.20:37123", Some(5555)).unwrap();
+        assert_eq!(embedded.port, 37123);
+        assert_eq!(
+            parse_wireless_endpoint("phone.local", Some(5555))
+                .unwrap()
+                .display(),
+            "phone.local:5555"
+        );
+        assert_eq!(
+            parse_wireless_endpoint("[fe80::1]:5555", None)
+                .unwrap()
+                .display(),
+            "[fe80::1]:5555"
+        );
+        assert!(parse_wireless_endpoint("", None).is_err());
+        assert!(parse_wireless_endpoint("192.168.1.20;reboot", None).is_err());
+        assert!(parse_wireless_endpoint("256.1.1.1", None).is_err());
+        assert!(parse_wireless_endpoint("fe80::1", None).is_err());
+        assert!(parse_pairing(None, None).unwrap().is_none());
+        assert!(parse_pairing(Some(37123), Some("12 34 56")).unwrap().unwrap().code == "123456");
+        assert!(parse_pairing(None, Some("123456")).is_err());
+        assert!(parse_pairing(Some(37123), Some("abc")).is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn wireless_connect_pairs_then_connects() {
+        let dir = std::env::temp_dir().join(format!("pc-adb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("args.txt");
+        let script = dir.join("adb");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\ncase \"$1\" in\n  pair) echo \"Successfully paired to $2\" ;;\n  connect) echo \"connected to $2\" ;;\n  *) echo unexpected >&2; exit 1 ;;\nesac\n",
+                super::shell_quote(&log)
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let endpoint = parse_wireless_endpoint("192.168.1.20:5555", None).unwrap();
+        let pairing = parse_pairing(Some(37123), Some("123456")).unwrap().unwrap();
+        let message = connect_wireless(&script, &endpoint, Some(&pairing))
+            .await
+            .unwrap();
+        assert!(message.contains("Successfully paired"));
+        assert!(message.contains("connected to 192.168.1.20:5555"));
+        let args = std::fs::read_to_string(&log).unwrap();
+        assert!(args.contains("pair 192.168.1.20:37123 123456\n"), "{args}");
+        assert!(args.contains("connect 192.168.1.20:5555\n"), "{args}");
+
+        std::fs::write(
+            &script,
+            "#!/bin/sh\necho 'failed to connect to 192.168.1.20:5555'\nexit 0\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let err = connect_wireless(&script, &endpoint, None).await.unwrap_err();
+        assert!(err.contains("failed to connect"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wireless_list_remembers_and_forgets() {
+        let path = std::env::temp_dir().join(format!("pc-wireless-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let previous = std::env::var("PHONECONTROL_WIRELESS").ok();
+        std::env::set_var("PHONECONTROL_WIRELESS", &path);
+        let endpoint = parse_wireless_endpoint("10.0.0.8", None).unwrap();
+        remember_wireless(&endpoint).unwrap();
+        remember_wireless(&endpoint).unwrap();
+        assert_eq!(load_wireless(), vec![endpoint.clone()]);
+        forget_wireless(&endpoint).unwrap();
+        assert!(load_wireless().is_empty());
+        match previous {
+            Some(value) => std::env::set_var("PHONECONTROL_WIRELESS", value),
+            None => std::env::remove_var("PHONECONTROL_WIRELESS"),
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+fn shell_quote(path: &std::path::Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
 }

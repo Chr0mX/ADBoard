@@ -2,6 +2,7 @@
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DeviceCard } from "@/components/phone-control/device-card";
+import { WirelessAdb } from "@/components/phone-control/wireless-adb";
 import type { Device } from "@/lib/devices/types";
 import type { SelectionEvent } from "@/hooks/use-phone-control";
 import { useMemo } from "react";
@@ -58,6 +59,7 @@ export function DeviceGrid({
       <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
         {multiHost ? "Hosts" : "Devices"}
       </h2>
+      <WirelessAdb />
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 pr-2">
           {groups.map((group) => (

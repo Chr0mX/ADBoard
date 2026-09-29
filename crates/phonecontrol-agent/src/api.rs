@@ -33,6 +33,10 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/api/health", get(health))
         .route("/api/devices", get(list_devices))
+        .route(
+            "/api/devices/wireless",
+            get(list_wireless).post(add_wireless).delete(remove_wireless),
+        )
         .route("/api/hosts", get(list_hosts))
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/{serial}", get(get_session))
@@ -136,6 +140,67 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 
 async fn list_devices(State(state): State<AppState>) -> Json<Vec<phonecontrol_protocol::Device>> {
     Json(state.list_devices().await)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WirelessConnectBody {
+    address: String,
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    pairing_port: Option<u16>,
+    #[serde(default)]
+    pairing_code: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct WirelessResult {
+    endpoint: String,
+    message: String,
+}
+
+#[derive(serde::Serialize)]
+struct WirelessList {
+    endpoints: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct WirelessRemoveBody {
+    address: String,
+}
+
+async fn list_wireless(State(state): State<AppState>) -> Json<WirelessList> {
+    Json(WirelessList {
+        endpoints: state.list_wireless(),
+    })
+}
+
+async fn add_wireless(
+    State(state): State<AppState>,
+    Json(body): Json<WirelessConnectBody>,
+) -> Result<Json<WirelessResult>, (StatusCode, String)> {
+    state
+        .add_wireless(
+            &body.address,
+            body.port,
+            body.pairing_port,
+            body.pairing_code.as_deref(),
+        )
+        .await
+        .map(|(endpoint, message)| Json(WirelessResult { endpoint, message }))
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))
+}
+
+async fn remove_wireless(
+    State(state): State<AppState>,
+    Json(body): Json<WirelessRemoveBody>,
+) -> Result<Json<WirelessResult>, (StatusCode, String)> {
+    state
+        .remove_wireless(&body.address)
+        .await
+        .map(|(endpoint, message)| Json(WirelessResult { endpoint, message }))
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))
 }
 
 async fn list_hosts(State(state): State<AppState>) -> Json<Vec<phonecontrol_protocol::HostInfo>> {
