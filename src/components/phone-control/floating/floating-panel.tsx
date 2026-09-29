@@ -41,7 +41,7 @@ interface PanelPrefs {
   collapsed: boolean;
 }
 
-function readPrefs(key: string): Partial<PanelPrefs> | null {
+function readPrefs(key: string): PanelPrefs | null {
   try {
     const raw = sessionStorage.getItem(key);
     if (!raw) return null;
