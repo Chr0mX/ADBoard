@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { DeviceNavFloat } from "@/components/phone-control/floating/device-nav-float";
 import { ControlPanelFloat } from "@/components/phone-control/floating/control-panel-float";
 import { StatsWidget } from "@/components/phone-control/floating/stats-widget";
+import { repairEdgeDockedFloatPrefs } from "@/lib/ui/floating-prefs-repair";
 import type { DeskSection } from "@/components/phone-control/desk/desk-context";
 import type { Device, NavAction, SessionStatus, StreamStats } from "@/lib/devices/types";
 
@@ -37,7 +38,10 @@ export interface FloatingLayerProps {
 
 export function FloatingLayer(props: FloatingLayerProps) {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    repairEdgeDockedFloatPrefs();
+    setMounted(true);
+  }, []);
   if (!mounted) return null;
 
   return createPortal(

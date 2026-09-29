@@ -14,7 +14,7 @@ import {
   EDGE_PEEK,
   clampFloatingRect,
   defaultFloatPosition,
-  edgeDockRect,
+  edgePeekRect,
   readSafeInsets,
   resolveCollapsedEdge,
   type FloatEdge,
@@ -128,6 +128,13 @@ export function FloatingPanel({
   collapsedRef.current = collapsed;
   pinnedRef.current = pinned;
 
+  const persist = useCallback(
+    (next: PanelPrefs) => {
+      writePrefs(storageKey, next);
+    },
+    [storageKey],
+  );
+
   useLayoutEffect(() => {
     if (prefsHydrated.current) return;
     prefsHydrated.current = true;
@@ -135,14 +142,19 @@ export function FloatingPanel({
     if (prefs?.pinned) setPinned(true);
     if (prefs?.collapsed) setCollapsed(true);
     if (prefs?.edge) setEdge(prefs.edge);
-  }, [storageKey]);
-
-  const persist = useCallback(
-    (next: PanelPrefs) => {
-      writePrefs(storageKey, next);
-    },
-    [storageKey],
-  );
+    // Recover panels stuck off-screen from the old wide-panel edge math.
+    if (prefs?.edge && prefs.collapsed) {
+      const peek = edgePeekRect(prefs.edge, defaultSize.height, currentBounds(), prefs.y);
+      writePrefs(storageKey, {
+        x: peek.x,
+        y: peek.y,
+        pinned: prefs.pinned,
+        collapsed: true,
+        edge: prefs.edge,
+      });
+      setPos({ x: peek.x, y: peek.y });
+    }
+  }, [defaultSize.height, storageKey]);
 
   const clampToViewport = useCallback(
     (
@@ -188,7 +200,7 @@ export function FloatingPanel({
 
       let next: FloatingRect;
       if (isCollapsed && nextEdge) {
-        next = edgeDockRect(nextEdge, { width, height }, bounds, base.y);
+        next = edgePeekRect(nextEdge, height, bounds, base.y);
       } else {
         next = clampToViewport(base.x, base.y, width, height, Boolean(isCollapsed));
         nextEdge = null;
@@ -348,13 +360,12 @@ export function FloatingPanel({
   };
 
   const revealFromEdge = () => {
-    if (!edge || !pos) return;
     const node = panelRef.current;
     const width = node?.offsetWidth || defaultSize.width;
     const height = node?.offsetHeight || defaultSize.height;
     const bounds = currentBounds();
     const fully = clampFloatingRect(
-      { x: pos.x, y: pos.y, width, height },
+      { x: bounds.margin ?? 8, y: pos?.y ?? bounds.margin ?? 8, width, height },
       bounds,
     );
     setEdge(null);
@@ -366,6 +377,33 @@ export function FloatingPanel({
       collapsed: true,
       edge: null,
     });
+  };
+
+  const peekDragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+
+  const onPeekPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pinned) return;
+    event.preventDefault();
+    peekDragRef.current = { x: event.clientX, y: event.clientY, moved: false };
+  };
+
+  const onPeekPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = peekDragRef.current;
+    if (!start) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.hypot(dx, dy) > 10) start.moved = true;
+    const towardCenter =
+      (edge === "left" && dx > 18) || (edge === "right" && dx < -18);
+    if (start.moved && towardCenter) revealFromEdge();
+  };
+
+  const onPeekPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = peekDragRef.current;
+    peekDragRef.current = null;
+    if (!start || start.moved) return;
+    event.preventDefault();
+    revealFromEdge();
   };
 
   const vp = typeof window !== "undefined" ? viewportSize() : { offsetLeft: 0, offsetTop: 0 };
@@ -393,26 +431,24 @@ export function FloatingPanel({
         left: (pos?.x ?? 0) + (typeof window !== "undefined" ? vp.offsetLeft : 0),
         top: (pos?.y ?? 0) + (typeof window !== "undefined" ? vp.offsetTop : 0),
         visibility: pos ? "visible" : "hidden",
-        zIndex: 20,
-        // Keep the on-screen peek interactive while the rest is off-canvas.
-        maxWidth: edgeHidden ? undefined : undefined,
+        zIndex: edgeHidden ? 25 : 20,
+        width: edgeHidden ? EDGE_PEEK : undefined,
+        height: edgeHidden ? Math.max(EDGE_PEEK * 2, 56) : undefined,
+        overflow: edgeHidden ? "hidden" : undefined,
       }}
     >
       {edgeHidden ? (
         <button
           type="button"
           data-float-edge-peek
-          aria-label={`Show ${label}`}
-          className={cn(
-            "flex touch-auto items-center justify-center bg-[var(--pc-accent-fill)] text-[var(--pc-ink)] active:brightness-110",
-            "h-14 w-7 min-h-14 min-w-7",
-          )}
-          style={{ width: EDGE_PEEK }}
-          onClick={revealFromEdge}
-          onPointerDown={onHandlePointerDown}
-          onPointerMove={onHandlePointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
+          aria-label={`Show ${label}. Tap or swipe toward the screen.`}
+          className="flex h-full w-full touch-auto items-center justify-center bg-[var(--pc-accent-fill)] text-white active:brightness-110"
+          onPointerDown={onPeekPointerDown}
+          onPointerMove={onPeekPointerMove}
+          onPointerUp={onPeekPointerUp}
+          onPointerCancel={() => {
+            peekDragRef.current = null;
+          }}
         >
           <span
             className="font-mono text-[10px] font-semibold tracking-wide text-white"

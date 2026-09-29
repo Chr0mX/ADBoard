@@ -19,9 +19,35 @@ export interface FloatingBounds {
 }
 
 /** Visible strip when a collapsed float is docked like a Samsung edge panel. */
-export const EDGE_PEEK = 28;
+export const EDGE_PEEK = 36;
 
 export type FloatEdge = "left" | "right";
+
+/** Flush peek tab geometry on the left/right edge (always fully tappable). */
+export function edgePeekRect(
+  edge: FloatEdge,
+  height: number,
+  bounds: FloatingBounds,
+  y: number,
+): FloatingRect {
+  const margin = bounds.margin ?? 8;
+  const left = (bounds.insetLeft ?? 0) + margin;
+  const right = (bounds.insetRight ?? 0) + margin;
+  const top = (bounds.insetTop ?? 0) + margin;
+  const bottom = (bounds.insetBottom ?? 0) + margin;
+  const h = Math.max(EDGE_PEEK * 2, height);
+  const maxY = Math.max(top, bounds.viewportHeight - bottom - h);
+  const clampedY = Math.min(Math.max(top, y), maxY);
+  if (edge === "left") {
+    return { x: 0, y: clampedY, width: EDGE_PEEK, height: h };
+  }
+  return {
+    x: Math.max(0, bounds.viewportWidth - EDGE_PEEK),
+    y: clampedY,
+    width: EDGE_PEEK,
+    height: h,
+  };
+}
 
 export function clampFloatingRect(
   rect: FloatingRect,
@@ -87,43 +113,26 @@ export function resolveCollapsedEdge(
   const nearRight = rect.x + rect.width >= bounds.viewportWidth - right - threshold;
 
   if (nearLeft || distLeft <= threshold) {
-    return { x: leftDockX, y, edge: "left" };
+    const peek = edgePeekRect("left", rect.height, bounds, y);
+    return { x: peek.x, y: peek.y, edge: "left" };
   }
   if (nearRight || distRight <= threshold) {
-    return { x: rightDockX, y, edge: "right" };
+    const peek = edgePeekRect("right", rect.height, bounds, y);
+    return { x: peek.x, y: peek.y, edge: "right" };
   }
 
   const fully = clampFloatingRect(rect, bounds);
   return { x: fully.x, y: fully.y, edge: null };
 }
 
+/** @deprecated Prefer edgePeekRect — kept for callers that still pass full size. */
 export function edgeDockRect(
   edge: FloatEdge,
   size: { width: number; height: number },
   bounds: FloatingBounds,
   y: number,
 ): FloatingRect {
-  const margin = bounds.margin ?? 8;
-  const left = (bounds.insetLeft ?? 0) + margin;
-  const right = (bounds.insetRight ?? 0) + margin;
-  const top = (bounds.insetTop ?? 0) + margin;
-  const bottom = (bounds.insetBottom ?? 0) + margin;
-  const maxY = Math.max(top, bounds.viewportHeight - bottom - size.height);
-  const clampedY = Math.min(Math.max(top, y), maxY);
-  if (edge === "left") {
-    return {
-      x: left - Math.max(0, size.width - EDGE_PEEK),
-      y: clampedY,
-      width: size.width,
-      height: size.height,
-    };
-  }
-  return {
-    x: bounds.viewportWidth - right - EDGE_PEEK,
-    y: clampedY,
-    width: size.width,
-    height: size.height,
-  };
+  return edgePeekRect(edge, size.height, bounds, y);
 }
 
 export function readSafeInsets(style: CSSStyleDeclaration | null): {

@@ -61,7 +61,7 @@ describe("resolveCollapsedEdge", () => {
       { viewportWidth: 390, viewportHeight: 844, margin: 8 },
     );
     assert.equal(next.edge, "left");
-    assert.equal(next.x, 8 - (140 - EDGE_PEEK));
+    assert.equal(next.x, 0);
   });
 
   it("snaps near the right edge", () => {
@@ -70,7 +70,7 @@ describe("resolveCollapsedEdge", () => {
       { viewportWidth: 390, viewportHeight: 844, margin: 8 },
     );
     assert.equal(next.edge, "right");
-    assert.equal(next.x, 390 - 8 - EDGE_PEEK);
+    assert.equal(next.x, 390 - EDGE_PEEK);
   });
 
   it("keeps a centered collapsed chip on-screen", () => {
