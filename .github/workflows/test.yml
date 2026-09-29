@@ -24,6 +24,6 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Unit tests
-        run: node --experimental-strip-types --test src/lib/video/fit-box.test.ts src/lib/desk/gesture.test.ts
+        run: node --experimental-strip-types --test src/lib/video/fit-box.test.ts src/lib/desk/gesture.test.ts src/lib/ui/floating-clamp.test.ts
       - name: Typecheck
         run: npx tsc --noEmit

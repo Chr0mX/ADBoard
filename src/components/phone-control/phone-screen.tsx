@@ -36,9 +36,14 @@ import { fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
+import { FloatingLayer } from "@/components/phone-control/floating/floating-layer";
+import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
 import { updateLibrary, useLibrary } from "@/lib/desk/store";
 import type { GestureSample } from "@/lib/desk/store";
+
+/** Bottom reservation for the default mobile DeviceNav float. */
+const FLOAT_NAV_RESERVE = 72;
 
 interface PhoneScreenProps {
   device: Device | null;
@@ -48,6 +53,8 @@ interface PhoneScreenProps {
   fillWindow: boolean;
   /** Narrow viewport with fill on: the picture uses the window and controls overlay it. */
   compactFill?: boolean;
+  /** Mobile Control: docked chrome is replaced by FloatingLayer. */
+  floatingChrome?: boolean;
   onFillWindowChange: (on: boolean) => void;
   showDevicesButton?: boolean;
   onOpenDevices?: () => void;
@@ -78,6 +85,7 @@ export function PhoneScreen({
   mouseOn,
   fillWindow,
   compactFill = false,
+  floatingChrome = false,
   onFillWindowChange,
   showDevicesButton,
   onOpenDevices,
@@ -93,6 +101,7 @@ export function PhoneScreen({
   broadcastLabel,
   targetIds,
 }: PhoneScreenProps) {
+  const desk = useDeskOptional();
   const screenRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -156,21 +165,32 @@ export function PhoneScreen({
   // When it would cover the picture, the fit gives up one bar of height.
   const fillSideGutter = Math.max(0, Math.floor((stageSize.width - openFit.width) / 2));
   const fillBottomGap = Math.max(0, Math.floor((stageSize.height - openFit.height) / 2));
-  const fillSideChrome = compactFill && fillSideGutter >= 72;
-  const fillBottomChrome = compactFill && !fillSideChrome;
+  const fillSideChrome = !floatingChrome && compactFill && fillSideGutter >= 72;
+  const fillBottomChrome = !floatingChrome && compactFill && !fillSideChrome;
+  const floatReserve =
+    floatingChrome && fillBottomGap < FLOAT_NAV_RESERVE ? FLOAT_NAV_RESERVE : 0;
   const fitted =
-    fillBottomChrome && fillBottomGap < 52
+    floatReserve > 0
       ? fitVideoBox(
           stageSize.width,
-          Math.max(0, stageSize.height - 52),
+          Math.max(0, stageSize.height - floatReserve),
           videoWidth,
           videoHeight,
         )
-      : openFit;
+      : fillBottomChrome && fillBottomGap < 52
+        ? fitVideoBox(
+            stageSize.width,
+            Math.max(0, stageSize.height - 52),
+            videoWidth,
+            videoHeight,
+          )
+        : openFit;
   const orientation = videoWidth >= videoHeight ? "landscape" : "portrait";
   // Non-fill keeps a rail on each side of the picture: volume on the left,
   // power on the right. Navigation stays in the row under the stream.
-  const sideControls = !fillWindow;
+  // Mobile floating chrome owns device nav instead of the side rails.
+  const sideControls = !fillWindow && !floatingChrome;
+  const showDockedChrome = !floatingChrome;
   const railClass =
     "h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]";
   // Mobile bottom rows share one square. The column is flexible so nine
@@ -511,6 +531,7 @@ export function PhoneScreen({
               "relative shrink-0 touch-none overflow-hidden select-none",
               recording && "ring-2 ring-[var(--pc-warn)]",
               fillBottomChrome && fillBottomGap < 52 && "self-start",
+              floatReserve > 0 && "self-start",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
@@ -657,7 +678,7 @@ export function PhoneScreen({
           )}
           </div>
 
-          {!compactFill && (
+          {!compactFill && showDockedChrome && (
           <div data-nav-row className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
             {(sideControls
               ? ([
@@ -748,7 +769,7 @@ export function PhoneScreen({
         </div>
       </div>
 
-      {fillSideChrome && (
+      {showDockedChrome && fillSideChrome && (
         <>
           <div
             data-fill-chrome
@@ -816,7 +837,7 @@ export function PhoneScreen({
           </div>
         </>
       )}
-      {fillBottomChrome && (
+      {showDockedChrome && fillBottomChrome && (
         <div
           data-fill-chrome
           data-fill-layout="bottom"
@@ -857,9 +878,9 @@ export function PhoneScreen({
         </div>
       )}
 
-      {!compactFill && <AppShortcuts />}
+      {showDockedChrome && !compactFill && <AppShortcuts />}
 
-      {!fillWindow && gestures.length > 1 && (
+      {showDockedChrome && !fillWindow && gestures.length > 1 && (
         <select
           aria-label="Recorded touch"
           data-gesture-pick
@@ -874,7 +895,7 @@ export function PhoneScreen({
           ))}
         </select>
       )}
-      {!fillWindow && (
+      {showDockedChrome && !fillWindow && (
         <div
           data-tool-row
           className="grid w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 lg:flex lg:flex-wrap lg:justify-center lg:gap-1.5"
@@ -967,11 +988,40 @@ export function PhoneScreen({
           )}
         </div>
       )}
-      {!compactFill && (
+      {showDockedChrome && !compactFill && (
         <ScrcpyOptions
           targetIds={targetIds}
           serial={device?.serial ?? null}
           disabled={offline}
+        />
+      )}
+      {floatingChrome && (
+        <FloatingLayer
+          device={device}
+          session={session}
+          stats={stats}
+          offline={offline}
+          fillWindow={fillWindow}
+          keyboardOn={keyboardOn}
+          mouseOn={mouseOn}
+          recording={recording}
+          replaying={replaying}
+          refreshing={refreshing}
+          installing={installing}
+          onNav={onNav}
+          onFillWindowChange={onFillWindowChange}
+          onKeyboardChange={onKeyboardChange}
+          onMouseChange={onMouseChange}
+          onRecordToggle={() => {
+            if (recording) stopRecording();
+            else startRecording();
+          }}
+          onReplay={() => void replayRecording()}
+          onRefresh={() => void refreshVideo()}
+          onInstallFile={(file) => void pickApk(file)}
+          onOpenDevices={() => onOpenDevices?.()}
+          onOpenScreens={() => onOpenScreens?.()}
+          onOpenDesk={(section) => desk?.open(section)}
         />
       )}
       {installNote && (

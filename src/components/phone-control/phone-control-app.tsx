@@ -65,6 +65,18 @@ export function PhoneControlApp() {
   const [devicesOpen, setDevicesOpen] = useState(false);
   const [screensOpen, setScreensOpen] = useState(false);
 
+  // Prefer fill on first visit for narrow viewports only; leave desktop preference alone.
+  useEffect(() => {
+    if (wide) return;
+    try {
+      if (localStorage.getItem("phonecontrol-fill-window") == null) {
+        setFillWindow(true);
+      }
+    } catch {
+      // private mode
+    }
+  }, [wide, setFillWindow]);
+
   const setFill = (on: boolean) => {
     setFillWindow(on);
     if (on) setDevicesOpen(false);
@@ -120,11 +132,12 @@ export function PhoneControlApp() {
     );
   };
 
-  const showDevices = !fillWindow && (wide || devicesOpen);
+  const showDevices = wide ? !fillWindow : devicesOpen;
   const dockedScreens = wide && !fillWindow;
   const screenSheet = screensOpen && !dockedScreens;
-
-  const showHeader = !fillWindow || section !== "control";
+  const mobileControl = !wide && section === "control";
+  // Mobile Control collapses the desk header into the floating Desk menu.
+  const showHeader = section !== "control" || (wide && !fillWindow);
 
   return (
     <DeskProvider
@@ -140,7 +153,7 @@ export function PhoneControlApp() {
         selectDevice,
       }}
     >
-    <div className="pc-shell fixed inset-0 flex flex-col overflow-hidden">
+    <div className="pc-shell fixed inset-0 flex h-dvh min-h-dvh flex-col overflow-hidden">
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
         <ControlHeader
@@ -203,7 +216,8 @@ export function PhoneControlApp() {
                 keyboardOn={keyboardOn}
                 mouseOn={mouseOn}
                 fillWindow={fillWindow}
-                compactFill={fillWindow && !wide}
+                compactFill={fillWindow && !wide && !mobileControl}
+                floatingChrome={mobileControl}
                 onFillWindowChange={setFill}
                 showDevicesButton={!fillWindow && !wide}
                 onOpenDevices={() => {
@@ -310,7 +324,7 @@ export function PhoneControlApp() {
         )}
       </main>
 
-      {section === "control" && (
+      {section === "control" && wide && (
         <StatusBar device={activeDevice} session={activeSession} stats={streamStats} />
       )}
     </div>
