@@ -10,6 +10,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Cursor Cloud specific instructions
 
+### Git workflow
+
+- Work **directly on `main`**. Do not create `cursor/*` feature branches for new requests unless the user explicitly asks.
+- Commit and push to `main`. Do not open extra branches or leave stale agent branches around.
+
 Phone Control is two processes. This VM has no USB phones, so use the mock fleet.
 
 - Agent (port 3848): `PHONECONTROL_FORCE_MOCK=1 PHONECONTROL_VIDEO_SOURCE=testpattern PHONECONTROL_BIND=0.0.0.0 cargo run -p phonecontrol-agent`. `ffmpeg` is on `PATH` and supplies the live H264 test pattern.
