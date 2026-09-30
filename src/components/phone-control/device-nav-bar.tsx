@@ -13,7 +13,7 @@ import type { NavAction } from "@/lib/devices/types";
 import { cn } from "@/lib/utils";
 
 const MOBILE_HIT =
-  "inline-flex h-12 min-h-12 w-full max-w-14 flex-1 items-center justify-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
+  "inline-flex h-11 min-h-11 w-full max-w-14 flex-1 items-center justify-center rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
 
 const NAV_ACTIONS = [
   ["back", "Back", ChevronLeft],
@@ -46,7 +46,7 @@ export function DeviceNavBar({
       data-device-nav-bar
       data-device-nav-variant={variant}
       className={cn(
-        "flex w-full shrink-0 items-center justify-between gap-1 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/90 px-1.5 py-1",
+        "flex w-full shrink-0 items-center justify-between gap-0.5 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-1 py-0.5",
         safeBottom && "pb-[max(0.25rem,env(safe-area-inset-bottom))]",
         className,
       )}

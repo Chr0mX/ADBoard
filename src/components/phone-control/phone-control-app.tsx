@@ -158,7 +158,10 @@ export function PhoneControlApp() {
         selectDevice,
       }}
     >
-    <div className="pc-shell fixed inset-0 flex h-dvh min-h-dvh flex-col overflow-hidden">
+    <div
+      className="pc-shell fixed inset-0 flex flex-col overflow-hidden"
+      data-ui-build="pc-shell-v9"
+    >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
         <ControlHeader

@@ -31,6 +31,28 @@ export function fitVideoBox(
   };
 }
 
+/**
+ * Smallest rectangle of `videoWidth`×`videoHeight` that fully covers the stage.
+ * Overflow is clipped by the stage; used on mobile to kill letterbox dead space.
+ */
+export function coverVideoBox(
+  containerWidth: number,
+  containerHeight: number,
+  videoWidth: number,
+  videoHeight: number,
+): FittedBox {
+  if (
+    !(containerWidth > 0 && containerHeight > 0 && videoWidth > 0 && videoHeight > 0)
+  ) {
+    return { width: 0, height: 0 };
+  }
+  const scale = Math.max(containerWidth / videoWidth, containerHeight / videoHeight);
+  return {
+    width: Math.max(1, Math.floor(videoWidth * scale)),
+    height: Math.max(1, Math.floor(videoHeight * scale)),
+  };
+}
+
 function sameOrientation(prev: TrackedVideoSize, width: number, height: number) {
   return prev.width >= prev.height === width >= height;
 }

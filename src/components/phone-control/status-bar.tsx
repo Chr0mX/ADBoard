@@ -30,11 +30,11 @@ export function StatusBar({
     return (
       <footer
         className={cn(
-          "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 py-2 font-mono text-[11px] leading-4 text-[var(--pc-muted)]",
-          safeBottom && "pb-[max(0.5rem,env(safe-area-inset-bottom))]",
-          className,
-        )}
-      >
+        "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 py-1 font-mono text-[11px] leading-4 text-[var(--pc-muted)]",
+        safeBottom && "pb-[max(0.25rem,env(safe-area-inset-bottom))]",
+        className,
+      )}
+    >
         No active device
       </footer>
     );
@@ -59,8 +59,8 @@ export function StatusBar({
     <footer
       data-stream-stats
       className={cn(
-        "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/90 px-3 py-1.5 backdrop-blur-sm",
-        safeBottom && "pb-[max(0.5rem,env(safe-area-inset-bottom))]",
+        "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 py-1",
+        safeBottom && "pb-[max(0.25rem,env(safe-area-inset-bottom))]",
         className,
       )}
     >

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fitVideoBox, nextVideoSize, type TrackedVideoSize } from "./fit-box.ts";
+import { coverVideoBox, fitVideoBox, nextVideoSize, type TrackedVideoSize } from "./fit-box.ts";
 
 test("portrait frame fits a wide stage without stretching", () => {
   const box = fitVideoBox(1600, 900, 1080, 2400);
@@ -22,6 +22,13 @@ test("a tall stage letterboxes a landscape frame on the sides", () => {
   assert.equal(box.width, 400);
   assert.ok(box.height < 800);
   assert.ok(Math.abs(box.width / box.height - 1920 / 1080) < 0.02);
+});
+
+test("cover fills a tall stage for a shorter 16:9 portrait frame", () => {
+  const box = coverVideoBox(390, 700, 720, 1280);
+  assert.ok(box.width >= 390);
+  assert.ok(box.height >= 700);
+  assert.ok(Math.abs(box.width / box.height - 720 / 1280) < 0.02);
 });
 
 test("different phone aspects each keep their own ratio", () => {

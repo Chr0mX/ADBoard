@@ -32,7 +32,7 @@ import type {
   TapBroadcast,
 } from "@/lib/devices/types";
 import { useDeviceVideo } from "@/hooks/use-device-video";
-import { fitVideoBox } from "@/lib/video/fit-box";
+import { coverVideoBox, fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
@@ -163,7 +163,9 @@ export function PhoneScreen({
   // before the first frame; device wm size is not the stream aspect.
   const videoWidth = frameSize?.width || (configured ? 9 : device?.resolution.width || 9);
   const videoHeight = frameSize?.height || (configured ? 16 : device?.resolution.height || 16);
-  const openFit = fitVideoBox(stageSize.width, stageSize.height, videoWidth, videoHeight);
+  const openFit = floatingChrome
+    ? coverVideoBox(stageSize.width, stageSize.height, videoWidth, videoHeight)
+    : fitVideoBox(stageSize.width, stageSize.height, videoWidth, videoHeight);
   // Mobile fill keeps one short control bar. When the picture already leaves a
   // gap (letterbox, or side space in landscape), the bar sits in that gap.
   // When it would cover the picture, the fit gives up one bar of height.
@@ -480,8 +482,8 @@ export function PhoneScreen({
             ref={stageRef}
             data-screen-stage
             className={cn(
-              "flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden",
-              floatingChrome && "bg-[var(--pc-frame)]",
+              "relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden",
+              floatingChrome && "bg-black",
               sideControls && "gap-2",
             )}
           >
@@ -527,7 +529,8 @@ export function PhoneScreen({
             onPointerUp={(e) => finishPointer(e, "up")}
             onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
-              "relative shrink-0 touch-none overflow-hidden select-none",
+              "relative touch-none overflow-hidden select-none",
+              floatingChrome ? "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" : "shrink-0",
               recording && "ring-2 ring-[var(--pc-warn)]",
               fillBottomChrome && fillBottomGap < 52 && "self-start",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
@@ -552,7 +555,8 @@ export function PhoneScreen({
               <canvas
                 ref={canvasRef}
                 className={cn(
-                  "absolute inset-0 z-[5] h-full w-full object-contain",
+                  "absolute inset-0 z-[5] h-full w-full",
+                  floatingChrome ? "object-cover" : "object-contain",
                   showingVideo ? "opacity-100" : "opacity-0",
                 )}
               />

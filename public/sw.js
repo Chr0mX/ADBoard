@@ -1,5 +1,5 @@
 /* Phone Control app-shell service worker. Version bump to refresh caches. */
-const CACHE_VERSION = "pc-shell-v8";
+const CACHE_VERSION = "pc-shell-v9";
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -26,7 +26,17 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))),
-    ).then(() => self.clients.claim()),
+    ).then(() => self.clients.claim()).then(() =>
+      self.clients.matchAll({ type: "window" }).then((clients) => {
+        for (const client of clients) {
+          if ("navigate" in client) {
+            void client.navigate(client.url);
+          } else {
+            client.postMessage({ type: "pc-sw-updated", version: CACHE_VERSION });
+          }
+        }
+      }),
+    ),
   );
 });
 
