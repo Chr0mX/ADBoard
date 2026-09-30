@@ -21,9 +21,10 @@ interface TouchScreenGridProps {
 
 function columnCount(online: number, layout: "mobile" | "desktop") {
   if (layout === "desktop") {
+    // Prefer fewer, taller tiles so portrait frames fill without side bars.
     if (online <= 1) return 1;
-    if (online <= 2) return 2;
-    if (online <= 6) return 3;
+    if (online <= 4) return 2;
+    if (online <= 9) return 3;
     return 4;
   }
   if (online <= 1) return 1;
@@ -49,19 +50,11 @@ export function TouchScreenGrid({
     <section
       data-touch-screen-grid
       data-touch-screen-layout={layout}
-      className={cn(
-        "relative flex min-h-0 flex-1 flex-col overflow-hidden",
-        desktop ? "gap-2 p-2" : "gap-2 p-2",
-      )}
+      className="relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2"
     >
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h2
-            className={cn(
-              "shrink-0 font-semibold text-[var(--pc-ink)]",
-              desktop ? "font-display text-sm" : "font-display text-sm",
-            )}
-          >
+          <h2 className="shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)]">
             Grid
           </h2>
           <p className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
@@ -85,7 +78,6 @@ export function TouchScreenGrid({
       <div
         className={cn(
           "min-h-0 flex-1",
-          // Fit tiles in the stage; only scroll when there are multiple rows.
           desktop && rows <= 1 ? "overflow-hidden" : "overflow-y-auto",
         )}
       >
@@ -95,13 +87,23 @@ export function TouchScreenGrid({
           </p>
         ) : (
           <div
-            className={cn("grid h-full min-h-0", desktop ? "gap-2" : "gap-2")}
-            style={{
-              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-              gridTemplateRows: desktop
-                ? `repeat(${rows}, minmax(0, 1fr))`
-                : undefined,
-            }}
+            data-touch-screen-cells={cols}
+            className={cn(
+              "grid h-full min-h-0 gap-2",
+              desktop && "justify-center justify-items-center",
+            )}
+            style={
+              desktop
+                ? {
+                    // Hug each phone's aspect — empty gap between tiles instead
+                    // of letterbox bars inside the tile.
+                    gridTemplateColumns: `repeat(${cols}, max-content)`,
+                    gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+                  }
+                : {
+                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                  }
+            }
           >
             {online.map((device) => (
               <TouchScreenTile
@@ -177,7 +179,7 @@ function TouchScreenTile({
       data-touch-screen-tile={device.id}
       className={cn(
         "flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[var(--pc-panel)]",
-        desktop && "h-full",
+        desktop ? "h-full w-auto" : "min-h-0",
         isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
       )}
     >
@@ -197,8 +199,8 @@ function TouchScreenTile({
       </div>
       <div
         className={cn(
-          "relative min-h-0 w-full flex-1 overflow-hidden bg-[#0a0d10]",
-          desktop && "flex items-center justify-center",
+          "relative min-h-0 w-full flex-1 overflow-hidden",
+          desktop ? "bg-[var(--pc-panel)]" : "bg-[#0a0d10]",
         )}
       >
         <div
@@ -209,19 +211,15 @@ function TouchScreenTile({
           data-video-frame={`${width}x${height}`}
           className={cn(
             "relative touch-none select-none overflow-hidden bg-[#101418]",
-            desktop ? "max-h-full max-w-full" : "min-h-0 w-full",
+            desktop ? "h-full w-auto" : "min-h-0 w-full",
             mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
           )}
-          style={
-            desktop
-              ? {
-                  aspectRatio: `${width} / ${height}`,
-                  height: "100%",
-                  width: "auto",
-                  maxWidth: "100%",
-                }
-              : { aspectRatio: `${width} / ${height}`, width: "100%" }
-          }
+          style={{
+            aspectRatio: `${width} / ${height}`,
+            ...(desktop
+              ? { height: "100%", width: "auto", maxHeight: "100%" }
+              : { width: "100%" }),
+          }}
           onPointerDown={(event) => {
             if (offline || !mouseOn) return;
             event.currentTarget.setPointerCapture(event.pointerId);
