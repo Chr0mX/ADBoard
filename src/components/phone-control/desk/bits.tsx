@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Device, DeviceOpResult } from "@/lib/devices/types";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +41,7 @@ export function TargetChecks({
       {devices.map((device) => (
         <label
           key={device.id}
-          className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm text-[var(--pc-ink)]"
+          className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-[var(--pc-ink)]"
         >
           <input
             type="checkbox"
@@ -142,18 +142,26 @@ export function ConfirmDialog({
   onConfirm: () => void;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
   useEffect(() => {
     cancelRef.current?.focus();
   }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="desk-confirm-title"
+        aria-labelledby={titleId}
         className="w-full max-w-sm rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-4 shadow-lg"
       >
-        <h3 id="desk-confirm-title" className="font-display text-base font-semibold text-[var(--pc-ink)]">
+        <h3 id={titleId} className="font-display text-base font-semibold text-[var(--pc-ink)]">
           {title}
         </h3>
         <div className="mt-2 text-sm text-[var(--pc-muted)]">{body}</div>
@@ -161,7 +169,7 @@ export function ConfirmDialog({
           <button
             ref={cancelRef}
             type="button"
-            className="h-11 rounded-lg border border-[var(--pc-line)] px-3 text-sm"
+            className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] px-3 text-sm"
             onClick={onCancel}
           >
             Cancel
@@ -169,7 +177,7 @@ export function ConfirmDialog({
           <button
             type="button"
             disabled={busy}
-            className="h-11 rounded-lg bg-[var(--pc-accent-fill)] px-3 text-sm font-medium text-white disabled:opacity-60"
+            className="h-11 min-h-11 rounded-xl bg-[var(--pc-accent-fill)] px-3 text-sm font-medium text-white disabled:opacity-60"
             onClick={onConfirm}
           >
             {confirmLabel}
@@ -198,7 +206,7 @@ export function TextField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-xs text-[var(--pc-ink)]"
+        className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-xs text-[var(--pc-ink)]"
       />
     </label>
   );
@@ -220,7 +228,7 @@ export function PrimaryButton({
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className="h-11 rounded-lg bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold tracking-wide text-white disabled:opacity-60"
+      className="h-11 min-h-11 rounded-xl bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold tracking-wide text-white disabled:opacity-60"
     >
       {children}
     </button>

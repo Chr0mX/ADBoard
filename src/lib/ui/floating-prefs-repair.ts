@@ -23,7 +23,7 @@ export function repairEdgeDockedFloatPrefs(defaultChipHeight = 56): number {
       if (parsed.edge !== "left" && parsed.edge !== "right") continue;
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const peekW = 36;
+      const peekW = 44;
       const peekH = Math.max(72, defaultChipHeight);
       const y = typeof parsed.y === "number" ? parsed.y : 12;
       const maxY = Math.max(8, h - 8 - peekH);

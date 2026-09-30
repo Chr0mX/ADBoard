@@ -19,7 +19,7 @@ export interface FloatingBounds {
 }
 
 /** Visible strip when a collapsed float is docked like a Samsung edge panel. */
-export const EDGE_PEEK = 36;
+export const EDGE_PEEK = 44;
 
 export type FloatEdge = "left" | "right";
 

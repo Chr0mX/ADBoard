@@ -2,18 +2,13 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  ChevronLeft,
   Circle,
-  House,
   Keyboard,
   LayoutGrid,
   Maximize2,
   Minimize2,
-  Minus,
   MousePointer2,
   Play,
-  Plus,
-  Power,
   RefreshCw,
   Smartphone,
   Square,
@@ -21,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
+import { PC_HIT_LABELED, PC_HIT_TOOL_RESPONSIVE } from "@/lib/ui/control-chrome";
 import { normalizePoint } from "@/lib/devices/coords";
 import type {
   Device,
@@ -53,8 +49,6 @@ interface PhoneScreenProps {
   keyboardOn: boolean;
   mouseOn: boolean;
   fillWindow: boolean;
-  /** Narrow viewport with fill on: the picture uses the window and controls overlay it. */
-  compactFill?: boolean;
   /** Mobile Control: docked chrome is replaced by FloatingLayer. */
   floatingChrome?: boolean;
   /** Mobile multi-device touch grid (replaces single stage). */
@@ -93,7 +87,6 @@ export function PhoneScreen({
   keyboardOn,
   mouseOn,
   fillWindow,
-  compactFill = false,
   floatingChrome = false,
   gridView = false,
   statsMode = "float",
@@ -179,33 +172,16 @@ export function PhoneScreen({
   // Mobile fill keeps one short control bar. When the picture already leaves a
   // gap (letterbox, or side space in landscape), the bar sits in that gap.
   // When it would cover the picture, the fit gives up one bar of height.
-  const fillSideGutter = Math.max(0, Math.floor((stageSize.width - openFit.width) / 2));
-  const fillBottomGap = Math.max(0, Math.floor((stageSize.height - openFit.height) / 2));
-  const fillSideChrome = !floatingChrome && compactFill && fillSideGutter >= 72;
-  const fillBottomChrome = !floatingChrome && compactFill && !fillSideChrome;
-  const fitted =
-    fillBottomChrome && fillBottomGap < 52
-        ? fitVideoBox(
-            stageSize.width,
-            Math.max(0, stageSize.height - 52),
-            videoWidth,
-            videoHeight,
-          )
-        : openFit;
+  const fitted = openFit;
   const orientation = videoWidth >= videoHeight ? "landscape" : "portrait";
   // Non-fill keeps a rail on each side of the picture: volume on the left,
   // power on the right. Navigation stays in the row under the stream.
   // Mobile floating chrome owns device nav instead of the side rails.
   const sideControls = !fillWindow && !floatingChrome;
   const showDockedChrome = !floatingChrome;
-  const railClass =
-    "h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs tracking-wide text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]";
-  // Mobile bottom rows share one square. The column is flexible so nine
-  // controls stay inside a phone width; lg: restores the labeled desktop buttons.
-  const toolControlClass =
-    "aspect-square h-auto w-full min-w-0 max-w-9 justify-self-center gap-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 p-0 text-[var(--pc-ink)] lg:aspect-auto lg:h-11 lg:w-auto lg:max-w-none lg:shrink-0 lg:gap-1.5 lg:px-3";
-  const fillControlClass =
-    "aspect-square h-auto w-full min-w-0 max-w-9 justify-self-center rounded-full border-transparent bg-transparent p-0 text-[var(--pc-ink)]";
+  const railClass = PC_HIT_LABELED;
+  // Responsive tool row: square on narrow residual layouts; labeled on lg+.
+  const toolControlClass = PC_HIT_TOOL_RESPONSIVE;
 
   useLayoutEffect(() => {
     const node = stageRef.current;
@@ -404,30 +380,29 @@ export function PhoneScreen({
     emitPointer(phase, e.clientX, e.clientY, drag.tool);
   };
 
-  const gestureButtons = (variant: "fill" | "side" | "nav" | "tool") => {
+  const gestureButtons = (variant: "side" | "nav" | "tool") => {
     const recordClass =
-      variant === "fill"
+      variant === "side"
         ? cn(
-            fillControlClass,
-            "aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
+            PC_HIT_LABELED,
+            "w-11 min-w-11 px-0 aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
           )
-        : variant === "side"
-          ? "h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]"
-          : variant === "nav"
-            ? "h-11 w-auto shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]"
-            : cn(
-                toolControlClass,
-                "aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
-              );
+        : variant === "nav"
+          ? cn(
+              PC_HIT_LABELED,
+              "aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
+            )
+          : cn(
+              toolControlClass,
+              "aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
+            );
     const replayClass =
-      variant === "fill"
-        ? fillControlClass
-        : variant === "side"
-          ? "h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)]"
-          : variant === "nav"
-            ? "h-11 w-auto shrink-0 gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)]"
-            : toolControlClass;
-    const iconClass = variant === "fill" || variant === "side" ? "size-5" : "size-4";
+      variant === "side"
+        ? cn(PC_HIT_LABELED, "w-11 min-w-11 px-0")
+        : variant === "nav"
+          ? PC_HIT_LABELED
+          : toolControlClass;
+    const iconClass = variant === "side" ? "size-5" : "size-4";
     const showLabel = variant === "nav" || variant === "tool";
     return (
       <>
@@ -477,7 +452,7 @@ export function PhoneScreen({
       data-device-name={device?.name ?? ""}
       className={cn(
         "relative flex min-h-0 flex-1 flex-col",
-        floatingChrome || compactFill ? "gap-0" : "gap-2",
+        floatingChrome ? "gap-0" : "gap-2",
       )}
     >
       {!fillWindow && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
@@ -551,7 +526,6 @@ export function PhoneScreen({
             className={cn(
               "relative shrink-0 touch-none overflow-hidden select-none",
               recording && "ring-2 ring-[var(--pc-warn)]",
-              fillBottomChrome && fillBottomGap < 52 && "self-start",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
             )}
             style={{
@@ -698,7 +672,7 @@ export function PhoneScreen({
           )}
           </div>
 
-          {!compactFill && showDockedChrome && (
+          {showDockedChrome && (
           <div data-nav-row className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
             {(sideControls
               ? ([
@@ -743,7 +717,7 @@ export function PhoneScreen({
                 onClick={() => void refreshVideo()}
                 aria-label="Refresh video"
                 data-video-refresh
-                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs text-[var(--pc-ink)]"
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
               >
                 <RefreshCw className="size-4" />
               </Button>
@@ -753,7 +727,7 @@ export function PhoneScreen({
                 pressed={keyboardOn}
                 onPressedChange={onKeyboardChange}
                 aria-label="Toggle keyboard injection"
-                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
               >
                 <Keyboard className="size-4" />
               </Toggle>
@@ -767,7 +741,7 @@ export function PhoneScreen({
                 variant="ghost"
                 onClick={onOpenScreens}
                 aria-label="Screens"
-                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)]"
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
               >
                 Screens
               </Button>
@@ -778,7 +752,7 @@ export function PhoneScreen({
                 onPressedChange={() => onToggleGrid()}
                 aria-label={gridView ? "Exit grid view" : "Grid view"}
                 data-grid-view={gridView ? "1" : "0"}
-                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
               >
                 <LayoutGrid className="size-4" />
               </Toggle>
@@ -790,7 +764,7 @@ export function PhoneScreen({
                 variant="ghost"
                 onClick={() => onFillWindowChange(false)}
                 aria-label="Exit fill"
-                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)]"
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
               >
                 <Minimize2 className="size-4" />
               </Button>
@@ -824,127 +798,7 @@ export function PhoneScreen({
         )}
       </div>
 
-      {showDockedChrome && fillSideChrome && !gridView && (
-        <>
-          <div
-            data-fill-chrome
-            data-fill-layout="side"
-            className="pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center"
-            style={{ width: fillSideGutter }}
-          >
-            <div className="pointer-events-auto ml-auto flex flex-col gap-2 pr-2">
-              {(
-                [
-                  ["volume_up", "Volume up", Plus],
-                  ["volume_down", "Volume down", Minus],
-                ] as const
-              ).map(([action, label, Icon]) => (
-                <Button
-                  key={action}
-                  type="button"
-                  variant="ghost"
-                  disabled={offline}
-                  onClick={() => onNav(action)}
-                  aria-label={label}
-                  className="h-11 w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)]"
-                >
-                  <Icon className="size-5" />
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div
-            className="pointer-events-none absolute inset-y-0 right-0 z-20 flex items-center"
-            style={{ width: fillSideGutter }}
-          >
-            <div className="pointer-events-auto mr-auto flex max-h-full flex-col gap-2 overflow-y-auto pl-2">
-              {(
-                [
-                  ["back", "Back", ChevronLeft],
-                  ["home", "Home", House],
-                  ["recent", "Recent", Square],
-                  ["power", "Power", Power],
-                ] as const
-              ).map(([action, label, Icon]) => (
-                <Button
-                  key={action}
-                  type="button"
-                  variant="ghost"
-                  disabled={offline}
-                  onClick={() => onNav(action)}
-                  aria-label={label}
-                  className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)]"
-                >
-                  <Icon className="size-5" />
-                </Button>
-              ))}
-              {gestureButtons("side")}
-              {onToggleGrid && (
-                <Toggle
-                  pressed={gridView}
-                  onPressedChange={() => onToggleGrid()}
-                  aria-label={gridView ? "Exit grid view" : "Grid view"}
-                  data-grid-view={gridView ? "1" : "0"}
-                  className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
-                >
-                  <LayoutGrid className="size-5" />
-                </Toggle>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => onFillWindowChange(false)}
-                aria-label="Exit fill"
-                className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)]"
-              >
-                <Minimize2 className="size-5" />
-              </Button>
-            </div>
-          </div>
-        </>
-      )}
-      {showDockedChrome && fillBottomChrome && !gridView && (
-        <div
-          data-fill-chrome
-          data-fill-layout="bottom"
-          className="absolute inset-x-0 bottom-0 z-20 grid h-[52px] w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 bg-[var(--pc-paper)]/90 px-1"
-        >
-          {(
-            [
-              ["back", "Back", ChevronLeft],
-              ["home", "Home", House],
-              ["recent", "Recent", Square],
-              ["volume_down", "Volume down", Minus],
-              ["volume_up", "Volume up", Plus],
-              ["power", "Power", Power],
-            ] as const
-          ).map(([action, label, Icon]) => (
-            <Button
-              key={action}
-              type="button"
-              variant="ghost"
-              disabled={offline}
-              onClick={() => onNav(action)}
-              aria-label={label}
-              className={fillControlClass}
-            >
-              <Icon className="size-5" />
-            </Button>
-          ))}
-          {gestureButtons("fill")}
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => onFillWindowChange(false)}
-            aria-label="Exit fill"
-            className={fillControlClass}
-          >
-            <Minimize2 className="size-5" />
-          </Button>
-        </div>
-      )}
-
-      {showDockedChrome && !compactFill && !gridView && <AppShortcuts />}
+      {showDockedChrome && !gridView && <AppShortcuts />}
 
       {showDockedChrome && !fillWindow && !gridView && gestures.length > 1 && (
         <select
@@ -1071,7 +925,7 @@ export function PhoneScreen({
           )}
         </div>
       )}
-      {showDockedChrome && !compactFill && !gridView && (
+      {showDockedChrome && !gridView && (
         <ScrcpyOptions
           targetIds={targetIds}
           serial={device?.serial ?? null}
@@ -1146,7 +1000,7 @@ function ApkFileButton({
   return (
     <label
       className={cn(
-        "inline-flex h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 font-mono text-xs text-[var(--pc-ink)]",
+        "inline-flex h-11 min-w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 font-mono text-xs text-[var(--pc-ink)]",
         className,
         disabled && "pointer-events-none opacity-50",
       )}

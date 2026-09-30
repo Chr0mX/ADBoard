@@ -1,21 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { formatResolution } from "@/lib/devices/coords";
 import type { Device, SessionStatus, StreamStats } from "@/lib/devices/types";
 import { FloatingPanel } from "@/components/phone-control/floating/floating-panel";
+import { streamStatFields } from "@/lib/ui/stream-stats-format";
 import { cn } from "@/lib/utils";
 
 interface StatsWidgetProps {
   device: Device | null;
   session?: SessionStatus | null;
   stats?: StreamStats | null;
-}
-
-function formatRate(kbps: number): string {
-  if (!(kbps > 0)) return "—";
-  if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`;
-  return `${Math.round(kbps)} kbps`;
 }
 
 export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
@@ -34,20 +28,7 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
     );
   }
 
-  const problem =
-    device.status !== "online"
-      ? device.status
-      : session?.stream === "error"
-        ? session.note || "stream error"
-        : null;
-
-  const width = stats && stats.width > 0 ? stats.width : device.resolution.width;
-  const height = stats && stats.height > 0 ? stats.height : device.resolution.height;
-  const fps = stats && stats.fps > 0 ? `${Math.round(stats.fps)} fps` : "— fps";
-  const rate = formatRate(stats?.bitrateKbps ?? 0);
-  const codec = stats?.codec || "h264";
-  const battery = device.battery != null ? `${device.battery}%` : "—";
-  const temperature = device.temperatureC != null ? `${device.temperatureC.toFixed(1)}°C` : "—";
+  const fields = streamStatFields(device, session, stats);
 
   return (
     <FloatingPanel
@@ -67,28 +48,28 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
       >
         {!expanded ? (
           <p className="font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
-            {fps} · {rate} · {battery}
+            {fields.fps} · {fields.rate} · {fields.battery}
           </p>
         ) : (
           <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
             <dt className="text-[var(--pc-muted)]">Name</dt>
-            <dd className="truncate">{device.name}</dd>
+            <dd className="truncate">{fields.name}</dd>
             <dt className="text-[var(--pc-muted)]">Size</dt>
-            <dd>{formatResolution(width, height)}</dd>
+            <dd>{fields.size}</dd>
             <dt className="text-[var(--pc-muted)]">Battery</dt>
-            <dd data-battery>{battery}</dd>
+            <dd data-battery>{fields.battery}</dd>
             <dt className="text-[var(--pc-muted)]">Temp</dt>
-            <dd data-temperature>{temperature}</dd>
+            <dd data-temperature>{fields.temperature}</dd>
             <dt className="text-[var(--pc-muted)]">FPS</dt>
-            <dd>{fps}</dd>
+            <dd>{fields.fps}</dd>
             <dt className="text-[var(--pc-muted)]">Rate</dt>
-            <dd>{rate}</dd>
+            <dd>{fields.rate}</dd>
             <dt className="text-[var(--pc-muted)]">Codec</dt>
-            <dd>{codec}</dd>
-            {problem ? (
+            <dd>{fields.codec}</dd>
+            {fields.problem ? (
               <>
                 <dt className="text-[var(--pc-muted)]">Note</dt>
-                <dd className="text-[var(--pc-warn)]">{problem}</dd>
+                <dd className="text-[var(--pc-warn)]">{fields.problem}</dd>
               </>
             ) : null}
           </dl>

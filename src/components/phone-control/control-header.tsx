@@ -22,7 +22,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
             type="button"
             data-section-tab={item.id}
             aria-current={section === item.id ? "page" : undefined}
-            className={`inline-flex h-11 shrink-0 items-center justify-center rounded-lg px-2.5 text-sm leading-5 ${
+            className={`inline-flex h-11 shrink-0 items-center justify-center rounded-xl px-2.5 text-sm leading-5 ${
               section === item.id
                 ? "bg-[var(--pc-accent-fill)] text-white"
                 : "text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"

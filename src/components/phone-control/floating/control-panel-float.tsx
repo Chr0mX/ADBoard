@@ -22,11 +22,11 @@ import { FloatingPanel } from "@/components/phone-control/floating/floating-pane
 import { DESK_SECTIONS } from "@/components/phone-control/desk/desk-context";
 import type { DeskSection } from "@/components/phone-control/desk/desk-context";
 import { useScrcpyOptions } from "@/hooks/use-scrcpy-options";
+import { PC_HIT_LG } from "@/lib/ui/control-chrome";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { cn } from "@/lib/utils";
 
-const HIT =
-  "inline-flex h-12 min-h-12 w-12 min-w-12 shrink-0 items-center justify-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)] disabled:opacity-40";
+const HIT = PC_HIT_LG;
 
 interface ControlPanelFloatProps {
   offline: boolean;
