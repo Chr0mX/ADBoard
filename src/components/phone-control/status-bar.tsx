@@ -21,14 +21,17 @@ function formatRate(kbps: number): string {
   return `${Math.round(kbps)} kbps`;
 }
 
-function StatsLine({
+/** Compact one-line stats used under grid tiles and the desktop footer. */
+export function StatsLine({
   device,
   session,
   stats,
+  className,
 }: {
   device: Device;
   session?: SessionStatus | null;
   stats?: StreamStats | null;
+  className?: string;
 }) {
   const problem =
     device.status !== "online"
@@ -46,7 +49,12 @@ function StatsLine({
   const temperature = device.temperatureC != null ? `${device.temperatureC.toFixed(1)}°C` : "—";
 
   return (
-    <p className="flex items-center gap-x-2 overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-4 text-[var(--pc-ink)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <p
+      className={cn(
+        "flex items-center gap-x-2 overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-4 text-[var(--pc-ink)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        className,
+      )}
+    >
       <span>{device.name}</span>
       <span>{formatResolution(width, height)}</span>
       <span data-battery>{battery}</span>
@@ -70,8 +78,9 @@ export function StatusBar({
   if (!device) {
     return (
       <footer
+        data-desktop-stats
         className={cn(
-          "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-[11px] leading-4 text-[var(--pc-muted)]",
+          "flex shrink-0 justify-start border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-[11px] leading-4 text-[var(--pc-muted)]",
           compact ? "py-0.5" : "pt-1",
           safeBottom
             ? "pb-[env(safe-area-inset-bottom,0px)]"
@@ -89,8 +98,9 @@ export function StatusBar({
   return (
     <footer
       data-stream-stats
+      data-desktop-stats
       className={cn(
-        "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2",
+        "flex shrink-0 justify-start border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2",
         compact ? "py-0.5" : "pt-1",
         safeBottom
           ? "pb-[env(safe-area-inset-bottom,0px)]"

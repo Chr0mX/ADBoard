@@ -7,6 +7,7 @@ import { useDeviceVideo } from "@/hooks/use-device-video";
 import { normalizePoint } from "@/lib/devices/coords";
 import { devicesClient } from "@/lib/api/client";
 import type { Device, PointerPhase, PointerTool } from "@/lib/devices/types";
+import { StatsLine } from "@/components/phone-control/status-bar";
 import { cn } from "@/lib/utils";
 
 interface TouchScreenGridProps {
@@ -28,6 +29,8 @@ interface DesktopPack {
 
 const GAP = 12;
 const PORTRAIT = 9 / 16;
+/** Reserved strip under each desktop tile for fps/bitrate/battery. */
+const TILE_STATS_H = 22;
 
 /** Pick cols/rows that maximize tile area while keeping phone aspect (no side bars). */
 function bestDesktopPack(
@@ -49,13 +52,15 @@ function bestDesktopPack(
     const rows = Math.ceil(count / cols);
     const cellW = (stageW - GAP * (cols - 1)) / cols;
     const cellH = (stageH - GAP * (rows - 1)) / rows;
-    if (!(cellW > 1 && cellH > 1)) continue;
+    // Leave room under the stream for the per-tile stats line.
+    const streamCellH = cellH - TILE_STATS_H;
+    if (!(cellW > 1 && streamCellH > 1)) continue;
 
     let tileW: number;
     let tileH: number;
-    if (cellW / cellH > aspect) {
-      tileH = cellH;
-      tileW = cellH * aspect;
+    if (cellW / streamCellH > aspect) {
+      tileH = streamCellH;
+      tileW = streamCellH * aspect;
     } else {
       tileW = cellW;
       tileH = cellW / aspect;
@@ -166,10 +171,7 @@ export function TouchScreenGrid({
                 pack.tileW > 0
                   ? `repeat(${pack.cols}, ${pack.tileW}px)`
                   : `repeat(${pack.cols}, max-content)`,
-              gridTemplateRows:
-                pack.tileH > 0
-                  ? `repeat(${pack.rows}, ${pack.tileH}px)`
-                  : `repeat(${pack.rows}, minmax(0, 1fr))`,
+              gridAutoRows: "max-content",
             }}
           >
             {listed.map((device) => (
@@ -233,7 +235,7 @@ function TouchScreenTile({
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(
     null,
   );
-  const { canvasRef, configured, decodeState, frameSize, frameSizeRef } =
+  const { canvasRef, configured, decodeState, frameSize, frameSizeRef, stats } =
     useDeviceVideo(device.serial);
   const width = frameSize?.width || 9;
   const height = frameSize?.height || 16;
@@ -269,92 +271,108 @@ function TouchScreenTile({
     return (
       <div
         data-touch-screen-tile={device.id}
-        className={cn(
-          "relative overflow-hidden rounded-xl border",
-          isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
-        )}
-        style={
-          sized
-            ? { width: tileWidth, height: tileHeight }
-            : { aspectRatio: `${width} / ${height}`, height: "40vh", width: "auto" }
-        }
+        className="flex w-full flex-col gap-1"
+        style={sized ? { width: tileWidth } : undefined}
       >
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-1 bg-gradient-to-b from-black/70 to-transparent px-1.5">
-          <span className="pointer-events-none min-w-0 flex-1 truncate font-mono text-[10px] text-white">
-            {device.name}
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label={`Focus ${device.name}`}
-            className="pointer-events-auto h-6 min-h-6 w-6 min-w-6 rounded-md p-0 text-white hover:bg-white/15 hover:text-white"
-            onClick={onFocus}
+        <div
+          className={cn(
+            "relative overflow-hidden rounded-xl border",
+            isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
+          )}
+          style={
+            sized
+              ? { width: tileWidth, height: tileHeight }
+              : { aspectRatio: `${width} / ${height}`, height: "40vh", width: "auto" }
+          }
+        >
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-1 bg-gradient-to-b from-black/70 to-transparent px-1.5">
+            <span className="pointer-events-none min-w-0 flex-1 truncate font-mono text-[10px] text-white">
+              {device.name}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label={`Focus ${device.name}`}
+              className="pointer-events-auto h-6 min-h-6 w-6 min-w-6 rounded-md p-0 text-white hover:bg-white/15 hover:text-white"
+              onClick={onFocus}
+            >
+              <Maximize2 className="size-3.5" />
+            </Button>
+          </div>
+          <div
+            ref={paneRef}
+            role="application"
+            aria-label={`${device.name} screen`}
+            data-video-orientation={width >= height ? "landscape" : "portrait"}
+            data-video-frame={`${width}x${height}`}
+            className={cn(
+              "absolute inset-0 touch-none select-none overflow-hidden bg-[#101418]",
+              mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
+            )}
+            onPointerDown={(event) => {
+              if (offline || !mouseOn) return;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              const tool: PointerTool = event.pointerType === "touch" ? "finger" : "mouse";
+              dragRef.current = { id: event.pointerId, tool };
+              emit("down", event.clientX, event.clientY, tool);
+            }}
+            onPointerMove={(event) => {
+              const drag = dragRef.current;
+              if (!drag || drag.id !== event.pointerId) return;
+              emit("move", event.clientX, event.clientY, drag.tool);
+            }}
+            onPointerUp={(event) => {
+              const drag = dragRef.current;
+              if (!drag || drag.id !== event.pointerId) return;
+              dragRef.current = null;
+              emit("up", event.clientX, event.clientY, drag.tool);
+            }}
+            onPointerCancel={(event) => {
+              const drag = dragRef.current;
+              if (!drag || drag.id !== event.pointerId) return;
+              dragRef.current = null;
+              emit("cancel", event.clientX, event.clientY, drag.tool);
+            }}
           >
-            <Maximize2 className="size-3.5" />
-          </Button>
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background: `linear-gradient(165deg, hsl(${device.wallpaperHue} 42% 22%), hsl(${(device.wallpaperHue + 40) % 360} 28% 10%))`,
+              }}
+            />
+            {configured && (
+              <canvas
+                ref={canvasRef}
+                className={cn(
+                  "pointer-events-none absolute inset-0 h-full w-full object-contain",
+                  live ? "opacity-100" : "opacity-0",
+                )}
+              />
+            )}
+            {ripple && (
+              <span
+                key={ripple.key}
+                className="pointer-events-none absolute z-10 h-8 w-8 -translate-x-1/2 -translate-y-1/2 animate-pc-ripple rounded-full border-2 border-white/90 bg-white/25"
+                style={{ left: `${ripple.x}%`, top: `${ripple.y}%` }}
+              />
+            )}
+            {offline && (
+              <p className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] text-white/70">
+                Offline
+              </p>
+            )}
+          </div>
         </div>
         <div
-          ref={paneRef}
-          role="application"
-          aria-label={`${device.name} screen`}
-          data-video-orientation={width >= height ? "landscape" : "portrait"}
-          data-video-frame={`${width}x${height}`}
-          className={cn(
-            "absolute inset-0 touch-none select-none overflow-hidden bg-[#101418]",
-            mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
-          )}
-          onPointerDown={(event) => {
-            if (offline || !mouseOn) return;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            const tool: PointerTool = event.pointerType === "touch" ? "finger" : "mouse";
-            dragRef.current = { id: event.pointerId, tool };
-            emit("down", event.clientX, event.clientY, tool);
-          }}
-          onPointerMove={(event) => {
-            const drag = dragRef.current;
-            if (!drag || drag.id !== event.pointerId) return;
-            emit("move", event.clientX, event.clientY, drag.tool);
-          }}
-          onPointerUp={(event) => {
-            const drag = dragRef.current;
-            if (!drag || drag.id !== event.pointerId) return;
-            dragRef.current = null;
-            emit("up", event.clientX, event.clientY, drag.tool);
-          }}
-          onPointerCancel={(event) => {
-            const drag = dragRef.current;
-            if (!drag || drag.id !== event.pointerId) return;
-            dragRef.current = null;
-            emit("cancel", event.clientX, event.clientY, drag.tool);
-          }}
+          data-tile-stats={device.id}
+          className="min-w-0 overflow-hidden px-0.5"
+          style={{ height: TILE_STATS_H }}
         >
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background: `linear-gradient(165deg, hsl(${device.wallpaperHue} 42% 22%), hsl(${(device.wallpaperHue + 40) % 360} 28% 10%))`,
-            }}
+          <StatsLine
+            device={device}
+            stats={stats}
+            className="text-[10px] text-[var(--pc-muted)]"
           />
-          {configured && (
-            <canvas
-              ref={canvasRef}
-              className={cn(
-                "pointer-events-none absolute inset-0 h-full w-full object-contain",
-                live ? "opacity-100" : "opacity-0",
-              )}
-            />
-          )}
-          {ripple && (
-            <span
-              key={ripple.key}
-              className="pointer-events-none absolute z-10 h-8 w-8 -translate-x-1/2 -translate-y-1/2 animate-pc-ripple rounded-full border-2 border-white/90 bg-white/25"
-              style={{ left: `${ripple.x}%`, top: `${ripple.y}%` }}
-            />
-          )}
-          {offline && (
-            <p className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] text-white/70">
-              Offline
-            </p>
-          )}
         </div>
       </div>
     );
@@ -445,6 +463,13 @@ function TouchScreenTile({
             Offline
           </p>
         )}
+      </div>
+      <div data-tile-stats={device.id} className="shrink-0 border-t border-[var(--pc-line)] px-1.5 py-0.5">
+        <StatsLine
+          device={device}
+          stats={stats}
+          className="text-[10px] text-[var(--pc-muted)]"
+        />
       </div>
     </div>
   );

@@ -162,7 +162,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v20"
+      data-ui-build="pc-shell-v21"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -349,7 +349,13 @@ export function PhoneControlApp() {
       </main>
 
       {section === "control" && wide && (
-        <StatusBar device={activeDevice} session={activeSession} stats={streamStats} safeBottom />
+        <StatusBar
+          device={activeDevice}
+          session={activeSession}
+          stats={streamStats}
+          safeBottom
+          className="justify-start"
+        />
       )}
     </div>
     </DeskProvider>

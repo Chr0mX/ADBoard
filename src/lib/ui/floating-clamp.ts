@@ -173,7 +173,7 @@ export function defaultFloatPosition(
   if (kind === "stats") {
     return {
       x: margin,
-      y: margin,
+      y: Math.max(margin, viewportHeight - size.height - margin),
       width: size.width,
       height: size.height,
     };

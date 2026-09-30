@@ -97,6 +97,18 @@ describe("defaultFloatPosition", () => {
     assert.ok(Math.abs(rect.x - (390 - 300) / 2) < 1);
   });
 
+  it("places stats at the bottom-left", () => {
+    const rect = defaultFloatPosition(
+      "stats",
+      390,
+      844,
+      { width: 180, height: 56 },
+      false,
+    );
+    assert.equal(rect.x, 12);
+    assert.ok(rect.y > 700);
+  });
+
   it("places controls on the trailing edge in landscape", () => {
     const rect = defaultFloatPosition(
       "controls",
