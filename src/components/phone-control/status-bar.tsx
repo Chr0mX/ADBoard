@@ -10,6 +10,8 @@ interface StatusBarProps {
   stats?: StreamStats | null;
   /** Pad for the home indicator when this bar is the bottommost chrome. */
   safeBottom?: boolean;
+  /** Tighter padding under the mobile stream dock. */
+  compact?: boolean;
   className?: string;
 }
 
@@ -62,16 +64,20 @@ export function StatusBar({
   session,
   stats,
   safeBottom = false,
+  compact = false,
   className,
 }: StatusBarProps) {
   if (!device) {
     return (
       <footer
         className={cn(
-          "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 pt-1 font-mono text-[11px] leading-4 text-[var(--pc-muted)]",
+          "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-[11px] leading-4 text-[var(--pc-muted)]",
+          compact ? "py-0.5" : "pt-1",
           safeBottom
             ? "pb-[env(safe-area-inset-bottom,0px)]"
-            : "pb-1",
+            : compact
+              ? "pb-0.5"
+              : "pb-1",
           className,
         )}
       >
@@ -84,10 +90,13 @@ export function StatusBar({
     <footer
       data-stream-stats
       className={cn(
-        "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 pt-1",
+        "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2",
+        compact ? "py-0.5" : "pt-1",
         safeBottom
           ? "pb-[env(safe-area-inset-bottom,0px)]"
-          : "pb-1",
+          : compact
+            ? "pb-0.5"
+            : "pb-1",
         className,
       )}
     >

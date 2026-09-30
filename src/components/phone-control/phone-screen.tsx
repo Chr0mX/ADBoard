@@ -789,14 +789,14 @@ export function PhoneScreen({
         {floatingChrome && (
           <div
             data-mobile-bottom-chrome
-            className="flex w-full max-w-full shrink-0 flex-col border-t border-[var(--pc-line)] bg-[var(--pc-panel)]"
-            style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+            className="flex w-full max-w-full shrink-0 flex-col border-t border-[var(--pc-line)] bg-[var(--pc-panel)] pb-0.5"
           >
             <DeviceNavBar
               offline={offline}
               onNav={onNav}
               className="w-full max-w-full border-t-0"
               safeBottom={false}
+              compact
             />
             {statsMode === "bar" && (
               <StatusBar
@@ -804,6 +804,7 @@ export function PhoneScreen({
                 session={session}
                 stats={stats}
                 safeBottom={false}
+                compact
               />
             )}
           </div>

@@ -15,6 +15,9 @@ import { cn } from "@/lib/utils";
 const MOBILE_HIT =
   "inline-flex h-11 min-h-11 w-full max-w-14 flex-1 items-center justify-center rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
 
+const MOBILE_HIT_COMPACT =
+  "inline-flex h-9 min-h-9 w-full max-w-12 flex-1 items-center justify-center rounded-md border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
+
 const NAV_ACTIONS = [
   ["back", "Back", ChevronLeft],
   ["home", "Home", House],
@@ -32,6 +35,8 @@ interface DeviceNavBarProps {
   variant?: "mobile" | "inline";
   /** When false, omit home-indicator padding (a status bar below owns it). */
   safeBottom?: boolean;
+  /** Tighter hit targets for the under-stream dock. */
+  compact?: boolean;
 }
 
 export function DeviceNavBar({
@@ -40,13 +45,16 @@ export function DeviceNavBar({
   className,
   variant = "mobile",
   safeBottom = true,
+  compact = false,
 }: DeviceNavBarProps) {
   return (
     <div
       data-device-nav-bar
       data-device-nav-variant={variant}
+      data-device-nav-compact={compact ? "1" : "0"}
       className={cn(
-        "flex w-full shrink-0 items-center justify-between gap-0.5 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-1 py-0.5",
+        "flex w-full shrink-0 items-center justify-between gap-0.5 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-1",
+        compact ? "py-0" : "py-0.5",
         safeBottom && "pb-[max(0.25rem,env(safe-area-inset-bottom))]",
         className,
       )}
@@ -58,10 +66,10 @@ export function DeviceNavBar({
           variant="ghost"
           disabled={offline}
           aria-label={label}
-          className={MOBILE_HIT}
+          className={compact ? MOBILE_HIT_COMPACT : MOBILE_HIT}
           onClick={() => onNav(action)}
         >
-          <Icon className="size-5" />
+          <Icon className={compact ? "size-4" : "size-5"} />
         </Button>
       ))}
     </div>
