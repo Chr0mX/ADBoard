@@ -89,7 +89,9 @@ export function TouchScreenGrid({
   layout = "mobile",
   onExit,
 }: TouchScreenGridProps) {
-  const online = devices.filter((device) => device.status === "online");
+  // Show every known device — offline tiles stay visible so nothing disappears.
+  const listed = devices;
+  const onlineCount = listed.filter((device) => device.status === "online").length;
   const desktop = layout === "desktop";
   const stageRef = useRef<HTMLDivElement>(null);
   const [pack, setPack] = useState<DesktopPack>({
@@ -106,15 +108,15 @@ export function TouchScreenGrid({
 
     const measure = () => {
       const rect = node.getBoundingClientRect();
-      setPack(bestDesktopPack(online.length, rect.width, rect.height, PORTRAIT));
+      setPack(bestDesktopPack(listed.length, rect.width, rect.height, PORTRAIT));
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [desktop, online.length]);
+  }, [desktop, listed.length]);
 
-  const mobileCols = mobileColumnCount(online.length);
+  const mobileCols = mobileColumnCount(listed.length);
 
   return (
     <section
@@ -128,7 +130,7 @@ export function TouchScreenGrid({
             Grid
           </h2>
           <p className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
-            {online.length} online · control each screen
+            {listed.length} devices · {onlineCount} online · control each screen
           </p>
         </div>
         {onExit && (
@@ -147,19 +149,30 @@ export function TouchScreenGrid({
       </div>
       <div
         ref={stageRef}
-        className="min-h-0 flex-1 overflow-hidden"
+        className="min-h-0 flex-1 overflow-auto"
       >
-        {online.length === 0 ? (
+        {listed.length === 0 ? (
           <p className="px-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
-            No online screens
+            No devices
           </p>
         ) : desktop ? (
           <div
             data-touch-screen-cells={pack.cols}
             data-touch-screen-pack={`${pack.tileW}x${pack.tileH}`}
-            className="flex h-full w-full flex-wrap content-center items-center justify-center gap-3"
+            data-touch-screen-count={listed.length}
+            className="grid h-full w-full place-content-center justify-items-center gap-3"
+            style={{
+              gridTemplateColumns:
+                pack.tileW > 0
+                  ? `repeat(${pack.cols}, ${pack.tileW}px)`
+                  : `repeat(${pack.cols}, max-content)`,
+              gridTemplateRows:
+                pack.tileH > 0
+                  ? `repeat(${pack.rows}, ${pack.tileH}px)`
+                  : `repeat(${pack.rows}, minmax(0, 1fr))`,
+            }}
           >
-            {online.map((device) => (
+            {listed.map((device) => (
               <TouchScreenTile
                 key={device.id}
                 device={device}
@@ -174,10 +187,11 @@ export function TouchScreenGrid({
           </div>
         ) : (
           <div
+            data-touch-screen-count={listed.length}
             className="grid gap-2"
             style={{ gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))` }}
           >
-            {online.map((device) => (
+            {listed.map((device) => (
               <TouchScreenTile
                 key={device.id}
                 device={device}
