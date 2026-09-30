@@ -2,11 +2,15 @@
 
 import { formatResolution } from "@/lib/devices/coords";
 import type { Device, SessionStatus, StreamStats } from "@/lib/devices/types";
+import { cn } from "@/lib/utils";
 
 interface StatusBarProps {
   device: Device | null;
   session?: SessionStatus | null;
   stats?: StreamStats | null;
+  /** Pad for the home indicator when this bar is the bottommost chrome. */
+  safeBottom?: boolean;
+  className?: string;
 }
 
 function formatRate(kbps: number): string {
@@ -15,10 +19,22 @@ function formatRate(kbps: number): string {
   return `${Math.round(kbps)} kbps`;
 }
 
-export function StatusBar({ device, session, stats }: StatusBarProps) {
+export function StatusBar({
+  device,
+  session,
+  stats,
+  safeBottom = false,
+  className,
+}: StatusBarProps) {
   if (!device) {
     return (
-      <footer className="shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 py-2 font-mono text-[11px] leading-4 text-[var(--pc-muted)]">
+      <footer
+        className={cn(
+          "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 py-2 font-mono text-[11px] leading-4 text-[var(--pc-muted)]",
+          safeBottom && "pb-[max(0.5rem,env(safe-area-inset-bottom))]",
+          className,
+        )}
+      >
         No active device
       </footer>
     );
@@ -42,7 +58,11 @@ export function StatusBar({ device, session, stats }: StatusBarProps) {
   return (
     <footer
       data-stream-stats
-      className="shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1.5 backdrop-blur-sm"
+      className={cn(
+        "shrink-0 border-t border-[var(--pc-line)] bg-[var(--pc-panel)]/90 px-3 py-1.5 backdrop-blur-sm",
+        safeBottom && "pb-[max(0.5rem,env(safe-area-inset-bottom))]",
+        className,
+      )}
     >
       <p className="flex items-center gap-x-2 overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-4 text-[var(--pc-ink)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <span>{device.name}</span>

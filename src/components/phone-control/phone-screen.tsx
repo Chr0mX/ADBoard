@@ -38,6 +38,7 @@ import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
 import { DeviceNavBar } from "@/components/phone-control/device-nav-bar";
 import { FloatingLayer } from "@/components/phone-control/floating/floating-layer";
+import { StatusBar } from "@/components/phone-control/status-bar";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
@@ -205,7 +206,7 @@ export function PhoneScreen({
       // or the flex item is shrunk on one axis and the aspect ratio breaks.
       // Non-fill reserves a rail on each side so volume and power sit beside
       // the picture without covering it.
-      const rails = fillWindow ? 0 : 76 * 2 + 16;
+      const rails = fillWindow || floatingChrome ? 0 : 76 * 2 + 16;
       const width = Math.max(0, Math.floor(node.clientWidth - padX - rails));
       const height = Math.max(0, Math.floor(node.clientHeight - padY));
       setStageSize((prev) =>
@@ -216,7 +217,7 @@ export function PhoneScreen({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [fillWindow, device?.id]);
+  }, [fillWindow, floatingChrome, device?.id]);
 
   const pointerFailed = lastTap?.targets.some((t) => t.inject === "error") ?? false;
   const installFailed = !!installNote && !installNote.startsWith("Installed");
@@ -462,7 +463,10 @@ export function PhoneScreen({
       data-side-controls={sideControls ? "1" : "0"}
       data-device-id={device?.id ?? ""}
       data-device-name={device?.name ?? ""}
-      className={cn("relative flex min-h-0 flex-1 flex-col", compactFill ? "gap-0" : "gap-2")}
+      className={cn(
+        "relative flex min-h-0 flex-1 flex-col",
+        floatingChrome || compactFill ? "gap-0" : "gap-2",
+      )}
     >
       {!fillWindow && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
         <p className="truncate text-center font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
@@ -470,13 +474,14 @@ export function PhoneScreen({
         </p>
       )}
 
-      <div className="flex min-h-0 w-full flex-1 flex-col items-center">
-        <div className="flex min-h-0 w-full max-w-full flex-1 flex-col items-center">
+      <div className="flex min-h-0 w-full flex-1 flex-col">
+        <div className="flex min-h-0 w-full max-w-full flex-1 flex-col">
           <div
             ref={stageRef}
             data-screen-stage
             className={cn(
               "flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden",
+              floatingChrome && "bg-[var(--pc-frame)]",
               sideControls && "gap-2",
             )}
           >
@@ -761,7 +766,22 @@ export function PhoneScreen({
           )}
         </div>
         {floatingChrome && (
-          <DeviceNavBar offline={offline} onNav={onNav} className="w-full max-w-full" />
+          <div data-mobile-bottom-chrome className="flex w-full max-w-full shrink-0 flex-col">
+            <DeviceNavBar
+              offline={offline}
+              onNav={onNav}
+              className="w-full max-w-full"
+              safeBottom={statsMode !== "bar"}
+            />
+            {statsMode === "bar" && (
+              <StatusBar
+                device={device}
+                session={session}
+                stats={stats}
+                safeBottom
+              />
+            )}
+          </div>
         )}
       </div>
 

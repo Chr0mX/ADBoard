@@ -172,7 +172,7 @@ export function PhoneControlApp() {
       <main
         className={cn(
           "relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden",
-          !fillWindow && "px-2 py-2 lg:px-4 lg:py-3",
+          !fillWindow && !mobileControl && "px-2 py-2 lg:px-4 lg:py-3",
         )}
       >
         {loading && (
@@ -331,8 +331,8 @@ export function PhoneControlApp() {
         )}
       </main>
 
-      {section === "control" && (wide || (mobileControl && mobileStatsMode === "bar")) && (
-        <StatusBar device={activeDevice} session={activeSession} stats={streamStats} />
+      {section === "control" && wide && (
+        <StatusBar device={activeDevice} session={activeSession} stats={streamStats} safeBottom />
       )}
     </div>
     </DeskProvider>
