@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  Camera,
   Circle,
   Keyboard,
   LayoutGrid,
@@ -12,6 +13,7 @@ import {
   RefreshCw,
   Smartphone,
   Square,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
@@ -27,6 +29,13 @@ import type {
   StreamStats,
   TapBroadcast,
 } from "@/lib/devices/types";
+import { devicesClient } from "@/lib/api/client";
+import {
+  downloadScreenshots,
+  startScreenRecords,
+  stopScreenRecords,
+} from "@/lib/desk/capture";
+import { offlineOverlayCopy } from "@/lib/ui/connection-copy";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
@@ -127,6 +136,9 @@ export function PhoneScreen({
   );
   const [installNote, setInstallNote] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [captureNote, setCaptureNote] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const [screenRecording, setScreenRecording] = useState(false);
 
   const { canvasRef, status, decodeState, error: videoError, configured, frameSize, frameSizeRef, stats } =
     useDeviceVideo(device?.serial, refreshToken);
@@ -136,6 +148,11 @@ export function PhoneScreen({
   }, [onStats, stats]);
 
   const offline = !device || device.status !== "online";
+  const offlineCopy = offlineOverlayCopy(device);
+  const captureTargets =
+    desk?.targets?.length
+      ? desk.targets
+      : devices.filter((item) => targetIds.includes(item.id));
   const showingVideo =
     !offline &&
     configured &&
@@ -272,6 +289,67 @@ export function PhoneScreen({
       setInstallNote(await onInstall(file));
     } finally {
       setInstalling(false);
+    }
+  };
+
+  const noteFromCapture = (
+    rows: { state: string; deviceName: string; detail: string }[],
+    fallback: string,
+  ) => {
+    const failed = rows.filter((row) => row.state !== "ok");
+    if (failed.length === 0) {
+      return rows[0]?.detail || fallback;
+    }
+    return failed.map((row) => `${row.deviceName}: ${row.detail}`).join(" · ");
+  };
+
+  const takeScreenshot = async () => {
+    if (capturing || captureTargets.length === 0) return;
+    setCapturing(true);
+    try {
+      const rows = await downloadScreenshots(captureTargets);
+      setCaptureNote(noteFromCapture(rows, "Screenshot saved"));
+    } catch (error) {
+      setCaptureNote(error instanceof Error ? error.message : "Screenshot failed");
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  const toggleScreenRecord = async () => {
+    if (capturing || captureTargets.length === 0) return;
+    setCapturing(true);
+    try {
+      if (screenRecording) {
+        const rows = await stopScreenRecords(captureTargets);
+        setScreenRecording(false);
+        setCaptureNote(noteFromCapture(rows, "Recording stopped"));
+      } else {
+        const rows = await startScreenRecords(captureTargets);
+        const ok = rows.some((row) => row.state === "ok");
+        setScreenRecording(ok);
+        setCaptureNote(noteFromCapture(rows, "Recording started on device"));
+      }
+    } catch (error) {
+      setCaptureNote(error instanceof Error ? error.message : "Screen record failed");
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  const reconnectDevice = async () => {
+    if (!device) return;
+    setCapturing(true);
+    try {
+      const response = await devicesClient.runCommand([device], "reconnect");
+      const result = response.results[0];
+      setCaptureNote(
+        result?.ok ? result.output || "Reconnect sent" : result?.error || "Reconnect failed",
+      );
+    } catch (error) {
+      setCaptureNote(error instanceof Error ? error.message : "Reconnect failed");
+    } finally {
+      setCapturing(false);
     }
   };
 
@@ -630,19 +708,35 @@ export function PhoneScreen({
             )}
 
             {offline && (
-              <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-                <p className="font-display text-lg text-white/90">
-                  {device?.status === "unauthorized"
-                    ? "Unauthorized"
-                    : "No signal"}
-                </p>
-                <p className="text-xs text-white/50">
-                  {device
-                    ? "Stream unavailable for this device."
-                    : "Select an online device to preview."}
-                </p>
+              <div className="relative z-20 flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="font-display text-lg text-white/90">{offlineCopy.title}</p>
+                <p className="max-w-xs text-xs text-white/55">{offlineCopy.body}</p>
+                {offlineCopy.showReconnect && device && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    data-reconnect
+                    disabled={capturing}
+                    className="h-11 min-h-11 border-white/30 bg-white/10 text-white hover:bg-white/20"
+                    onClick={() => void reconnectDevice()}
+                  >
+                    Reconnect
+                  </Button>
+                )}
               </div>
             )}
+            {!offline &&
+              (status?.stream === "error" || session?.stream === "error") &&
+              !showingVideo && (
+                <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 rounded-xl border border-[var(--pc-warn)]/40 bg-black/55 px-3 py-2 text-left">
+                  <p className="font-display text-sm text-[var(--pc-warn)]">Stream error</p>
+                  <p className="mt-0.5 font-mono text-[10px] text-white/70">
+                    {status?.note ||
+                      session?.note ||
+                      "Video dropped. Tap Refresh, or Reconnect from the device menu."}
+                  </p>
+                </div>
+              )}
 
             {ripple && (
               <span
@@ -734,6 +828,37 @@ export function PhoneScreen({
             )}
             {fillWindow && (
               <ApkFileButton disabled={offline || installing} onFile={pickApk} />
+            )}
+            {fillWindow && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={offline || capturing || captureTargets.length === 0}
+                onClick={() => void takeScreenshot()}
+                aria-label="Screenshot and download"
+                data-control-screenshot
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
+              >
+                <Camera className="size-4" />
+              </Button>
+            )}
+            {fillWindow && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={offline || capturing || captureTargets.length === 0}
+                onClick={() => void toggleScreenRecord()}
+                aria-label={screenRecording ? "Stop screen record" : "Start screen record"}
+                data-control-screenrecord
+                data-pressed={screenRecording ? "true" : undefined}
+                className={cn(
+                  PC_HIT_LABELED,
+                  "min-w-11 px-3",
+                  screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
+                )}
+              >
+                <Video className="size-4" />
+              </Button>
             )}
             {fillWindow && showScreensButton && (
               <Button
@@ -870,6 +995,34 @@ export function PhoneScreen({
             onFile={pickApk}
             className={cn(toolControlClass, "font-mono text-[10px] leading-none lg:text-xs")}
           />
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={offline || capturing || captureTargets.length === 0}
+            onClick={() => void takeScreenshot()}
+            aria-label="Screenshot and download"
+            data-control-screenshot
+            className={toolControlClass}
+          >
+            <Camera className="size-4" />
+            <span className="hidden lg:inline">Shot</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={offline || capturing || captureTargets.length === 0}
+            onClick={() => void toggleScreenRecord()}
+            aria-label={screenRecording ? "Stop screen record" : "Start screen record"}
+            data-control-screenrecord
+            data-pressed={screenRecording ? "true" : undefined}
+            className={cn(
+              toolControlClass,
+              screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
+            )}
+          >
+            <Video className="size-4" />
+            <span className="hidden lg:inline">{screenRecording ? "Stop" : "Rec"}</span>
+          </Button>
           <Toggle
             pressed={fillWindow}
             onPressedChange={onFillWindowChange}
@@ -948,6 +1101,8 @@ export function PhoneScreen({
           replaying={replaying}
           refreshing={refreshing}
           installing={installing}
+          capturing={capturing}
+          screenRecording={screenRecording}
           onKeyboardChange={onKeyboardChange}
           onMouseChange={onMouseChange}
           onRecordToggle={() => {
@@ -957,20 +1112,27 @@ export function PhoneScreen({
           onReplay={() => void replayRecording()}
           onRefresh={() => void refreshVideo()}
           onInstallFile={(file) => void pickApk(file)}
+          onScreenshot={() => void takeScreenshot()}
+          onScreenRecordToggle={() => void toggleScreenRecord()}
           onOpenDevices={() => onOpenDevices?.()}
           onToggleGrid={() => onToggleGrid?.()}
           onOpenDesk={(section) => desk?.open(section)}
         />
       )}
-      {installNote && (
+      {(installNote || captureNote) && (
         <p
-          data-install-note
+          data-install-note={installNote ? true : undefined}
+          data-capture-note={captureNote ? true : undefined}
           className={cn(
             "mx-auto max-w-lg text-center font-mono text-[10px] leading-snug",
-            installFailed ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]",
+            (installFailed ||
+              (captureNote &&
+                /fail|error|unavailable|no devices/i.test(captureNote)))
+              ? "text-[var(--pc-warn)]"
+              : "text-[var(--pc-muted)]",
           )}
         >
-          {installNote}
+          {captureNote || installNote}
         </p>
       )}
       {pointerFailed && lastTap && (

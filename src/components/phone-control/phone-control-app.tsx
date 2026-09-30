@@ -68,7 +68,7 @@ export function PhoneControlApp() {
   const fillWindow = wide ? storedFillWindow : true;
   const [devicesOpen, setDevicesOpen] = useState(false);
   const [screensOpen, setScreensOpen] = useState(false);
-  const [gridView, setGridView] = useState(false);
+  const [gridView, setGridView] = useStoredFlag("phonecontrol-grid-view", false);
 
   const setFill = (on: boolean) => {
     if (!wide) return;
@@ -173,7 +173,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v22"
+      data-ui-build="pc-shell-v23"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -245,7 +245,7 @@ export function PhoneControlApp() {
                 statsMode={mobileStatsMode}
                 onStatsModeChange={setMobileStatsMode}
                 onFillWindowChange={setFill}
-                onToggleGrid={() => setGridView((open) => !open)}
+                onToggleGrid={() => setGridView(!gridView)}
                 onFocusDevice={(deviceId) => {
                   selectDevice({
                     deviceId,

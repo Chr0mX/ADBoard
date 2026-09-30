@@ -1,5 +1,6 @@
 import { formatResolution } from "@/lib/devices/coords";
 import type { Device, SessionStatus, StreamStats } from "@/lib/devices/types";
+import { connectionProblemLabel } from "@/lib/ui/connection-copy";
 
 export function formatBitrate(kbps: number): string {
   if (!(kbps > 0)) return "—";
@@ -24,12 +25,7 @@ export function streamStatFields(
   session?: SessionStatus | null,
   stats?: StreamStats | null,
 ): StreamStatFields {
-  const problem =
-    device.status !== "online"
-      ? device.status
-      : session?.stream === "error"
-        ? session.note || "stream error"
-        : null;
+  const problem = connectionProblemLabel(device, session);
 
   const width = stats && stats.width > 0 ? stats.width : device.resolution.width;
   const height = stats && stats.height > 0 ? stats.height : device.resolution.height;

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
 import { WirelessAdb } from "@/components/phone-control/wireless-adb";
 import type { Device } from "@/lib/devices/types";
+import { downloadScreenshots } from "@/lib/desk/capture";
 import { useDesk } from "@/components/phone-control/desk/desk-context";
 import {
   ConfirmDialog,
@@ -98,9 +99,29 @@ export function ManagePanel() {
       </div>
       {confirm && (
         <ConfirmDialog
-          title={confirm === "reboot" ? "Reboot Device?" : "Shut down device?"}
-          body={<p>{targets.map((device) => device.name).join(", ") || "No devices selected"}</p>}
+          title={
+            confirm === "reboot"
+              ? targets.length > 1
+                ? `Reboot ${targets.length} devices?`
+                : "Reboot Device?"
+              : targets.length > 1
+                ? `Shut down ${targets.length} devices?`
+                : "Shut down device?"
+          }
+          body={
+            <div className="flex flex-col gap-2">
+              <p>
+                {targets.map((device) => device.name).join(", ") || "No devices selected"}
+              </p>
+              {targets.length > 1 && (
+                <p className="text-[var(--pc-warn)]">
+                  This affects every checked phone. It cannot be undone from here.
+                </p>
+              )}
+            </div>
+          }
           confirmLabel={confirm === "reboot" ? "Reboot" : "Shutdown"}
+          requirePhrase={targets.length > 1 ? confirm : undefined}
           busy={busy}
           onCancel={() => setConfirm(null)}
           onConfirm={() => void run(confirm)}
@@ -146,6 +167,10 @@ function ScreenshotTools({
     if (devices.length === 0) return;
     setWorking(true);
     try {
+      if (mode === "local") {
+        onDone(await downloadScreenshots(devices));
+        return;
+      }
       const response = await devicesClient.runCommand(
         devices,
         "screenshot",
@@ -167,16 +192,6 @@ function ScreenshotTools({
         } catch (error) {
           rows[0].detail = error instanceof Error ? error.message : "Clipboard unavailable";
           rows[0].state = "error";
-        }
-      }
-      if (mode === "local") {
-        for (const result of response.results) {
-          if (result.ok && result.output) {
-            const anchor = document.createElement("a");
-            anchor.href = devicesClient.hostFileUrl(result.output);
-            anchor.download = `${result.deviceName}.png`;
-            anchor.click();
-          }
         }
       }
       onDone(rows);
