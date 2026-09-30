@@ -21,7 +21,7 @@ interface TouchScreenGridProps {
 
 function columnCount(online: number, layout: "mobile" | "desktop") {
   if (layout === "desktop") {
-    // Prefer fewer, taller tiles so portrait frames fill without side bars.
+    // Fewer columns → taller phones that fill without left/right letterbox.
     if (online <= 1) return 1;
     if (online <= 4) return 2;
     if (online <= 9) return 3;
@@ -85,25 +85,14 @@ export function TouchScreenGrid({
           <p className="px-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
             No online screens
           </p>
-        ) : (
+        ) : desktop ? (
           <div
             data-touch-screen-cells={cols}
-            className={cn(
-              "grid h-full min-h-0 gap-2",
-              desktop && "justify-center justify-items-center",
-            )}
-            style={
-              desktop
-                ? {
-                    // Hug each phone's aspect — empty gap between tiles instead
-                    // of letterbox bars inside the tile.
-                    gridTemplateColumns: `repeat(${cols}, max-content)`,
-                    gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-                  }
-                : {
-                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                  }
-            }
+            className="grid h-full min-h-0 place-content-center justify-items-center gap-3"
+            style={{
+              gridTemplateColumns: `repeat(${cols}, max-content)`,
+              gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+            }}
           >
             {online.map((device) => (
               <TouchScreenTile
@@ -111,7 +100,23 @@ export function TouchScreenGrid({
                 device={device}
                 isActive={device.id === activeId}
                 mouseOn={mouseOn}
-                layout={layout}
+                layout="desktop"
+                onFocus={() => onFocusDevice(device.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+          >
+            {online.map((device) => (
+              <TouchScreenTile
+                key={device.id}
+                device={device}
+                isActive={device.id === activeId}
+                mouseOn={mouseOn}
+                layout="mobile"
                 onFocus={() => onFocusDevice(device.id)}
               />
             ))}
@@ -174,35 +179,37 @@ function TouchScreenTile({
       });
   };
 
-  return (
-    <div
-      data-touch-screen-tile={device.id}
-      className={cn(
-        "flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[var(--pc-panel)]",
-        desktop ? "h-full w-auto" : "min-h-0",
-        isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
-      )}
-    >
-      <div className="flex h-7 shrink-0 items-center gap-1 border-b border-[var(--pc-line)] px-1.5">
-        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--pc-ink)]">
-          {device.name}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          aria-label={`Focus ${device.name}`}
-          className="h-6 min-h-6 w-6 min-w-6 rounded-md p-0 text-[var(--pc-ink)]"
-          onClick={onFocus}
-        >
-          <Maximize2 className="size-3.5" />
-        </Button>
-      </div>
+  // Desktop: the whole tile is the phone aspect (header overlays the top).
+  // That removes the wide landscape chrome that left black bars on the sides.
+  if (desktop) {
+    return (
       <div
+        data-touch-screen-tile={device.id}
         className={cn(
-          "relative min-h-0 w-full flex-1 overflow-hidden",
-          desktop ? "bg-[var(--pc-panel)]" : "bg-[#0a0d10]",
+          "relative h-full max-h-full overflow-hidden rounded-xl border",
+          isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
         )}
+        style={{
+          aspectRatio: `${width} / ${height}`,
+          height: "100%",
+          width: "auto",
+          maxWidth: "100%",
+        }}
       >
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-1 bg-gradient-to-b from-black/70 to-transparent px-1.5">
+          <span className="pointer-events-none min-w-0 flex-1 truncate font-mono text-[10px] text-white">
+            {device.name}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label={`Focus ${device.name}`}
+            className="pointer-events-auto h-6 min-h-6 w-6 min-w-6 rounded-md p-0 text-white hover:bg-white/15 hover:text-white"
+            onClick={onFocus}
+          >
+            <Maximize2 className="size-3.5" />
+          </Button>
+        </div>
         <div
           ref={paneRef}
           role="application"
@@ -210,16 +217,9 @@ function TouchScreenTile({
           data-video-orientation={width >= height ? "landscape" : "portrait"}
           data-video-frame={`${width}x${height}`}
           className={cn(
-            "relative touch-none select-none overflow-hidden bg-[#101418]",
-            desktop ? "h-full w-auto" : "min-h-0 w-full",
+            "absolute inset-0 touch-none select-none overflow-hidden bg-[#101418]",
             mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
           )}
-          style={{
-            aspectRatio: `${width} / ${height}`,
-            ...(desktop
-              ? { height: "100%", width: "auto", maxHeight: "100%" }
-              : { width: "100%" }),
-          }}
           onPointerDown={(event) => {
             if (offline || !mouseOn) return;
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -273,6 +273,95 @@ function TouchScreenTile({
             </p>
           )}
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-touch-screen-tile={device.id}
+      className={cn(
+        "flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[var(--pc-panel)]",
+        isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
+      )}
+    >
+      <div className="flex h-7 shrink-0 items-center gap-1 border-b border-[var(--pc-line)] px-1.5">
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--pc-ink)]">
+          {device.name}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label={`Focus ${device.name}`}
+          className="h-6 min-h-6 w-6 min-w-6 rounded-md p-0 text-[var(--pc-ink)]"
+          onClick={onFocus}
+        >
+          <Maximize2 className="size-3.5" />
+        </Button>
+      </div>
+      <div
+        ref={paneRef}
+        role="application"
+        aria-label={`${device.name} screen`}
+        data-video-orientation={width >= height ? "landscape" : "portrait"}
+        data-video-frame={`${width}x${height}`}
+        className={cn(
+          "relative min-h-0 w-full touch-none select-none overflow-hidden bg-[#101418]",
+          mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
+        )}
+        style={{ aspectRatio: `${width} / ${height}` }}
+        onPointerDown={(event) => {
+          if (offline || !mouseOn) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          const tool: PointerTool = event.pointerType === "touch" ? "finger" : "mouse";
+          dragRef.current = { id: event.pointerId, tool };
+          emit("down", event.clientX, event.clientY, tool);
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.id !== event.pointerId) return;
+          emit("move", event.clientX, event.clientY, drag.tool);
+        }}
+        onPointerUp={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.id !== event.pointerId) return;
+          dragRef.current = null;
+          emit("up", event.clientX, event.clientY, drag.tool);
+        }}
+        onPointerCancel={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.id !== event.pointerId) return;
+          dragRef.current = null;
+          emit("cancel", event.clientX, event.clientY, drag.tool);
+        }}
+      >
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: `linear-gradient(165deg, hsl(${device.wallpaperHue} 42% 22%), hsl(${(device.wallpaperHue + 40) % 360} 28% 10%))`,
+          }}
+        />
+        {configured && (
+          <canvas
+            ref={canvasRef}
+            className={cn(
+              "pointer-events-none absolute inset-0 h-full w-full object-contain",
+              live ? "opacity-100" : "opacity-0",
+            )}
+          />
+        )}
+        {ripple && (
+          <span
+            key={ripple.key}
+            className="pointer-events-none absolute z-10 h-8 w-8 -translate-x-1/2 -translate-y-1/2 animate-pc-ripple rounded-full border-2 border-white/90 bg-white/25"
+            style={{ left: `${ripple.x}%`, top: `${ripple.y}%` }}
+          />
+        )}
+        {offline && (
+          <p className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] text-white/70">
+            Offline
+          </p>
+        )}
       </div>
     </div>
   );
