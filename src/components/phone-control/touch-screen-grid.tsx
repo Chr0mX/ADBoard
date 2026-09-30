@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDeviceVideo } from "@/hooks/use-device-video";
@@ -19,14 +19,62 @@ interface TouchScreenGridProps {
   onExit?: () => void;
 }
 
-function columnCount(online: number, layout: "mobile" | "desktop") {
-  if (layout === "desktop") {
-    // Fewer columns → taller phones that fill without left/right letterbox.
-    if (online <= 1) return 1;
-    if (online <= 4) return 2;
-    if (online <= 9) return 3;
-    return 4;
+interface DesktopPack {
+  cols: number;
+  rows: number;
+  tileW: number;
+  tileH: number;
+}
+
+const GAP = 12;
+const PORTRAIT = 9 / 16;
+
+/** Pick cols/rows that maximize tile area while keeping phone aspect (no side bars). */
+function bestDesktopPack(
+  count: number,
+  stageW: number,
+  stageH: number,
+  aspect: number,
+): DesktopPack {
+  let best: DesktopPack & { area: number } = {
+    cols: 1,
+    rows: Math.max(1, count),
+    tileW: 0,
+    tileH: 0,
+    area: 0,
+  };
+  if (!(count > 0 && stageW > 0 && stageH > 0 && aspect > 0)) return best;
+
+  for (let cols = 1; cols <= count; cols += 1) {
+    const rows = Math.ceil(count / cols);
+    const cellW = (stageW - GAP * (cols - 1)) / cols;
+    const cellH = (stageH - GAP * (rows - 1)) / rows;
+    if (!(cellW > 1 && cellH > 1)) continue;
+
+    let tileW: number;
+    let tileH: number;
+    if (cellW / cellH > aspect) {
+      tileH = cellH;
+      tileW = cellH * aspect;
+    } else {
+      tileW = cellW;
+      tileH = cellW / aspect;
+    }
+    const area = tileW * tileH;
+    if (area > best.area) {
+      best = {
+        cols,
+        rows,
+        tileW: Math.floor(tileW),
+        tileH: Math.floor(tileH),
+        area,
+      };
+    }
   }
+  return best;
+}
+
+function mobileColumnCount(online: number) {
   if (online <= 1) return 1;
   if (online <= 4) return 2;
   return 3;
@@ -42,9 +90,31 @@ export function TouchScreenGrid({
   onExit,
 }: TouchScreenGridProps) {
   const online = devices.filter((device) => device.status === "online");
-  const cols = columnCount(online.length, layout);
-  const rows = Math.max(1, Math.ceil(online.length / cols));
   const desktop = layout === "desktop";
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [pack, setPack] = useState<DesktopPack>({
+    cols: 1,
+    rows: 1,
+    tileW: 0,
+    tileH: 0,
+  });
+
+  useLayoutEffect(() => {
+    if (!desktop) return;
+    const node = stageRef.current;
+    if (!node) return;
+
+    const measure = () => {
+      const rect = node.getBoundingClientRect();
+      setPack(bestDesktopPack(online.length, rect.width, rect.height, PORTRAIT));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [desktop, online.length]);
+
+  const mobileCols = mobileColumnCount(online.length);
 
   return (
     <section
@@ -76,10 +146,8 @@ export function TouchScreenGrid({
         )}
       </div>
       <div
-        className={cn(
-          "min-h-0 flex-1",
-          desktop && rows <= 1 ? "overflow-hidden" : "overflow-y-auto",
-        )}
+        ref={stageRef}
+        className="min-h-0 flex-1 overflow-hidden"
       >
         {online.length === 0 ? (
           <p className="px-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
@@ -87,12 +155,9 @@ export function TouchScreenGrid({
           </p>
         ) : desktop ? (
           <div
-            data-touch-screen-cells={cols}
-            className="grid h-full min-h-0 place-content-center justify-items-center gap-3"
-            style={{
-              gridTemplateColumns: `repeat(${cols}, max-content)`,
-              gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-            }}
+            data-touch-screen-cells={pack.cols}
+            data-touch-screen-pack={`${pack.tileW}x${pack.tileH}`}
+            className="flex h-full w-full flex-wrap content-center items-center justify-center gap-3"
           >
             {online.map((device) => (
               <TouchScreenTile
@@ -101,6 +166,8 @@ export function TouchScreenGrid({
                 isActive={device.id === activeId}
                 mouseOn={mouseOn}
                 layout="desktop"
+                tileWidth={pack.tileW}
+                tileHeight={pack.tileH}
                 onFocus={() => onFocusDevice(device.id)}
               />
             ))}
@@ -108,7 +175,7 @@ export function TouchScreenGrid({
         ) : (
           <div
             className="grid gap-2"
-            style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+            style={{ gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))` }}
           >
             {online.map((device) => (
               <TouchScreenTile
@@ -132,12 +199,16 @@ function TouchScreenTile({
   isActive,
   mouseOn,
   layout,
+  tileWidth,
+  tileHeight,
   onFocus,
 }: {
   device: Device;
   isActive: boolean;
   mouseOn: boolean;
   layout: "mobile" | "desktop";
+  tileWidth?: number;
+  tileHeight?: number;
   onFocus: () => void;
 }) {
   const paneRef = useRef<HTMLDivElement>(null);
@@ -179,22 +250,20 @@ function TouchScreenTile({
       });
   };
 
-  // Desktop: the whole tile is the phone aspect (header overlays the top).
-  // That removes the wide landscape chrome that left black bars on the sides.
   if (desktop) {
+    const sized = (tileWidth ?? 0) > 0 && (tileHeight ?? 0) > 0;
     return (
       <div
         data-touch-screen-tile={device.id}
         className={cn(
-          "relative h-full max-h-full overflow-hidden rounded-xl border",
+          "relative overflow-hidden rounded-xl border",
           isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
         )}
-        style={{
-          aspectRatio: `${width} / ${height}`,
-          height: "100%",
-          width: "auto",
-          maxWidth: "100%",
-        }}
+        style={
+          sized
+            ? { width: tileWidth, height: tileHeight }
+            : { aspectRatio: `${width} / ${height}`, height: "40vh", width: "auto" }
+        }
       >
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-1 bg-gradient-to-b from-black/70 to-transparent px-1.5">
           <span className="pointer-events-none min-w-0 flex-1 truncate font-mono text-[10px] text-white">

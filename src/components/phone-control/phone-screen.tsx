@@ -944,9 +944,9 @@ export function PhoneScreen({
         </div>
       )}
 
-      {showDockedChrome && !compactFill && <AppShortcuts />}
+      {showDockedChrome && !compactFill && !gridView && <AppShortcuts />}
 
-      {showDockedChrome && !fillWindow && gestures.length > 1 && (
+      {showDockedChrome && !fillWindow && !gridView && gestures.length > 1 && (
         <select
           aria-label="Recorded touch"
           data-gesture-pick
@@ -961,7 +961,7 @@ export function PhoneScreen({
           ))}
         </select>
       )}
-      {showDockedChrome && !fillWindow && (
+      {showDockedChrome && !fillWindow && !gridView && (
         <div
           data-tool-row
           className="grid w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 lg:flex lg:flex-wrap lg:justify-center lg:gap-1.5"
@@ -1071,7 +1071,7 @@ export function PhoneScreen({
           )}
         </div>
       )}
-      {showDockedChrome && !compactFill && (
+      {showDockedChrome && !compactFill && !gridView && (
         <ScrcpyOptions
           targetIds={targetIds}
           serial={device?.serial ?? null}
