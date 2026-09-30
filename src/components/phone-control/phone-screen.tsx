@@ -36,8 +36,9 @@ import { coverVideoBox, fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
+import { DeviceNavBar } from "@/components/phone-control/device-nav-bar";
 import { FloatingLayer } from "@/components/phone-control/floating/floating-layer";
-import { MobileBottomChrome } from "@/components/phone-control/mobile-bottom-chrome";
+import { StatusBar } from "@/components/phone-control/status-bar";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
@@ -108,7 +109,6 @@ export function PhoneScreen({
   const screenRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
-  const [mobileChromeH, setMobileChromeH] = useState(0);
   const dragRef = useRef<{
     id: number;
     lastX: number;
@@ -469,11 +469,6 @@ export function PhoneScreen({
         "relative flex min-h-0 flex-1 flex-col",
         floatingChrome || compactFill ? "gap-0" : "gap-2",
       )}
-      style={
-        floatingChrome && mobileChromeH > 0
-          ? { paddingBottom: mobileChromeH }
-          : undefined
-      }
     >
       {!fillWindow && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
         <p className="truncate text-center font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
@@ -535,7 +530,11 @@ export function PhoneScreen({
             onPointerCancel={(e) => finishPointer(e, "cancel")}
             className={cn(
               "relative touch-none overflow-hidden select-none",
-              floatingChrome ? "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" : "shrink-0",
+              // Cover on mobile: pin to the bottom of the stage so the stream
+              // edge meets the nav chrome (crop overflows the top instead).
+              floatingChrome
+                ? "absolute bottom-0 left-1/2 -translate-x-1/2"
+                : "shrink-0",
               recording && "ring-2 ring-[var(--pc-warn)]",
               fillBottomChrome && fillBottomGap < 52 && "self-start",
               mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
@@ -775,15 +774,26 @@ export function PhoneScreen({
           )}
         </div>
         {floatingChrome && (
-          <MobileBottomChrome
-            offline={offline}
-            device={device}
-            session={session}
-            stats={stats}
-            statsMode={statsMode}
-            onNav={onNav}
-            onHeightChange={setMobileChromeH}
-          />
+          <div
+            data-mobile-bottom-chrome
+            className="flex w-full max-w-full shrink-0 flex-col border-t border-[var(--pc-line)] bg-[var(--pc-panel)]"
+            style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+          >
+            <DeviceNavBar
+              offline={offline}
+              onNav={onNav}
+              className="w-full max-w-full border-t-0"
+              safeBottom={false}
+            />
+            {statsMode === "bar" && (
+              <StatusBar
+                device={device}
+                session={session}
+                stats={stats}
+                safeBottom={false}
+              />
+            )}
+          </div>
         )}
       </div>
 
