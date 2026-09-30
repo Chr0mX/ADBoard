@@ -22,6 +22,7 @@ import { ManagePanel } from "@/components/phone-control/desk/manage-panel";
 import { Button } from "@/components/ui/button";
 import { usePhoneControl } from "@/hooks/use-phone-control";
 import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
+import { useVisualViewportLock } from "@/hooks/use-visual-viewport-lock";
 import { parseMobileStatsMode, type MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { cn } from "@/lib/utils";
 
@@ -143,6 +144,7 @@ export function PhoneControlApp() {
   const mobileControl = !wide && section === "control";
   // Mobile Control collapses the desk header into the floating Desk menu.
   const showHeader = section !== "control" || (wide && !fillWindow);
+  useVisualViewportLock(true);
 
   return (
     <DeskProvider
@@ -159,8 +161,8 @@ export function PhoneControlApp() {
       }}
     >
     <div
-      className="pc-shell fixed inset-0 flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v9"
+      className="pc-shell fixed flex flex-col overflow-hidden"
+      data-ui-build="pc-shell-v10"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (

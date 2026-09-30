@@ -36,9 +36,8 @@ import { coverVideoBox, fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
-import { DeviceNavBar } from "@/components/phone-control/device-nav-bar";
 import { FloatingLayer } from "@/components/phone-control/floating/floating-layer";
-import { StatusBar } from "@/components/phone-control/status-bar";
+import { MobileBottomChrome } from "@/components/phone-control/mobile-bottom-chrome";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
@@ -109,6 +108,7 @@ export function PhoneScreen({
   const screenRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const [mobileChromeH, setMobileChromeH] = useState(0);
   const dragRef = useRef<{
     id: number;
     lastX: number;
@@ -469,6 +469,11 @@ export function PhoneScreen({
         "relative flex min-h-0 flex-1 flex-col",
         floatingChrome || compactFill ? "gap-0" : "gap-2",
       )}
+      style={
+        floatingChrome && mobileChromeH > 0
+          ? { paddingBottom: mobileChromeH }
+          : undefined
+      }
     >
       {!fillWindow && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
         <p className="truncate text-center font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
@@ -770,22 +775,15 @@ export function PhoneScreen({
           )}
         </div>
         {floatingChrome && (
-          <div data-mobile-bottom-chrome className="flex w-full max-w-full shrink-0 flex-col">
-            <DeviceNavBar
-              offline={offline}
-              onNav={onNav}
-              className="w-full max-w-full"
-              safeBottom={statsMode !== "bar"}
-            />
-            {statsMode === "bar" && (
-              <StatusBar
-                device={device}
-                session={session}
-                stats={stats}
-                safeBottom
-              />
-            )}
-          </div>
+          <MobileBottomChrome
+            offline={offline}
+            device={device}
+            session={session}
+            stats={stats}
+            statsMode={statsMode}
+            onNav={onNav}
+            onHeightChange={setMobileChromeH}
+          />
         )}
       </div>
 
