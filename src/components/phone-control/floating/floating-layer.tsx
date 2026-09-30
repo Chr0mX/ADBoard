@@ -17,14 +17,13 @@ export interface FloatingLayerProps {
   onStatsModeChange?: (mode: MobileStatsMode) => void;
   targetIds: string[];
   offline: boolean;
-  fillWindow: boolean;
+  gridView?: boolean;
   keyboardOn: boolean;
   mouseOn: boolean;
   recording: boolean;
   replaying: boolean;
   refreshing: boolean;
   installing: boolean;
-  onFillWindowChange: (on: boolean) => void;
   onKeyboardChange: (on: boolean) => void;
   onMouseChange: (on: boolean) => void;
   onRecordToggle: () => void;
@@ -32,7 +31,7 @@ export interface FloatingLayerProps {
   onRefresh: () => void;
   onInstallFile: (file: File) => void;
   onOpenDevices: () => void;
-  onOpenScreens: () => void;
+  onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
 }
 
@@ -61,14 +60,13 @@ export function FloatingLayer(props: FloatingLayerProps) {
         targetIds={props.targetIds}
         statsMode={props.statsMode ?? "float"}
         onStatsModeChange={props.onStatsModeChange}
-        fillWindow={props.fillWindow}
+        gridView={props.gridView}
         keyboardOn={props.keyboardOn}
         mouseOn={props.mouseOn}
         recording={props.recording}
         replaying={props.replaying}
         refreshing={props.refreshing}
         installing={props.installing}
-        onFillWindowChange={props.onFillWindowChange}
         onKeyboardChange={props.onKeyboardChange}
         onMouseChange={props.onMouseChange}
         onRecordToggle={props.onRecordToggle}
@@ -76,7 +74,7 @@ export function FloatingLayer(props: FloatingLayerProps) {
         onRefresh={props.onRefresh}
         onInstallFile={props.onInstallFile}
         onOpenDevices={props.onOpenDevices}
-        onOpenScreens={props.onOpenScreens}
+        onToggleGrid={props.onToggleGrid}
         onOpenDesk={props.onOpenDesk}
       />
     </div>,

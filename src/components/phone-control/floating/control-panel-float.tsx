@@ -5,7 +5,6 @@ import {
   Circle,
   Keyboard,
   LayoutGrid,
-  Maximize2,
   MonitorOff,
   MousePointer2,
   PanelBottom,
@@ -35,14 +34,13 @@ interface ControlPanelFloatProps {
   targetIds: string[];
   statsMode: MobileStatsMode;
   onStatsModeChange?: (mode: MobileStatsMode) => void;
-  fillWindow: boolean;
+  gridView?: boolean;
   keyboardOn: boolean;
   mouseOn: boolean;
   recording: boolean;
   replaying: boolean;
   refreshing: boolean;
   installing: boolean;
-  onFillWindowChange: (on: boolean) => void;
   onKeyboardChange: (on: boolean) => void;
   onMouseChange: (on: boolean) => void;
   onRecordToggle: () => void;
@@ -50,7 +48,7 @@ interface ControlPanelFloatProps {
   onRefresh: () => void;
   onInstallFile: (file: File) => void;
   onOpenDevices: () => void;
-  onOpenScreens: () => void;
+  onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
 }
 
@@ -60,14 +58,13 @@ export function ControlPanelFloat({
   targetIds,
   statsMode,
   onStatsModeChange,
-  fillWindow,
+  gridView = false,
   keyboardOn,
   mouseOn,
   recording,
   replaying,
   refreshing,
   installing,
-  onFillWindowChange,
   onKeyboardChange,
   onMouseChange,
   onRecordToggle,
@@ -75,7 +72,7 @@ export function ControlPanelFloat({
   onRefresh,
   onInstallFile,
   onOpenDevices,
-  onOpenScreens,
+  onToggleGrid,
   onOpenDesk,
 }: ControlPanelFloatProps) {
   const [deskOpen, setDeskOpen] = useState(false);
@@ -221,12 +218,13 @@ export function ControlPanelFloat({
             />
           </label>
           <Toggle
-            pressed={fillWindow}
-            onPressedChange={onFillWindowChange}
-            aria-label="Fill window"
+            pressed={gridView}
+            onPressedChange={() => onToggleGrid()}
+            aria-label={gridView ? "Exit grid view" : "Grid view"}
+            data-grid-view={gridView ? "1" : "0"}
             className={HIT}
           >
-            <Maximize2 className="size-5" />
+            <LayoutGrid className="size-5" />
           </Toggle>
           <Button
             type="button"
@@ -260,15 +258,6 @@ export function ControlPanelFloat({
             onClick={onOpenDevices}
           >
             <Smartphone className="size-5" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label="Screens"
-            className={HIT}
-            onClick={onOpenScreens}
-          >
-            <LayoutGrid className="size-5" />
           </Button>
           <Button
             type="button"

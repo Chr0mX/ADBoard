@@ -58,28 +58,20 @@ export function PhoneControlApp() {
     sessions,
   } = usePhoneControl();
 
-  const [fillWindow, setFillWindow] = useStoredFlag("phonecontrol-fill-window", false);
+  const [storedFillWindow, setFillWindow] = useStoredFlag("phonecontrol-fill-window", false);
   const wide = useSyncExternalStore(
     subscribeWide,
     () => window.matchMedia("(min-width: 1024px)").matches,
     () => false,
   );
+  // Mobile always fills; Fill toggle stays desktop-only.
+  const fillWindow = wide ? storedFillWindow : true;
   const [devicesOpen, setDevicesOpen] = useState(false);
   const [screensOpen, setScreensOpen] = useState(false);
-
-  // Prefer fill on first visit for narrow viewports only; leave desktop preference alone.
-  useEffect(() => {
-    if (wide) return;
-    try {
-      if (localStorage.getItem("phonecontrol-fill-window") == null) {
-        setFillWindow(true);
-      }
-    } catch {
-      // private mode
-    }
-  }, [wide, setFillWindow]);
+  const [gridView, setGridView] = useState(false);
 
   const setFill = (on: boolean) => {
+    if (!wide) return;
     setFillWindow(on);
     if (on) setDevicesOpen(false);
   };
@@ -112,6 +104,10 @@ export function PhoneControlApp() {
     if (changed) setLastSeen({ ...seenRef.current });
   }, [devices]);
 
+  useEffect(() => {
+    if (wide) setGridView(false);
+  }, [wide]);
+
   const open = (next: DeskSection, tool?: string, deviceId?: string) => {
     if (deviceId) {
       selectDevice({ deviceId, ctrlKey: false, shiftKey: false, metaKey: false });
@@ -140,7 +136,7 @@ export function PhoneControlApp() {
 
   const showDevices = wide ? !fillWindow : devicesOpen;
   const dockedScreens = wide && !fillWindow;
-  const screenSheet = screensOpen && !dockedScreens;
+  const screenSheet = screensOpen && !dockedScreens && wide;
   const mobileControl = !wide && section === "control";
   // Mobile Control collapses the desk header into the floating Desk menu.
   const showHeader = section !== "control" || (wide && !fillWindow);
@@ -162,7 +158,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v11"
+      data-ui-build="pc-shell-v12"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -222,21 +218,33 @@ export function PhoneControlApp() {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <PhoneScreen
                 device={activeDevice}
+                devices={devices}
                 session={activeSession}
                 keyboardOn={keyboardOn}
                 mouseOn={mouseOn}
                 fillWindow={fillWindow}
                 compactFill={fillWindow && !wide && !mobileControl}
                 floatingChrome={mobileControl}
+                gridView={mobileControl && gridView}
                 statsMode={mobileStatsMode}
                 onStatsModeChange={setMobileStatsMode}
                 onFillWindowChange={setFill}
+                onToggleGrid={() => setGridView((open) => !open)}
+                onFocusDevice={(deviceId) => {
+                  selectDevice({
+                    deviceId,
+                    ctrlKey: false,
+                    shiftKey: false,
+                    metaKey: false,
+                  });
+                  setGridView(false);
+                }}
                 showDevicesButton={!fillWindow && !wide}
                 onOpenDevices={() => {
                   setScreensOpen(false);
                   setDevicesOpen(true);
                 }}
-                showScreensButton={!dockedScreens}
+                showScreensButton={!dockedScreens && wide}
                 onOpenScreens={() => {
                   setDevicesOpen(false);
                   setScreensOpen(true);

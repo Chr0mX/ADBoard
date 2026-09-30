@@ -38,6 +38,7 @@ import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { AppShortcuts } from "@/components/phone-control/app-shortcuts";
 import { DeviceNavBar } from "@/components/phone-control/device-nav-bar";
 import { FloatingLayer } from "@/components/phone-control/floating/floating-layer";
+import { TouchScreenGrid } from "@/components/phone-control/touch-screen-grid";
 import { StatusBar } from "@/components/phone-control/status-bar";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
@@ -47,6 +48,7 @@ import type { GestureSample } from "@/lib/desk/store";
 
 interface PhoneScreenProps {
   device: Device | null;
+  devices?: Device[];
   session?: SessionStatus | null;
   keyboardOn: boolean;
   mouseOn: boolean;
@@ -55,9 +57,13 @@ interface PhoneScreenProps {
   compactFill?: boolean;
   /** Mobile Control: docked chrome is replaced by FloatingLayer. */
   floatingChrome?: boolean;
+  /** Mobile multi-device touch grid (replaces single stage). */
+  gridView?: boolean;
   statsMode?: MobileStatsMode;
   onStatsModeChange?: (mode: MobileStatsMode) => void;
   onFillWindowChange: (on: boolean) => void;
+  onToggleGrid?: () => void;
+  onFocusDevice?: (deviceId: string) => void;
   showDevicesButton?: boolean;
   onOpenDevices?: () => void;
   showScreensButton?: boolean;
@@ -82,15 +88,19 @@ interface PhoneScreenProps {
 
 export function PhoneScreen({
   device,
+  devices = [],
   session,
   keyboardOn,
   mouseOn,
   fillWindow,
   compactFill = false,
   floatingChrome = false,
+  gridView = false,
   statsMode = "float",
   onStatsModeChange,
   onFillWindowChange,
+  onToggleGrid,
+  onFocusDevice,
   showDevicesButton,
   onOpenDevices,
   showScreensButton,
@@ -477,6 +487,14 @@ export function PhoneScreen({
       )}
 
       <div className="flex min-h-0 w-full flex-1 flex-col">
+        {floatingChrome && gridView ? (
+          <TouchScreenGrid
+            devices={devices}
+            activeId={device?.id ?? null}
+            mouseOn={mouseOn}
+            onFocusDevice={(deviceId) => onFocusDevice?.(deviceId)}
+          />
+        ) : (
         <div className="flex min-h-0 w-full max-w-full flex-1 flex-col">
           <div
             ref={stageRef}
@@ -773,6 +791,7 @@ export function PhoneScreen({
           </div>
           )}
         </div>
+        )}
         {floatingChrome && (
           <div
             data-mobile-bottom-chrome
@@ -984,6 +1003,7 @@ export function PhoneScreen({
             aria-label="Fill window"
             className={cn(
               toolControlClass,
+              "hidden lg:inline-flex",
               "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
             )}
           >
@@ -1032,14 +1052,13 @@ export function PhoneScreen({
           onStatsModeChange={onStatsModeChange}
           targetIds={targetIds}
           offline={offline}
-          fillWindow={fillWindow}
+          gridView={gridView}
           keyboardOn={keyboardOn}
           mouseOn={mouseOn}
           recording={recording}
           replaying={replaying}
           refreshing={refreshing}
           installing={installing}
-          onFillWindowChange={onFillWindowChange}
           onKeyboardChange={onKeyboardChange}
           onMouseChange={onMouseChange}
           onRecordToggle={() => {
@@ -1050,7 +1069,7 @@ export function PhoneScreen({
           onRefresh={() => void refreshVideo()}
           onInstallFile={(file) => void pickApk(file)}
           onOpenDevices={() => onOpenDevices?.()}
-          onOpenScreens={() => onOpenScreens?.()}
+          onToggleGrid={() => onToggleGrid?.()}
           onOpenDesk={(section) => desk?.open(section)}
         />
       )}
