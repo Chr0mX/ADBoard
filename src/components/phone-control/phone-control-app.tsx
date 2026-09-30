@@ -112,6 +112,17 @@ export function PhoneControlApp() {
     }
   }, [wide]);
 
+  useEffect(() => {
+    if (!devicesOpen && !screensOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setDevicesOpen(false);
+      setScreensOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [devicesOpen, screensOpen]);
+
   const open = (next: DeskSection, tool?: string, deviceId?: string) => {
     if (deviceId) {
       selectDevice({ deviceId, ctrlKey: false, shiftKey: false, metaKey: false });
@@ -162,7 +173,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v21"
+      data-ui-build="pc-shell-v22"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -177,7 +188,9 @@ export function PhoneControlApp() {
       <main
         className={cn(
           "relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden",
-          !fillWindow && !mobileControl && "px-2 py-2 lg:px-4 lg:py-3",
+          section !== "control"
+            ? "px-3 py-2 lg:px-4 lg:py-3"
+            : !fillWindow && !mobileControl && "px-2 py-2 lg:px-4 lg:py-3",
         )}
       >
         {loading && (
@@ -227,7 +240,6 @@ export function PhoneControlApp() {
                 keyboardOn={keyboardOn}
                 mouseOn={mouseOn}
                 fillWindow={fillWindow}
-                compactFill={fillWindow && !wide && !mobileControl}
                 floatingChrome={mobileControl}
                 gridView={gridView}
                 statsMode={mobileStatsMode}
@@ -267,6 +279,9 @@ export function PhoneControlApp() {
 
             {showDevices && (
               <aside
+                role={!wide ? "dialog" : undefined}
+                aria-modal={!wide ? true : undefined}
+                aria-label={!wide ? "Devices" : undefined}
                 className={cn(
                   "flex min-h-0 flex-col gap-3",
                   wide
@@ -317,7 +332,12 @@ export function PhoneControlApp() {
             )}
             </div>
             {screenSheet && (
-              <div className="absolute inset-0 z-40 flex flex-col gap-3 overflow-hidden bg-[var(--pc-paper)] p-3">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Screens"
+                className="absolute inset-0 z-40 flex flex-col gap-3 overflow-hidden bg-[var(--pc-paper)] p-3"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">
                     Screens

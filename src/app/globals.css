@@ -65,6 +65,16 @@
   --pc-warn-soft: color-mix(in srgb, #ff9b63 16%, #121a22);
   --pc-frame: #070b0f;
 
+  /* Spacing rhythm + Control chrome (PWA Tools HIT is the reference). */
+  --pc-space-1: 0.25rem;
+  --pc-space-2: 0.5rem;
+  --pc-space-3: 0.75rem;
+  --pc-space-4: 1rem;
+  --pc-hit: 2.75rem;
+  --pc-hit-lg: 3rem;
+  --pc-radius-control: 0.75rem;
+  --pc-radius-shell: 1rem;
+
   --background: var(--pc-paper);
   --foreground: var(--pc-ink);
   --card: var(--pc-panel);
@@ -203,4 +213,32 @@ body {
 
 .animate-pc-ripple {
   animation: pc-ripple 0.55s ease-out forwards;
+}
+
+/* Shared Control surface — float Tools / desk primary language. */
+.pc-control-surface {
+  border: 1px solid var(--pc-line);
+  border-radius: var(--pc-radius-control);
+  background-color: color-mix(in srgb, var(--pc-panel) 80%, transparent);
+  color: var(--pc-ink);
+}
+
+.pc-control-surface:is(:hover, :active) {
+  background-color: var(--pc-accent-soft);
+}
+
+.pc-control-surface[aria-pressed="true"] {
+  border-color: var(--pc-accent);
+  background-color: var(--pc-accent-soft);
+  color: var(--pc-accent);
+}
+
+.pc-hit {
+  min-height: var(--pc-hit);
+  min-width: var(--pc-hit);
+}
+
+.pc-hit-lg {
+  min-height: var(--pc-hit-lg);
+  min-width: var(--pc-hit-lg);
 }

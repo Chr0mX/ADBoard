@@ -1,7 +1,7 @@
 "use client";
 
-import { formatResolution } from "@/lib/devices/coords";
 import type { Device, SessionStatus, StreamStats } from "@/lib/devices/types";
+import { streamStatFields } from "@/lib/ui/stream-stats-format";
 import { cn } from "@/lib/utils";
 
 interface StatusBarProps {
@@ -13,12 +13,6 @@ interface StatusBarProps {
   /** Tighter padding under the mobile stream dock. */
   compact?: boolean;
   className?: string;
-}
-
-function formatRate(kbps: number): string {
-  if (!(kbps > 0)) return "—";
-  if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`;
-  return `${Math.round(kbps)} kbps`;
 }
 
 /** Compact one-line stats used under grid tiles and the desktop footer. */
@@ -33,20 +27,7 @@ export function StatsLine({
   stats?: StreamStats | null;
   className?: string;
 }) {
-  const problem =
-    device.status !== "online"
-      ? device.status
-      : session?.stream === "error"
-        ? session.note || "stream error"
-        : null;
-
-  const width = stats && stats.width > 0 ? stats.width : device.resolution.width;
-  const height = stats && stats.height > 0 ? stats.height : device.resolution.height;
-  const fps = stats && stats.fps > 0 ? `${Math.round(stats.fps)} fps` : "— fps";
-  const rate = formatRate(stats?.bitrateKbps ?? 0);
-  const codec = stats?.codec || "h264";
-  const battery = device.battery != null ? `${device.battery}%` : "—";
-  const temperature = device.temperatureC != null ? `${device.temperatureC.toFixed(1)}°C` : "—";
+  const fields = streamStatFields(device, session, stats);
 
   return (
     <p
@@ -55,14 +36,14 @@ export function StatsLine({
         className,
       )}
     >
-      <span>{device.name}</span>
-      <span>{formatResolution(width, height)}</span>
-      <span data-battery>{battery}</span>
-      <span data-temperature>{temperature}</span>
-      <span>{fps}</span>
-      <span>{rate}</span>
-      <span>{codec}</span>
-      {problem ? <span>{problem}</span> : null}
+      <span>{fields.name}</span>
+      <span>{fields.size}</span>
+      <span data-battery>{fields.battery}</span>
+      <span data-temperature>{fields.temperature}</span>
+      <span>{fields.fps}</span>
+      <span>{fields.rate}</span>
+      <span>{fields.codec}</span>
+      {fields.problem ? <span>{fields.problem}</span> : null}
     </p>
   );
 }

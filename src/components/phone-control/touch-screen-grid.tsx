@@ -8,6 +8,7 @@ import { normalizePoint } from "@/lib/devices/coords";
 import { devicesClient } from "@/lib/api/client";
 import type { Device, PointerPhase, PointerTool } from "@/lib/devices/types";
 import { StatsLine } from "@/components/phone-control/status-bar";
+import { PC_HIT_MIN } from "@/lib/ui/control-chrome";
 import { cn } from "@/lib/utils";
 
 interface TouchScreenGridProps {
@@ -144,7 +145,7 @@ export function TouchScreenGrid({
             variant="outline"
             aria-label="Exit grid view"
             data-grid-exit
-            className="h-8 shrink-0 gap-1.5 border-[var(--pc-line)] px-2 text-[var(--pc-ink)]"
+            className={cn(PC_HIT_MIN, "h-11 shrink-0 gap-1.5 border-[var(--pc-line)] px-2 text-[var(--pc-ink)]")}
             onClick={onExit}
           >
             <X className="size-3.5" />
@@ -293,7 +294,7 @@ function TouchScreenTile({
               type="button"
               variant="ghost"
               aria-label={`Focus ${device.name}`}
-              className="pointer-events-auto h-6 min-h-6 w-6 min-w-6 rounded-md p-0 text-white hover:bg-white/15 hover:text-white"
+              className="pointer-events-auto h-11 min-h-11 w-11 min-w-11 rounded-xl border border-white/20 bg-black/40 p-0 text-white hover:bg-white/15 hover:text-white"
               onClick={onFocus}
             >
               <Maximize2 className="size-3.5" />
@@ -394,7 +395,7 @@ function TouchScreenTile({
           type="button"
           variant="ghost"
           aria-label={`Focus ${device.name}`}
-          className="h-6 min-h-6 w-6 min-w-6 rounded-md p-0 text-[var(--pc-ink)]"
+          className="h-11 min-h-11 w-11 min-w-11 rounded-xl p-0 text-[var(--pc-ink)]"
           onClick={onFocus}
         >
           <Maximize2 className="size-3.5" />

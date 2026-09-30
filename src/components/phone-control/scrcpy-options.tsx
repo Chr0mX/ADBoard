@@ -167,7 +167,7 @@ export function ScrcpyOptions({
   return (
     <div className="flex w-full shrink-0 flex-col items-center gap-1" data-scrcpy-options>
       <div className="flex w-full flex-nowrap items-center justify-start gap-1.5 overflow-x-auto lg:flex-wrap lg:justify-center">
-        <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
+        <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
           <span className="hidden font-mono text-[10px] uppercase tracking-wide text-[var(--pc-muted)] lg:inline">
             Quality
           </span>
@@ -187,7 +187,7 @@ export function ScrcpyOptions({
             <option value="original">Original</option>
           </select>
         </label>
-        <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
+        <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
           <span className="hidden font-mono text-[10px] uppercase tracking-wide text-[var(--pc-muted)] lg:inline">
             Size
           </span>
@@ -216,7 +216,7 @@ export function ScrcpyOptions({
           disabled={disabled}
           aria-label="Audio forwarding"
           data-scrcpy-audio
-          className="h-11 shrink-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+          className="h-11 shrink-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
         >
           Audio
         </Toggle>
@@ -228,7 +228,7 @@ export function ScrcpyOptions({
           disabled={disabled}
           aria-label="Screen off"
           data-scrcpy-screen
-          className="h-11 shrink-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+          className="h-11 shrink-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
         >
           Screen off
         </Toggle>
@@ -240,7 +240,7 @@ export function ScrcpyOptions({
             disabled={disabled}
             placeholder="Clipboard"
             onChange={(event) => setClip(event.target.value)}
-            className="h-11 min-w-[8rem] flex-1 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 font-mono text-xs text-[var(--pc-ink)] outline-none placeholder:text-[var(--pc-muted)]"
+            className="h-11 min-w-[8rem] flex-1 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 font-mono text-xs text-[var(--pc-ink)] outline-none placeholder:text-[var(--pc-muted)]"
           />
           <Button
             type="button"
@@ -248,7 +248,7 @@ export function ScrcpyOptions({
             disabled={disabled}
             data-scrcpy-to-phone
             onClick={() => void sendToPhone(true)}
-            className="h-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs"
+            className="h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs"
           >
             To phone
           </Button>
@@ -258,7 +258,7 @@ export function ScrcpyOptions({
             disabled={disabled}
             data-scrcpy-from-phone
             onClick={() => void takeFromPhone()}
-            className="h-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs"
+            className="h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs"
           >
             From phone
           </Button>
