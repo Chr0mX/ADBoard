@@ -105,7 +105,11 @@ export function PhoneControlApp() {
   }, [devices]);
 
   useEffect(() => {
-    if (wide) setGridView(false);
+    // Keep grid mode when resizing; only clear the mobile sheet overlays.
+    if (wide) {
+      setDevicesOpen(false);
+      setScreensOpen(false);
+    }
   }, [wide]);
 
   const open = (next: DeskSection, tool?: string, deviceId?: string) => {
@@ -134,9 +138,9 @@ export function PhoneControlApp() {
     );
   };
 
-  const showDevices = wide ? !fillWindow : devicesOpen;
-  const dockedScreens = wide && !fillWindow;
-  const screenSheet = screensOpen && !dockedScreens && wide;
+  const showDevices = wide ? !fillWindow && !gridView : devicesOpen;
+  const dockedScreens = wide && !fillWindow && !gridView;
+  const screenSheet = screensOpen && !dockedScreens && wide && !gridView;
   const mobileControl = !wide && section === "control";
   // Mobile Control collapses the desk header into the floating Desk menu.
   const showHeader = section !== "control" || (wide && !fillWindow);
@@ -158,7 +162,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v14"
+      data-ui-build="pc-shell-v15"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -225,7 +229,7 @@ export function PhoneControlApp() {
                 fillWindow={fillWindow}
                 compactFill={fillWindow && !wide && !mobileControl}
                 floatingChrome={mobileControl}
-                gridView={mobileControl && gridView}
+                gridView={gridView}
                 statsMode={mobileStatsMode}
                 onStatsModeChange={setMobileStatsMode}
                 onFillWindowChange={setFill}
@@ -244,7 +248,7 @@ export function PhoneControlApp() {
                   setScreensOpen(false);
                   setDevicesOpen(true);
                 }}
-                showScreensButton={!dockedScreens && wide}
+                showScreensButton={!dockedScreens && wide && !gridView}
                 onOpenScreens={() => {
                   setDevicesOpen(false);
                   setScreensOpen(true);

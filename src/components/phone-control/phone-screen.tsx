@@ -487,12 +487,14 @@ export function PhoneScreen({
       )}
 
       <div className="flex min-h-0 w-full flex-1 flex-col">
-        {floatingChrome && gridView ? (
+        {gridView ? (
           <TouchScreenGrid
             devices={devices}
             activeId={device?.id ?? null}
             mouseOn={mouseOn}
+            layout={floatingChrome ? "mobile" : "desktop"}
             onFocusDevice={(deviceId) => onFocusDevice?.(deviceId)}
+            onExit={onToggleGrid}
           />
         ) : (
         <div className="flex min-h-0 w-full max-w-full flex-1 flex-col">
@@ -770,6 +772,17 @@ export function PhoneScreen({
                 Screens
               </Button>
             )}
+            {fillWindow && onToggleGrid && (
+              <Toggle
+                pressed={gridView}
+                onPressedChange={() => onToggleGrid()}
+                aria-label={gridView ? "Exit grid view" : "Grid view"}
+                data-grid-view={gridView ? "1" : "0"}
+                className="h-11 min-w-11 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+              >
+                <LayoutGrid className="size-4" />
+              </Toggle>
+            )}
             {fillWindow && gestureButtons("nav")}
             {fillWindow && (
               <Button
@@ -811,7 +824,7 @@ export function PhoneScreen({
         )}
       </div>
 
-      {showDockedChrome && fillSideChrome && (
+      {showDockedChrome && fillSideChrome && !gridView && (
         <>
           <div
             data-fill-chrome
@@ -866,6 +879,17 @@ export function PhoneScreen({
                 </Button>
               ))}
               {gestureButtons("side")}
+              {onToggleGrid && (
+                <Toggle
+                  pressed={gridView}
+                  onPressedChange={() => onToggleGrid()}
+                  aria-label={gridView ? "Exit grid view" : "Grid view"}
+                  data-grid-view={gridView ? "1" : "0"}
+                  className="h-11 w-11 shrink-0 rounded-full border border-[var(--pc-line)] bg-[var(--pc-paper)]/90 p-0 text-[var(--pc-ink)] aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+                >
+                  <LayoutGrid className="size-5" />
+                </Toggle>
+              )}
               <Button
                 type="button"
                 variant="ghost"
@@ -879,7 +903,7 @@ export function PhoneScreen({
           </div>
         </>
       )}
-      {showDockedChrome && fillBottomChrome && (
+      {showDockedChrome && fillBottomChrome && !gridView && (
         <div
           data-fill-chrome
           data-fill-layout="bottom"
@@ -1005,6 +1029,22 @@ export function PhoneScreen({
             <Maximize2 className="size-4" />
             <span className="hidden lg:inline">Fill</span>
           </Toggle>
+          {onToggleGrid && (
+            <Toggle
+              pressed={gridView}
+              onPressedChange={() => onToggleGrid()}
+              aria-label={gridView ? "Exit grid view" : "Grid view"}
+              data-grid-view={gridView ? "1" : "0"}
+              className={cn(
+                toolControlClass,
+                "hidden lg:inline-flex",
+                "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+              )}
+            >
+              <LayoutGrid className="size-4" />
+              <span className="hidden lg:inline">Grid</span>
+            </Toggle>
+          )}
           {showScreensButton && (
             <Button
               type="button"
