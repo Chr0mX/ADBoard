@@ -42,6 +42,7 @@ export function TouchScreenGrid({
 }: TouchScreenGridProps) {
   const online = devices.filter((device) => device.status === "online");
   const cols = columnCount(online.length, layout);
+  const rows = Math.max(1, Math.ceil(online.length / cols));
   const desktop = layout === "desktop";
 
   return (
@@ -50,20 +51,20 @@ export function TouchScreenGrid({
       data-touch-screen-layout={layout}
       className={cn(
         "relative flex min-h-0 flex-1 flex-col overflow-hidden",
-        desktop ? "gap-3 p-3" : "gap-2 p-2",
+        desktop ? "gap-2 p-2" : "gap-2 p-2",
       )}
     >
       <div className="flex shrink-0 items-center justify-between gap-2">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-baseline gap-2">
           <h2
             className={cn(
-              "font-semibold text-[var(--pc-ink)]",
-              desktop ? "font-display text-base" : "font-display text-sm",
+              "shrink-0 font-semibold text-[var(--pc-ink)]",
+              desktop ? "font-display text-sm" : "font-display text-sm",
             )}
           >
             Grid
           </h2>
-          <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
+          <p className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
             {online.length} online · control each screen
           </p>
         </div>
@@ -73,30 +74,33 @@ export function TouchScreenGrid({
             variant="outline"
             aria-label="Exit grid view"
             data-grid-exit
-            className={cn(
-              "shrink-0 gap-1.5 border-[var(--pc-line)] text-[var(--pc-ink)]",
-              desktop ? "h-10 px-3" : "h-9 px-2",
-            )}
+            className="h-8 shrink-0 gap-1.5 border-[var(--pc-line)] px-2 text-[var(--pc-ink)]"
             onClick={onExit}
           >
-            <X className="size-4" />
-            <span className={desktop ? "inline" : "sr-only"}>Exit</span>
+            <X className="size-3.5" />
+            <span className={desktop ? "inline text-xs" : "sr-only"}>Exit</span>
           </Button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className={cn(
+          "min-h-0 flex-1",
+          // Fit tiles in the stage; only scroll when there are multiple rows.
+          desktop && rows <= 1 ? "overflow-hidden" : "overflow-y-auto",
+        )}
+      >
         {online.length === 0 ? (
           <p className="px-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
             No online screens
           </p>
         ) : (
           <div
-            className={cn("grid min-h-full", desktop ? "gap-3" : "gap-2")}
+            className={cn("grid h-full min-h-0", desktop ? "gap-2" : "gap-2")}
             style={{
               gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-              ...(desktop
-                ? { gridAutoRows: "minmax(16rem, 1fr)" }
-                : null),
+              gridTemplateRows: desktop
+                ? `repeat(${rows}, minmax(0, 1fr))`
+                : undefined,
             }}
           >
             {online.map((device) => (
@@ -173,41 +177,28 @@ function TouchScreenTile({
       data-touch-screen-tile={device.id}
       className={cn(
         "flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[var(--pc-panel)]",
-        desktop && "h-full min-h-[16rem]",
+        desktop && "h-full",
         isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
       )}
     >
-      <div
-        className={cn(
-          "flex shrink-0 items-center gap-1 border-b border-[var(--pc-line)]",
-          desktop ? "px-2 py-1.5" : "px-1.5 py-1",
-        )}
-      >
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate font-mono text-[var(--pc-ink)]",
-            desktop ? "text-xs" : "text-[10px]",
-          )}
-        >
+      <div className="flex h-7 shrink-0 items-center gap-1 border-b border-[var(--pc-line)] px-1.5">
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--pc-ink)]">
           {device.name}
         </span>
         <Button
           type="button"
           variant="ghost"
           aria-label={`Focus ${device.name}`}
-          className={cn(
-            "rounded-lg p-0 text-[var(--pc-ink)]",
-            desktop ? "h-9 min-h-9 w-9 min-w-9" : "h-9 min-h-9 w-9 min-w-9",
-          )}
+          className="h-6 min-h-6 w-6 min-w-6 rounded-md p-0 text-[var(--pc-ink)]"
           onClick={onFocus}
         >
-          <Maximize2 className="size-4" />
+          <Maximize2 className="size-3.5" />
         </Button>
       </div>
       <div
         className={cn(
           "relative min-h-0 w-full flex-1 overflow-hidden bg-[#0a0d10]",
-          desktop && "flex items-center justify-center p-2",
+          desktop && "flex items-center justify-center",
         )}
       >
         <div
@@ -218,10 +209,19 @@ function TouchScreenTile({
           data-video-frame={`${width}x${height}`}
           className={cn(
             "relative touch-none select-none overflow-hidden bg-[#101418]",
-            desktop ? "max-h-full max-w-full" : "min-h-0 w-full flex-1",
+            desktop ? "max-h-full max-w-full" : "min-h-0 w-full",
             mouseOn && !offline ? "cursor-crosshair" : "cursor-default",
           )}
-          style={{ aspectRatio: `${width} / ${height}`, width: desktop ? "100%" : undefined }}
+          style={
+            desktop
+              ? {
+                  aspectRatio: `${width} / ${height}`,
+                  height: "100%",
+                  width: "auto",
+                  maxWidth: "100%",
+                }
+              : { aspectRatio: `${width} / ${height}`, width: "100%" }
+          }
           onPointerDown={(event) => {
             if (offline || !mouseOn) return;
             event.currentTarget.setPointerCapture(event.pointerId);
