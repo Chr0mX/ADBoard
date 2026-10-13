@@ -432,7 +432,12 @@ export function FloatingPanel({
         top: (pos?.y ?? 0) + (typeof window !== "undefined" ? vp.offsetTop : 0),
         visibility: pos ? "visible" : "hidden",
         zIndex: edgeHidden ? 25 : 20,
+        // Override panel min-width utilities (e.g. Stats min-w-[10rem]) so the
+        // peek strip is truly EDGE_PEEK wide — otherwise a right dock centers
+        // the label in the off-screen portion of a wide panel.
         width: edgeHidden ? EDGE_PEEK : undefined,
+        minWidth: edgeHidden ? EDGE_PEEK : undefined,
+        maxWidth: edgeHidden ? EDGE_PEEK : undefined,
         height: edgeHidden ? Math.max(EDGE_PEEK * 2, 56) : undefined,
         overflow: edgeHidden ? "hidden" : undefined,
       }}
@@ -442,7 +447,7 @@ export function FloatingPanel({
           type="button"
           data-float-edge-peek
           aria-label={`Show ${label}. Tap or swipe toward the screen.`}
-          className="flex h-full w-full touch-auto items-center justify-center bg-[var(--pc-accent-fill)] text-white active:brightness-110"
+          className="relative flex h-full w-full touch-auto items-center justify-center overflow-hidden bg-[var(--pc-accent-fill)] text-white active:brightness-110"
           onPointerDown={onPeekPointerDown}
           onPointerMove={onPeekPointerMove}
           onPointerUp={onPeekPointerUp}
@@ -450,12 +455,19 @@ export function FloatingPanel({
             peekDragRef.current = null;
           }}
         >
+          {/*
+            vertical-rl starts lines on the right; on a right-edge peek that
+            clips the label. Use vertical-lr on the right so “Stats” stays inside
+            the EDGE_PEEK strip. Left keeps vertical-rl + 180° so it reads upward.
+          */}
           <span
-            className="font-mono text-[10px] font-semibold tracking-wide text-white"
-            style={{
-              writingMode: "vertical-rl",
-              transform: edge === "left" ? "rotate(180deg)" : undefined,
-            }}
+            data-float-edge-label
+            className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] font-semibold tracking-[0.12em] text-white"
+            style={
+              edge === "right"
+                ? { writingMode: "vertical-lr" }
+                : { writingMode: "vertical-rl", transform: "rotate(180deg)" }
+            }
           >
             {label}
           </span>
