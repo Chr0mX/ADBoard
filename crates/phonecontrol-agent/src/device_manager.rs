@@ -44,6 +44,9 @@ pub struct InnerState {
     pub mesh: Arc<MeshRegistry>,
     /// Serials whose `wm size` changed and must be read again on the next poll.
     pub resolution_refresh: Mutex<HashSet<String>>,
+    /// Serials where Phone Control applied a non-native `wm size` override.
+    /// Cleared on successful `wm size reset` (manual or on disconnect/reconnect).
+    pub display_size_overrides: Mutex<HashSet<String>>,
     pub qr_pairs: Mutex<HashMap<String, QrPairSlot>>,
     /// Shared secret for HTTP and WebSocket API calls (`PHONECONTROL_TOKEN`).
     pub api_token: String,
@@ -139,6 +142,7 @@ impl AppState {
                 sessions,
                 mesh,
                 resolution_refresh: Mutex::new(HashSet::new()),
+                display_size_overrides: Mutex::new(HashSet::new()),
                 qr_pairs: Mutex::new(HashMap::new()),
                 api_token,
             }),
@@ -1038,6 +1042,15 @@ impl AppState {
             Ok(output) => output,
             Err(error) => return op_error(device, error),
         };
+        note_display_size_override(
+            &mut self
+                .inner
+                .display_size_overrides
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()),
+            &device.serial,
+            spec,
+        );
         self.inner
             .resolution_refresh
             .lock()
@@ -1062,6 +1075,45 @@ impl AppState {
             }
         }
         op_ok(device, output)
+    }
+
+    /// Best-effort `wm size reset` for phones we resized. Safe if the cable is
+    /// already gone — the override flag stays so reconnect can retry.
+    async fn reset_overridden_display_size(&self, serial: &str) {
+        let needs_reset = self
+            .inner
+            .display_size_overrides
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .contains(serial);
+        if !needs_reset {
+            return;
+        }
+        let Some(adb) = self.inner.adb_path.clone() else {
+            return;
+        };
+        match crate::device_ops::set_display_size(&adb, serial, "reset").await {
+            Ok(output) => {
+                info!(%serial, %output, "reset wm size after disconnect");
+                self.inner
+                    .display_size_overrides
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .remove(serial);
+                self.inner
+                    .resolution_refresh
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .insert(serial.to_string());
+            }
+            Err(error) => {
+                warn!(
+                    %serial,
+                    %error,
+                    "could not reset wm size; will retry when the phone returns"
+                );
+            }
+        }
     }
 
     async fn gesture(
@@ -1993,9 +2045,13 @@ impl AppState {
                                 RecoveryAction::RestartAdb { serial } => {
                                     *adb_attempts.entry(serial.clone()).or_insert(0) += 1;
                                     let adb = adb.clone();
-                                    info!(%serial, "phone disconnected — restarting its ADB connection");
+                                    let state = state.clone();
+                                    info!(%serial, "phone disconnected — resetting wm size and restarting ADB");
                                     tokio::spawn(async move {
-                                        let args = vec!["-s".into(), serial.clone(), "reconnect".into()];
+                                        // Best-effort: often fails if the cable is already gone.
+                                        state.reset_overridden_display_size(&serial).await;
+                                        let args =
+                                            vec!["-s".into(), serial.clone(), "reconnect".into()];
                                         match crate::device_ops::adb_text(&adb, &args).await {
                                             Ok(output) => {
                                                 info!(%serial, %output, "automatic adb reconnect")
@@ -2007,7 +2063,9 @@ impl AppState {
                                     });
                                 }
                                 RecoveryAction::RestartSession { serial } => {
-                                    info!(%serial, "device returned — restarting scrcpy");
+                                    info!(%serial, "device returned — resetting wm size if needed, then scrcpy");
+                                    // Retry reset if disconnect could not talk to the phone.
+                                    state.reset_overridden_display_size(&serial).await;
                                     match state.restart_session_local(&serial).await {
                                         Ok(session) => {
                                             state.publish(ServerEvent::SessionUpdated { session });
@@ -2153,6 +2211,16 @@ impl RecoveryAction {
                 serial
             }
         }
+    }
+}
+
+/// Track Phone Control `wm size` overrides so disconnect can restore the panel.
+fn note_display_size_override(overrides: &mut HashSet<String>, serial: &str, spec: &str) {
+    let spec = spec.trim();
+    if spec.is_empty() || spec == "reset" || spec == "native" {
+        overrides.remove(serial);
+    } else {
+        overrides.insert(serial.to_string());
     }
 }
 
@@ -2563,6 +2631,18 @@ mod tests {
             host_id: None,
             wallpaper_hue: 0,
         }
+    }
+
+    #[test]
+    fn note_display_size_override_tracks_and_clears() {
+        let mut overrides = HashSet::new();
+        note_display_size_override(&mut overrides, "s24", "1080x1920");
+        assert!(overrides.contains("s24"));
+        note_display_size_override(&mut overrides, "s24", "reset");
+        assert!(!overrides.contains("s24"));
+        note_display_size_override(&mut overrides, "s23", "1080x2400");
+        note_display_size_override(&mut overrides, "s23", "native");
+        assert!(!overrides.contains("s23"));
     }
 
     #[test]
