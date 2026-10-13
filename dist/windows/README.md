@@ -1,4 +1,4 @@
-# Phone Control — Windows USB host pack
+# Rasiel — Windows USB host pack
 
 Drop-in folder for running the **controller** on a Windows PC that has phones on USB.
 Same Rust binary as Linux `phonecontrol-agent`; here it is named `PhoneControl.exe`.

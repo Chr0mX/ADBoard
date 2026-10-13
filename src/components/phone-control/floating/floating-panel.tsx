@@ -457,18 +457,18 @@ export function FloatingPanel({
           }}
         >
           {/*
-            Rotate (not writing-mode): Safari/iOS often paints vertical-lr/rl
-            flex labels at zero size inside a clipped EDGE_PEEK strip, which
-            left Stats blank while Tools sometimes still looked fine.
+            Stack letters (no writing-mode / rotate): Safari/iOS has painted
+            vertical-lr and rotated flex labels at zero size inside a clipped
+            EDGE_PEEK strip, which left the Stats word blank.
           */}
           <span
             data-float-edge-label
-            className="pointer-events-none whitespace-nowrap font-mono text-[11px] font-semibold tracking-[0.14em] text-white"
-            style={{
-              transform: edge === "right" ? "rotate(90deg)" : "rotate(-90deg)",
-            }}
+            aria-hidden
+            className="pointer-events-none flex flex-col items-center justify-center gap-0.5 font-mono text-[11px] font-semibold leading-none tracking-wide text-white"
           >
-            {label}
+            {Array.from(label).map((ch, i) => (
+              <span key={`${ch}-${i}`}>{ch}</span>
+            ))}
           </span>
         </button>
       ) : (
