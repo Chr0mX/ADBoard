@@ -293,8 +293,8 @@ fn ui_dir() -> Option<PathBuf> {
 
 async fn ui_not_bundled() -> Html<&'static str> {
     Html(
-        "<!doctype html><meta charset=\"utf-8\"><title>Phone Control</title>\
-         <p>Phone Control is running, but the web UI was not found next to the executable.</p>\
+        "<!doctype html><meta charset=\"utf-8\"><title>Rasiel</title>\
+         <p>Rasiel is running, but the web UI was not found next to the executable.</p>\
          <p><a href=\"/health\">Health</a></p>",
     )
 }
