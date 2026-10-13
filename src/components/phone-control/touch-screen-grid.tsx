@@ -133,7 +133,7 @@ export function TouchScreenGrid({
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
           <h2 className="shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)]">
-            Grid
+            Rasiel
           </h2>
           <p className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
             {listed.length} devices · {onlineCount} online · control each screen

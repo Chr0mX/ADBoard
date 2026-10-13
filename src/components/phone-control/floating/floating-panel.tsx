@@ -438,7 +438,8 @@ export function FloatingPanel({
         width: edgeHidden ? EDGE_PEEK : undefined,
         minWidth: edgeHidden ? EDGE_PEEK : undefined,
         maxWidth: edgeHidden ? EDGE_PEEK : undefined,
-        height: edgeHidden ? Math.max(EDGE_PEEK * 2, 56) : undefined,
+        // Tall enough for a rotated 5-letter label inside EDGE_PEEK.
+        height: edgeHidden ? Math.max(EDGE_PEEK * 2.5, 110) : undefined,
         overflow: edgeHidden ? "hidden" : undefined,
       }}
     >
@@ -447,7 +448,7 @@ export function FloatingPanel({
           type="button"
           data-float-edge-peek
           aria-label={`Show ${label}. Tap or swipe toward the screen.`}
-          className="relative flex h-full w-full touch-auto items-center justify-center overflow-hidden bg-[var(--pc-accent-fill)] text-white active:brightness-110"
+          className="flex h-full w-full touch-auto items-center justify-center overflow-hidden bg-[var(--pc-accent-fill)] text-white active:brightness-110"
           onPointerDown={onPeekPointerDown}
           onPointerMove={onPeekPointerMove}
           onPointerUp={onPeekPointerUp}
@@ -456,18 +457,16 @@ export function FloatingPanel({
           }}
         >
           {/*
-            vertical-rl starts lines on the right; on a right-edge peek that
-            clips the label. Use vertical-lr on the right so “Stats” stays inside
-            the EDGE_PEEK strip. Left keeps vertical-rl + 180° so it reads upward.
+            Rotate (not writing-mode): Safari/iOS often paints vertical-lr/rl
+            flex labels at zero size inside a clipped EDGE_PEEK strip, which
+            left Stats blank while Tools sometimes still looked fine.
           */}
           <span
             data-float-edge-label
-            className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] font-semibold tracking-[0.12em] text-white"
-            style={
-              edge === "right"
-                ? { writingMode: "vertical-lr" }
-                : { writingMode: "vertical-rl", transform: "rotate(180deg)" }
-            }
+            className="pointer-events-none whitespace-nowrap font-mono text-[11px] font-semibold tracking-[0.14em] text-white"
+            style={{
+              transform: edge === "right" ? "rotate(90deg)" : "rotate(-90deg)",
+            }}
           >
             {label}
           </span>
