@@ -2,9 +2,13 @@
 
 export const TASKBAR_PINS_KEY = "rasiel-taskbar-pins";
 
-/** Max extra icons beside the fixed nav actions (space is tight on phones). */
-export const MAX_TASKBAR_PINS = 4;
+/**
+ * Max extra icons beside the fixed nav actions.
+ * The bottom bar scrolls horizontally when pins overflow.
+ */
+export const MAX_TASKBAR_PINS = 10;
 
+/** Every tool in the floating Tools icon grid (pin-from-icon targets). */
 export const TASKBAR_TOOL_IDS = [
   "keyboard",
   "mouse",
