@@ -897,6 +897,10 @@ OFFLINE1               offline usb:1-3 transport_id:4
             vec!["wm", "size", "1080x1920"]
         );
         assert_eq!(
+            display_size_command("900x1600").unwrap(),
+            vec!["wm", "size", "900x1600"]
+        );
+        assert_eq!(
             display_size_command("reset").unwrap(),
             vec!["wm", "size", "reset"]
         );

@@ -24,6 +24,8 @@ use tracing::{info, warn};
 
 const ADB_POLL_SECS: u64 = 2;
 const SESSION_REAP_SECS: u64 = 3;
+/// Applied with `wm size` whenever a phone becomes online (plug / wireless connect).
+const CONNECT_DISPLAY_SIZE: &str = "900x1600";
 
 #[derive(Clone)]
 pub struct AppState {
@@ -1116,6 +1118,35 @@ impl AppState {
         }
     }
 
+    /// Set `wm size` to the farm connect size when a phone comes online.
+    async fn apply_connect_display_size(&self, serial: &str) {
+        let Some(adb) = self.inner.adb_path.clone() else {
+            return;
+        };
+        match crate::device_ops::set_display_size(&adb, serial, CONNECT_DISPLAY_SIZE).await {
+            Ok(output) => {
+                info!(%serial, size = CONNECT_DISPLAY_SIZE, %output, "set wm size on connect");
+                note_display_size_override(
+                    &mut self
+                        .inner
+                        .display_size_overrides
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()),
+                    serial,
+                    CONNECT_DISPLAY_SIZE,
+                );
+                self.inner
+                    .resolution_refresh
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .insert(serial.to_string());
+            }
+            Err(error) => {
+                warn!(%serial, size = CONNECT_DISPLAY_SIZE, %error, "could not set wm size on connect");
+            }
+        }
+    }
+
     async fn gesture(
         &self,
         device: &Device,
@@ -2063,9 +2094,12 @@ impl AppState {
                                     });
                                 }
                                 RecoveryAction::RestartSession { serial } => {
-                                    info!(%serial, "device returned — resetting wm size if needed, then scrcpy");
-                                    // Retry reset if disconnect could not talk to the phone.
-                                    state.reset_overridden_display_size(&serial).await;
+                                    info!(
+                                        %serial,
+                                        size = CONNECT_DISPLAY_SIZE,
+                                        "device online — setting wm size, then scrcpy"
+                                    );
+                                    state.apply_connect_display_size(&serial).await;
                                     match state.restart_session_local(&serial).await {
                                         Ok(session) => {
                                             state.publish(ServerEvent::SessionUpdated { session });
@@ -2236,8 +2270,9 @@ fn recovery_actions(previous: &HashMap<String, DeviceStatus>, next: &[Device]) -
                     serial: device.serial.clone(),
                 });
             }
-            Some(before)
-                if before != DeviceStatus::Online && device.status == DeviceStatus::Online =>
+            // First time online (not in previous) or returning from offline.
+            None | Some(DeviceStatus::Offline) | Some(DeviceStatus::Unauthorized)
+                if device.status == DeviceStatus::Online =>
             {
                 actions.push(RecoveryAction::RestartSession {
                     serial: device.serial.clone(),
@@ -2668,6 +2703,19 @@ mod tests {
             sample("s23", DeviceStatus::Online),
         ];
         let actions = recovery_actions(&previous, &back);
+        assert_eq!(
+            actions,
+            vec![RecoveryAction::RestartSession {
+                serial: "s24".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn recovery_sets_size_when_a_phone_first_appears_online() {
+        let previous = HashMap::new();
+        let next = vec![sample("s24", DeviceStatus::Online)];
+        let actions = recovery_actions(&previous, &next);
         assert_eq!(
             actions,
             vec![RecoveryAction::RestartSession {
