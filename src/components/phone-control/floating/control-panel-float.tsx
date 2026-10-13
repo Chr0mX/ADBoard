@@ -10,6 +10,7 @@ import {
   PanelBottom,
   PanelsTopLeft,
   PictureInPicture2,
+  Pin,
   Play,
   RefreshCw,
   Smartphone,
@@ -22,8 +23,14 @@ import { FloatingPanel } from "@/components/phone-control/floating/floating-pane
 import { DESK_SECTIONS } from "@/components/phone-control/desk/desk-context";
 import type { DeskSection } from "@/components/phone-control/desk/desk-context";
 import { useScrcpyOptions } from "@/hooks/use-scrcpy-options";
+import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
 import { PC_HIT_LG } from "@/lib/ui/control-chrome";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
+import {
+  TASKBAR_TOOL_IDS,
+  TASKBAR_TOOL_LABELS,
+  type TaskbarToolId,
+} from "@/lib/ui/taskbar-pins";
 import { cn } from "@/lib/utils";
 
 const HIT = PC_HIT_LG;
@@ -76,6 +83,8 @@ export function ControlPanelFloat({
   onOpenDesk,
 }: ControlPanelFloatProps) {
   const [deskOpen, setDeskOpen] = useState(false);
+  const [taskbarEdit, setTaskbarEdit] = useState(false);
+  const { pins, togglePin, resetPins, atLimit, maxPins } = useTaskbarPins();
   const { options, apply, note, audioNote, audioError } = useScrcpyOptions({
     targetIds,
     serial,
@@ -291,6 +300,71 @@ export function ControlPanelFloat({
             ))}
           </div>
         )}
+        <div className="border-t border-[var(--pc-line)] pt-2">
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Customize taskbar"
+              aria-expanded={taskbarEdit}
+              data-taskbar-customize
+              data-pressed={taskbarEdit ? "true" : "false"}
+              className={cn(
+                HIT,
+                "min-w-0 flex-1 gap-1.5 px-2",
+                taskbarEdit && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
+              )}
+              onClick={() => setTaskbarEdit((open) => !open)}
+            >
+              <Pin className={cn("size-4", pins.length > 0 && "fill-current")} />
+              <span className="font-mono text-[10px]">
+                Taskbar{pins.length > 0 ? ` (${pins.length})` : ""}
+              </span>
+            </Button>
+            {taskbarEdit && (
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Reset taskbar pins"
+                data-taskbar-reset
+                className={cn(HIT, "px-2")}
+                onClick={resetPins}
+              >
+                <span className="font-mono text-[10px]">Reset</span>
+              </Button>
+            )}
+          </div>
+          {taskbarEdit && (
+            <div data-taskbar-pin-list className="mt-1.5 flex flex-col gap-1">
+              <p className="px-1 font-mono text-[10px] text-[var(--pc-muted)]">
+                Pin up to {maxPins} tools on the bottom bar
+                {atLimit ? " · full" : ""}
+              </p>
+              {TASKBAR_TOOL_IDS.map((id) => {
+                const pinned = pins.includes(id);
+                const blocked = !pinned && atLimit;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    data-taskbar-pin={id}
+                    data-pinned={pinned ? "1" : "0"}
+                    disabled={blocked}
+                    aria-pressed={pinned}
+                    className={cn(
+                      "flex h-11 min-h-11 items-center justify-between rounded-xl border border-[var(--pc-line)] px-3 text-left text-sm text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40",
+                      pinned && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
+                    )}
+                    onClick={() => togglePin(id as TaskbarToolId)}
+                  >
+                    <span>{TASKBAR_TOOL_LABELS[id]}</span>
+                    <Pin className={cn("size-3.5", pinned && "fill-current")} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </FloatingPanel>
   );

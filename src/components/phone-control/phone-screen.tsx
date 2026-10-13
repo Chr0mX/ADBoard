@@ -38,6 +38,7 @@ import { TouchScreenGrid } from "@/components/phone-control/touch-screen-grid";
 import { StatusBar } from "@/components/phone-control/status-bar";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
+import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
 import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
 import { updateLibrary, useLibrary } from "@/lib/desk/store";
 import type { GestureSample } from "@/lib/desk/store";
@@ -109,6 +110,7 @@ export function PhoneScreen({
   targetIds,
 }: PhoneScreenProps) {
   const desk = useDeskOptional();
+  const { pins: taskbarPins } = useTaskbarPins();
   const screenRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -784,6 +786,36 @@ export function PhoneScreen({
               className="w-full max-w-full border-t-0"
               safeBottom={false}
               compact
+              pinnedTools={taskbarPins}
+              toolHandlers={{
+                keyboardOn,
+                mouseOn,
+                recording,
+                replaying,
+                refreshing,
+                installing,
+                gridView: Boolean(gridView),
+                statsMode,
+                onKeyboardChange,
+                onMouseChange,
+                onRecordToggle: () => {
+                  if (recording) stopRecording();
+                  else startRecording();
+                },
+                onReplay: () => {
+                  void replayRecording();
+                },
+                onRefresh: () => {
+                  void refreshVideo();
+                },
+                onInstallFile: (file) => {
+                  void pickApk(file);
+                },
+                onToggleGrid: () => onToggleGrid?.(),
+                onStatsModeChange: (mode) => onStatsModeChange?.(mode),
+                onOpenDevices: () => onOpenDevices?.(),
+                onOpenDesk: () => desk?.open("manage"),
+              }}
             />
             {statsMode === "bar" && (
               <StatusBar
