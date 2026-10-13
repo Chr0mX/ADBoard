@@ -52,8 +52,6 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
           </p>
         ) : (
           <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
-            <dt className="text-[var(--pc-muted)]">Name</dt>
-            <dd className="truncate">{fields.name}</dd>
             <dt className="text-[var(--pc-muted)]">Size</dt>
             <dd>{fields.size}</dd>
             <dt className="text-[var(--pc-muted)]">Battery</dt>

@@ -1,6 +1,6 @@
 {
-  "name": "Phone Control",
-  "short_name": "Phone Control",
+  "name": "Rasiel",
+  "short_name": "Rasiel",
   "description": "Multi-device Android control center",
   "start_url": "/",
   "scope": "/",

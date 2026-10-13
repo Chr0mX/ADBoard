@@ -35,7 +35,9 @@ export function edgePeekRect(
   const right = (bounds.insetRight ?? 0) + margin;
   const top = (bounds.insetTop ?? 0) + margin;
   const bottom = (bounds.insetBottom ?? 0) + margin;
-  const h = Math.max(EDGE_PEEK * 2, height);
+  // Match FloatingPanel edge-peek min height so short panels (Stats) keep
+  // enough strip for a rotated label on both edges.
+  const h = Math.max(EDGE_PEEK * 2.5, 110, height);
   const maxY = Math.max(top, bounds.viewportHeight - bottom - h);
   const clampedY = Math.min(Math.max(top, y), maxY);
   if (edge === "left") {

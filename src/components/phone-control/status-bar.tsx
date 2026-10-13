@@ -36,7 +36,6 @@ export function StatsLine({
         className,
       )}
     >
-      <span>{fields.name}</span>
       <span>{fields.size}</span>
       <span data-battery>{fields.battery}</span>
       <span data-temperature>{fields.temperature}</span>

@@ -1,4 +1,4 @@
-# Start Phone Control controller on this Windows USB host (loopback by default).
+# Start Rasiel controller on this Windows USB host (loopback by default).
 # Usage (from the pack folder):
 #   .\Start-PhoneControl.ps1
 #   .\Start-PhoneControl.ps1 -Bind 0.0.0.0 -Mock
@@ -28,7 +28,7 @@ $Root = $PSScriptRoot
 $Exe = Join-Path $Root "PhoneControl.exe"
 
 if (-not (Test-Path $Exe)) {
-    Write-Error "PhoneControl.exe not found next to this script: $Exe"
+    Write-Error "Rasiel binary (PhoneControl.exe) not found next to this script: $Exe"
 }
 
 $Adb = Join-Path $Root "vendor\adb\adb.exe"
@@ -68,6 +68,7 @@ if ($Mock) {
     Write-Host "Mock fleet enabled (windows profile)"
 }
 
-Write-Host "Starting PhoneControl ($Role) on http://${Bind}:${Port}/"
+$Host.UI.RawUI.WindowTitle = "Rasiel"
+Write-Host "Starting Rasiel ($Role) on http://${Bind}:${Port}/"
 Write-Host "Point UI: NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:${Port}  (or the LAN IP if Bind=0.0.0.0)"
 & $Exe

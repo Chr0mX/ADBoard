@@ -26,4 +26,5 @@ jobs:
       - name: Unit tests
         run: node --experimental-strip-types --test src/lib/video/fit-box.test.ts src/lib/desk/gesture.test.ts src/lib/ui/floating-clamp.test.ts src/lib/ui/mobile-stats-mode.test.ts
       - name: Typecheck
-        run: npx tsc --noEmit
+        # LayoutProps and next-env.d.ts come from Next's generated route types.
+        run: npx next typegen && npx tsc --noEmit
