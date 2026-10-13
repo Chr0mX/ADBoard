@@ -21,6 +21,9 @@ export interface FloatingBounds {
 /** Visible strip when a collapsed float is docked like a Samsung edge panel. */
 export const EDGE_PEEK = 44;
 
+/** Reserve for the centered bottom taskbar capsule so floats stay clear of it. */
+export const TASKBAR_FLOAT_RESERVE = 56;
+
 export type FloatEdge = "left" | "right";
 
 /** Flush peek tab geometry on the left/right edge (always fully tappable). */
@@ -175,7 +178,10 @@ export function defaultFloatPosition(
   if (kind === "stats") {
     return {
       x: margin,
-      y: Math.max(margin, viewportHeight - size.height - margin),
+      y: Math.max(
+        margin,
+        viewportHeight - size.height - margin - TASKBAR_FLOAT_RESERVE,
+      ),
       width: size.width,
       height: size.height,
     };
