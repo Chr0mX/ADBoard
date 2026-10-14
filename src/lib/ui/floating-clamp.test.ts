@@ -4,6 +4,8 @@ import {
   EDGE_PEEK,
   clampFloatingRect,
   defaultFloatPosition,
+  edgePeekRect,
+  edgeRevealRect,
   resolveCollapsedEdge,
 } from "./floating-clamp.ts";
 
@@ -118,5 +120,37 @@ describe("defaultFloatPosition", () => {
       true,
     );
     assert.ok(rect.x > 500);
+  });
+});
+
+describe("edge peek symmetry", () => {
+  const bounds = { viewportWidth: 390, viewportHeight: 844, margin: 8 };
+
+  it("gives left and right peeks the same size", () => {
+    const left = edgePeekRect("left", 52, bounds, 300);
+    const right = edgePeekRect("right", 52, bounds, 300);
+    assert.equal(left.width, right.width);
+    assert.equal(left.height, right.height);
+    assert.equal(left.y, right.y);
+    assert.equal(right.x + right.width, 390);
+  });
+
+  it("reveals a right-docked panel fully on the right", () => {
+    const next = edgeRevealRect("right", { width: 176, height: 52 }, bounds, 300);
+    assert.equal(next.x, 390 - 8 - 176);
+    assert.equal(next.width, 176);
+  });
+
+  it("reveals a left-docked panel fully on the left", () => {
+    const next = edgeRevealRect("left", { width: 176, height: 52 }, bounds, 300);
+    assert.equal(next.x, 8);
+  });
+
+  it("does not leave a revealed right panel hanging off-screen", () => {
+    // Reveal starts from the 44px peek width; re-fitting with the real width
+    // must pull the whole chip (and its label) back into view.
+    const fromPeek = edgeRevealRect("right", { width: EDGE_PEEK, height: 52 }, bounds, 300);
+    const refit = clampFloatingRect({ ...fromPeek, width: 176 }, bounds);
+    assert.equal(refit.x + refit.width, 390 - 8);
   });
 });

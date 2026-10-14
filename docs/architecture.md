@@ -1,6 +1,6 @@
-# Phone Control architecture
+# Rasiel architecture
 
-Phone Control is a multi-device Android desk. The browser never talks to ADB or USB. A Rust binary owns discovery, sessions, video, and input. The Next.js UI is either served by that binary (Windows pack) or pointed at it in development.
+Rasiel is a multi-device Android desk. The browser never talks to ADB or USB. A Rust binary owns discovery, sessions, video, and input. The Next.js UI is either served by that binary (Windows pack) or pointed at it in development.
 
 ## Processes
 

@@ -1,4 +1,4 @@
-# Phone Control
+# Rasiel
 
 Multi-device Android control center. **scrcpy/ADB is the transport; this app owns discovery, sessions, video/input abstraction, and the Web UI.** The browser never talks to ADB directly.
 

@@ -91,6 +91,21 @@ export function clampFloatingRect(
   };
 }
 
+/** Bring an edge-docked panel fully on-screen on the same side it was docked. */
+export function edgeRevealRect(
+  edge: FloatEdge | null,
+  size: { width: number; height: number },
+  bounds: FloatingBounds,
+  y: number,
+): FloatingRect {
+  const margin = bounds.margin ?? 8;
+  const x =
+    edge === "right"
+      ? bounds.viewportWidth - (bounds.insetRight ?? 0) - margin - size.width
+      : (bounds.insetLeft ?? 0) + margin;
+  return clampFloatingRect({ x, y, ...size }, bounds);
+}
+
 /** Snap a collapsed panel to a side edge when it is close enough, else clear edge. */
 export function resolveCollapsedEdge(
   rect: FloatingRect,

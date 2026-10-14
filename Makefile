@@ -1,4 +1,4 @@
-# Phone Control — packaging + dependency helpers
+# Rasiel — packaging + dependency helpers
 #
 # Cross-compile + zip-ready folder (no MSI). Default target: x86_64-pc-windows-gnu.
 #

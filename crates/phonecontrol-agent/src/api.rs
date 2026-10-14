@@ -1,4 +1,4 @@
-//! HTTP + WebSocket API for the Phone Control UI + agent mesh.
+//! HTTP + WebSocket API for the Rasiel UI + agent mesh.
 
 use crate::device_manager::AppState;
 use axum::body::Bytes;

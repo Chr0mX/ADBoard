@@ -3,7 +3,7 @@ name = "phonecontrol-agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Phone Control Linux agent — ADB discovery, device manager, HTTP + WebSocket API"
+description = "Rasiel Linux agent — ADB discovery, device manager, HTTP + WebSocket API"
 default-run = "phonecontrol-agent"
 
 [[bin]]

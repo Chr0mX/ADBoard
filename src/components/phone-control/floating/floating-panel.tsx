@@ -15,6 +15,7 @@ import {
   clampFloatingRect,
   defaultFloatPosition,
   edgePeekRect,
+  edgeRevealRect,
   readSafeInsets,
   resolveCollapsedEdge,
   type FloatEdge,
@@ -156,20 +157,14 @@ export function FloatingPanel({
     }
   }, [defaultSize.height, storageKey]);
 
+  // Panels always stay fully on-screen, docked edge peeks aside. Letting a
+  // collapsed chip hang off the side left only EDGE_PEEK visible: on the right
+  // that was the drag grip with the "Stats" label pushed off-screen, on the
+  // left the pin button. Docking needs no overhang; resolveCollapsedEdge snaps
+  // any chip released within its threshold of either edge.
   const clampToViewport = useCallback(
-    (
-      x: number,
-      y: number,
-      width: number,
-      height: number,
-      allowEdgeHide: boolean,
-    ): FloatingRect => {
-      return clampFloatingRect(
-        { x, y, width, height },
-        currentBounds(),
-        { allowEdgeHide },
-      );
-    },
+    (x: number, y: number, width: number, height: number): FloatingRect =>
+      clampFloatingRect({ x, y, width, height }, currentBounds()),
     [],
   );
 
@@ -202,7 +197,7 @@ export function FloatingPanel({
       if (isCollapsed && nextEdge) {
         next = edgePeekRect(nextEdge, height, bounds, base.y);
       } else {
-        next = clampToViewport(base.x, base.y, width, height, Boolean(isCollapsed));
+        next = clampToViewport(base.x, base.y, width, height);
         nextEdge = null;
       }
 
@@ -268,7 +263,6 @@ export function FloatingPanel({
       drag.originY + (event.clientY - drag.startY),
       width,
       height,
-      collapsed,
     );
     setPos({ x: next.x, y: next.y });
   };
@@ -306,7 +300,7 @@ export function FloatingPanel({
       return;
     }
 
-    const next = clampToViewport(pos.x, pos.y, width, height, false);
+    const next = clampToViewport(pos.x, pos.y, width, height);
     setEdge(null);
     setPos({ x: next.x, y: next.y });
     persist({ x: next.x, y: next.y, pinned, collapsed: false, edge: null });
@@ -341,7 +335,6 @@ export function FloatingPanel({
             pos.y,
             node.offsetWidth || defaultSize.width,
             node.offsetHeight || defaultSize.height,
-            false,
           );
           setPos({ x: fully.x, y: fully.y });
           persist({
@@ -364,10 +357,9 @@ export function FloatingPanel({
     const width = node?.offsetWidth || defaultSize.width;
     const height = node?.offsetHeight || defaultSize.height;
     const bounds = currentBounds();
-    const fully = clampFloatingRect(
-      { x: bounds.margin ?? 8, y: pos?.y ?? bounds.margin ?? 8, width, height },
-      bounds,
-    );
+    // Width here is still the peek strip; reclamp re-fits with the real width
+    // after the panel renders, keeping it on the side it was docked to.
+    const fully = edgeRevealRect(edge, { width, height }, bounds, pos?.y ?? bounds.margin ?? 8);
     setEdge(null);
     setPos({ x: fully.x, y: fully.y });
     persist({
@@ -496,7 +488,7 @@ export function FloatingPanel({
             >
               <span className="h-1 w-8 rounded-full bg-[var(--pc-line)]" aria-hidden />
               {collapsed && (
-                <span className="ml-2 truncate font-mono text-[11px] text-[var(--pc-muted)]">
+                <span className="ml-2 shrink-0 whitespace-nowrap font-mono text-[11px] text-[var(--pc-muted)]">
                   {label}
                 </span>
               )}

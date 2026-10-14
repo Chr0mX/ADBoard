@@ -153,15 +153,17 @@ export function PhoneScreen({
       session?.stream === "streaming" ||
       session?.stream === "starting");
 
+  // Device name is already the heading inside the screen and in the device
+  // list, so this status line only carries the stream state.
   const streamLabel = (() => {
     if (!device) return "No device";
-    if (!configured) return `${device.name} · local mock`;
-    if (decodeState === "unsupported") return `${device.name} · decode unsupported`;
+    if (!configured) return "local mock";
+    if (decodeState === "unsupported") return "decode unsupported";
     if (status?.backend) {
-      return `${device.name} · ${status.backend}${status.stream ? `/${status.stream}` : ""}`;
+      return `${status.backend}${status.stream ? `/${status.stream}` : ""}`;
     }
-    if (session) return `${device.name} · ${session.backend}/${session.stream}`;
-    return `${device.name} · video`;
+    if (session) return `${session.backend}/${session.stream}`;
+    return "video";
   })();
 
   // Live picture size comes from the scrcpy frame. 9/16 is only the placeholder
@@ -470,6 +472,7 @@ export function PhoneScreen({
             activeId={device?.id ?? null}
             mouseOn={mouseOn}
             layout={floatingChrome ? "mobile" : "desktop"}
+            showTitle={floatingChrome || fillWindow}
             onFocusDevice={(deviceId) => onFocusDevice?.(deviceId)}
             onExit={onToggleGrid}
           />

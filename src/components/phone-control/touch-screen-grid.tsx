@@ -18,6 +18,8 @@ interface TouchScreenGridProps {
   onFocusDevice: (deviceId: string) => void;
   /** Desktop uses a larger multi-column layout that fills the main stage. */
   layout?: "mobile" | "desktop";
+  /** Hide the app name when the desk header above already shows it. */
+  showTitle?: boolean;
   onExit?: () => void;
 }
 
@@ -93,6 +95,7 @@ export function TouchScreenGrid({
   mouseOn,
   onFocusDevice,
   layout = "mobile",
+  showTitle = true,
   onExit,
 }: TouchScreenGridProps) {
   // Show every known device — offline tiles stay visible so nothing disappears.
@@ -132,9 +135,11 @@ export function TouchScreenGrid({
     >
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h2 className="shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)]">
-            Rasiel
-          </h2>
+          {showTitle && (
+            <h2 className="shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)]">
+              Rasiel
+            </h2>
+          )}
           <p className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
             {listed.length} devices · {onlineCount} online · control each screen
           </p>

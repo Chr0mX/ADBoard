@@ -12,6 +12,11 @@ interface StatsWidgetProps {
   stats?: StreamStats | null;
 }
 
+// max-content width: an absolutely positioned panel otherwise shrink-wraps to
+// the space right of its left edge, so near the right edge the chip narrowed
+// and clipped the "Stats" label while on the left it stayed full width.
+const PANEL_WIDTH = "w-max max-w-[calc(100vw-16px)]";
+
 export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -20,8 +25,8 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
       <FloatingPanel
         storageKey="pc-float-stats"
         kind="stats"
-        defaultSize={{ width: 140, height: 56 }}
-        className="min-w-[8rem]"
+        defaultSize={{ width: 176, height: 56 }}
+        className={cn(PANEL_WIDTH, "min-w-[11rem]")}
       >
         <p className="px-1 font-mono text-[11px] text-[var(--pc-muted)]">No device</p>
       </FloatingPanel>
@@ -34,8 +39,8 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
     <FloatingPanel
       storageKey="pc-float-stats"
       kind="stats"
-      defaultSize={{ width: expanded ? 220 : 180, height: expanded ? 160 : 56 }}
-      className={cn("min-w-[10rem]", expanded && "min-w-[12rem]")}
+      defaultSize={{ width: expanded ? 208 : 176, height: expanded ? 160 : 56 }}
+      className={cn(PANEL_WIDTH, expanded ? "min-w-[13rem]" : "min-w-[11rem]")}
     >
       <button
         type="button"

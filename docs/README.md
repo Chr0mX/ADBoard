@@ -1,4 +1,4 @@
-# Phone Control — notes
+# Rasiel — notes
 
 Architecture: [architecture.md](./architecture.md). Run instructions and video framing: repo root `README.md`. Windows pack: `dist/windows/README.md`.
 
