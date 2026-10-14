@@ -2,6 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  ChevronDown,
+  ChevronUp,
   Circle,
   Keyboard,
   LayoutGrid,
@@ -39,6 +41,7 @@ import { StatusBar } from "@/components/phone-control/status-bar";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
+import { useDesktopShortcuts, useShortcutHint } from "@/hooks/use-desktop-shortcuts";
 import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
 import { updateLibrary, useLibrary } from "@/lib/desk/store";
 import type { GestureSample } from "@/lib/desk/store";
@@ -186,6 +189,50 @@ export function PhoneScreen({
   const railClass = PC_HIT_LABELED;
   // Responsive tool row: square on narrow residual layouts; labeled on lg+.
   const toolControlClass = PC_HIT_TOOL_RESPONSIVE;
+  // Tool labels show only when the row itself has room for all of them;
+  // otherwise icons (with tooltips) keep the row on a single line.
+  const toolLabelClass = "hidden @5xl:inline";
+  const dockedTools = showDockedChrome && !fillWindow && !gridView;
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const hint = useShortcutHint();
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Capture phase: close the menu instead of sending Escape to the phone.
+      event.preventDefault();
+      event.stopPropagation();
+      setMoreOpen(false);
+      document.querySelector<HTMLElement>("[data-more-tools]")?.focus();
+    };
+    const onOutside = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (moreRef.current?.contains(target) || target?.closest?.("[data-more-tools]")) return;
+      setMoreOpen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("pointerdown", onOutside, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pointerdown", onOutside, true);
+    };
+  }, [moreOpen]);
+
+  const navShortcut = (action: "back" | "home" | "recent") => () => {
+    if (!offline) onNav(action);
+  };
+  useDesktopShortcuts(showDockedChrome, {
+    back: navShortcut("back"),
+    home: navShortcut("home"),
+    recent: navShortcut("recent"),
+    grid: onToggleGrid,
+    fill: gridView ? undefined : () => onFillWindowChange(!fillWindow),
+    more: dockedTools ? () => setMoreOpen((open) => !open) : undefined,
+  });
+  const navHint = (action: string, name: string) =>
+    action === "back" || action === "home" || action === "recent" ? hint(name, action) : {};
 
   useLayoutEffect(() => {
     const node = stageRef.current;
@@ -422,7 +469,7 @@ export function PhoneScreen({
         >
           {recording ? <Square className={iconClass} /> : <Circle className={iconClass} />}
           {showLabel && (
-            <span className={variant === "tool" ? "hidden lg:inline" : undefined}>
+            <span className={variant === "tool" ? toolLabelClass : undefined}>
               {recording ? "Stop" : "Record"}
             </span>
           )}
@@ -438,7 +485,7 @@ export function PhoneScreen({
         >
           <Play className={iconClass} />
           {showLabel && (
-            <span className={variant === "tool" ? "hidden lg:inline" : undefined}>
+            <span className={variant === "tool" ? toolLabelClass : undefined}>
               {replaying ? "Playing" : "Replay"}
             </span>
           )}
@@ -700,6 +747,7 @@ export function PhoneScreen({
                 variant="ghost"
                 disabled={offline}
                 onClick={() => onNav(action)}
+                {...navHint(action, name)}
                 aria-label={
                   action === "volume_up"
                     ? "Volume up"
@@ -756,6 +804,7 @@ export function PhoneScreen({
                 pressed={gridView}
                 onPressedChange={() => onToggleGrid()}
                 aria-label={gridView ? "Exit grid view" : "Grid view"}
+                {...hint(gridView ? "Exit grid view" : "Grid view", "grid")}
                 data-grid-view={gridView ? "1" : "0"}
                 className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
               >
@@ -769,6 +818,7 @@ export function PhoneScreen({
                 variant="ghost"
                 onClick={() => onFillWindowChange(false)}
                 aria-label="Exit fill"
+                {...hint("Exit fill", "fill")}
                 className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
               >
                 <Minimize2 className="size-4" />
@@ -850,10 +900,12 @@ export function PhoneScreen({
           ))}
         </select>
       )}
-      {showDockedChrome && !fillWindow && !gridView && (
+      {showDockedChrome && !gridView && (
+      <div className="relative flex w-full min-w-0 flex-col items-center gap-1">
+      {dockedTools && (
         <div
           data-tool-row
-          className="grid w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 lg:flex lg:flex-wrap lg:justify-center lg:gap-1.5"
+          className="@container grid w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 lg:flex lg:flex-wrap lg:justify-center lg:gap-1.5"
         >
           <Toggle
             pressed={keyboardOn}
@@ -865,7 +917,7 @@ export function PhoneScreen({
             )}
           >
             <Keyboard className="size-4" />
-            <span className="hidden lg:inline">Keyboard</span>
+            <span className={toolLabelClass}>Keyboard</span>
           </Toggle>
           <Toggle
             pressed={mouseOn}
@@ -877,7 +929,7 @@ export function PhoneScreen({
             )}
           >
             <MousePointer2 className="size-4" />
-            <span className="hidden lg:inline">Touch</span>
+            <span className={toolLabelClass}>Touch</span>
           </Toggle>
           {gestureButtons("tool")}
           {recording && (
@@ -898,7 +950,7 @@ export function PhoneScreen({
             className={toolControlClass}
           >
             <RefreshCw className="size-4" />
-            <span className="hidden lg:inline">Refresh</span>
+            <span className={toolLabelClass}>Refresh</span>
           </Button>
           <ApkFileButton
             disabled={offline || installing}
@@ -909,6 +961,7 @@ export function PhoneScreen({
             pressed={fillWindow}
             onPressedChange={onFillWindowChange}
             aria-label="Fill window"
+            {...hint("Fill window", "fill")}
             className={cn(
               toolControlClass,
               "hidden lg:inline-flex",
@@ -916,13 +969,14 @@ export function PhoneScreen({
             )}
           >
             <Maximize2 className="size-4" />
-            <span className="hidden lg:inline">Fill</span>
+            <span className={toolLabelClass}>Fill</span>
           </Toggle>
           {onToggleGrid && (
             <Toggle
               pressed={gridView}
               onPressedChange={() => onToggleGrid()}
               aria-label={gridView ? "Exit grid view" : "Grid view"}
+              {...hint("Grid view", "grid")}
               data-grid-view={gridView ? "1" : "0"}
               className={cn(
                 toolControlClass,
@@ -931,7 +985,7 @@ export function PhoneScreen({
               )}
             >
               <LayoutGrid className="size-4" />
-              <span className="hidden lg:inline">Grid</span>
+              <span className={toolLabelClass}>Grid</span>
             </Toggle>
           )}
           {showScreensButton && (
@@ -942,8 +996,8 @@ export function PhoneScreen({
               className={toolControlClass}
               onClick={onOpenScreens}
             >
-              <LayoutGrid className="size-4 lg:hidden" />
-              <span className="hidden lg:inline">Screens</span>
+              <LayoutGrid className="size-4 @5xl:hidden" />
+              <span className={toolLabelClass}>Screens</span>
             </Button>
           )}
           {showDevicesButton && (
@@ -954,18 +1008,54 @@ export function PhoneScreen({
               className={toolControlClass}
               onClick={onOpenDevices}
             >
-              <Smartphone className="size-4 lg:hidden" />
-              <span className="hidden lg:inline">Devices</span>
+              <Smartphone className="size-4 @5xl:hidden" />
+              <span className={toolLabelClass}>Devices</span>
             </Button>
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setMoreOpen((open) => !open)}
+            aria-label="More tools"
+            aria-expanded={moreOpen}
+            aria-controls="pc-more-tools"
+            {...hint("More tools", "more")}
+            data-more-tools
+            className={cn(
+              toolControlClass,
+              "aria-expanded:border-[var(--pc-accent)] aria-expanded:bg-[var(--pc-accent-soft)] aria-expanded:text-[var(--pc-accent)]",
+            )}
+          >
+            {moreOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+            <span className={toolLabelClass}>More</span>
+          </Button>
         </div>
       )}
-      {showDockedChrome && !gridView && (
+      {/*
+        One mounted ScrcpyOptions for both layouts (it holds the clipboard
+        socket). Docked: a popover above the tool row, hidden until More.
+        Fill: inline under the nav row, as before.
+      */}
+      <div
+        ref={moreRef}
+        id="pc-more-tools"
+        role={dockedTools ? "group" : undefined}
+        aria-label={dockedTools ? "More tools" : undefined}
+        hidden={dockedTools && !moreOpen}
+        data-more-tools-panel={dockedTools ? (moreOpen ? "open" : "closed") : undefined}
+        className={cn(
+          "w-full",
+          dockedTools &&
+            "absolute bottom-full left-1/2 z-30 mb-2 w-[min(40rem,100%)] -translate-x-1/2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-2 shadow-lg",
+        )}
+      >
         <ScrcpyOptions
           targetIds={targetIds}
           serial={device?.serial ?? null}
           disabled={offline}
         />
+      </div>
+      </div>
       )}
       {floatingChrome && (
         <FloatingLayer

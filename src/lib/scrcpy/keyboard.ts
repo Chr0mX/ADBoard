@@ -10,6 +10,8 @@ export type KeyInject =
 
 type KeyLike = {
   key: string;
+  /** Physical key (KeyboardEvent.code); used for desktop shortcuts. */
+  code?: string;
   ctrlKey: boolean;
   altKey: boolean;
   metaKey: boolean;
@@ -56,6 +58,57 @@ function shortcut(event: KeyLike): boolean {
   return event.ctrlKey || event.altKey || event.metaKey;
 }
 
+export type DesktopShortcut =
+  | "back"
+  | "home"
+  | "recent"
+  | "grid"
+  | "fill"
+  | "more"
+  | "screens"
+  | "devices";
+
+// Alt+Shift+key so shortcuts work while keyboard injection (on by default)
+// forwards plain keys to the phone. Matched by physical key: on macOS
+// Option+Shift turns the letter into a symbol.
+const DESKTOP_SHORTCUT_CODES: Record<string, DesktopShortcut> = {
+  KeyB: "back",
+  KeyH: "home",
+  KeyR: "recent",
+  KeyG: "grid",
+  KeyF: "fill",
+  KeyM: "more",
+  BracketLeft: "screens",
+  BracketRight: "devices",
+};
+
+export const DESKTOP_SHORTCUT_KEY: Record<DesktopShortcut, string> = {
+  back: "B",
+  home: "H",
+  recent: "R",
+  grid: "G",
+  fill: "F",
+  more: "M",
+  screens: "[",
+  devices: "]",
+};
+
+export function matchDesktopShortcut(event: KeyLike): DesktopShortcut | null {
+  if (!event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return null;
+  return (event.code && DESKTOP_SHORTCUT_CODES[event.code]) || null;
+}
+
+/** Human label, e.g. "Alt+Shift+H" or "⌥⇧H" on a Mac. */
+export function desktopShortcutLabel(action: DesktopShortcut, mac: boolean): string {
+  const key = DESKTOP_SHORTCUT_KEY[action];
+  return mac ? `⌥⇧${key}` : `Alt+Shift+${key}`;
+}
+
+/** Value for aria-keyshortcuts. */
+export function desktopShortcutAria(action: DesktopShortcut): string {
+  return `Alt+Shift+${DESKTOP_SHORTCUT_KEY[action]}`;
+}
+
 /** Browser commands stay in the browser. Everything else can go to the phone. */
 export function leaveToBrowser(event: KeyLike): boolean {
   if (event.key === "F5" || event.key === "F11" || event.key === "F12") return true;
@@ -76,7 +129,7 @@ export function keyDownInject(event: KeyLike): KeyInject | null {
   if (event.key === "Shift" || event.key === "Control" || event.key === "Alt" || event.key === "Meta") {
     return null;
   }
-  if (leaveToBrowser(event)) return null;
+  if (leaveToBrowser(event) || matchDesktopShortcut(event)) return null;
   if (!shortcut(event) && event.key.length === 1) {
     return { kind: "text", text: event.key };
   }
@@ -95,7 +148,7 @@ export function keyUpInject(event: KeyLike): KeyInject | null {
   if (event.key === "Shift" || event.key === "Control" || event.key === "Alt" || event.key === "Meta") {
     return null;
   }
-  if (leaveToBrowser(event)) return null;
+  if (leaveToBrowser(event) || matchDesktopShortcut(event)) return null;
   if (!shortcut(event) && event.key.length === 1) return null;
   const keycode = SPECIAL[event.key] ?? letterCode(event.key);
   if (keycode == null) return null;

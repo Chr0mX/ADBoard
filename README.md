@@ -234,6 +234,18 @@ PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
 
 Mock without phones: `.\Start-RasielControl.ps1 -Mock` (testpattern video).
 
+## Desktop shortcuts
+
+Control view on a desktop-width window. They use Alt+Shift (⌥⇧ on a Mac) so they still work while keyboard injection sends plain keys to the phone, and they are never forwarded to the phone. Buttons show their shortcut in the tooltip.
+
+| Keys | Action |
+|---|---|
+| Alt+Shift+B / H / R | Back / Home / Recent |
+| Alt+Shift+G | Grid view |
+| Alt+Shift+F | Fill window |
+| Alt+Shift+M | More tools (quality, size, audio, screen off, clipboard) |
+| Alt+Shift+[ / ] | Fold or unfold the Screens / Devices panel |
+
 ## Environment flags
 
 | Variable | Default | Purpose |

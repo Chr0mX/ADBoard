@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { StreamStats } from "@/lib/devices/types";
 import { ControlHeader } from "@/components/phone-control/control-header";
 import { ControlModes } from "@/components/phone-control/control-modes";
@@ -11,6 +12,7 @@ import { StatusBar } from "@/components/phone-control/status-bar";
 import { AppsPanel } from "@/components/phone-control/desk/apps-panel";
 import { AutomatePanel } from "@/components/phone-control/desk/automate-panel";
 import {
+  DESK_SECTIONS,
   DeskProvider,
   asSection,
   type DeskSection,
@@ -21,8 +23,10 @@ import { HostsPanel } from "@/components/phone-control/desk/hosts-panel";
 import { ManagePanel } from "@/components/phone-control/desk/manage-panel";
 import { Button } from "@/components/ui/button";
 import { usePhoneControl } from "@/hooks/use-phone-control";
+import { useDesktopShortcuts, useShortcutHint } from "@/hooks/use-desktop-shortcuts";
 import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { useVisualViewportLock } from "@/hooks/use-visual-viewport-lock";
+import { documentTitle } from "@/lib/ui/document-title";
 import { parseMobileStatsMode, type MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +71,9 @@ export function PhoneControlApp() {
   // Mobile always fills; Fill toggle stays desktop-only.
   const fillWindow = wide ? storedFillWindow : true;
   const [devicesOpen, setDevicesOpen] = useState(false);
+  // Desktop side panels fold to a thin rail so the phone gets the width.
+  const [screensCollapsed, setScreensCollapsed] = useStoredFlag("phonecontrol-screens-collapsed", false);
+  const [devicesCollapsed, setDevicesCollapsed] = useStoredFlag("phonecontrol-devices-collapsed", false);
   const [screensOpen, setScreensOpen] = useState(false);
   const [gridView, setGridView] = useState(false);
 
@@ -157,6 +164,19 @@ export function PhoneControlApp() {
   const showHeader = section !== "control" || (wide && !fillWindow);
   useVisualViewportLock(true);
 
+  const sidePanels = dockedScreens && section === "control";
+  const hint = useShortcutHint();
+  useDesktopShortcuts(sidePanels, {
+    screens: () => setScreensCollapsed(!screensCollapsed),
+    devices: () => setDevicesCollapsed(!devicesCollapsed),
+  });
+
+  const activeName = activeDevice?.name ?? null;
+  const sectionLabel = DESK_SECTIONS.find((item) => item.id === section)?.label;
+  useEffect(() => {
+    document.title = documentTitle({ section, sectionLabel, gridView, deviceName: activeName });
+  }, [section, sectionLabel, gridView, activeName]);
+
   return (
     <DeskProvider
       value={{
@@ -223,11 +243,30 @@ export function PhoneControlApp() {
                 !fillWindow && "lg:flex-row lg:gap-3",
               )}
             >
-            {dockedScreens && (
-              <aside className="flex min-h-0 w-[200px] shrink-0 flex-col xl:w-[240px]">
+            {dockedScreens && screensCollapsed && (
+              <PanelRail
+                side="left"
+                label="Screens"
+                count={onlineCount}
+                onExpand={() => setScreensCollapsed(false)}
+                hintProps={hint("Show screens", "screens")}
+              />
+            )}
+            {dockedScreens && !screensCollapsed && (
+              <aside
+                data-side-panel="screens"
+                className="flex min-h-0 w-[200px] shrink-0 flex-col gap-2 xl:w-[240px]"
+              >
+                <PanelHeader
+                  title="Screens"
+                  side="left"
+                  onCollapse={() => setScreensCollapsed(true)}
+                  hintProps={hint("Hide screens", "screens")}
+                />
                 <ScreenGrid
                   devices={devices}
                   activeId={activeId}
+                  showHeading={false}
                   onSelect={selectDevice}
                 />
               </aside>
@@ -277,8 +316,18 @@ export function PhoneControlApp() {
               />
             </div>
 
-            {showDevices && (
+            {showDevices && wide && devicesCollapsed && (
+              <PanelRail
+                side="right"
+                label="Devices"
+                count={devices.length}
+                onExpand={() => setDevicesCollapsed(false)}
+                hintProps={hint("Show devices", "devices")}
+              />
+            )}
+            {showDevices && !(wide && devicesCollapsed) && (
               <aside
+                data-side-panel={wide ? "devices" : undefined}
                 role={!wide ? "dialog" : undefined}
                 aria-modal={!wide ? true : undefined}
                 aria-label={!wide ? "Devices" : undefined}
@@ -289,6 +338,14 @@ export function PhoneControlApp() {
                     : "absolute inset-0 z-30 gap-4 overflow-y-auto bg-[var(--pc-paper)] p-3",
                 )}
               >
+                {wide && (
+                  <PanelHeader
+                    title="Devices"
+                    side="right"
+                    onCollapse={() => setDevicesCollapsed(true)}
+                    hintProps={hint("Hide devices", "devices")}
+                  />
+                )}
                 {!wide && (
                   <div className="flex items-center justify-between gap-2">
                     <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">
@@ -379,5 +436,75 @@ export function PhoneControlApp() {
       )}
     </div>
     </DeskProvider>
+  );
+}
+
+type HintProps = { title: string; "aria-keyshortcuts": string };
+
+function PanelHeader({
+  title,
+  side,
+  onCollapse,
+  hintProps,
+}: {
+  title: string;
+  side: "left" | "right";
+  onCollapse: () => void;
+  hintProps: HintProps;
+}) {
+  const icon: ReactNode =
+    side === "left" ? <ChevronLeft className="size-4" /> : <ChevronRight className="size-4" />;
+  return (
+    <div className="flex shrink-0 items-center justify-between gap-2">
+      <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
+        {title}
+      </h2>
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={onCollapse}
+        aria-label={`Hide ${title.toLowerCase()}`}
+        aria-expanded
+        {...hintProps}
+        data-panel-collapse={title.toLowerCase()}
+        className="h-11 w-11 min-w-11 rounded-xl text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
+      >
+        {icon}
+      </Button>
+    </div>
+  );
+}
+
+/** Folded side panel: one tall button that reopens it. */
+function PanelRail({
+  side,
+  label,
+  count,
+  onExpand,
+  hintProps,
+}: {
+  side: "left" | "right";
+  label: string;
+  count: number;
+  onExpand: () => void;
+  hintProps: HintProps;
+}) {
+  return (
+    <aside data-side-rail={label.toLowerCase()} className="flex min-h-0 w-12 shrink-0 flex-col">
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label={`Show ${label.toLowerCase()}`}
+        aria-expanded={false}
+        {...hintProps}
+        className="flex min-h-0 flex-1 flex-col items-center gap-3 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 py-3 text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pc-accent)]"
+      >
+        {side === "left" ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+        <span className="font-mono text-[11px] tracking-wider [writing-mode:vertical-rl]">
+          {label}
+        </span>
+        <span className="font-mono text-[10px] text-[var(--pc-ink)]">{count}</span>
+      </button>
+    </aside>
   );
 }
