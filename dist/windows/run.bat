@@ -1,10 +1,11 @@
 @echo off
-rem Starts Rasiel (PhoneControl.exe). ADB and scrcpy are the copies in vendor\, not PATH.
+rem Starts Rasiel (RasielControl.exe). ADB and scrcpy are the copies in vendor\, not PATH.
 title Rasiel
 cd /d "%~dp0"
 
-if not exist "%~dp0PhoneControl.exe" (
-  echo Rasiel binary ^(PhoneControl.exe^) is missing next to this script.
+if not exist "%~dp0RasielControl.exe" (
+  echo Rasiel binary ^(RasielControl.exe^) is missing next to this script.
+  if exist "%~dp0PhoneControl.exe" echo Found the old name PhoneControl.exe: rename it to RasielControl.exe.
   echo From the repo: make package-windows
   pause
   exit /b 1
@@ -24,5 +25,5 @@ if exist "%~dp0vendor\scrcpy\scrcpy-server" set "SCRCPY_SERVER_PATH=%~dp0vendor\
 echo Starting Rasiel on every interface, port 3848
 echo   this PC:    http://127.0.0.1:3848/
 echo   other PCs:  http://THIS-PC-LAN-IP:3848/
-"%~dp0PhoneControl.exe"
+"%~dp0RasielControl.exe"
 if errorlevel 1 pause

@@ -1,4 +1,4 @@
-# Cross-compile PhoneControl for Windows from Linux (gnu toolchain).
+# Cross-compile Rasiel for Windows from Linux (gnu toolchain).
 # MSVC (`x86_64-pc-windows-msvc`) needs a Windows host or a full MSVC/wine setup — use gnu here.
 [target.x86_64-pc-windows-gnu]
 linker = "x86_64-w64-mingw32-gcc"

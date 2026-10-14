@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Assemble / refresh dist/windows/ with a fresh PhoneControl.exe (no MSI).
+# Assemble / refresh dist/windows/ with a fresh RasielControl.exe (no MSI).
 #
 # Builds the same-origin control page into dist/windows/ui and copies
-# PhoneControl.exe beside it. README, run.bat, and vendor placeholders stay committed.
+# RasielControl.exe beside it. README, run.bat, and vendor placeholders stay committed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,17 +27,17 @@ if [[ "$BUILD" != "1" ]]; then
   bash "$ROOT/scripts/build-windows.sh"
 fi
 
-EXE_SRC="target/${TARGET}/${PROFILE}/phonecontrol-agent.exe"
+EXE_SRC="target/${TARGET}/${PROFILE}/rasiel-agent.exe"
 if [[ ! -f "$EXE_SRC" ]]; then
   echo "error: missing $EXE_SRC — run scripts/build-windows.sh first" >&2
   exit 1
 fi
 
 mkdir -p "$DIST/vendor/adb" "$DIST/vendor/scrcpy"
-cp -f "$EXE_SRC" "$DIST/PhoneControl.exe"
+cp -f "$EXE_SRC" "$DIST/RasielControl.exe"
 
 # Ensure placeholder docs exist (fresh clone / zip)
-for f in README.md Start-PhoneControl.ps1 run.bat .env.example \
+for f in README.md Start-RasielControl.ps1 run.bat .env.example \
          vendor/adb/README.md vendor/scrcpy/README.md; do
   if [[ ! -f "$DIST/$f" ]]; then
     echo "error: missing committed pack file: $DIST/$f" >&2
@@ -46,6 +46,6 @@ for f in README.md Start-PhoneControl.ps1 run.bat .env.example \
 done
 
 echo "==> packaged $DIST"
-ls -lh "$DIST/PhoneControl.exe"
+ls -lh "$DIST/RasielControl.exe"
 find "$DIST" -maxdepth 3 \( -type f -o -type d \) | sort
 echo "OK: copy $DIST to a Windows USB host and follow $DIST/README.md"

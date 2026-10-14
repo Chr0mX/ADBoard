@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Rasiel Linux agent — ADB discovery, device manager, HTTP + WebSocket API"
-default-run = "phonecontrol-agent"
+default-run = "rasiel-agent"
 
 [[bin]]
-name = "phonecontrol-agent"
+name = "rasiel-agent"
 path = "src/main.rs"
 
 [dependencies]

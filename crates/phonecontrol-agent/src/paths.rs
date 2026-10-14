@@ -22,7 +22,7 @@ fn project_roots() -> &'static [PathBuf] {
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
                 push_unique(&mut roots, dir.to_path_buf());
-                // PhoneControl.exe lives in dist/windows/ — repo root is two up.
+                // RasielControl.exe lives in dist/windows/ — repo root is two up.
                 if let Some(grand) = dir.parent().and_then(|p| p.parent()) {
                     push_unique(&mut roots, grand.to_path_buf());
                 }

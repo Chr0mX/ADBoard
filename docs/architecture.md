@@ -50,5 +50,5 @@ Application
 
 ## Operator vs developer
 
-- Operators run `dist/windows/run.bat` (or Linux `phonecontrol-agent` with `dist/windows/ui` beside it). The binary serves the static UI from disk and does not embed it or load `.env`.
+- Operators run `dist/windows/run.bat` (or Linux `rasiel-agent` with `dist/windows/ui` beside it). The binary serves the static UI from disk and does not embed it or load `.env`.
 - Developers run the agent and `NEXT_PUBLIC_AGENT_URL=… npm run dev` as described in the root README.

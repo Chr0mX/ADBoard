@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Cross-compile phonecontrol-agent for Windows (x86_64-pc-windows-gnu).
-# Produces: target/x86_64-pc-windows-gnu/release/phonecontrol-agent.exe
+# Cross-compile rasiel-agent for Windows (x86_64-pc-windows-gnu).
+# Produces: target/x86_64-pc-windows-gnu/release/rasiel-agent.exe
 #
 # Requires on the build host:
 #   - rustup target: x86_64-pc-windows-gnu
@@ -35,7 +35,7 @@ fi
 echo "==> cargo build -p phonecontrol-agent --${PROFILE} --target ${TARGET}"
 cargo build -p phonecontrol-agent --"${PROFILE}" --target "${TARGET}"
 
-EXE="target/${TARGET}/${PROFILE}/phonecontrol-agent.exe"
+EXE="target/${TARGET}/${PROFILE}/rasiel-agent.exe"
 if [[ ! -f "$EXE" ]]; then
   echo "error: expected artifact missing: $EXE" >&2
   exit 1

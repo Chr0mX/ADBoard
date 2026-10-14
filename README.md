@@ -7,7 +7,7 @@ Multi-device Android control center. **scrcpy/ADB is the transport; this app own
 | Piece | Path | Port |
 |---|---|---|
 | Next.js Web UI | `src/` | **3847** |
-| Rust binary (`phonecontrol-agent`) | `crates/phonecontrol-agent` | **3848** controller / **3849** agent |
+| Rust binary (`rasiel-agent`) | `crates/phonecontrol-agent` | **3848** controller / **3849** agent |
 | Shared protocol types | `crates/phonecontrol-protocol` | — |
 
 Same binary, two roles via `--role` / `PHONECONTROL_ROLE`:
@@ -147,7 +147,7 @@ curl -s http://127.0.0.1:3848/api/hosts | jq
 
 | Host | Role | Notes |
 |---|---|---|
-| Windows PC | `controller` (or agent) | Packaged as `PhoneControl.exe` — see **Windows host pack** below |
+| Windows PC | `controller` (or agent) | Packaged as `RasielControl.exe` — see **Windows host pack** below |
 | Proxmox LXC | `agent` | `--role agent` + `PHONECONTROL_CONTROLLER_URL`. Set `PHONECONTROL_HTTP_BASE` to a controller-reachable URL for video proxy. |
 | Browser | UI | Always talks to the **controller** (`NEXT_PUBLIC_AGENT_URL`). |
 
@@ -172,13 +172,13 @@ The agent auto-discovers vendored binaries (env `ADB_PATH` / `SCRCPY_PATH` / `SC
 
 ### Windows host pack (`dist/windows/`)
 
-Zip-ready folder (no MSI / signed installer). Same binary as Linux; renamed to `PhoneControl.exe`.
+Zip-ready folder (no MSI / signed installer). Same binary as Linux; renamed to `RasielControl.exe`.
 
 ```text
 dist/windows/
-  PhoneControl.exe           # Windows controller (double-click run.bat)
+  RasielControl.exe           # Windows controller (double-click run.bat)
   run.bat                    # double-click: exe + vendor\adb and vendor\scrcpy
-  Start-PhoneControl.ps1
+  Start-RasielControl.ps1
   .env.example
   README.md
   vendor/adb/                # make fetch-deps FETCH_TARGET=windows
@@ -190,8 +190,8 @@ dist/windows/
 ```bash
 # once: sudo apt-get install -y gcc-mingw-w64-x86-64
 #       rustup target add x86_64-pc-windows-gnu
-make build-windows      # → target/x86_64-pc-windows-gnu/release/phonecontrol-agent.exe
-make package-windows    # → dist/windows/PhoneControl.exe + docs
+make build-windows      # → target/x86_64-pc-windows-gnu/release/rasiel-agent.exe
+make package-windows    # → dist/windows/RasielControl.exe + docs
 ```
 
 Scripts: `scripts/build-windows.sh`, `scripts/package-windows.sh`, `scripts/fetch-deps.sh`. Linker config: `.cargo/config.toml`.
@@ -216,7 +216,7 @@ http://127.0.0.1:3848
 | `0.0.0.0` (`run.bat`) | LAN browser or a remote agent can open port 3848. Allow TCP 3848 in Windows Firewall. |
 
 ```powershell
-.\Start-PhoneControl.ps1 -Bind 0.0.0.0
+.\Start-RasielControl.ps1 -Bind 0.0.0.0
 ```
 
 **Pair Linux LXC agent** (controller on Windows, agent on LXC):
@@ -229,10 +229,10 @@ PHONECONTROL_HOST=lxc-agent-01 \
 PHONECONTROL_HOST_ID=lxc-agent-01 \
 PHONECONTROL_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
 PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
-./phonecontrol-agent
+./rasiel-agent
 ```
 
-Mock without phones: `.\Start-PhoneControl.ps1 -Mock` (testpattern video).
+Mock without phones: `.\Start-RasielControl.ps1 -Mock` (testpattern video).
 
 ## Environment flags
 
@@ -286,12 +286,12 @@ Mock without phones: `.\Start-PhoneControl.ps1 -Mock` (testpattern video).
 | Session manager + **scrcpy-server `raw_stream` → Annex-B video WS** | Deep Proxmox USB docs |
 | Synthetic H264 testpattern → browser WebCodecs | — |
 | Multi-host mesh + video proxy | — |
-| Windows pack scripts (`PhoneControl.exe` via MinGW cross-build) | — |
+| Windows pack scripts (`RasielControl.exe` via MinGW cross-build) | — |
 
 ## Stack
 
 - Frontend: Next.js · TypeScript · Tailwind · shadcn/ui · WebCodecs
-- Backend: Rust · Axum · Tokio (same codebase as Windows `PhoneControl.exe` / Linux `phonecontrol-agent`)
+- Backend: Rust · Axum · Tokio (same codebase as Windows `RasielControl.exe` / Linux `rasiel-agent`)
 
 ## Layout
 

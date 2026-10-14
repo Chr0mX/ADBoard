@@ -1,8 +1,8 @@
 # Start Rasiel controller on this Windows USB host (loopback by default).
 # Usage (from the pack folder):
-#   .\Start-PhoneControl.ps1
-#   .\Start-PhoneControl.ps1 -Bind 0.0.0.0 -Mock
-#   .\Start-PhoneControl.ps1 -Port 3848 -HostName "desk-pc"
+#   .\Start-RasielControl.ps1
+#   .\Start-RasielControl.ps1 -Bind 0.0.0.0 -Mock
+#   .\Start-RasielControl.ps1 -Port 3848 -HostName "desk-pc"
 
 [CmdletBinding()]
 param(
@@ -25,10 +25,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
-$Exe = Join-Path $Root "PhoneControl.exe"
+$Exe = Join-Path $Root "RasielControl.exe"
 
 if (-not (Test-Path $Exe)) {
-    Write-Error "Rasiel binary (PhoneControl.exe) not found next to this script: $Exe"
+    if (Test-Path (Join-Path $Root "PhoneControl.exe")) {
+        Write-Warning "Found the old name PhoneControl.exe: rename it to RasielControl.exe."
+    }
+    Write-Error "Rasiel binary (RasielControl.exe) not found next to this script: $Exe"
 }
 
 $Adb = Join-Path $Root "vendor\adb\adb.exe"

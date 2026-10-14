@@ -307,7 +307,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     };
     Json(HealthResponse {
         status: "ok".into(),
-        agent: "phonecontrol-agent".into(),
+        agent: "rasiel-agent".into(),
         role: state.role(),
         host_id: state.host_id().into(),
         host_name: state.host_name().into(),

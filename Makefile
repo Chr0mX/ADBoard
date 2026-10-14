@@ -31,7 +31,7 @@ test-linux:
 	cargo build -p phonecontrol-agent --release
 
 clean-windows-dist:
-	rm -f $(DIST)/PhoneControl.exe
+	rm -f $(DIST)/RasielControl.exe $(DIST)/PhoneControl.exe
 
 clean-temp:
 	rm -rf $(ROOT)/temp

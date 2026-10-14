@@ -16,7 +16,7 @@ Downloads go to `./temp/`; this folder receives the scrcpy win64 release (`scrcp
 - `scrcpy-server` (or `scrcpy-server.jar`)
 - any DLLs shipped next to `scrcpy.exe`
 
-`Start-PhoneControl.ps1` sets `SCRCPY_PATH` / `SCRCPY_SERVER_PATH` when those files exist. The agent also auto-discovers vendored paths.
+`Start-RasielControl.ps1` sets `SCRCPY_PATH` / `SCRCPY_SERVER_PATH` when those files exist. The agent also auto-discovers vendored paths.
 
 Rasiel owns discovery and the Web UI; scrcpy-server is the capture transport for video (`raw_stream=true` over an adb-forwarded TCP socket → Annex-B on the video WebSocket). Inject v1 still uses `adb shell input`. Use `PHONECONTROL_VIDEO_SOURCE=testpattern` to validate the browser path without phones.
 
