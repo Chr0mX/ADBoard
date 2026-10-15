@@ -1,6 +1,51 @@
-# ADBoard
+<p align="center">
+  <img src="site/assets/banner.svg" alt="ADBoard: Android device control. Every device. One dashboard." width="100%">
+</p>
 
-Multi-device Android control center. **scrcpy/ADB is the transport; this app owns discovery, sessions, video/input abstraction, and the Web UI.** The browser never talks to ADB directly.
+<h1 align="center">ADBoard</h1>
+
+<p align="center">
+  <b>Every device. One dashboard.</b><br>
+  A self-hosted web interface for scrcpy, ADB, multi-device control, and automation.
+</p>
+
+<p align="center">
+  <a href="https://chr0mx.github.io/Phone-control/">Website</a> ·
+  <a href="#run-on-windows-operator">Quick start</a> ·
+  <a href="#remote-access-nginx-proxy-manager--cloudflare">Remote access</a> ·
+  <a href="docs/architecture.md">Architecture</a>
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="site/assets/icon-live-control.svg" width="32" height="32" alt=""><br>
+      <b>Live Control</b><br>
+      Screen mirroring and input. Low-latency H.264 in the browser, touch, keyboard and navigation keys.
+    </td>
+    <td width="50%" valign="top">
+      <img src="site/assets/icon-automation.svg" width="32" height="32" alt=""><br>
+      <b>Automation</b><br>
+      Macros and batch actions. Record touches, replay them, and run steps across many phones at once.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="site/assets/icon-adb-terminal.svg" width="32" height="32" alt=""><br>
+      <b>ADB Terminal</b><br>
+      Shell and device commands. Run ADB shell, install APKs, push and pull files.
+    </td>
+    <td width="50%" valign="top">
+      <img src="site/assets/icon-device-fleet.svg" width="32" height="32" alt=""><br>
+      <b>Device Fleet</b><br>
+      Manage every connected phone. USB and wireless devices across Windows and Linux hosts in one grid.
+    </td>
+  </tr>
+</table>
+
+## How it works
+
+**scrcpy/ADB is the transport; ADBoard owns discovery, sessions, video/input abstraction, and the Web UI.** The browser never talks to ADB directly.
 
 ## Components
 

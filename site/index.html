@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ADBoard</title>
+  <meta name="description" content="Every device. One dashboard. A self-hosted web interface for scrcpy, ADB, multi-device control, and automation.">
+  <meta name="theme-color" content="#0b0f17">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ADBoard — Android device control">
+  <meta property="og:description" content="Every device. One dashboard. A self-hosted web interface for scrcpy, ADB, multi-device control, and automation.">
+  <meta property="og:image" content="https://chr0mx.github.io/Phone-control/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta name="twitter:card" content="summary_large_image">
+  <style>
+    /* Dark only, matching the ADBoard brand card. */
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f17;
+      --surface: #111620;
+      --card: #1b2130;
+      --tile: #1e2c3c;
+      --line: #2a3140;
+      --ink: #f1f5f9;
+      --muted: #9aa4b2;
+      --sky: #7dd3fc;
+      --lav: #b4a5f8;
+      --mint: #86e3c3;
+      --amber: #f5c98a;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+      --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 17px/1.6 var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--sky); }
+    a:focus-visible, .button:focus-visible { outline: 2px solid var(--sky); outline-offset: 3px; }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding-left: max(20px, env(safe-area-inset-left));
+      padding-right: max(20px, env(safe-area-inset-right));
+    }
+    header.top { padding-block: 20px; }
+    header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; font-weight: 700; font-size: 20px; }
+    .brand img { width: 36px; height: 36px; }
+    nav.links { display: flex; gap: 20px; font-size: 15px; }
+    nav.links a { color: var(--muted); text-decoration: none; }
+    nav.links a:hover { color: var(--ink); }
+
+    .hero { padding-block: 56px 72px; }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center; }
+    .identity { display: flex; align-items: center; gap: 22px; }
+    .identity img { width: 104px; height: 104px; flex: none; }
+    .name { margin: 0; font-size: clamp(44px, 7vw, 68px); line-height: 1; font-weight: 700; letter-spacing: -0.02em; }
+    .tagline { margin: 10px 0 0; color: var(--sky); font-size: 16px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; }
+    h1 { margin: 40px 0 0; font-size: clamp(30px, 4.4vw, 42px); line-height: 1.15; font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; }
+    .lede { margin: 16px 0 0; color: var(--muted); font-size: 19px; max-width: 34em; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+    .button {
+      display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 22px;
+      border-radius: 14px; font-weight: 600; font-size: 16px; text-decoration: none;
+    }
+    .button.primary { background: var(--sky); color: #06202e; }
+    .button.primary:hover { background: #a5e1fd; }
+    .button.secondary { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+    .button.secondary:hover { border-color: #3a4357; }
+    .button svg { width: 20px; height: 20px; }
+
+    .features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .feature { background: var(--card); border-radius: 22px; padding: 24px; }
+    .feature img { width: 34px; height: 34px; display: block; }
+    .feature h3 { margin: 18px 0 4px; font-size: 21px; font-weight: 600; }
+    .feature p { margin: 0; color: var(--muted); font-size: 15.5px; line-height: 1.5; }
+
+    section.block { padding-block: 64px; border-top: 1px solid var(--line); }
+    section.block h2 { margin: 0 0 8px; font-size: 30px; font-weight: 650; letter-spacing: -0.01em; }
+    section.block > .wrap > p.sub { margin: 0 0 32px; color: var(--muted); max-width: 40em; }
+
+    ol.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    ol.steps li { counter-increment: step; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; }
+    ol.steps li::before { content: counter(step); display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--tile); color: var(--sky); font-weight: 700; font-size: 15px; }
+    ol.steps h3 { margin: 16px 0 6px; font-size: 19px; font-weight: 600; }
+    ol.steps p { margin: 0; color: var(--muted); font-size: 15.5px; }
+
+    .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; min-width: 0; }
+    .panel h3 { margin: 0 0 12px; font-size: 18px; font-weight: 600; }
+    pre { margin: 0; overflow-x: auto; background: #070a10; border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+    code { font: 14px/1.6 var(--mono); color: #dbe4ee; }
+    .panel p { margin: 12px 0 0; color: var(--muted); font-size: 15px; }
+    p code, li code { font-size: 0.88em; background: #070a10; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+
+    ul.checks { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 32px; }
+    ul.checks li { position: relative; padding-left: 30px; color: var(--muted); font-size: 16px; }
+    ul.checks li b { color: var(--ink); font-weight: 600; }
+    ul.checks li::before { content: ""; position: absolute; left: 0; top: 0.42em; width: 16px; height: 9px; border-left: 2px solid var(--mint); border-bottom: 2px solid var(--mint); transform: rotate(-45deg); }
+
+    footer { border-top: 1px solid var(--line); padding-block: 32px calc(32px + env(safe-area-inset-bottom)); color: var(--muted); font-size: 14px; }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+    @media (max-width: 860px) {
+      .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+      ol.steps, .two, ul.checks { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 480px) {
+      .features { grid-template-columns: minmax(0, 1fr); }
+      .identity img { width: 80px; height: 80px; }
+      nav.links { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/logo.svg" alt="">ADBoard</a>
+      <nav class="links" aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#start">Quick start</a>
+        <a href="#remote">Remote access</a>
+        <a href="https://github.com/Chr0mX/Phone-control">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <div class="identity">
+            <img src="assets/logo.svg" alt="">
+            <div>
+              <p class="name">ADBoard</p>
+              <p class="tagline">Android device control</p>
+            </div>
+          </div>
+          <h1>Every device. One dashboard.</h1>
+          <p class="lede">A self-hosted web interface for scrcpy, ADB, multi-device control, and automation.</p>
+          <div class="actions">
+            <a class="button primary" href="https://github.com/Chr0mX/Phone-control">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+              View on GitHub
+            </a>
+            <a class="button secondary" href="#start">Quick start</a>
+          </div>
+        </div>
+
+        <div class="features" role="list">
+          <article class="feature" role="listitem">
+            <img src="assets/icon-live-control.svg" alt="">
+            <h3>Live Control</h3>
+            <p>Screen mirroring and input</p>
+          </article>
+          <article class="feature" role="listitem">
+            <img src="assets/icon-automation.svg" alt="">
+            <h3>Automation</h3>
+            <p>Macros and batch actions</p>
+          </article>
+          <article class="feature" role="listitem">
+            <img src="assets/icon-adb-terminal.svg" alt="">
+            <h3>ADB Terminal</h3>
+            <p>Shell and device commands</p>
+          </article>
+          <article class="feature" role="listitem">
+            <img src="assets/icon-device-fleet.svg" alt="">
+            <h3>Device Fleet</h3>
+            <p>Manage every connected phone</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="how">
+      <div class="wrap">
+        <h2>How it works</h2>
+        <p class="sub">scrcpy and ADB carry the video and input. ADBoard handles discovery, sessions and the web UI, so the browser never talks to ADB directly.</p>
+        <ol class="steps">
+          <li>
+            <h3>Connect phones</h3>
+            <p>Plug Android phones into a Windows or Linux host over USB, or pair them with wireless ADB.</p>
+          </li>
+          <li>
+            <h3>Start ADBoard</h3>
+            <p>Run <code>run.bat</code> on Windows or <code>adboard-agent</code> on Linux. One binary serves the UI, video and control.</p>
+          </li>
+          <li>
+            <h3>Open the dashboard</h3>
+            <p>Open it in a browser at port 3848, or publish it behind Nginx Proxy Manager and Cloudflare with sign-in.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="block" id="start">
+      <div class="wrap">
+        <h2>Quick start</h2>
+        <p class="sub">No installer. One script downloads ADB and scrcpy; Windows and Linux run the same Rust binary.</p>
+        <div class="two">
+          <div class="panel">
+            <h3>Windows</h3>
+<pre><code>git clone https://github.com/Chr0mX/Phone-control
+cd Phone-control
+powershell -ExecutionPolicy Bypass -File scripts\fetch-deps.ps1
+run.bat</code></pre>
+            <p>The script puts ADB and scrcpy in <code>dist\windows\vendor</code>; <code>run.bat</code> starts <code>ADBoard.exe</code>. Open <code>http://127.0.0.1:3848</code>.</p>
+          </div>
+          <div class="panel">
+            <h3>Linux</h3>
+<pre><code>git clone https://github.com/Chr0mX/Phone-control
+cd Phone-control
+make fetch-deps
+cargo run -p phonecontrol-agent --release</code></pre>
+            <p>Needs a Rust toolchain. Serves the dashboard on port 3848. Try it without phones: <code>PHONECONTROL_FORCE_MOCK=1</code>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="remote">
+      <div class="wrap">
+        <h2>Ready for remote access</h2>
+        <p class="sub">Publish ADBoard on its own subdomain behind Nginx Proxy Manager with Cloudflare's proxy turned on.</p>
+        <ul class="checks">
+          <li><b>Sign-in with a changeable password.</b> Salted and hashed on the host; set it from the dashboard on your own network.</li>
+          <li><b>Locked by default.</b> Requests through a proxy are refused until an account exists.</li>
+          <li><b>Stable live video.</b> Keep-alive pings stay under Cloudflare's and nginx's idle limits.</li>
+          <li><b>Large uploads.</b> APKs and files go up in chunks under Cloudflare's 100 MB request cap.</li>
+          <li><b>No secrets in URLs.</b> Access tokens travel in headers, never in logs.</li>
+          <li><b>Clean updates.</b> Cache headers keep Cloudflare from serving a stale dashboard.</li>
+        </ul>
+        <p class="sub" style="margin-top:28px;margin-bottom:0">Step-by-step settings: <a href="https://github.com/Chr0mX/Phone-control#remote-access-nginx-proxy-manager--cloudflare">Remote access guide</a>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>ADBoard · Android device control</span>
+      <span>Icons from <a href="https://lucide.dev">Lucide</a> (ISC)</span>
+    </div>
+  </footer>
+</body>
+</html>
