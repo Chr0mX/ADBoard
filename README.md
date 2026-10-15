@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://chr0mx.github.io/Phone-control/">Website</a> ·
+  <a href="https://chr0mx.github.io/ADBoard/">Website</a> ·
   <a href="#run-on-windows-operator">Quick start</a> ·
   <a href="#remote-access-nginx-proxy-manager--cloudflare">Remote access</a> ·
   <a href="docs/architecture.md">Architecture</a>
