@@ -82,11 +82,11 @@ export function SignInGate({ children }: { children: ReactNode }) {
       <Screen>
         <Card title="Password required for remote access">
           <p className="text-sm leading-relaxed text-[var(--pc-muted)]">
-            Rasiel is being reached through a reverse proxy, but no password is set. Anyone who
+            ADBoard is being reached through a reverse proxy, but no password is set. Anyone who
             can open this address could control the phones.
           </p>
           <p className="text-sm leading-relaxed text-[var(--pc-muted)]">
-            Open Rasiel on the host&apos;s own network and choose <strong className="text-[var(--pc-ink)]">Set password</strong>,
+            Open ADBoard on the host&apos;s own network and choose <strong className="text-[var(--pc-ink)]">Set password</strong>,
             or start it with{" "}
             <code className="font-mono text-[var(--pc-ink)] [overflow-wrap:anywhere]">PHONECONTROL_PASSWORD</code>. If
             Cloudflare Access already protects this address, set{" "}
@@ -170,11 +170,11 @@ function SignInForm({ onSignedIn }: { onSignedIn: (username: string) => void }) 
 
   return (
     <Screen>
-      <Card title="Sign in to Rasiel">
+      <Card title="Sign in to ADBoard">
         <form onSubmit={submit} className="flex flex-col gap-3" data-sign-in>
-          <Field id="rasiel-username" label="Username">
+          <Field id="adboard-username" label="Username">
             <input
-              id="rasiel-username"
+              id="adboard-username"
               name="username"
               autoComplete="username"
               autoCapitalize="none"
@@ -184,9 +184,9 @@ function SignInForm({ onSignedIn }: { onSignedIn: (username: string) => void }) 
               className={inputClass}
             />
           </Field>
-          <Field id="rasiel-password" label="Password">
+          <Field id="adboard-password" label="Password">
             <input
-              id="rasiel-password"
+              id="adboard-password"
               name="password"
               type="password"
               autoComplete="current-password"
@@ -273,26 +273,26 @@ function AccountDialog({
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="rasiel-account-title"
+      aria-labelledby="adboard-account-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <section className="flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-6 shadow-lg">
-        <h2 id="rasiel-account-title" className="font-display text-xl font-bold tracking-tight text-[var(--pc-ink)]">
+        <h2 id="adboard-account-title" className="font-display text-xl font-bold tracking-tight text-[var(--pc-ink)]">
           {hasAccount ? "Change password" : "Set a password"}
         </h2>
         {!hasAccount && (
           <p className="text-sm leading-relaxed text-[var(--pc-muted)]">
-            Required before Rasiel can be reached through a reverse proxy or Cloudflare. Anyone
+            Required before ADBoard can be reached through a reverse proxy or Cloudflare. Anyone
             opening it from outside will have to sign in.
           </p>
         )}
         <form onSubmit={submit} className="flex flex-col gap-3" data-account-form>
-          <Field id="rasiel-account-username" label="Username">
+          <Field id="adboard-account-username" label="Username">
             <input
-              id="rasiel-account-username"
+              id="adboard-account-username"
               autoComplete="username"
               autoCapitalize="none"
               value={name}
@@ -301,9 +301,9 @@ function AccountDialog({
             />
           </Field>
           {hasAccount && (
-            <Field id="rasiel-current-password" label="Current password">
+            <Field id="adboard-current-password" label="Current password">
               <input
-                id="rasiel-current-password"
+                id="adboard-current-password"
                 type="password"
                 autoComplete="current-password"
                 autoFocus
@@ -313,9 +313,9 @@ function AccountDialog({
               />
             </Field>
           )}
-          <Field id="rasiel-new-password" label="New password">
+          <Field id="adboard-new-password" label="New password">
             <input
-              id="rasiel-new-password"
+              id="adboard-new-password"
               type="password"
               autoComplete="new-password"
               autoFocus={!hasAccount}
@@ -324,9 +324,9 @@ function AccountDialog({
               className={inputClass}
             />
           </Field>
-          <Field id="rasiel-confirm-password" label="Confirm new password">
+          <Field id="adboard-confirm-password" label="Confirm new password">
             <input
-              id="rasiel-confirm-password"
+              id="adboard-confirm-password"
               type="password"
               autoComplete="new-password"
               value={confirm}
@@ -335,7 +335,7 @@ function AccountDialog({
             />
           </Field>
           {hasAccount && (
-            <p className="text-xs text-[var(--pc-muted)]">Other browsers signed in to Rasiel will be signed out.</p>
+            <p className="text-xs text-[var(--pc-muted)]">Other browsers signed in to ADBoard will be signed out.</p>
           )}
           {error && (
             <p role="alert" className="text-sm text-[var(--pc-warn)]">

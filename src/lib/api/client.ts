@@ -26,7 +26,7 @@ import {
 
 /**
  * Thin client API shape for the control plane.
- * Uses the Rust rasiel-agent when NEXT_PUBLIC_AGENT_URL is set;
+ * Uses the Rust adboard-agent when NEXT_PUBLIC_AGENT_URL is set;
  * otherwise falls back to the local mock fleet.
  * The browser never talks to ADB directly.
  */

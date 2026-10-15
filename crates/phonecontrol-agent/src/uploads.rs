@@ -24,7 +24,7 @@ fn valid_id(id: &str) -> bool {
 }
 
 fn staged_path(id: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("rasiel-upload-{id}.part"))
+    std::env::temp_dir().join(format!("adboard-upload-{id}.part"))
 }
 
 fn remove_stale() {
@@ -35,7 +35,7 @@ fn remove_stale() {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        if !(name.starts_with("rasiel-upload-") && name.ends_with(".part")) {
+        if !(name.starts_with("adboard-upload-") && name.ends_with(".part")) {
             continue;
         }
         let old = entry

@@ -1,4 +1,4 @@
-//! HTTP + WebSocket API for the Rasiel UI + agent mesh.
+//! HTTP + WebSocket API for the ADBoard UI + agent mesh.
 
 use crate::device_manager::AppState;
 use crate::web_auth::{self, WebAuth};
@@ -225,10 +225,12 @@ fn from_hex(byte: u8) -> Option<u8> {
 }
 
 /// Browsers cannot set headers on a WebSocket, so the UI offers the token as a
-/// subprotocol (`rasiel-token.<hex>`) instead of `?token=`, which proxies and
-/// Cloudflare would log. The server answers with the plain `rasiel` protocol.
-pub const WS_PROTOCOL: &str = "rasiel";
-const WS_TOKEN_PROTOCOL_PREFIX: &str = "rasiel-token.";
+/// subprotocol (`adboard-token.<hex>`) instead of `?token=`, which proxies and
+/// Cloudflare would log. The server answers with the plain `adboard` protocol.
+pub const WS_PROTOCOL: &str = "adboard";
+/// Accepted from UIs built before the ADBoard rename (tabs left open).
+const LEGACY_WS_PROTOCOL: &str = "rasiel";
+const WS_TOKEN_PROTOCOL_PREFIXES: [&str; 2] = ["adboard-token.", "rasiel-token."];
 
 fn token_from_ws_protocol(headers: &HeaderMap) -> Option<String> {
     headers
@@ -237,7 +239,10 @@ fn token_from_ws_protocol(headers: &HeaderMap) -> Option<String> {
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(','))
         .find_map(|item| {
-            let hex = item.trim().strip_prefix(WS_TOKEN_PROTOCOL_PREFIX)?;
+            let item = item.trim();
+            let hex = WS_TOKEN_PROTOCOL_PREFIXES
+                .iter()
+                .find_map(|prefix| item.strip_prefix(prefix))?;
             if hex.len() % 2 != 0 {
                 return None;
             }
@@ -335,7 +340,7 @@ struct BootstrapBody {
     token: String,
 }
 
-const PROXY_NEEDS_PASSWORD: &str = "Rasiel is being reached through a reverse proxy without a password. Set PHONECONTROL_PASSWORD on the Rasiel host (or PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1 if Cloudflare Access or similar already protects it).";
+const PROXY_NEEDS_PASSWORD: &str = "ADBoard is being reached through a reverse proxy without a password. Set PHONECONTROL_PASSWORD on the ADBoard host (or PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1 if Cloudflare Access or similar already protects it).";
 
 fn auth_error(status: StatusCode, message: &str) -> Response {
     (status, Json(serde_json::json!({ "error": message }))).into_response()
@@ -347,11 +352,11 @@ async fn bootstrap(
     headers: HeaderMap,
 ) -> Response {
     if !origin_allowed_for_bootstrap(&headers) {
-        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use Rasiel.");
+        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use ADBoard.");
     }
     if auth.password_required() {
         if !auth.session_valid(&headers) {
-            return auth_error(StatusCode::UNAUTHORIZED, "Sign in to Rasiel.");
+            return auth_error(StatusCode::UNAUTHORIZED, "Sign in to ADBoard.");
         }
     } else if auth.proxy_blocked(&headers) {
         return auth_error(StatusCode::FORBIDDEN, PROXY_NEEDS_PASSWORD);
@@ -402,10 +407,10 @@ async fn login(
     Json(body): Json<LoginBody>,
 ) -> Response {
     if !origin_allowed_for_bootstrap(&headers) {
-        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use Rasiel.");
+        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use ADBoard.");
     }
     if !auth.password_required() {
-        return auth_error(StatusCode::BAD_REQUEST, "No password is configured on this Rasiel host.");
+        return auth_error(StatusCode::BAD_REQUEST, "No password is configured on this ADBoard host.");
     }
     let username = body
         .username
@@ -445,13 +450,13 @@ async fn change_password(
     Json(body): Json<ChangePasswordBody>,
 ) -> Response {
     if !origin_allowed_for_bootstrap(&headers) {
-        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use Rasiel.");
+        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use ADBoard.");
     }
     let current_user = auth.username();
     match &current_user {
         Some(user) => {
             if !auth.session_valid(&headers) {
-                return auth_error(StatusCode::UNAUTHORIZED, "Sign in to Rasiel.");
+                return auth_error(StatusCode::UNAUTHORIZED, "Sign in to ADBoard.");
             }
             if !auth.check_login(user, &body.current_password) {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -462,7 +467,7 @@ async fn change_password(
             if web_auth::is_proxied(&headers) {
                 return auth_error(
                     StatusCode::FORBIDDEN,
-                    "Set the first password on the Rasiel host's network, or with PHONECONTROL_PASSWORD.",
+                    "Set the first password on the ADBoard host's network, or with PHONECONTROL_PASSWORD.",
                 );
             }
         }
@@ -477,7 +482,7 @@ async fn change_password(
     if let Err(message) = auth.set_credentials(&username, &body.new_password) {
         return auth_error(StatusCode::BAD_REQUEST, &message);
     }
-    info!(%username, "Rasiel account password changed");
+    info!(%username, "ADBoard account password changed");
     let id = auth.create_session();
     let mut response = Json(serde_json::json!({ "ok": true, "username": username })).into_response();
     response.headers_mut().insert(
@@ -539,8 +544,8 @@ fn ui_dir() -> Option<PathBuf> {
 
 async fn ui_not_bundled() -> Html<&'static str> {
     Html(
-        "<!doctype html><meta charset=\"utf-8\"><title>Rasiel</title>\
-         <p>Rasiel is running, but the web UI was not found next to the executable.</p>\
+        "<!doctype html><meta charset=\"utf-8\"><title>ADBoard</title>\
+         <p>ADBoard is running, but the web UI was not found next to the executable.</p>\
          <p><a href=\"/health\">Health</a></p>",
     )
 }
@@ -553,7 +558,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     };
     Json(HealthResponse {
         status: "ok".into(),
-        agent: "rasiel-agent".into(),
+        agent: "adboard-agent".into(),
         role: state.role(),
         host_id: state.host_id().into(),
         host_name: state.host_name().into(),
@@ -1005,7 +1010,7 @@ fn header_list(headers: &HeaderMap, name: &str) -> Result<Vec<String>, (StatusCo
 }
 
 async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
-    ws.protocols([WS_PROTOCOL]).on_upgrade(move |socket| handle_socket(socket, state))
+    ws.protocols([WS_PROTOCOL, LEGACY_WS_PROTOCOL]).on_upgrade(move |socket| handle_socket(socket, state))
 }
 
 async fn ws_agent_upgrade(
@@ -1014,7 +1019,7 @@ async fn ws_agent_upgrade(
 ) -> impl IntoResponse {
     if state.role() != Role::Controller {
         // Still upgrade so the peer gets a clean close rather than HTTP 404 mid-handshake.
-        return ws.protocols([WS_PROTOCOL]).on_upgrade(|mut socket| async move {
+        return ws.protocols([WS_PROTOCOL, LEGACY_WS_PROTOCOL]).on_upgrade(|mut socket| async move {
             let _ = socket
                 .send(Message::Text(
                     r#"{"type":"notice","message":"not a controller"}"#.into(),
@@ -1023,7 +1028,7 @@ async fn ws_agent_upgrade(
             let _ = socket.close().await;
         });
     }
-    ws.protocols([WS_PROTOCOL]).on_upgrade(move |socket| handle_agent_socket(socket, state))
+    ws.protocols([WS_PROTOCOL, LEGACY_WS_PROTOCOL]).on_upgrade(move |socket| handle_agent_socket(socket, state))
 }
 
 async fn ws_video_upgrade(
@@ -1031,7 +1036,7 @@ async fn ws_video_upgrade(
     State(state): State<AppState>,
     Path(serial): Path<String>,
 ) -> impl IntoResponse {
-    ws.protocols([WS_PROTOCOL]).on_upgrade(move |socket| handle_video_socket(socket, state, serial))
+    ws.protocols([WS_PROTOCOL, LEGACY_WS_PROTOCOL]).on_upgrade(move |socket| handle_video_socket(socket, state, serial))
 }
 
 async fn ws_audio_upgrade(
@@ -1039,7 +1044,7 @@ async fn ws_audio_upgrade(
     State(state): State<AppState>,
     Path(serial): Path<String>,
 ) -> impl IntoResponse {
-    ws.protocols([WS_PROTOCOL]).on_upgrade(move |socket| handle_audio_socket(socket, state, serial))
+    ws.protocols([WS_PROTOCOL, LEGACY_WS_PROTOCOL]).on_upgrade(move |socket| handle_audio_socket(socket, state, serial))
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
@@ -2143,8 +2148,8 @@ mod tests {
         let token = state.api_token().to_string();
         let app = router_with_auth(state, WebAuth::new(Some("open sesame".into()), false));
         let proxy = [
-            ("host", "rasiel.example.com"),
-            ("origin", "https://rasiel.example.com"),
+            ("host", "adboard.example.com"),
+            ("origin", "https://adboard.example.com"),
             ("x-forwarded-for", "203.0.113.9"),
             ("x-forwarded-proto", "https"),
         ];
@@ -2161,7 +2166,7 @@ mod tests {
             .clone()
             .oneshot(login_request(
                 "open sesame",
-                &[("host", "rasiel.example.com"), ("origin", "https://evil.example")],
+                &[("host", "adboard.example.com"), ("origin", "https://evil.example")],
             ))
             .await
             .unwrap();
@@ -2237,16 +2242,25 @@ mod tests {
         let mut request = format!("ws://{addr}/ws").into_client_request().unwrap();
         request.headers_mut().insert(
             "sec-websocket-protocol",
-            format!("rasiel, rasiel-token.{}", hex(&token)).parse().unwrap(),
+            format!("adboard, adboard-token.{}", hex(&token)).parse().unwrap(),
         );
         let (_socket, response) = tokio_tungstenite::connect_async(request).await.unwrap();
-        assert_eq!(response.headers()["sec-websocket-protocol"], "rasiel");
+        assert_eq!(response.headers()["sec-websocket-protocol"], "adboard");
+
+        // A UI from before the rename (still open in a tab) keeps working.
+        let mut legacy = format!("ws://{addr}/ws").into_client_request().unwrap();
+        legacy.headers_mut().insert(
+            "sec-websocket-protocol",
+            format!("rasiel, rasiel-token.{}", hex(&token)).parse().unwrap(),
+        );
+        let (_legacy_socket, legacy_response) = tokio_tungstenite::connect_async(legacy).await.unwrap();
+        assert_eq!(legacy_response.headers()["sec-websocket-protocol"], "rasiel");
 
         // Wrong token in the subprotocol: refused.
         let mut bad = format!("ws://{addr}/ws").into_client_request().unwrap();
         bad.headers_mut().insert(
             "sec-websocket-protocol",
-            format!("rasiel, rasiel-token.{}", hex("nope")).parse().unwrap(),
+            format!("adboard, adboard-token.{}", hex("nope")).parse().unwrap(),
         );
         assert!(tokio_tungstenite::connect_async(bad).await.is_err());
 

@@ -24,15 +24,15 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rasiel",
+  title: "ADBoard",
   description:
     "Multi-device Android control center — scrcpy/ADB transport with a unified Web UI.",
-  applicationName: "Rasiel",
+  applicationName: "ADBoard",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Rasiel",
+    title: "ADBoard",
   },
   other: {
     "mobile-web-app-capable": "yes",

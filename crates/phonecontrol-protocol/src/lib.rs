@@ -1,4 +1,4 @@
-//! Shared protocol types for Rasiel.
+//! Shared protocol types for ADBoard.
 //!
 //! Mirrors `src/lib/devices/types.ts` so the Next.js UI and Rust agent
 //! speak the same shape over HTTP + WebSocket.

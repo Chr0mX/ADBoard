@@ -22,7 +22,7 @@ export function httpErrorMessage(status: number, body: string, fallback: string)
     case 502:
     case 503:
     case 504:
-      return `The proxy could not reach Rasiel (${status}). Check that Rasiel is running and the proxy forwards to the right port.`;
+      return `The proxy could not reach ADBoard (${status}). Check that ADBoard is running and the proxy forwards to the right port.`;
     case 520:
     case 521:
     case 522:
@@ -31,7 +31,7 @@ export function httpErrorMessage(status: number, body: string, fallback: string)
     case 526:
       return `Cloudflare could not reach the server behind it (${status}). Check the proxy host and the Cloudflare SSL mode.`;
     case 524:
-      return "Cloudflare timed out waiting for Rasiel (524). The request ran longer than 100 seconds.";
+      return "Cloudflare timed out waiting for ADBoard (524). The request ran longer than 100 seconds.";
     case 0:
       return fallback;
     default:

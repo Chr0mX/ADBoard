@@ -1,6 +1,6 @@
-# Rasiel architecture
+# ADBoard architecture
 
-Rasiel is a multi-device Android desk. The browser never talks to ADB or USB. A Rust binary owns discovery, sessions, video, and input. The Next.js UI is either served by that binary (Windows pack) or pointed at it in development.
+ADBoard is a multi-device Android desk. The browser never talks to ADB or USB. A Rust binary owns discovery, sessions, video, and input. The Next.js UI is either served by that binary (Windows pack) or pointed at it in development.
 
 ## Processes
 
@@ -50,5 +50,5 @@ Application
 
 ## Operator vs developer
 
-- Operators run `dist/windows/run.bat` (or Linux `rasiel-agent` with `dist/windows/ui` beside it). The binary serves the static UI from disk and does not embed it or load `.env`.
+- Operators run `dist/windows/run.bat` (or Linux `adboard-agent` with `dist/windows/ui` beside it). The binary serves the static UI from disk and does not embed it or load `.env`.
 - Developers run the agent and `NEXT_PUBLIC_AGENT_URL=… npm run dev` as described in the root README.

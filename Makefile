@@ -1,4 +1,4 @@
-# Rasiel — packaging + dependency helpers
+# ADBoard — packaging + dependency helpers
 #
 # Cross-compile + zip-ready folder (no MSI). Default target: x86_64-pc-windows-gnu.
 #
@@ -31,7 +31,7 @@ test-linux:
 	cargo build -p phonecontrol-agent --release
 
 clean-windows-dist:
-	rm -f $(DIST)/RasielControl.exe $(DIST)/PhoneControl.exe
+	rm -f $(DIST)/ADBoard.exe $(DIST)/PhoneControl.exe
 
 clean-temp:
 	rm -rf $(ROOT)/temp

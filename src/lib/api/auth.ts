@@ -1,7 +1,7 @@
 /**
  * Shared agent auth for HTTP and WebSocket calls.
  * The agent exposes GET /api/bootstrap (same-origin or allow-listed Origin)
- * and expects x-phonecontrol-token (a `rasiel-token.<hex>` subprotocol on WebSockets).
+ * and expects x-phonecontrol-token (a `adboard-token.<hex>` subprotocol on WebSockets).
  */
 
 import { httpErrorMessage } from "@/lib/api/http-error";
@@ -68,7 +68,7 @@ export function agentTokenSync(): string | null {
 export function agentWsProtocols(): string[] {
   if (!cachedToken) return [];
   const hex = Array.from(new TextEncoder().encode(cachedToken), (b) => b.toString(16).padStart(2, "0")).join("");
-  return ["rasiel", `rasiel-token.${hex}`];
+  return ["adboard", `adboard-token.${hex}`];
 }
 
 export async function agentFetch(input: string, init?: RequestInit): Promise<Response> {

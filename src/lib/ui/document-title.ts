@@ -1,7 +1,7 @@
-export const APP_NAME = "Rasiel";
+export const APP_NAME = "ADBoard";
 
 /**
- * Browser tab title. Control names the phone being driven so several Rasiel
+ * Browser tab title. Control names the phone being driven so several ADBoard
  * tabs stay distinguishable; other sections use their own label.
  */
 export function documentTitle(options: {

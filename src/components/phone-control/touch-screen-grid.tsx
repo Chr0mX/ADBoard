@@ -137,7 +137,7 @@ export function TouchScreenGrid({
         <div className="flex min-w-0 items-baseline gap-2">
           {showTitle && (
             <h2 className="shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)]">
-              Rasiel
+              ADBoard
             </h2>
           )}
           <p className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">

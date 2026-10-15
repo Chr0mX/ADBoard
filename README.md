@@ -1,4 +1,4 @@
-# Rasiel
+# ADBoard
 
 Multi-device Android control center. **scrcpy/ADB is the transport; this app owns discovery, sessions, video/input abstraction, and the Web UI.** The browser never talks to ADB directly.
 
@@ -7,7 +7,7 @@ Multi-device Android control center. **scrcpy/ADB is the transport; this app own
 | Piece | Path | Port |
 |---|---|---|
 | Next.js Web UI | `src/` | **3847** |
-| Rust binary (`rasiel-agent`) | `crates/phonecontrol-agent` | **3848** controller / **3849** agent |
+| Rust binary (`adboard-agent`) | `crates/phonecontrol-agent` | **3848** controller / **3849** agent |
 | Shared protocol types | `crates/phonecontrol-protocol` | — |
 
 Same binary, two roles via `--role` / `PHONECONTROL_ROLE`:
@@ -147,7 +147,7 @@ curl -s http://127.0.0.1:3848/api/hosts | jq
 
 | Host | Role | Notes |
 |---|---|---|
-| Windows PC | `controller` (or agent) | Packaged as `RasielControl.exe` — see **Windows host pack** below |
+| Windows PC | `controller` (or agent) | Packaged as `ADBoard.exe` — see **Windows host pack** below |
 | Proxmox LXC | `agent` | `--role agent` + `PHONECONTROL_CONTROLLER_URL`. Set `PHONECONTROL_HTTP_BASE` to a controller-reachable URL for video proxy. |
 | Browser | UI | Always talks to the **controller** (`NEXT_PUBLIC_AGENT_URL`). |
 
@@ -172,13 +172,13 @@ The agent auto-discovers vendored binaries (env `ADB_PATH` / `SCRCPY_PATH` / `SC
 
 ### Windows host pack (`dist/windows/`)
 
-Zip-ready folder (no MSI / signed installer). Same binary as Linux; renamed to `RasielControl.exe`.
+Zip-ready folder (no MSI / signed installer). Same binary as Linux; renamed to `ADBoard.exe`.
 
 ```text
 dist/windows/
-  RasielControl.exe           # Windows controller (double-click run.bat)
+  ADBoard.exe           # Windows controller (double-click run.bat)
   run.bat                    # double-click: exe + vendor\adb and vendor\scrcpy
-  Start-RasielControl.ps1
+  Start-ADBoard.ps1
   .env.example
   README.md
   vendor/adb/                # make fetch-deps FETCH_TARGET=windows
@@ -190,8 +190,8 @@ dist/windows/
 ```bash
 # once: sudo apt-get install -y gcc-mingw-w64-x86-64
 #       rustup target add x86_64-pc-windows-gnu
-make build-windows      # → target/x86_64-pc-windows-gnu/release/rasiel-agent.exe
-make package-windows    # → dist/windows/RasielControl.exe + docs
+make build-windows      # → target/x86_64-pc-windows-gnu/release/adboard-agent.exe
+make package-windows    # → dist/windows/ADBoard.exe + docs
 ```
 
 Scripts: `scripts/build-windows.sh`, `scripts/package-windows.sh`, `scripts/fetch-deps.sh`. Linker config: `.cargo/config.toml`.
@@ -216,7 +216,7 @@ http://127.0.0.1:3848
 | `0.0.0.0` (`run.bat`) | LAN browser or a remote agent can open port 3848. Allow TCP 3848 in Windows Firewall. |
 
 ```powershell
-.\Start-RasielControl.ps1 -Bind 0.0.0.0
+.\Start-ADBoard.ps1 -Bind 0.0.0.0
 ```
 
 **Pair Linux LXC agent** (controller on Windows, agent on LXC):
@@ -229,27 +229,27 @@ PHONECONTROL_HOST=lxc-agent-01 \
 PHONECONTROL_HOST_ID=lxc-agent-01 \
 PHONECONTROL_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
 PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
-./rasiel-agent
+./adboard-agent
 ```
 
-Mock without phones: `.\Start-RasielControl.ps1 -Mock` (testpattern video).
+Mock without phones: `.\Start-ADBoard.ps1 -Mock` (testpattern video).
 
 ## Remote access (Nginx Proxy Manager + Cloudflare)
 
-Rasiel can be published on a hostname such as `rasiel.example.com` behind Nginx Proxy Manager, with Cloudflare's proxy in front. The UI talks to the same origin and switches to `wss://` on HTTPS, so no URLs need changing.
+ADBoard can be published on a hostname such as `adboard.example.com` behind Nginx Proxy Manager, with Cloudflare's proxy in front. The UI talks to the same origin and switches to `wss://` on HTTPS, so no URLs need changing.
 
-**Create an account first.** Without one, Rasiel refuses to hand out its API token to any request that arrived through a proxy (it shows "Password required for remote access"). Anyone who reaches the site could otherwise control the phones, run ADB shell commands and browse host files.
+**Create an account first.** Without one, ADBoard refuses to hand out its API token to any request that arrived through a proxy (it shows "Password required for remote access"). Anyone who reaches the site could otherwise control the phones, run ADB shell commands and browse host files.
 
-- Open Rasiel on the host's own network (e.g. `http://127.0.0.1:3848`) and click **Set password** in the header, or start it once with `PHONECONTROL_PASSWORD` (username `admin`, or `PHONECONTROL_USERNAME`).
+- Open ADBoard on the host's own network (e.g. `http://127.0.0.1:3848`) and click **Set password** in the header, or start it once with `PHONECONTROL_PASSWORD` (username `admin`, or `PHONECONTROL_USERNAME`).
 - Visitors through the proxy get a sign-in form (username and password). Sessions last 30 days in an HttpOnly, Secure, SameSite=Strict cookie.
 - Signed-in users change the password from the **account name** in the header. That needs the current password and signs out every other browser.
-- The account is stored as a salted PBKDF2-SHA256 hash in `rasiel-auth.json` next to the executable (`PHONECONTROL_AUTH_FILE` to move it). `PHONECONTROL_PASSWORD` only sets the first password; to recover a forgotten one, start with `PHONECONTROL_PASSWORD=… PHONECONTROL_RESET_PASSWORD=1`.
+- The account is stored as a salted PBKDF2-SHA256 hash in `adboard-auth.json` next to the executable (`PHONECONTROL_AUTH_FILE` to move it). `PHONECONTROL_PASSWORD` only sets the first password; to recover a forgotten one, start with `PHONECONTROL_PASSWORD=… PHONECONTROL_RESET_PASSWORD=1`.
 - `PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1` skips all of this when Cloudflare Access already guards the hostname.
 
-On Windows: `.\Start-RasielControl.ps1 -Bind 0.0.0.0 -Password '…'` sets the first password. LAN access without a proxy keeps working without an account.
+On Windows: `.\Start-ADBoard.ps1 -Bind 0.0.0.0 -Password '…'` sets the first password. LAN access without a proxy keeps working without an account.
 
 **Nginx Proxy Manager** (proxy host):
-- Scheme `http`, forward to the Rasiel host, port `3848`. Turn on **Websockets Support**.
+- Scheme `http`, forward to the ADBoard host, port `3848`. Turn on **Websockets Support**.
 - SSL: request a certificate (or use a Cloudflare Origin certificate) and turn on **Force SSL**.
 - Advanced tab, so long-lived video sockets are not cut:
   ```nginx
@@ -257,17 +257,17 @@ On Windows: `.\Start-RasielControl.ps1 -Bind 0.0.0.0 -Password '…'` sets the f
   proxy_send_timeout 3600s;
   proxy_buffering off;
   ```
-- Use its own subdomain. Serving Rasiel under a path such as `example.com/rasiel` is not supported.
+- Use its own subdomain. Serving ADBoard under a path such as `example.com/adboard` is not supported.
 
 **Cloudflare:**
 - SSL/TLS mode **Full (strict)**; Network → **WebSockets** on (default).
 - Turn **Rocket Loader off** (it rewrites scripts).
-- Leave caching at defaults: Rasiel sends `no-cache` for the page, `sw.js` and the manifest, `no-store` for `/api/*`, and long-lived `immutable` caching only for hashed `/_next/static/*` files.
+- Leave caching at defaults: ADBoard sends `no-cache` for the page, `sw.js` and the manifest, `no-store` for `/api/*`, and long-lived `immutable` caching only for hashed `/_next/static/*` files.
 - Bot Fight Mode or "I'm Under Attack" can challenge the app's background requests; skip them for this hostname or use Cloudflare Access.
-- Cloudflare Free and Pro accept at most 100 MB per request. Rasiel sends files over 64 MB in 32 MB chunks, so APK installs and file pushes up to 256 MB still work.
+- Cloudflare Free and Pro accept at most 100 MB per request. ADBoard sends files over 64 MB in 32 MB chunks, so APK installs and file pushes up to 256 MB still work.
 - Optional: firewall port 3848 so only the Nginx Proxy Manager host can reach it.
 
-Rasiel pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. The API token never appears in URLs (browsers send it as a WebSocket subprotocol, servers as the `x-phonecontrol-token` header), so it stays out of proxy and Cloudflare logs. Remote agents can join a controller published this way with `PHONECONTROL_CONTROLLER_URL=wss://rasiel.example.com/ws/agent` and the same `PHONECONTROL_TOKEN` on both sides.
+ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. The API token never appears in URLs (browsers send it as a WebSocket subprotocol, servers as the `x-phonecontrol-token` header), so it stays out of proxy and Cloudflare logs. Remote agents can join a controller published this way with `PHONECONTROL_CONTROLLER_URL=wss://adboard.example.com/ws/agent` and the same `PHONECONTROL_TOKEN` on both sides.
 
 ## Desktop shortcuts
 
@@ -333,12 +333,12 @@ Control view on a desktop-width window. They use Alt+Shift (⌥⇧ on a Mac) so 
 | Session manager + **scrcpy-server `raw_stream` → Annex-B video WS** | Deep Proxmox USB docs |
 | Synthetic H264 testpattern → browser WebCodecs | — |
 | Multi-host mesh + video proxy | — |
-| Windows pack scripts (`RasielControl.exe` via MinGW cross-build) | — |
+| Windows pack scripts (`ADBoard.exe` via MinGW cross-build) | — |
 
 ## Stack
 
 - Frontend: Next.js · TypeScript · Tailwind · shadcn/ui · WebCodecs
-- Backend: Rust · Axum · Tokio (same codebase as Windows `RasielControl.exe` / Linux `rasiel-agent`)
+- Backend: Rust · Axum · Tokio (same codebase as Windows `ADBoard.exe` / Linux `adboard-agent`)
 
 ## Layout
 

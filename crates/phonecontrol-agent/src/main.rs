@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         role = role.as_str(),
         host_id = %host_id,
         host = %host_name,
-        "rasiel-agent listening (HTTP + WS)"
+        "adboard-agent listening (HTTP + WS)"
     );
     info!("  GET  /          (control UI)");
     info!("  GET  /health");

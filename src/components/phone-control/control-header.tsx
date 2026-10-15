@@ -15,7 +15,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
   return (
     <header className="relative z-10 flex shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1.5 sm:px-4">
       <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]">
-        Rasiel
+        ADBoard
       </h1>
       <nav aria-label="Sections" className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
         {DESK_SECTIONS.map((item) => (

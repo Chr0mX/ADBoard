@@ -1,13 +1,13 @@
 //! Browser sign-in for remote access (reverse proxy / Cloudflare).
 //!
-//! The API token alone only stops other websites from driving Rasiel through
+//! The API token alone only stops other websites from driving ADBoard through
 //! a visitor's browser: `/api/bootstrap` hands it to any same-origin caller.
 //! That is fine on a LAN, not on a public hostname. Once an account exists,
 //! bootstrap requires a session cookie from `POST /api/login` (username and
 //! password form). Without an account, bootstrap refuses requests that
 //! arrived through a proxy unless `PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1`.
 //!
-//! The account lives in `rasiel-auth.json` (salted PBKDF2-SHA256), next to
+//! The account lives in `adboard-auth.json` (salted PBKDF2-SHA256), next to
 //! the executable unless `PHONECONTROL_AUTH_FILE` says otherwise, so a password
 //! changed in the UI survives restarts. `PHONECONTROL_PASSWORD` creates the
 //! first account; `PHONECONTROL_RESET_PASSWORD=1` makes it overwrite the file
@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-pub const SESSION_COOKIE: &str = "rasiel_session";
+pub const SESSION_COOKIE: &str = "adboard_session";
 pub const DEFAULT_USERNAME: &str = "admin";
 pub const MIN_PASSWORD_LEN: usize = 8;
 const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
@@ -118,7 +118,7 @@ impl WebAuth {
             .unwrap_or_else(|| DEFAULT_USERNAME.to_string());
         let credentials = match (stored, env_password) {
             (Some(stored), Some(password)) if reset => {
-                tracing::warn!("PHONECONTROL_RESET_PASSWORD=1 — replacing the stored Rasiel account");
+                tracing::warn!("PHONECONTROL_RESET_PASSWORD=1 — replacing the stored ADBoard account");
                 let fresh = Credentials::new(&username, &password);
                 write_or_warn(&file, &fresh);
                 drop(stored);
@@ -127,7 +127,7 @@ impl WebAuth {
             (Some(stored), Some(_)) => {
                 tracing::info!(
                     path = %file.display(),
-                    "using the stored Rasiel account; PHONECONTROL_PASSWORD only sets the first password (PHONECONTROL_RESET_PASSWORD=1 to replace it)"
+                    "using the stored ADBoard account; PHONECONTROL_PASSWORD only sets the first password (PHONECONTROL_RESET_PASSWORD=1 to replace it)"
                 );
                 Some(stored)
             }
@@ -164,10 +164,10 @@ impl WebAuth {
             allow,
         );
         if auth.password_required() {
-            tracing::info!("Rasiel account configured — the browser UI requires sign-in");
+            tracing::info!("ADBoard account configured — the browser UI requires sign-in");
         } else if !allow {
             tracing::info!(
-                "no Rasiel account yet — requests through a reverse proxy are refused; set a password from the UI on the LAN or with PHONECONTROL_PASSWORD"
+                "no ADBoard account yet — requests through a reverse proxy are refused; set a password from the UI on the LAN or with PHONECONTROL_PASSWORD"
             );
         }
         auth
@@ -256,10 +256,24 @@ fn auth_file_path() -> PathBuf {
             return PathBuf::from(path);
         }
     }
-    std::env::current_exe()
+    let path = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("rasiel-auth.json")))
-        .unwrap_or_else(|| PathBuf::from("rasiel-auth.json"))
+        .and_then(|exe| exe.parent().map(|dir| dir.join("adboard-auth.json")))
+        .unwrap_or_else(|| PathBuf::from("adboard-auth.json"));
+    migrate_legacy_auth_file(&path);
+    path
+}
+
+/// Keep the account created before the ADBoard rename (`rasiel-auth.json`).
+fn migrate_legacy_auth_file(path: &Path) {
+    let legacy = path.with_file_name("rasiel-auth.json");
+    if path.exists() || !legacy.exists() {
+        return;
+    }
+    match std::fs::rename(&legacy, path) {
+        Ok(()) => tracing::info!(from = %legacy.display(), to = %path.display(), "moved the sign-in account to its new file name"),
+        Err(e) => tracing::warn!(error = %e, "could not rename rasiel-auth.json; sign in may need PHONECONTROL_RESET_PASSWORD"),
+    }
 }
 
 fn read_credentials(path: &Path) -> Option<Credentials> {
@@ -267,7 +281,7 @@ fn read_credentials(path: &Path) -> Option<Credentials> {
     match serde_json::from_str::<Credentials>(&text) {
         Ok(credentials) => Some(credentials),
         Err(e) => {
-            tracing::warn!(path = %path.display(), error = %e, "ignoring unreadable Rasiel account file");
+            tracing::warn!(path = %path.display(), error = %e, "ignoring unreadable ADBoard account file");
             None
         }
     }
@@ -287,7 +301,7 @@ fn write_credentials(path: &Path, credentials: &Credentials) -> std::io::Result<
 
 fn write_or_warn(path: &Path, credentials: &Credentials) {
     if let Err(e) = write_credentials(path, credentials) {
-        tracing::warn!(path = %path.display(), error = %e, "could not save the Rasiel account; it lasts until restart");
+        tracing::warn!(path = %path.display(), error = %e, "could not save the ADBoard account; it lasts until restart");
     }
 }
 
@@ -385,7 +399,7 @@ mod tests {
     }
 
     fn temp_file() -> PathBuf {
-        std::env::temp_dir().join(format!("rasiel-auth-test-{}.json", uuid::Uuid::new_v4().simple()))
+        std::env::temp_dir().join(format!("adboard-auth-test-{}.json", uuid::Uuid::new_v4().simple()))
     }
 
     #[test]
@@ -408,7 +422,7 @@ mod tests {
         let cookie = format!("other=1; {SESSION_COOKIE}={id}");
         let with = headers(&[("cookie", &cookie)]);
         assert!(auth.session_valid(&with));
-        assert!(!auth.session_valid(&headers(&[("cookie", "rasiel_session=nope")])));
+        assert!(!auth.session_valid(&headers(&[("cookie", "adboard_session=nope")])));
         auth.end_session(&with);
         assert!(!auth.session_valid(&with));
     }
@@ -438,6 +452,20 @@ mod tests {
         let reset = WebAuth::with_file(file.clone(), None, Some("third-pass".into()), true, false);
         assert!(reset.check_login("admin", "third-pass"));
         let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn legacy_auth_file_is_migrated() {
+        let dir = std::env::temp_dir().join(format!("adboard-migrate-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let legacy = dir.join("rasiel-auth.json");
+        let current = dir.join("adboard-auth.json");
+        write_credentials(&legacy, &Credentials::new("ops", "kept-pass-1")).unwrap();
+        migrate_legacy_auth_file(&current);
+        assert!(current.exists() && !legacy.exists());
+        let auth = WebAuth::with_file(current, None, None, false, false);
+        assert!(auth.check_login("ops", "kept-pass-1"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

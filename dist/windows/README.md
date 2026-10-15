@@ -1,17 +1,17 @@
-# Rasiel — Windows USB host pack
+# ADBoard — Windows USB host pack
 
 Drop-in folder for running the **controller** on a Windows PC that has phones on USB.
-Same Rust binary as Linux `rasiel-agent`; here it is named `RasielControl.exe`.
+Same Rust binary as Linux `adboard-agent`; here it is named `ADBoard.exe`.
 
 This is **not** a signed installer / MSI. Copy the folder, drop in ADB + scrcpy, run the script.
 
 ## Layout
 
 ```text
-RasielControl.exe           # controller (or agent) binary
+ADBoard.exe           # controller (or agent) binary
 ui/                        # control page served at http://127.0.0.1:3848/
-run.bat                    # double-click: starts RasielControl.exe, vendor tools only
-Start-RasielControl.ps1     # same launch, with -Mock / -Bind switches
+run.bat                    # double-click: starts ADBoard.exe, vendor tools only
+Start-ADBoard.ps1     # same launch, with -Mock / -Bind switches
 .env.example               # copy to .env and edit (optional; script also sets defaults)
 README.md                  # this file
 vendor/
@@ -34,7 +34,7 @@ Caches under `./temp/`; installs into `vendor/adb/` and `vendor/scrcpy/`. See th
 
 ## Run (controller on this PC)
 
-Double-click `run.bat` in this folder, or from the repo root. It starts `RasielControl.exe` and uses `vendor\adb` and `vendor\scrcpy` beside it. The same process serves the control page from `ui/` — open that URL in a browser. A separate Node server is not required.
+Double-click `run.bat` in this folder, or from the repo root. It starts `ADBoard.exe` and uses `vendor\adb` and `vendor\scrcpy` beside it. The same process serves the control page from `ui/` — open that URL in a browser. A separate Node server is not required.
 
 ```text
 http://127.0.0.1:3848/
@@ -43,7 +43,7 @@ http://127.0.0.1:3848/
 PowerShell, when you need `-Mock` or a different bind address:
 
 ```powershell
-.\Start-RasielControl.ps1
+.\Start-ADBoard.ps1
 # → http://127.0.0.1:3848
 ```
 
@@ -56,7 +56,7 @@ $env:PHONECONTROL_PORT = "3848"
 $env:PHONECONTROL_HOST = "windows-host"
 $env:ADB_PATH = "$PWD\vendor\adb\adb.exe"
 $env:SCRCPY_PATH = "$PWD\vendor\scrcpy\scrcpy.exe"
-.\RasielControl.exe
+.\ADBoard.exe
 ```
 
 The page at `/` talks to this process on the same origin. A dev checkout can still point a separate Next server at the agent with `NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848`.
@@ -76,7 +76,7 @@ On the Windows controller, bind all interfaces so the LXC can connect:
 
 ```powershell
 $env:PHONECONTROL_BIND = "0.0.0.0"
-.\RasielControl.exe
+.\ADBoard.exe
 ```
 
 On the Linux agent (same binary, agent role):
@@ -89,7 +89,7 @@ PHONECONTROL_HOST_ID=lxc-agent-01 \
 PHONECONTROL_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
 PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
 cargo run -p phonecontrol-agent --release
-# or: ./rasiel-agent
+# or: ./adboard-agent
 ```
 
 - `PHONECONTROL_CONTROLLER_URL` — Windows host LAN IP (not `127.0.0.1` from the LXC’s perspective).
@@ -103,14 +103,14 @@ UI always talks to the **controller** only.
 $env:PHONECONTROL_FORCE_MOCK = "1"
 $env:PHONECONTROL_VIDEO_SOURCE = "testpattern"
 $env:PHONECONTROL_MOCK_PROFILE = "windows"
-.\Start-RasielControl.ps1
+.\Start-ADBoard.ps1
 ```
 
 ## Building this folder (from Linux / CI)
 
 ```bash
 make package-windows
-# → dist/windows/RasielControl.exe + docs (cross-compiled x86_64-pc-windows-gnu)
+# → dist/windows/ADBoard.exe + docs (cross-compiled x86_64-pc-windows-gnu)
 ```
 
 Do not commit real `adb.exe` / scrcpy redistributables into git — download them onto the Windows host as above.

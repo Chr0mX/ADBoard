@@ -1,11 +1,11 @@
 @echo off
-rem Starts Rasiel (RasielControl.exe). ADB and scrcpy are the copies in vendor\, not PATH.
-title Rasiel
+rem Starts ADBoard (ADBoard.exe). ADB and scrcpy are the copies in vendor\, not PATH.
+title ADBoard
 cd /d "%~dp0"
 
-if not exist "%~dp0RasielControl.exe" (
-  echo Rasiel binary ^(RasielControl.exe^) is missing next to this script.
-  if exist "%~dp0PhoneControl.exe" echo Found the old name PhoneControl.exe: rename it to RasielControl.exe.
+if not exist "%~dp0ADBoard.exe" (
+  echo ADBoard binary ^(ADBoard.exe^) is missing next to this script.
+  if exist "%~dp0PhoneControl.exe" echo Found the old name PhoneControl.exe: rename it to ADBoard.exe.
   echo From the repo: make package-windows
   pause
   exit /b 1
@@ -24,8 +24,8 @@ if exist "%~dp0vendor\adb\adb.exe" set "ADB_PATH=%~dp0vendor\adb\adb.exe"
 if exist "%~dp0vendor\scrcpy\scrcpy.exe" set "SCRCPY_PATH=%~dp0vendor\scrcpy\scrcpy.exe"
 if exist "%~dp0vendor\scrcpy\scrcpy-server" set "SCRCPY_SERVER_PATH=%~dp0vendor\scrcpy\scrcpy-server"
 
-echo Starting Rasiel on every interface, port 3848
+echo Starting ADBoard on every interface, port 3848
 echo   this PC:    http://127.0.0.1:3848/
 echo   other PCs:  http://THIS-PC-LAN-IP:3848/
-"%~dp0RasielControl.exe"
+"%~dp0ADBoard.exe"
 if errorlevel 1 pause

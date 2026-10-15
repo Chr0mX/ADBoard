@@ -4,6 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import {
   DEFAULT_TASKBAR_PINS,
   MAX_TASKBAR_PINS,
+  LEGACY_TASKBAR_PINS_KEY,
   TASKBAR_PINS_KEY,
   normalizeTaskbarPins,
   readTaskbarPins,
@@ -37,6 +38,14 @@ function getSnapshot(): TaskbarToolId[] {
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(TASKBAR_PINS_KEY);
+    if (raw == null) {
+      const legacy = localStorage.getItem(LEGACY_TASKBAR_PINS_KEY);
+      if (legacy != null) {
+        localStorage.setItem(TASKBAR_PINS_KEY, legacy);
+        localStorage.removeItem(LEGACY_TASKBAR_PINS_KEY);
+        raw = legacy;
+      }
+    }
   } catch {
     raw = null;
   }

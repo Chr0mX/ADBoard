@@ -1,9 +1,9 @@
-# Start Rasiel controller on this Windows USB host (loopback by default).
+# Start ADBoard controller on this Windows USB host (loopback by default).
 # Usage (from the pack folder):
-#   .\Start-RasielControl.ps1
-#   .\Start-RasielControl.ps1 -Bind 0.0.0.0 -Mock
-#   .\Start-RasielControl.ps1 -Port 3848 -HostName "desk-pc"
-#   .\Start-RasielControl.ps1 -Bind 0.0.0.0 -Password "long passphrase"   # behind a reverse proxy
+#   .\Start-ADBoard.ps1
+#   .\Start-ADBoard.ps1 -Bind 0.0.0.0 -Mock
+#   .\Start-ADBoard.ps1 -Port 3848 -HostName "desk-pc"
+#   .\Start-ADBoard.ps1 -Bind 0.0.0.0 -Password "long passphrase"   # behind a reverse proxy
 
 [CmdletBinding()]
 param(
@@ -29,13 +29,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
-$Exe = Join-Path $Root "RasielControl.exe"
+$Exe = Join-Path $Root "ADBoard.exe"
 
 if (-not (Test-Path $Exe)) {
     if (Test-Path (Join-Path $Root "PhoneControl.exe")) {
-        Write-Warning "Found the old name PhoneControl.exe: rename it to RasielControl.exe."
+        Write-Warning "Found the old name PhoneControl.exe: rename it to ADBoard.exe."
     }
-    Write-Error "Rasiel binary (RasielControl.exe) not found next to this script: $Exe"
+    Write-Error "ADBoard binary (ADBoard.exe) not found next to this script: $Exe"
 }
 
 $Adb = Join-Path $Root "vendor\adb\adb.exe"
@@ -79,7 +79,7 @@ if ($Mock) {
     Write-Host "Mock fleet enabled (windows profile)"
 }
 
-$Host.UI.RawUI.WindowTitle = "Rasiel"
-Write-Host "Starting Rasiel ($Role) on http://${Bind}:${Port}/"
+$Host.UI.RawUI.WindowTitle = "ADBoard"
+Write-Host "Starting ADBoard ($Role) on http://${Bind}:${Port}/"
 Write-Host "Point UI: NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:${Port}  (or the LAN IP if Bind=0.0.0.0)"
 & $Exe

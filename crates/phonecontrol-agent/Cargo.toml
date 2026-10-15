@@ -3,11 +3,11 @@ name = "phonecontrol-agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Rasiel Linux agent — ADB discovery, device manager, HTTP + WebSocket API"
-default-run = "rasiel-agent"
+description = "ADBoard Linux agent — ADB discovery, device manager, HTTP + WebSocket API"
+default-run = "adboard-agent"
 
 [[bin]]
-name = "rasiel-agent"
+name = "adboard-agent"
 path = "src/main.rs"
 
 [dependencies]

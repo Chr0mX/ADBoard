@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { httpErrorMessage } from "./http-error.ts";
 
-const CLOUDFLARE_PAGE = '<!DOCTYPE html><html lang="en-US"><head><title>rasiel.example.com | 522: Connection timed out</title></head><body>…</body></html>';
+const CLOUDFLARE_PAGE = '<!DOCTYPE html><html lang="en-US"><head><title>adboard.example.com | 522: Connection timed out</title></head><body>…</body></html>';
 
 describe("httpErrorMessage", () => {
   it("keeps plain agent errors", () => {
@@ -10,7 +10,7 @@ describe("httpErrorMessage", () => {
   });
 
   it("reads JSON error bodies", () => {
-    assert.equal(httpErrorMessage(401, '{"error":"Sign in to Rasiel."}', "x"), "Sign in to Rasiel.");
+    assert.equal(httpErrorMessage(401, '{"error":"Sign in to ADBoard."}', "x"), "Sign in to ADBoard.");
   });
 
   it("replaces Cloudflare HTML pages with one line", () => {
@@ -20,7 +20,7 @@ describe("httpErrorMessage", () => {
   });
 
   it("explains proxy failures and timeouts", () => {
-    assert.match(httpErrorMessage(502, "<html><body>Bad Gateway</body></html>", "x"), /proxy could not reach Rasiel \(502\)/);
+    assert.match(httpErrorMessage(502, "<html><body>Bad Gateway</body></html>", "x"), /proxy could not reach ADBoard \(502\)/);
     assert.match(httpErrorMessage(524, CLOUDFLARE_PAGE, "x"), /100 seconds/);
     assert.match(httpErrorMessage(413, "<html><body>413</body></html>", "x"), /100 MB/);
   });
