@@ -27,9 +27,26 @@ describe("normalizeTaskbarPins", () => {
       "replay",
       "refresh",
       "apk",
+      "grid",
+      "stats",
+      "devices",
+      "desk",
+      "keyboard",
     ];
     const next = normalizeTaskbarPins(many);
     assert.equal(next.length, MAX_TASKBAR_PINS);
-    assert.deepEqual(next, many.slice(0, MAX_TASKBAR_PINS));
+    assert.equal(MAX_TASKBAR_PINS, 10);
+    assert.deepEqual(next, [
+      "keyboard",
+      "mouse",
+      "record",
+      "replay",
+      "refresh",
+      "apk",
+      "grid",
+      "stats",
+      "devices",
+      "desk",
+    ]);
   });
 });

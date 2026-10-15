@@ -31,6 +31,13 @@ const MOBILE_HIT =
 const MOBILE_HIT_COMPACT =
   "inline-flex h-9 min-h-9 w-full max-w-12 flex-1 items-center justify-center rounded-md border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
 
+/** Fixed-size hits when sharing the bar with pinned Tools (no flex crush). */
+const MOBILE_HIT_FIXED =
+  "inline-flex h-11 min-h-11 w-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
+
+const MOBILE_HIT_COMPACT_FIXED =
+  "inline-flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded-md border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
+
 const NAV_ACTIONS = [
   ["back", "Back", ChevronLeft],
   ["home", "Home", House],
@@ -86,7 +93,14 @@ export function DeviceNavBar({
   pinnedTools = [],
   toolHandlers,
 }: DeviceNavBarProps) {
-  const hit = compact ? MOBILE_HIT_COMPACT : MOBILE_HIT;
+  const hasPins = Boolean(toolHandlers && pinnedTools.length > 0);
+  const hit = hasPins
+    ? compact
+      ? MOBILE_HIT_COMPACT_FIXED
+      : MOBILE_HIT_FIXED
+    : compact
+      ? MOBILE_HIT_COMPACT
+      : MOBILE_HIT;
   const iconClass = compact ? "size-4" : "size-5";
 
   return (
@@ -95,36 +109,51 @@ export function DeviceNavBar({
       data-device-nav-variant={variant}
       data-device-nav-compact={compact ? "1" : "0"}
       className={cn(
-        "flex w-full shrink-0 items-center justify-between gap-0.5 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-1",
+        "flex w-full shrink-0 items-center gap-0.5 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-1",
         compact ? "py-0" : "py-0.5",
         safeBottom && "pb-[max(0.25rem,env(safe-area-inset-bottom))]",
+        !hasPins && "justify-between",
         className,
       )}
     >
-      {NAV_ACTIONS.map(([action, label, Icon]) => (
-        <Button
-          key={action}
-          type="button"
-          variant="ghost"
-          disabled={offline}
-          aria-label={label}
-          className={hit}
-          onClick={() => onNav(action)}
-        >
-          <Icon className={iconClass} />
-        </Button>
-      ))}
-      {toolHandlers &&
-        pinnedTools.map((id) => (
-          <PinnedToolButton
-            key={id}
-            id={id}
-            offline={offline}
-            hit={hit}
-            iconClass={iconClass}
-            handlers={toolHandlers}
-          />
+      <div
+        data-device-nav-actions
+        className={cn(
+          "flex items-center gap-0.5",
+          hasPins ? "shrink-0" : "w-full min-w-0 justify-between",
+        )}
+      >
+        {NAV_ACTIONS.map(([action, label, Icon]) => (
+          <Button
+            key={action}
+            type="button"
+            variant="ghost"
+            disabled={offline}
+            aria-label={label}
+            className={hit}
+            onClick={() => onNav(action)}
+          >
+            <Icon className={iconClass} />
+          </Button>
         ))}
+      </div>
+      {hasPins && toolHandlers && (
+        <div
+          data-device-nav-pins
+          className="ml-0.5 flex min-w-0 flex-1 items-center justify-end gap-0.5 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {pinnedTools.map((id) => (
+            <PinnedToolButton
+              key={id}
+              id={id}
+              offline={offline}
+              hit={hit}
+              iconClass={iconClass}
+              handlers={toolHandlers}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
