@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="site/assets/banner.svg" alt="ADBoard: Android device control. Every device. One dashboard." width="100%">
+  <img src="site/assets/logo.svg" alt="" width="96" height="96">
 </p>
 
 <h1 align="center">ADBoard</h1>
+
+<p align="center"><b>ANDROID DEVICE CONTROL</b></p>
 
 <p align="center">
   <b>Every device. One dashboard.</b><br>
