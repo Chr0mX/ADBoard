@@ -132,7 +132,7 @@ mod tests {
     #[tokio::test]
     async fn chunks_assemble_in_order() {
         let id = format!("test-{}", uuid::Uuid::new_v4().simple());
-        put_chunk(Path(id.clone()), offset(0), Bytes::from_static(b"hello "))
+        let _ = put_chunk(Path(id.clone()), offset(0), Bytes::from_static(b"hello "))
             .await
             .unwrap();
         // Out-of-order chunk is refused with the current position.
@@ -141,7 +141,7 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(err.0, StatusCode::CONFLICT);
-        put_chunk(Path(id.clone()), offset(6), Bytes::from_static(b"world"))
+        let _ = put_chunk(Path(id.clone()), offset(6), Bytes::from_static(b"world"))
             .await
             .unwrap();
 

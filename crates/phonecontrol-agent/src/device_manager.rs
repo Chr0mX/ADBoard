@@ -24,6 +24,30 @@ use tracing::{info, warn};
 
 const ADB_POLL_SECS: u64 = 2;
 const SESSION_REAP_SECS: u64 = 3;
+/// Optional `wm size` applied whenever a phone comes online, from
+/// `PHONECONTROL_CONNECT_DISPLAY_SIZE` (e.g. `900x1600`). Off by default:
+/// changing every phone's real resolution must be a deliberate choice.
+fn connect_display_size() -> Option<&'static str> {
+    static SIZE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    SIZE.get_or_init(|| {
+        let spec = std::env::var("PHONECONTROL_CONNECT_DISPLAY_SIZE").ok()?;
+        let spec = spec.trim().to_string();
+        if spec.is_empty() || spec == "native" || spec == "reset" {
+            return None;
+        }
+        match crate::adb::display_size_command(&spec) {
+            Ok(_) => {
+                info!(size = %spec, "phones will be set to this wm size when they come online");
+                Some(spec)
+            }
+            Err(error) => {
+                warn!(size = %spec, %error, "ignoring PHONECONTROL_CONNECT_DISPLAY_SIZE");
+                None
+            }
+        }
+    })
+    .as_deref()
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -44,6 +68,9 @@ pub struct InnerState {
     pub mesh: Arc<MeshRegistry>,
     /// Serials whose `wm size` changed and must be read again on the next poll.
     pub resolution_refresh: Mutex<HashSet<String>>,
+    /// Serials where Phone Control applied a non-native `wm size` override.
+    /// Cleared on successful `wm size reset` (manual or on disconnect/reconnect).
+    pub display_size_overrides: Mutex<HashSet<String>>,
     pub qr_pairs: Mutex<HashMap<String, QrPairSlot>>,
     /// Shared secret for HTTP and WebSocket API calls (`PHONECONTROL_TOKEN`).
     pub api_token: String,
@@ -139,6 +166,7 @@ impl AppState {
                 sessions,
                 mesh,
                 resolution_refresh: Mutex::new(HashSet::new()),
+                display_size_overrides: Mutex::new(HashSet::new()),
                 qr_pairs: Mutex::new(HashMap::new()),
                 api_token,
             }),
@@ -1038,6 +1066,15 @@ impl AppState {
             Ok(output) => output,
             Err(error) => return op_error(device, error),
         };
+        note_display_size_override(
+            &mut self
+                .inner
+                .display_size_overrides
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()),
+            &device.serial,
+            spec,
+        );
         self.inner
             .resolution_refresh
             .lock()
@@ -1062,6 +1099,77 @@ impl AppState {
             }
         }
         op_ok(device, output)
+    }
+
+    /// Best-effort `wm size reset` for phones we resized. Safe if the cable is
+    /// already gone — the override flag stays so reconnect can retry.
+    async fn reset_overridden_display_size(&self, serial: &str) {
+        let needs_reset = self
+            .inner
+            .display_size_overrides
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .contains(serial);
+        if !needs_reset {
+            return;
+        }
+        let Some(adb) = self.inner.adb_path.clone() else {
+            return;
+        };
+        match crate::device_ops::set_display_size(&adb, serial, "reset").await {
+            Ok(output) => {
+                info!(%serial, %output, "reset wm size after disconnect");
+                self.inner
+                    .display_size_overrides
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .remove(serial);
+                self.inner
+                    .resolution_refresh
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .insert(serial.to_string());
+            }
+            Err(error) => {
+                warn!(
+                    %serial,
+                    %error,
+                    "could not reset wm size; will retry when the phone returns"
+                );
+            }
+        }
+    }
+
+    /// Set `wm size` to PHONECONTROL_CONNECT_DISPLAY_SIZE when a phone comes online.
+    async fn apply_connect_display_size(&self, serial: &str) {
+        let Some(size) = connect_display_size() else {
+            return;
+        };
+        let Some(adb) = self.inner.adb_path.clone() else {
+            return;
+        };
+        match crate::device_ops::set_display_size(&adb, serial, size).await {
+            Ok(output) => {
+                info!(%serial, %size, %output, "set wm size on connect");
+                note_display_size_override(
+                    &mut self
+                        .inner
+                        .display_size_overrides
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()),
+                    serial,
+                    size,
+                );
+                self.inner
+                    .resolution_refresh
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .insert(serial.to_string());
+            }
+            Err(error) => {
+                warn!(%serial, %size, %error, "could not set wm size on connect");
+            }
+        }
     }
 
     async fn gesture(
@@ -1974,7 +2082,9 @@ impl AppState {
                                 adb_attempts.remove(&device.serial);
                             }
                         }
-                        for action in recovery_actions(&previous, &next) {
+                        for action in
+                            recovery_actions(&previous, &next, connect_display_size().is_some())
+                        {
                             let serial = action.serial();
                             let due = last_recovery
                                 .get(serial)
@@ -1993,9 +2103,13 @@ impl AppState {
                                 RecoveryAction::RestartAdb { serial } => {
                                     *adb_attempts.entry(serial.clone()).or_insert(0) += 1;
                                     let adb = adb.clone();
-                                    info!(%serial, "phone disconnected — restarting its ADB connection");
+                                    let state = state.clone();
+                                    info!(%serial, "phone disconnected — resetting wm size and restarting ADB");
                                     tokio::spawn(async move {
-                                        let args = vec!["-s".into(), serial.clone(), "reconnect".into()];
+                                        // Best-effort: often fails if the cable is already gone.
+                                        state.reset_overridden_display_size(&serial).await;
+                                        let args =
+                                            vec!["-s".into(), serial.clone(), "reconnect".into()];
                                         match crate::device_ops::adb_text(&adb, &args).await {
                                             Ok(output) => {
                                                 info!(%serial, %output, "automatic adb reconnect")
@@ -2007,7 +2121,8 @@ impl AppState {
                                     });
                                 }
                                 RecoveryAction::RestartSession { serial } => {
-                                    info!(%serial, "device returned — restarting scrcpy");
+                                    info!(%serial, "device online — restarting scrcpy");
+                                    state.apply_connect_display_size(&serial).await;
                                     match state.restart_session_local(&serial).await {
                                         Ok(session) => {
                                             state.publish(ServerEvent::SessionUpdated { session });
@@ -2156,8 +2271,24 @@ impl RecoveryAction {
     }
 }
 
+/// Track Phone Control `wm size` overrides so disconnect can restore the panel.
+fn note_display_size_override(overrides: &mut HashSet<String>, serial: &str, spec: &str) {
+    let spec = spec.trim();
+    if spec.is_empty() || spec == "reset" || spec == "native" {
+        overrides.remove(serial);
+    } else {
+        overrides.insert(serial.to_string());
+    }
+}
+
 /// What to do after an ADB poll. One device dropping must not reconnect the others.
-fn recovery_actions(previous: &HashMap<String, DeviceStatus>, next: &[Device]) -> Vec<RecoveryAction> {
+/// `restart_new` also restarts scrcpy for phones seen for the first time, so a
+/// configured connect size is applied before the stream starts.
+fn recovery_actions(
+    previous: &HashMap<String, DeviceStatus>,
+    next: &[Device],
+    restart_new: bool,
+) -> Vec<RecoveryAction> {
     let mut actions = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for device in next {
@@ -2168,8 +2299,15 @@ fn recovery_actions(previous: &HashMap<String, DeviceStatus>, next: &[Device]) -
                     serial: device.serial.clone(),
                 });
             }
-            Some(before)
-                if before != DeviceStatus::Online && device.status == DeviceStatus::Online =>
+            // Returning from offline, or first seen when a connect size is set.
+            Some(DeviceStatus::Offline) | Some(DeviceStatus::Unauthorized)
+                if device.status == DeviceStatus::Online =>
+            {
+                actions.push(RecoveryAction::RestartSession {
+                    serial: device.serial.clone(),
+                });
+            }
+            None if restart_new && device.status == DeviceStatus::Online =>
             {
                 actions.push(RecoveryAction::RestartSession {
                     serial: device.serial.clone(),
@@ -2566,6 +2704,18 @@ mod tests {
     }
 
     #[test]
+    fn note_display_size_override_tracks_and_clears() {
+        let mut overrides = HashSet::new();
+        note_display_size_override(&mut overrides, "s24", "1080x1920");
+        assert!(overrides.contains("s24"));
+        note_display_size_override(&mut overrides, "s24", "reset");
+        assert!(!overrides.contains("s24"));
+        note_display_size_override(&mut overrides, "s23", "1080x2400");
+        note_display_size_override(&mut overrides, "s23", "native");
+        assert!(!overrides.contains("s23"));
+    }
+
+    #[test]
     fn recovery_restarts_only_the_device_that_dropped() {
         let mut previous = HashMap::new();
         previous.insert("s24".into(), DeviceStatus::Online);
@@ -2574,7 +2724,7 @@ mod tests {
             sample("s24", DeviceStatus::Offline),
             sample("s23", DeviceStatus::Online),
         ];
-        let actions = recovery_actions(&previous, &next);
+        let actions = recovery_actions(&previous, &next, false);
         assert_eq!(
             actions,
             vec![RecoveryAction::RestartAdb {
@@ -2587,12 +2737,28 @@ mod tests {
             sample("s24", DeviceStatus::Online),
             sample("s23", DeviceStatus::Online),
         ];
-        let actions = recovery_actions(&previous, &back);
+        let actions = recovery_actions(&previous, &back, false);
         assert_eq!(
             actions,
             vec![RecoveryAction::RestartSession {
                 serial: "s24".into()
             }]
         );
+    }
+
+    #[test]
+    fn recovery_sets_size_when_a_phone_first_appears_online() {
+        let previous = HashMap::new();
+        let next = vec![sample("s24", DeviceStatus::Online)];
+        // With a connect size configured, a new phone restarts scrcpy after resizing.
+        let actions = recovery_actions(&previous, &next, true);
+        assert_eq!(
+            actions,
+            vec![RecoveryAction::RestartSession {
+                serial: "s24".into()
+            }]
+        );
+        // Default: first sight of a phone does not restart anything.
+        assert!(recovery_actions(&previous, &next, false).is_empty());
     }
 }

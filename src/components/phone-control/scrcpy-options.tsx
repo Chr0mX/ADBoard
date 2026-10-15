@@ -16,6 +16,7 @@ import { firstError, useScrcpyOptions } from "@/hooks/use-scrcpy-options";
 const SIZE_KEY = "phonecontrol-display-size";
 const DISPLAY_SIZES = [
   { id: "native", label: "Each phone", arg: "reset" },
+  { id: "900x1600", label: "900×1600", arg: "900x1600" },
   { id: "1080x1920", label: "16:9", arg: "1080x1920" },
   { id: "1080x2400", label: "20:9", arg: "1080x2400" },
 ] as const;
