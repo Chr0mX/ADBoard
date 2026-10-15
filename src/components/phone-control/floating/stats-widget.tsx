@@ -25,10 +25,12 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
       <FloatingPanel
         storageKey="pc-float-stats"
         kind="stats"
-        defaultSize={{ width: 176, height: 56 }}
-        className={cn(PANEL_WIDTH, "min-w-[11rem]")}
+        defaultSize={{ width: 148, height: 52 }}
+        className={cn(PANEL_WIDTH, "min-w-[9rem]")}
       >
-        <p className="px-1 font-mono text-[11px] text-[var(--pc-muted)]">No device</p>
+        <p className="px-1.5 py-0.5 font-mono text-[11px] leading-4 text-[var(--pc-muted)]">
+          No device
+        </p>
       </FloatingPanel>
     );
   }
@@ -39,8 +41,8 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
     <FloatingPanel
       storageKey="pc-float-stats"
       kind="stats"
-      defaultSize={{ width: expanded ? 208 : 176, height: expanded ? 160 : 56 }}
-      className={cn(PANEL_WIDTH, expanded ? "min-w-[13rem]" : "min-w-[11rem]")}
+      defaultSize={{ width: expanded ? 220 : 188, height: expanded ? 168 : 52 }}
+      className={cn(PANEL_WIDTH, expanded ? "min-w-[12.5rem]" : "min-w-[10.5rem]")}
     >
       <button
         type="button"
@@ -48,31 +50,39 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
         data-stats-expanded={expanded ? "1" : "0"}
         aria-expanded={expanded}
         aria-label={expanded ? "Collapse stream stats" : "Expand stream stats"}
-        className="w-full rounded-lg px-1 text-left active:bg-[var(--pc-accent-soft)]/40"
+        className="w-full rounded-[calc(var(--pc-radius-control)-0.125rem)] px-1.5 py-1 text-left transition-colors duration-150 active:bg-[var(--pc-accent-soft)]/50"
         onClick={() => setExpanded((value) => !value)}
       >
         {!expanded ? (
-          <p className="font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
-            {fields.fps} · {fields.rate} · {fields.battery}
+          <p className="font-mono text-[11px] leading-4 tracking-wide text-[var(--pc-ink)]">
+            {fields.fps}
+            <span className="mx-1 text-[var(--pc-muted)]">·</span>
+            {fields.rate}
+            <span className="mx-1 text-[var(--pc-muted)]">·</span>
+            {fields.battery}
           </p>
         ) : (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 font-mono text-[11px] leading-4 text-[var(--pc-ink)]">
             <dt className="text-[var(--pc-muted)]">Size</dt>
-            <dd>{fields.size}</dd>
+            <dd className="text-right">{fields.size}</dd>
             <dt className="text-[var(--pc-muted)]">Battery</dt>
-            <dd data-battery>{fields.battery}</dd>
+            <dd data-battery className="text-right">
+              {fields.battery}
+            </dd>
             <dt className="text-[var(--pc-muted)]">Temp</dt>
-            <dd data-temperature>{fields.temperature}</dd>
+            <dd data-temperature className="text-right">
+              {fields.temperature}
+            </dd>
             <dt className="text-[var(--pc-muted)]">FPS</dt>
-            <dd>{fields.fps}</dd>
+            <dd className="text-right">{fields.fps}</dd>
             <dt className="text-[var(--pc-muted)]">Rate</dt>
-            <dd>{fields.rate}</dd>
+            <dd className="text-right">{fields.rate}</dd>
             <dt className="text-[var(--pc-muted)]">Codec</dt>
-            <dd>{fields.codec}</dd>
+            <dd className="text-right">{fields.codec}</dd>
             {fields.problem ? (
               <>
                 <dt className="text-[var(--pc-muted)]">Note</dt>
-                <dd className="text-[var(--pc-warn)]">{fields.problem}</dd>
+                <dd className="text-right text-[var(--pc-warn)]">{fields.problem}</dd>
               </>
             ) : null}
           </dl>

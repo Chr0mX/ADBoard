@@ -12,6 +12,7 @@ import {
 import { ChevronDown, ChevronUp, Pin } from "lucide-react";
 import {
   EDGE_PEEK,
+  TASKBAR_FLOAT_RESERVE,
   clampFloatingRect,
   defaultFloatPosition,
   edgePeekRect,
@@ -48,7 +49,8 @@ function currentBounds(): FloatingBounds {
     viewportHeight: vp.height,
     insetTop: insets.top,
     insetRight: insets.right,
-    insetBottom: insets.bottom,
+    // Keep floats above the centered bottom taskbar capsule.
+    insetBottom: insets.bottom + TASKBAR_FLOAT_RESERVE,
     insetLeft: insets.left,
     margin: 8,
   };
@@ -411,9 +413,8 @@ export function FloatingPanel({
       data-collapsed={collapsed ? "1" : "0"}
       data-edge={edge ?? ""}
       className={cn(
-        "pointer-events-auto absolute touch-none select-none rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/90 shadow-lg backdrop-blur-md transition-[border-radius] duration-150",
+        "pc-float-shell pointer-events-auto absolute touch-none select-none",
         dragging && "cursor-grabbing",
-        pinned && "border-[var(--pc-accent)]/50",
         edgeHidden && "rounded-none shadow-md",
         edgeHidden && edge === "left" && "rounded-r-2xl border-l-0",
         edgeHidden && edge === "right" && "rounded-l-2xl border-r-0",
@@ -430,7 +431,7 @@ export function FloatingPanel({
         width: edgeHidden ? EDGE_PEEK : undefined,
         minWidth: edgeHidden ? EDGE_PEEK : undefined,
         maxWidth: edgeHidden ? EDGE_PEEK : undefined,
-        // Tall enough for a rotated 5-letter label inside EDGE_PEEK.
+        // Tall enough for a stacked 5-letter label inside EDGE_PEEK.
         height: edgeHidden ? Math.max(EDGE_PEEK * 2.5, 110) : undefined,
         overflow: edgeHidden ? "hidden" : undefined,
       }}
@@ -440,7 +441,7 @@ export function FloatingPanel({
           type="button"
           data-float-edge-peek
           aria-label={`Show ${label}. Tap or swipe toward the screen.`}
-          className="flex h-full w-full touch-auto items-center justify-center overflow-hidden bg-[var(--pc-accent-fill)] text-white active:brightness-110"
+          className="flex h-full w-full touch-auto items-center justify-center overflow-hidden bg-[var(--pc-accent-fill)] text-white transition-[filter] duration-150 active:brightness-110"
           onPointerDown={onPeekPointerDown}
           onPointerMove={onPeekPointerMove}
           onPointerUp={onPeekPointerUp}
@@ -465,7 +466,7 @@ export function FloatingPanel({
         </button>
       ) : (
         <>
-          <div className="flex items-center gap-1 px-1 pt-1">
+          <div className="flex items-center gap-0.5 px-1.5 pt-1.5">
             <div
               data-float-handle
               role="separator"
@@ -478,7 +479,7 @@ export function FloatingPanel({
               }
               aria-disabled={pinned || undefined}
               className={cn(
-                "flex h-11 min-h-11 min-w-0 flex-1 items-center justify-center rounded-xl",
+                "flex h-9 min-h-9 min-w-0 flex-1 items-center justify-center rounded-[calc(var(--pc-radius-control)-0.125rem)]",
                 pinned ? "cursor-default opacity-60" : "cursor-grab active:cursor-grabbing",
               )}
               onPointerDown={onHandlePointerDown}
@@ -486,9 +487,12 @@ export function FloatingPanel({
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
             >
-              <span className="h-1 w-8 rounded-full bg-[var(--pc-line)]" aria-hidden />
+              <span
+                className="h-1 w-9 rounded-full bg-[color-mix(in_srgb,var(--pc-ink)_28%,transparent)]"
+                aria-hidden
+              />
               {collapsed && (
-                <span className="ml-2 shrink-0 whitespace-nowrap font-mono text-[11px] text-[var(--pc-muted)]">
+                <span className="ml-2 shrink-0 whitespace-nowrap font-mono text-[11px] font-medium tracking-wide text-[var(--pc-muted)]">
                   {label}
                 </span>
               )}
@@ -498,7 +502,7 @@ export function FloatingPanel({
               data-float-collapse
               aria-label={collapsed ? `Expand ${label}` : `Collapse ${label}`}
               aria-pressed={collapsed}
-              className="inline-flex h-11 min-h-11 w-11 min-w-11 touch-auto items-center justify-center rounded-xl text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+              className="pc-float-chrome-btn touch-auto"
               onClick={toggleCollapsed}
             >
               {collapsed ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
@@ -508,16 +512,22 @@ export function FloatingPanel({
               data-float-pin
               aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
               aria-pressed={pinned}
-              className={cn(
-                "inline-flex h-11 min-h-11 w-11 min-w-11 touch-auto items-center justify-center rounded-xl text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)]",
-                pinned && "text-[var(--pc-accent)]",
-              )}
+              className="pc-float-chrome-btn touch-auto"
               onClick={togglePinned}
             >
-              <Pin className={cn("size-4", pinned && "fill-current")} />
+              <Pin className={cn("size-3.5", pinned && "fill-current")} />
             </button>
           </div>
-          {!collapsed && <div className="touch-auto px-2 pb-2">{children}</div>}
+          <div
+            className={cn(
+              "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
+              collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+            )}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="touch-auto px-2 pb-2 pt-1">{children}</div>
+            </div>
+          </div>
         </>
       )}
     </div>

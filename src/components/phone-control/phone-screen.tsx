@@ -831,12 +831,12 @@ export function PhoneScreen({
         {floatingChrome && (
           <div
             data-mobile-bottom-chrome
-            className="flex w-full max-w-full shrink-0 flex-col border-t border-[var(--pc-line)] bg-[var(--pc-panel)] pb-0.5"
+            className="flex w-full max-w-full shrink-0 flex-col items-center gap-1 bg-gradient-to-t from-[color-mix(in_srgb,var(--pc-frame)_70%,transparent)] via-[color-mix(in_srgb,var(--pc-frame)_35%,transparent)] to-transparent px-2 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5"
           >
             <DeviceNavBar
               offline={offline}
               onNav={onNav}
-              className="w-full max-w-full border-t-0"
+              className="mx-auto"
               safeBottom={false}
               compact
               pinnedTools={taskbarPins}

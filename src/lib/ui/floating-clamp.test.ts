@@ -99,7 +99,7 @@ describe("defaultFloatPosition", () => {
     assert.ok(Math.abs(rect.x - (390 - 300) / 2) < 1);
   });
 
-  it("places stats at the bottom-left", () => {
+  it("places stats above the bottom taskbar reserve", () => {
     const rect = defaultFloatPosition(
       "stats",
       390,
@@ -108,7 +108,8 @@ describe("defaultFloatPosition", () => {
       false,
     );
     assert.equal(rect.x, 12);
-    assert.ok(rect.y > 700);
+    // 844 - 56(height) - 12(margin) - 56(taskbar reserve) = 720
+    assert.equal(rect.y, 720);
   });
 
   it("places controls on the trailing edge in landscape", () => {

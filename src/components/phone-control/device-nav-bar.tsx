@@ -25,19 +25,6 @@ import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import type { TaskbarToolId } from "@/lib/ui/taskbar-pins";
 import { cn } from "@/lib/utils";
 
-const MOBILE_HIT =
-  "inline-flex h-11 min-h-11 w-full max-w-14 flex-1 items-center justify-center rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
-
-const MOBILE_HIT_COMPACT =
-  "inline-flex h-9 min-h-9 w-full max-w-12 flex-1 items-center justify-center rounded-md border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
-
-/** Fixed-size hits when sharing the bar with pinned Tools (no flex crush). */
-const MOBILE_HIT_FIXED =
-  "inline-flex h-11 min-h-11 w-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
-
-const MOBILE_HIT_COMPACT_FIXED =
-  "inline-flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded-md border border-[var(--pc-line)] bg-[var(--pc-panel)] p-0 text-[var(--pc-ink)] active:bg-[var(--pc-accent-soft)] disabled:opacity-40";
-
 const NAV_ACTIONS = [
   ["back", "Back", ChevronLeft],
   ["home", "Home", House],
@@ -83,6 +70,10 @@ interface DeviceNavBarProps {
   toolHandlers?: TaskbarToolHandlers;
 }
 
+/**
+ * Content-sized, horizontally centered taskbar.
+ * Width follows nav + pinned tools; parent centers the capsule.
+ */
 export function DeviceNavBar({
   offline,
   onNav,
@@ -94,65 +85,53 @@ export function DeviceNavBar({
   toolHandlers,
 }: DeviceNavBarProps) {
   const hasPins = Boolean(toolHandlers && pinnedTools.length > 0);
-  const hit = hasPins
-    ? compact
-      ? MOBILE_HIT_COMPACT_FIXED
-      : MOBILE_HIT_FIXED
-    : compact
-      ? MOBILE_HIT_COMPACT
-      : MOBILE_HIT;
-  const iconClass = compact ? "size-4" : "size-5";
+  const iconClass = compact ? "size-3.5" : "size-4";
+  // Explicit Tailwind sizes beat Button/Toggle default size variants.
+  const itemClass = cn(
+    "pc-taskbar-item border-[var(--pc-line)] bg-[color-mix(in_srgb,var(--pc-panel)_80%,transparent)] p-0 text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]",
+    compact ? "h-8 w-8 min-h-8 min-w-8" : "h-9 w-9 min-h-9 min-w-9",
+  );
 
   return (
     <div
       data-device-nav-bar
       data-device-nav-variant={variant}
       data-device-nav-compact={compact ? "1" : "0"}
+      data-pin-count={pinnedTools.length}
       className={cn(
-        "flex w-full shrink-0 items-center gap-0.5 border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-1",
-        compact ? "py-0" : "py-0.5",
-        safeBottom && "pb-[max(0.25rem,env(safe-area-inset-bottom))]",
-        !hasPins && "justify-between",
+        "pc-taskbar",
+        safeBottom && "mb-[max(0.25rem,env(safe-area-inset-bottom))]",
         className,
       )}
     >
-      <div
-        data-device-nav-actions
-        className={cn(
-          "flex items-center gap-0.5",
-          hasPins ? "shrink-0" : "w-full min-w-0 justify-between",
-        )}
-      >
-        {NAV_ACTIONS.map(([action, label, Icon]) => (
-          <Button
-            key={action}
-            type="button"
-            variant="ghost"
-            disabled={offline}
-            aria-label={label}
-            className={hit}
-            onClick={() => onNav(action)}
-          >
-            <Icon className={iconClass} />
-          </Button>
-        ))}
-      </div>
-      {hasPins && toolHandlers && (
-        <div
-          data-device-nav-pins
-          className="ml-0.5 flex min-w-0 flex-1 items-center justify-end gap-0.5 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      {NAV_ACTIONS.map(([action, label, Icon]) => (
+        <Button
+          key={action}
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={offline}
+          aria-label={label}
+          className={itemClass}
+          onClick={() => onNav(action)}
         >
+          <Icon className={iconClass} />
+        </Button>
+      ))}
+      {hasPins && toolHandlers && (
+        <>
+          <span className="pc-taskbar-sep" aria-hidden />
           {pinnedTools.map((id) => (
             <PinnedToolButton
               key={id}
               id={id}
               offline={offline}
-              hit={hit}
+              hit={itemClass}
               iconClass={iconClass}
               handlers={toolHandlers}
             />
           ))}
-        </div>
+        </>
       )}
     </div>
   );
@@ -179,6 +158,7 @@ function PinnedToolButton({
           onPressedChange={handlers.onKeyboardChange}
           aria-label="Toggle keyboard injection"
           data-taskbar-tool="keyboard"
+          size="sm"
           className={hit}
         >
           <Keyboard className={iconClass} />
@@ -191,6 +171,7 @@ function PinnedToolButton({
           onPressedChange={handlers.onMouseChange}
           aria-label="Toggle touch"
           data-taskbar-tool="mouse"
+          size="sm"
           className={hit}
         >
           <MousePointer2 className={iconClass} />
@@ -201,6 +182,7 @@ function PinnedToolButton({
         <Button
           type="button"
           variant="ghost"
+          size="icon"
           aria-label={handlers.recording ? "Stop recording" : "Record gesture"}
           data-taskbar-tool="record"
           data-pressed={handlers.recording ? "true" : undefined}
@@ -215,6 +197,7 @@ function PinnedToolButton({
         <Button
           type="button"
           variant="ghost"
+          size="icon"
           aria-label={handlers.replaying ? "Playing gesture" : "Replay gesture"}
           data-taskbar-tool="replay"
           disabled={handlers.replaying}
@@ -229,6 +212,7 @@ function PinnedToolButton({
         <Button
           type="button"
           variant="ghost"
+          size="icon"
           aria-label="Refresh video"
           data-taskbar-tool="refresh"
           disabled={offline || handlers.refreshing}
@@ -244,7 +228,7 @@ function PinnedToolButton({
           data-taskbar-tool="apk"
           className={cn(hit, "cursor-pointer", (offline || handlers.installing) && "pointer-events-none opacity-40")}
         >
-          <span className="font-mono text-[9px] font-semibold">APK</span>
+          <span className="font-mono text-[9px] font-semibold leading-none">APK</span>
           <input
             type="file"
             accept=".apk,application/vnd.android.package-archive"
@@ -266,6 +250,7 @@ function PinnedToolButton({
           onPressedChange={() => handlers.onToggleGrid()}
           aria-label={handlers.gridView ? "Exit grid view" : "Grid view"}
           data-taskbar-tool="grid"
+          size="sm"
           className={hit}
         >
           <LayoutGrid className={iconClass} />
@@ -276,6 +261,7 @@ function PinnedToolButton({
         <Button
           type="button"
           variant="ghost"
+          size="icon"
           aria-label={
             handlers.statsMode === "bar"
               ? "Stats: bottom bar (tap for floating widget)"
@@ -283,10 +269,7 @@ function PinnedToolButton({
           }
           aria-pressed={handlers.statsMode === "bar"}
           data-taskbar-tool="stats"
-          className={cn(
-            hit,
-            handlers.statsMode === "bar" && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
-          )}
+          className={hit}
           onClick={() =>
             handlers.onStatsModeChange(handlers.statsMode === "bar" ? "float" : "bar")
           }
@@ -303,6 +286,7 @@ function PinnedToolButton({
         <Button
           type="button"
           variant="ghost"
+          size="icon"
           aria-label="Devices"
           data-taskbar-tool="devices"
           className={hit}
@@ -316,6 +300,7 @@ function PinnedToolButton({
         <Button
           type="button"
           variant="ghost"
+          size="icon"
           aria-label="Desk"
           data-taskbar-tool="desk"
           className={hit}
