@@ -3,6 +3,7 @@
 #   .\Start-RasielControl.ps1
 #   .\Start-RasielControl.ps1 -Bind 0.0.0.0 -Mock
 #   .\Start-RasielControl.ps1 -Port 3848 -HostName "desk-pc"
+#   .\Start-RasielControl.ps1 -Bind 0.0.0.0 -Password "long passphrase"   # behind a reverse proxy
 
 [CmdletBinding()]
 param(
@@ -18,6 +19,9 @@ param(
     [string] $HostId = "",
 
     [switch] $Mock,
+
+    # Browser sign-in, required when Rasiel is reached through a reverse proxy.
+    [string] $Password = "",
 
     [ValidateSet("auto", "testpattern", "scrcpy", "off")]
     [string] $VideoSource = "auto"
@@ -46,6 +50,10 @@ $env:PHONECONTROL_PORT = "$Port"
 $env:PHONECONTROL_HOST = $HostName
 $env:PHONECONTROL_HOST_ID = $HostId
 $env:PHONECONTROL_VIDEO_SOURCE = $VideoSource
+if ($Password) {
+    $env:PHONECONTROL_PASSWORD = $Password
+    Write-Host "Browser sign-in enabled"
+}
 
 if (Test-Path $Adb) {
     $env:ADB_PATH = $Adb

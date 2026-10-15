@@ -1,4 +1,5 @@
 import { agentBaseUrl, agentFetch, agentWsUrl, withAgentToken } from "@/lib/api/auth";
+import { httpErrorMessage } from "@/lib/api/http-error";
 
 export interface ScrcpyOptionsPayload {
   quality: string;
@@ -21,7 +22,7 @@ function agentBase(): string {
 
 async function readError(res: Response, fallback: string): Promise<string> {
   const text = await res.text();
-  return text || `${fallback}: ${res.status}`;
+  return httpErrorMessage(res.status, text, `${fallback}: ${res.status}`);
 }
 
 export async function postScrcpyOptions(

@@ -1,6 +1,7 @@
 //! HTTP + WebSocket API for the Rasiel UI + agent mesh.
 
 use crate::device_manager::AppState;
+use crate::web_auth::{self, WebAuth};
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
@@ -8,7 +9,7 @@ use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode}
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use axum::extract::Request;
 use futures_util::{SinkExt, StreamExt};
 use phonecontrol_protocol::{
@@ -19,7 +20,7 @@ use phonecontrol_protocol::{
     VideoRefreshRequest, VideoStatusFrame,
 };
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::mpsc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
@@ -27,14 +28,36 @@ use tower_http::trace::TraceLayer;
 use tracing::{debug, info, warn};
 
 const TOKEN_HEADER: &str = "x-phonecontrol-token";
+/// Ping browser sockets this often. Cloudflare drops a WebSocket after 100 s
+/// without traffic and nginx (Nginx Proxy Manager) after 60 s by default; a
+/// still phone screen sends no video frames at all.
+const WS_KEEPALIVE_SECS: u64 = 25;
+
+fn ws_keepalive() -> tokio::time::Interval {
+    let period = std::time::Duration::from_secs(WS_KEEPALIVE_SECS);
+    let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    interval
+}
+
+fn ws_ping() -> Message {
+    Message::Ping(Bytes::new())
+}
 
 pub fn router(state: AppState) -> Router {
+    router_with_auth(state, WebAuth::from_env())
+}
+
+pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
     let cors = build_cors_layer();
 
     let mut router = Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
         .route("/api/bootstrap", get(bootstrap))
+        .route("/api/session", get(session_status))
+        .route("/api/login", post(login))
+        .route("/api/logout", post(logout))
         .route("/api/devices", get(list_devices))
         .route(
             "/api/devices/wireless",
@@ -98,6 +121,8 @@ pub fn router(state: AppState) -> Router {
 
     router
         .layer(middleware::from_fn_with_state(state.clone(), require_api_token))
+        .layer(Extension(Arc::new(auth)))
+        .layer(middleware::from_fn(cache_headers))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -107,6 +132,8 @@ fn build_cors_layer() -> CorsLayer {
     let origins = allowed_dev_origins();
     CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
+        // The dev UI on :3847 signs in against the agent on :3848 with a cookie.
+        .allow_credentials(true)
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -142,7 +169,10 @@ fn allowed_dev_origins() -> Vec<HeaderValue> {
 }
 
 fn path_is_open(path: &str) -> bool {
-    matches!(path, "/health" | "/api/health" | "/api/bootstrap")
+    matches!(
+        path,
+        "/health" | "/api/health" | "/api/bootstrap" | "/api/session" | "/api/login" | "/api/logout"
+    )
 }
 
 fn path_is_static_ui(path: &str) -> bool {
@@ -263,16 +293,116 @@ struct BootstrapBody {
     token: String,
 }
 
+const PROXY_NEEDS_PASSWORD: &str = "Rasiel is being reached through a reverse proxy without a password. Set PHONECONTROL_PASSWORD on the Rasiel host (or PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1 if Cloudflare Access or similar already protects it).";
+
+fn auth_error(status: StatusCode, message: &str) -> Response {
+    (status, Json(serde_json::json!({ "error": message }))).into_response()
+}
+
 async fn bootstrap(
     State(state): State<AppState>,
+    Extension(auth): Extension<Arc<WebAuth>>,
     headers: HeaderMap,
-) -> Result<Json<BootstrapBody>, StatusCode> {
+) -> Response {
     if !origin_allowed_for_bootstrap(&headers) {
-        return Err(StatusCode::FORBIDDEN);
+        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use Rasiel.");
     }
-    Ok(Json(BootstrapBody {
+    if auth.password_required() {
+        if !auth.session_valid(&headers) {
+            return auth_error(StatusCode::UNAUTHORIZED, "Sign in to Rasiel.");
+        }
+    } else if auth.proxy_blocked(&headers) {
+        return auth_error(StatusCode::FORBIDDEN, PROXY_NEEDS_PASSWORD);
+    }
+    Json(BootstrapBody {
         token: state.api_token().to_string(),
-    }))
+    })
+    .into_response()
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionBody {
+    auth_required: bool,
+    authenticated: bool,
+    proxy_blocked: bool,
+}
+
+async fn session_status(
+    Extension(auth): Extension<Arc<WebAuth>>,
+    headers: HeaderMap,
+) -> Json<SessionBody> {
+    let auth_required = auth.password_required();
+    Json(SessionBody {
+        auth_required,
+        authenticated: auth_required && auth.session_valid(&headers),
+        proxy_blocked: auth.proxy_blocked(&headers),
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct LoginBody {
+    password: String,
+}
+
+async fn login(
+    Extension(auth): Extension<Arc<WebAuth>>,
+    headers: HeaderMap,
+    Json(body): Json<LoginBody>,
+) -> Response {
+    if !origin_allowed_for_bootstrap(&headers) {
+        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use Rasiel.");
+    }
+    if !auth.password_required() {
+        return auth_error(StatusCode::BAD_REQUEST, "No password is configured on this Rasiel host.");
+    }
+    if !auth.check_password(&body.password) {
+        // Slow down guessing.
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        warn!(proxied = web_auth::is_proxied(&headers), "failed sign-in");
+        return auth_error(StatusCode::UNAUTHORIZED, "Wrong password.");
+    }
+    let id = auth.create_session();
+    let mut response = Json(serde_json::json!({ "ok": true })).into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        web_auth::session_set_cookie(&id, web_auth::is_https(&headers)),
+    );
+    response
+}
+
+async fn logout(Extension(auth): Extension<Arc<WebAuth>>, headers: HeaderMap) -> Response {
+    auth.end_session(&headers);
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        web_auth::session_clear_cookie(web_auth::is_https(&headers)),
+    );
+    response
+}
+
+/// Cache rules for Cloudflare and browsers. Hashed Next assets never change;
+/// everything else (HTML, sw.js, manifest, RSC .txt) must revalidate so an
+/// update is not hidden behind an edge cache. API responses are never cached.
+async fn cache_headers(request: Request, next: Next) -> Response {
+    let path = request.uri().path().to_string();
+    let mut response = next.run(request).await;
+    if response.headers().contains_key(header::CACHE_CONTROL) {
+        return response;
+    }
+    let value = if path.starts_with("/api/") || path == "/health" {
+        "no-store"
+    } else if path == "/ws" || path.starts_with("/ws/") {
+        return response;
+    } else if path.starts_with("/_next/static/") && response.status().is_success() {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static(value));
+    response
 }
 
 fn ui_dir() -> Option<PathBuf> {
@@ -825,8 +955,18 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     let state_out = state.clone();
     let mut send_task = tokio::spawn(async move {
+        let mut keepalive = ws_keepalive();
         loop {
-            match events.recv().await {
+            let received = tokio::select! {
+                received = events.recv() => received,
+                _ = keepalive.tick() => {
+                    if sender.send(ws_ping()).await.is_err() {
+                        break;
+                    }
+                    continue;
+                }
+            };
+            match received {
                 Ok(event) => {
                     if send_event(&mut sender, &event).await.is_err() {
                         break;
@@ -1184,8 +1324,14 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
         // Scrcpy sockets always wait: the replayed IDR must not be followed by
         // later P-frames. The keyframe requested above ends the wait.
         let mut wait_for_key = scrcpy_live;
+        let mut keepalive = ws_keepalive();
         loop {
             tokio::select! {
+                _ = keepalive.tick() => {
+                    if sender.send(ws_ping()).await.is_err() {
+                        break;
+                    }
+                }
                 packet = video_rx.recv() => {
                     match packet {
                         Ok(crate::video::VideoPacket::Status(frame)) => {
@@ -1301,8 +1447,18 @@ async fn handle_audio_socket(socket: WebSocket, state: AppState, serial: String)
     let hub = state.inner.sessions.audio_hub();
     let (mut audio_rx, _) = hub.subscribe(&serial).await;
     let mut send_task = tokio::spawn(async move {
+        let mut keepalive = ws_keepalive();
         loop {
-            match audio_rx.recv().await {
+            let received = tokio::select! {
+                received = audio_rx.recv() => received,
+                _ = keepalive.tick() => {
+                    if sender.send(ws_ping()).await.is_err() {
+                        break;
+                    }
+                    continue;
+                }
+            };
+            match received {
                 Ok(crate::audio::AudioFrame::Status(frame)) => {
                     if send_json(&mut sender, &frame).await.is_err() {
                         break;
@@ -1491,7 +1647,7 @@ mod tests {
             .expect("online device")
             .id
             .clone();
-        let app = router(state);
+        let app = router_with_auth(state, WebAuth::new(None, false));
 
         let rejected = app
             .clone()
@@ -1539,7 +1695,7 @@ mod tests {
             .expect("online device")
             .id
             .clone();
-        let app = router(state);
+        let app = router_with_auth(state, WebAuth::new(None, false));
         let response = app
             .oneshot(
                 Request::builder()
@@ -1570,7 +1726,7 @@ mod tests {
             None,
         );
         let token = state.api_token().to_string();
-        let app = router(state);
+        let app = router_with_auth(state, WebAuth::new(None, false));
 
         let denied = app
             .clone()
@@ -1643,7 +1799,7 @@ mod tests {
             .expect("online device")
             .id
             .clone();
-        let app = router(state);
+        let app = router_with_auth(state, WebAuth::new(None, false));
 
         let response = app
             .clone()
@@ -1737,7 +1893,7 @@ mod tests {
             .expect("online device")
             .id
             .clone();
-        let app = router(state);
+        let app = router_with_auth(state, WebAuth::new(None, false));
 
         let text = app
             .clone()
@@ -1792,7 +1948,7 @@ mod tests {
             None,
         );
         let token = state.api_token().to_string();
-        let app = router(state);
+        let app = router_with_auth(state, WebAuth::new(None, false));
         let response = app
             .oneshot(apk_request("demo.apk", id, b"this is not a zip", &token))
             .await
@@ -1800,5 +1956,137 @@ mod tests {
         let status = response.status();
         let text = body_text(response).await;
         (status, text)
+    }
+
+    fn auth_state() -> AppState {
+        AppState::new(Role::Controller, "auth-test".into(), "auth-test".into(), 0, None)
+    }
+
+    fn get(uri: &str, headers: &[(&str, &str)]) -> Request<Body> {
+        let mut builder = Request::builder().uri(uri);
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        builder.body(Body::empty()).unwrap()
+    }
+
+    fn login_request(password: &str, headers: &[(&str, &str)]) -> Request<Body> {
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri("/api/login")
+            .header("content-type", "application/json");
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        builder
+            .body(Body::from(format!(r#"{{"password":"{password}"}}"#)))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn bootstrap_refuses_proxied_requests_without_password() {
+        let app = router_with_auth(auth_state(), WebAuth::new(None, false));
+        let lan = app.clone().oneshot(get("/api/bootstrap", &[])).await.unwrap();
+        assert_eq!(lan.status(), StatusCode::OK);
+
+        let proxied = app
+            .clone()
+            .oneshot(get(
+                "/api/bootstrap",
+                &[("x-forwarded-for", "203.0.113.9"), ("cf-ray", "abc")],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(proxied.status(), StatusCode::FORBIDDEN);
+        assert!(body_text(proxied).await.contains("PHONECONTROL_PASSWORD"));
+
+        let session = app
+            .oneshot(get("/api/session", &[("x-forwarded-for", "203.0.113.9")]))
+            .await
+            .unwrap();
+        assert!(body_text(session).await.contains(r#""proxyBlocked":true"#));
+
+        let allowed = router_with_auth(auth_state(), WebAuth::new(None, true))
+            .oneshot(get("/api/bootstrap", &[("x-forwarded-for", "203.0.113.9")]))
+            .await
+            .unwrap();
+        assert_eq!(allowed.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn password_sign_in_flow() {
+        let state = auth_state();
+        let token = state.api_token().to_string();
+        let app = router_with_auth(state, WebAuth::new(Some("open sesame".into()), false));
+        let proxy = [
+            ("host", "rasiel.example.com"),
+            ("origin", "https://rasiel.example.com"),
+            ("x-forwarded-for", "203.0.113.9"),
+            ("x-forwarded-proto", "https"),
+        ];
+
+        let anon = app.clone().oneshot(get("/api/bootstrap", &proxy)).await.unwrap();
+        assert_eq!(anon.status(), StatusCode::UNAUTHORIZED);
+        assert!(!body_text(anon).await.contains(&token));
+
+        let wrong = app.clone().oneshot(login_request("nope", &proxy)).await.unwrap();
+        assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+        assert!(wrong.headers().get(header::SET_COOKIE).is_none());
+
+        let evil = app
+            .clone()
+            .oneshot(login_request(
+                "open sesame",
+                &[("host", "rasiel.example.com"), ("origin", "https://evil.example")],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(evil.status(), StatusCode::FORBIDDEN);
+
+        let ok = app.clone().oneshot(login_request("open sesame", &proxy)).await.unwrap();
+        assert_eq!(ok.status(), StatusCode::OK);
+        let set_cookie = ok.headers()[header::SET_COOKIE].to_str().unwrap().to_string();
+        assert!(set_cookie.contains("HttpOnly") && set_cookie.contains("Secure"), "{set_cookie}");
+        let cookie = set_cookie.split(';').next().unwrap().to_string();
+
+        let mut with_cookie = proxy.to_vec();
+        with_cookie.push(("cookie", cookie.as_str()));
+        let boot = app.clone().oneshot(get("/api/bootstrap", &with_cookie)).await.unwrap();
+        assert_eq!(boot.status(), StatusCode::OK);
+        assert!(body_text(boot).await.contains(&token));
+
+        let session = app.clone().oneshot(get("/api/session", &with_cookie)).await.unwrap();
+        let text = body_text(session).await;
+        assert!(text.contains(r#""authRequired":true"#) && text.contains(r#""authenticated":true"#), "{text}");
+
+        let mut logout = Request::builder().method("POST").uri("/api/logout");
+        for (name, value) in &with_cookie {
+            logout = logout.header(*name, *value);
+        }
+        let out = app.clone().oneshot(logout.body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(out.status(), StatusCode::NO_CONTENT);
+        assert!(out.headers()[header::SET_COOKIE].to_str().unwrap().contains("Max-Age=0"));
+
+        let after = app.oneshot(get("/api/bootstrap", &with_cookie)).await.unwrap();
+        assert_eq!(after.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn cache_headers_by_path() {
+        let app: Router = Router::new()
+            .route("/api/devices", axum::routing::get(|| async { "[]" }))
+            .route("/_next/static/chunks/app.js", axum::routing::get(|| async { "js" }))
+            .route("/sw.js", axum::routing::get(|| async { "sw" }))
+            .route("/", axum::routing::get(|| async { "html" }))
+            .layer(middleware::from_fn(cache_headers));
+        for (path, expected) in [
+            ("/api/devices", "no-store"),
+            ("/_next/static/chunks/app.js", "public, max-age=31536000, immutable"),
+            ("/sw.js", "no-cache"),
+            ("/", "no-cache"),
+        ] {
+            let response = app.clone().oneshot(get(path, &[])).await.unwrap();
+            assert_eq!(response.headers()[header::CACHE_CONTROL], expected, "{path}");
+        }
     }
 }

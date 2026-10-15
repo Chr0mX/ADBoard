@@ -1,4 +1,5 @@
 import { MOCK_DEVICES } from "@/lib/devices/mock-data";
+import { responseError } from "@/lib/api/http-error";
 import type {
   ControlMode,
   Device,
@@ -353,7 +354,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     async listDevices() {
       const res = await agentFetch(`${base}/api/devices`, { cache: "no-store" });
       if (!res.ok) {
-        throw new Error(`agent listDevices failed: ${res.status}`);
+        throw await responseError(res, "agent listDevices failed");
       }
       return (await res.json()) as Device[];
     },
@@ -369,8 +370,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `agent sendTap failed: ${res.status}`);
+        throw await responseError(res, "agent sendTap failed");
       }
       return (await res.json()) as TapBroadcast;
     },
@@ -390,8 +390,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `agent sendPointer failed: ${res.status}`);
+        throw await responseError(res, "agent sendPointer failed");
       }
       return (await res.json()) as TapBroadcast;
     },
@@ -407,8 +406,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `agent sendNav failed: ${res.status}`);
+        throw await responseError(res, "agent sendNav failed");
       }
       return (await res.json()) as NavBroadcast;
     },
@@ -424,8 +422,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         }),
       });
       if (!res.ok) {
-        const body = await res.text();
-        throw new Error(body || `agent sendText failed: ${res.status}`);
+        throw await responseError(res, "agent sendText failed");
       }
       return (await res.json()) as ControlInjectResult;
     },
@@ -444,8 +441,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         }),
       });
       if (!res.ok) {
-        const body = await res.text();
-        throw new Error(body || `agent sendKey failed: ${res.status}`);
+        throw await responseError(res, "agent sendKey failed");
       }
       return (await res.json()) as ControlInjectResult;
     },
@@ -465,8 +461,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         body: file,
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `agent install failed: ${res.status}`);
+        throw await responseError(res, "agent install failed");
       }
       return (await res.json()) as InstallBroadcast;
     },
@@ -483,8 +478,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `command failed: ${res.status}`);
+        throw await responseError(res, "command failed");
       }
       return (await res.json()) as DeviceCommandResponse;
     },
@@ -493,7 +487,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       const res = await agentFetch(`${base}/api/host/files?path=${encodeURIComponent(path)}`, {
         cache: "no-store",
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw await responseError(res, "request failed");
       return (await res.json()) as HostFileEntry[];
     },
 
@@ -506,7 +500,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         },
         body: file,
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw await responseError(res, "request failed");
       return (await res.json()) as HostFileEntry;
     },
 
@@ -514,7 +508,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       const res = await agentFetch(`${base}/api/host/files?path=${encodeURIComponent(path)}`, {
         method: "DELETE",
       });
-      if (!res.ok && res.status !== 204) throw new Error(await res.text());
+      if (!res.ok && res.status !== 204) throw await responseError(res, "request failed");
     },
 
     hostFileUrl(path) {
@@ -533,7 +527,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         },
         body: file,
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw await responseError(res, "request failed");
       return (await res.json()) as DeviceCommandResponse;
     },
 
@@ -541,7 +535,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       const res = await agentFetch(
         `${base}/api/device/pull?deviceId=${encodeURIComponent(deviceId)}&path=${encodeURIComponent(path)}`,
       );
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw await responseError(res, "request failed");
       return res.blob();
     },
 
@@ -551,7 +545,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ op, path, dest: dest ?? "" }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw await responseError(res, "request failed");
       return (await res.json()) as HostFileEntry;
     },
 
@@ -567,14 +561,14 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         }),
       });
       if (!res.ok) {
-        throw new Error((await res.text()) || `wireless connect failed: ${res.status}`);
+        throw await responseError(res, "wireless connect failed");
       }
       return (await res.json()) as WirelessConnectResult;
     },
 
     async listWireless() {
       const res = await agentFetch(`${base}/api/devices/wireless`, { cache: "no-store" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw await responseError(res, "request failed");
       const body = (await res.json()) as { endpoints?: string[] };
       return body.endpoints ?? [];
     },
@@ -582,7 +576,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     async startWirelessQr() {
       const res = await agentFetch(`${base}/api/devices/wireless/qr`, { method: "POST" });
       if (!res.ok) {
-        throw new Error((await res.text()) || `QR pairing failed: ${res.status}`);
+        throw await responseError(res, "QR pairing failed");
       }
       return (await res.json()) as WirelessQrSession;
     },
@@ -592,7 +586,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         cache: "no-store",
       });
       if (!res.ok) {
-        throw new Error((await res.text()) || `QR status failed: ${res.status}`);
+        throw await responseError(res, "QR status failed");
       }
       return (await res.json()) as WirelessQrStatus;
     },
@@ -602,7 +596,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         method: "DELETE",
       });
       if (!res.ok && res.status !== 204) {
-        throw new Error((await res.text()) || `QR cancel failed: ${res.status}`);
+        throw await responseError(res, "QR cancel failed");
       }
     },
 
@@ -613,14 +607,14 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         body: JSON.stringify({ address }),
       });
       if (!res.ok) {
-        throw new Error((await res.text()) || `wireless disconnect failed: ${res.status}`);
+        throw await responseError(res, "wireless disconnect failed");
       }
       return (await res.json()) as WirelessConnectResult;
     },
 
     async listHosts() {
       const res = await agentFetch(`${base}/api/hosts`, { cache: "no-store" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw await responseError(res, "request failed");
       return (await res.json()) as import("@/lib/devices/types").HostInfo[];
     },
 

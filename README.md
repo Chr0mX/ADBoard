@@ -234,6 +234,40 @@ PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
 
 Mock without phones: `.\Start-RasielControl.ps1 -Mock` (testpattern video).
 
+## Remote access (Nginx Proxy Manager + Cloudflare)
+
+Rasiel can be published on a hostname such as `rasiel.example.com` behind Nginx Proxy Manager, with Cloudflare's proxy in front. The UI talks to the same origin and switches to `wss://` on HTTPS, so no URLs need changing.
+
+**Set a password first.** Without one, Rasiel refuses to hand out its API token to any request that arrived through a proxy (it shows "Password required for remote access"). Anyone who reaches the site could otherwise control the phones, run ADB shell commands and browse host files.
+
+```bash
+PHONECONTROL_PASSWORD='a long passphrase'      # browser sign-in, 30-day HttpOnly session cookie
+# PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1  # only if Cloudflare Access already guards the hostname
+```
+
+On Windows: `.\Start-RasielControl.ps1 -Bind 0.0.0.0 -Password '…'`, or uncomment the password line in `run.bat`. LAN access without a proxy keeps working without a password.
+
+**Nginx Proxy Manager** (proxy host):
+- Scheme `http`, forward to the Rasiel host, port `3848`. Turn on **Websockets Support**.
+- SSL: request a certificate (or use a Cloudflare Origin certificate) and turn on **Force SSL**.
+- Advanced tab, so long-lived video sockets are not cut:
+  ```nginx
+  proxy_read_timeout 3600s;
+  proxy_send_timeout 3600s;
+  proxy_buffering off;
+  ```
+- Use its own subdomain. Serving Rasiel under a path such as `example.com/rasiel` is not supported.
+
+**Cloudflare:**
+- SSL/TLS mode **Full (strict)**; Network → **WebSockets** on (default).
+- Turn **Rocket Loader off** (it rewrites scripts).
+- Leave caching at defaults: Rasiel sends `no-cache` for the page, `sw.js` and the manifest, `no-store` for `/api/*`, and long-lived `immutable` caching only for hashed `/_next/static/*` files.
+- Bot Fight Mode or "I'm Under Attack" can challenge the app's background requests; skip them for this hostname or use Cloudflare Access.
+- Uploads (APK installs, file pushes) are limited to 100 MB per request on Free and Pro plans.
+- Optional: firewall port 3848 so only the Nginx Proxy Manager host can reach it.
+
+Rasiel pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. Remote agents can join a controller published this way with `PHONECONTROL_CONTROLLER_URL=wss://rasiel.example.com/ws/agent` and the same `PHONECONTROL_TOKEN` on both sides.
+
 ## Desktop shortcuts
 
 Control view on a desktop-width window. They use Alt+Shift (⌥⇧ on a Mac) so they still work while keyboard injection sends plain keys to the phone, and they are never forwarded to the phone. Buttons show their shortcut in the tooltip.

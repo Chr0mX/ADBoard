@@ -4,6 +4,8 @@
  * and expects x-phonecontrol-token (or ?token= on WebSockets).
  */
 
+import { httpErrorMessage } from "@/lib/api/http-error";
+
 let cachedToken: string | null = null;
 let tokenPromise: Promise<string> | null = null;
 
@@ -24,15 +26,20 @@ export function httpToWs(base: string): string {
   return base;
 }
 
+/** Bootstrap answered 401: a password is set and this browser is not signed in. */
+export class SignInRequiredError extends Error {}
+
 export async function ensureAgentToken(): Promise<string | null> {
   const base = agentBaseUrl();
   if (base === null) return null;
   if (cachedToken) return cachedToken;
   if (!tokenPromise) {
-    tokenPromise = fetch(`${base}/api/bootstrap`, { cache: "no-store" })
+    // credentials: the session cookie from /api/login (also cross-port in dev).
+    tokenPromise = fetch(`${base}/api/bootstrap`, { cache: "no-store", credentials: "include" })
       .then(async (res) => {
         if (!res.ok) {
-          throw new Error((await res.text()) || `bootstrap failed: ${res.status}`);
+          const message = httpErrorMessage(res.status, await res.text(), `bootstrap failed: ${res.status}`);
+          throw res.status === 401 ? new SignInRequiredError(message) : new Error(message);
         }
         const body = (await res.json()) as { token?: string };
         if (!body.token) {
@@ -79,3 +86,44 @@ export async function agentWsUrl(pathAndQuery: string): Promise<string> {
   const path = pathAndQuery.startsWith("/") ? pathAndQuery : `/${pathAndQuery}`;
   return withAgentToken(`${root}${path}`);
 }
+
+export interface AgentSession {
+  authRequired: boolean;
+  authenticated: boolean;
+  /** Reached through a proxy while no password is configured. */
+  proxyBlocked: boolean;
+}
+
+export async function fetchAgentSession(): Promise<AgentSession | null> {
+  const base = agentBaseUrl();
+  if (base === null) return null;
+  const res = await fetch(`${base}/api/session`, { cache: "no-store", credentials: "include" });
+  // Older agents have no /api/session: behave as before (no sign-in).
+  if (res.status === 404) return { authRequired: false, authenticated: false, proxyBlocked: false };
+  if (!res.ok) throw new Error(httpErrorMessage(res.status, await res.text(), `session check failed: ${res.status}`));
+  return (await res.json()) as AgentSession;
+}
+
+export async function signIn(password: string): Promise<void> {
+  const base = agentBaseUrl() ?? "";
+  const res = await fetch(`${base}/api/login`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) throw new Error(httpErrorMessage(res.status, await res.text(), `sign-in failed: ${res.status}`));
+  cachedToken = null;
+  tokenPromise = null;
+}
+
+export async function signOut(): Promise<void> {
+  const base = agentBaseUrl() ?? "";
+  try {
+    await fetch(`${base}/api/logout`, { method: "POST", credentials: "include" });
+  } finally {
+    cachedToken = null;
+    tokenPromise = null;
+  }
+}
+

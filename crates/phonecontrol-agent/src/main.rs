@@ -12,6 +12,7 @@ mod scrcpy_control;
 mod scrcpy_video;
 mod session;
 mod video;
+mod web_auth;
 
 use crate::adb::adb_binary;
 use crate::device_manager::AppState;
@@ -26,6 +27,8 @@ const DEFAULT_PORT: u16 = 3848;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // TLS for wss:// controller URLs (mesh agents behind https proxies).
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()

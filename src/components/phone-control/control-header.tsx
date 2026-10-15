@@ -1,6 +1,7 @@
 "use client";
 
 import { DESK_SECTIONS, type DeskSection } from "@/components/phone-control/desk/desk-context";
+import { useAgentSessionInfo } from "@/components/phone-control/sign-in-gate";
 
 interface ControlHeaderProps {
   onlineCount: number;
@@ -10,6 +11,7 @@ interface ControlHeaderProps {
 }
 
 export function ControlHeader({ onlineCount, totalCount, section, onSection }: ControlHeaderProps) {
+  const session = useAgentSessionInfo();
   return (
     <header className="relative z-10 flex shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1.5 sm:px-4">
       <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]">
@@ -43,6 +45,16 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
         <span className="font-mono text-xs text-[var(--pc-ink)]">
           {onlineCount}/{totalCount} online
         </span>
+        {session.authRequired && (
+          <button
+            type="button"
+            data-sign-out
+            onClick={session.signOut}
+            className="inline-flex h-11 items-center rounded-xl px-2.5 text-sm text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
+          >
+            Sign out
+          </button>
+        )}
       </div>
     </header>
   );

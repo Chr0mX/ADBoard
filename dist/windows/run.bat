@@ -17,6 +17,8 @@ set "PHONECONTROL_PORT=3848"
 set "PHONECONTROL_HOST=windows-host"
 set "PHONECONTROL_HOST_ID=windows-host"
 set "PHONECONTROL_VIDEO_SOURCE=auto"
+rem Remote access through a reverse proxy (Nginx Proxy Manager / Cloudflare) needs a password:
+rem set "PHONECONTROL_PASSWORD=choose-a-long-passphrase"
 
 if exist "%~dp0vendor\adb\adb.exe" set "ADB_PATH=%~dp0vendor\adb\adb.exe"
 if exist "%~dp0vendor\scrcpy\scrcpy.exe" set "SCRCPY_PATH=%~dp0vendor\scrcpy\scrcpy.exe"

@@ -336,3 +336,28 @@ fn append_token_query(url: &str, token: &str) -> String {
         format!("{url}?token={encoded}")
     }
 }
+
+#[cfg(test)]
+mod tls_tests {
+    use tokio_tungstenite::tungstenite::error::{Error, UrlError};
+
+    /// A wss:// controller must get as far as a TLS handshake, not fail with
+    /// "TLS support not compiled in".
+    #[tokio::test]
+    async fn wss_urls_are_supported() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            // Accept and hang up: the client sees a TLS/IO error.
+            let _ = listener.accept().await;
+        });
+        let result = tokio_tungstenite::connect_async(format!("wss://127.0.0.1:{port}/ws/agent")).await;
+        match result {
+            Err(Error::Url(UrlError::TlsFeatureNotEnabled)) => panic!("TLS is not compiled in"),
+            Err(_) => {}
+            Ok(_) => panic!("handshake cannot succeed against a closed socket"),
+        }
+    }
+}
+
