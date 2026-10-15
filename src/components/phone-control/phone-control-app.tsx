@@ -75,7 +75,7 @@ export function PhoneControlApp() {
   const [screensCollapsed, setScreensCollapsed] = useStoredFlag("phonecontrol-screens-collapsed", false);
   const [devicesCollapsed, setDevicesCollapsed] = useStoredFlag("phonecontrol-devices-collapsed", false);
   const [screensOpen, setScreensOpen] = useState(false);
-  const [gridView, setGridView] = useState(false);
+  const [gridView, setGridView] = useStoredFlag("phonecontrol-grid-view", false);
 
   const setFill = (on: boolean) => {
     if (!wide) return;
@@ -284,7 +284,7 @@ export function PhoneControlApp() {
                 statsMode={mobileStatsMode}
                 onStatsModeChange={setMobileStatsMode}
                 onFillWindowChange={setFill}
-                onToggleGrid={() => setGridView((open) => !open)}
+                onToggleGrid={() => setGridView(!gridView)}
                 onFocusDevice={(deviceId) => {
                   selectDevice({
                     deviceId,

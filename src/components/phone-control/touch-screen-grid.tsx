@@ -363,8 +363,8 @@ function TouchScreenTile({
               />
             )}
             {offline && (
-              <p className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] text-white/70">
-                Offline
+              <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center font-mono text-[10px] text-white/70">
+                {device.status === "unauthorized" ? "Unauthorized" : "ADB offline"}
               </p>
             )}
           </div>
@@ -465,8 +465,8 @@ function TouchScreenTile({
           />
         )}
         {offline && (
-          <p className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[10px] text-white/70">
-            Offline
+          <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center font-mono text-[10px] text-white/70">
+            {device.status === "unauthorized" ? "Unauthorized" : "ADB offline"}
           </p>
         )}
       </div>

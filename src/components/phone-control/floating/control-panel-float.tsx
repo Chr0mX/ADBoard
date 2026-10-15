@@ -6,6 +6,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
+  Camera,
   Circle,
   Keyboard,
   LayoutGrid,
@@ -18,6 +19,7 @@ import {
   Play,
   RefreshCw,
   Smartphone,
+  Video,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -51,12 +53,16 @@ interface ControlPanelFloatProps {
   replaying: boolean;
   refreshing: boolean;
   installing: boolean;
+  capturing?: boolean;
+  screenRecording?: boolean;
   onKeyboardChange: (on: boolean) => void;
   onMouseChange: (on: boolean) => void;
   onRecordToggle: () => void;
   onReplay: () => void;
   onRefresh: () => void;
   onInstallFile: (file: File) => void;
+  onScreenshot?: () => void;
+  onScreenRecordToggle?: () => void;
   onOpenDevices: () => void;
   onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
@@ -125,12 +131,16 @@ export function ControlPanelFloat({
   replaying,
   refreshing,
   installing,
+  capturing = false,
+  screenRecording = false,
   onKeyboardChange,
   onMouseChange,
   onRecordToggle,
   onReplay,
   onRefresh,
   onInstallFile,
+  onScreenshot,
+  onScreenRecordToggle,
   onOpenDevices,
   onToggleGrid,
   onOpenDesk,
@@ -328,6 +338,33 @@ export function ControlPanelFloat({
               <RefreshCw className={cn("size-5", !taskbarEdit && refreshing && "animate-spin")} />
             </Button>
           </PinableTool>
+          {!taskbarEdit && (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Screenshot and download"
+                data-control-screenshot
+                disabled={offline || capturing || targetIds.length === 0}
+                className={HIT}
+                onClick={() => onScreenshot?.()}
+              >
+                <Camera className="size-5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={screenRecording ? "Stop screen record" : "Start screen record"}
+                data-control-screenrecord
+                data-pressed={screenRecording ? "true" : undefined}
+                disabled={offline || capturing || targetIds.length === 0}
+                className={cn(HIT, screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]")}
+                onClick={() => onScreenRecordToggle?.()}
+              >
+                <Video className="size-5" />
+              </Button>
+            </>
+          )}
           <PinableTool {...pinProps("apk")}>
             <label
               data-taskbar-pin="apk"

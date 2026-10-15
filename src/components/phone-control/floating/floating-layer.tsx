@@ -24,12 +24,16 @@ export interface FloatingLayerProps {
   replaying: boolean;
   refreshing: boolean;
   installing: boolean;
+  capturing?: boolean;
+  screenRecording?: boolean;
   onKeyboardChange: (on: boolean) => void;
   onMouseChange: (on: boolean) => void;
   onRecordToggle: () => void;
   onReplay: () => void;
   onRefresh: () => void;
   onInstallFile: (file: File) => void;
+  onScreenshot?: () => void;
+  onScreenRecordToggle?: () => void;
   onOpenDevices: () => void;
   onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
@@ -67,12 +71,16 @@ export function FloatingLayer(props: FloatingLayerProps) {
         replaying={props.replaying}
         refreshing={props.refreshing}
         installing={props.installing}
+        capturing={props.capturing}
+        screenRecording={props.screenRecording}
         onKeyboardChange={props.onKeyboardChange}
         onMouseChange={props.onMouseChange}
         onRecordToggle={props.onRecordToggle}
         onReplay={props.onReplay}
         onRefresh={props.onRefresh}
         onInstallFile={props.onInstallFile}
+        onScreenshot={props.onScreenshot}
+        onScreenRecordToggle={props.onScreenRecordToggle}
         onOpenDevices={props.onOpenDevices}
         onToggleGrid={props.onToggleGrid}
         onOpenDesk={props.onOpenDesk}

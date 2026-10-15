@@ -133,6 +133,8 @@ export function ConfirmDialog({
   busy,
   onCancel,
   onConfirm,
+  /** When set, confirm stays disabled until the typed value matches (case-insensitive). */
+  requirePhrase,
 }: {
   title: string;
   body: React.ReactNode;
@@ -140,9 +142,13 @@ export function ConfirmDialog({
   busy?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  requirePhrase?: string;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
+  const [typed, setTyped] = useState("");
+  const phraseOk =
+    !requirePhrase || typed.trim().toLowerCase() === requirePhrase.trim().toLowerCase();
   useEffect(() => {
     cancelRef.current?.focus();
   }, []);
@@ -165,6 +171,21 @@ export function ConfirmDialog({
           {title}
         </h3>
         <div className="mt-2 text-sm text-[var(--pc-muted)]">{body}</div>
+        {requirePhrase && (
+          <label className="mt-3 flex flex-col gap-1 text-sm text-[var(--pc-ink)]">
+            <span>
+              Type <span className="font-mono font-semibold">{requirePhrase}</span> to confirm
+            </span>
+            <input
+              data-confirm-phrase
+              value={typed}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setTyped(event.target.value)}
+              className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-xs text-[var(--pc-ink)]"
+            />
+          </label>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <button
             ref={cancelRef}
@@ -176,7 +197,7 @@ export function ConfirmDialog({
           </button>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || !phraseOk}
             className="h-11 min-h-11 rounded-xl bg-[var(--pc-accent-fill)] px-3 text-sm font-medium text-white disabled:opacity-60"
             onClick={onConfirm}
           >
