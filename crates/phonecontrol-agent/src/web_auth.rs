@@ -2,65 +2,216 @@
 //!
 //! The API token alone only stops other websites from driving Rasiel through
 //! a visitor's browser: `/api/bootstrap` hands it to any same-origin caller.
-//! That is fine on a LAN, not on a public hostname. With
-//! `PHONECONTROL_PASSWORD` set, bootstrap requires a session cookie obtained
-//! from `POST /api/login`. Without a password, bootstrap refuses requests that
-//! arrived through a proxy unless `PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1`
-//! (for setups that put Cloudflare Access or similar in front).
+//! That is fine on a LAN, not on a public hostname. Once an account exists,
+//! bootstrap requires a session cookie from `POST /api/login` (username and
+//! password form). Without an account, bootstrap refuses requests that
+//! arrived through a proxy unless `PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1`.
+//!
+//! The account lives in `rasiel-auth.json` (salted PBKDF2-SHA256), next to
+//! the executable unless `PHONECONTROL_AUTH_FILE` says otherwise, so a password
+//! changed in the UI survives restarts. `PHONECONTROL_PASSWORD` creates the
+//! first account; `PHONECONTROL_RESET_PASSWORD=1` makes it overwrite the file
+//! (for a forgotten password).
 
 use axum::http::{header, HeaderMap, HeaderValue};
+use ring::rand::SecureRandom;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::num::NonZeroU32;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 pub const SESSION_COOKIE: &str = "rasiel_session";
+pub const DEFAULT_USERNAME: &str = "admin";
+pub const MIN_PASSWORD_LEN: usize = 8;
 const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const MAX_SESSIONS: usize = 1024;
+const PBKDF2_ITERATIONS: u32 = 210_000;
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct Credentials {
+    username: String,
+    /// Hex.
+    salt: String,
+    /// Hex PBKDF2-HMAC-SHA256 output.
+    hash: String,
+    iterations: u32,
+}
+
+impl Credentials {
+    fn new(username: &str, password: &str) -> Self {
+        let mut salt = [0u8; 16];
+        ring::rand::SystemRandom::new()
+            .fill(&mut salt)
+            .expect("system randomness");
+        let mut hash = [0u8; 32];
+        ring::pbkdf2::derive(
+            ring::pbkdf2::PBKDF2_HMAC_SHA256,
+            NonZeroU32::new(PBKDF2_ITERATIONS).expect("non-zero"),
+            &salt,
+            password.as_bytes(),
+            &mut hash,
+        );
+        Self {
+            username: username.to_string(),
+            salt: to_hex(&salt),
+            hash: to_hex(&hash),
+            iterations: PBKDF2_ITERATIONS,
+        }
+    }
+
+    fn verify(&self, username: &str, password: &str) -> bool {
+        let (Some(salt), Some(hash), Some(iterations)) = (
+            from_hex(&self.salt),
+            from_hex(&self.hash),
+            NonZeroU32::new(self.iterations),
+        ) else {
+            return false;
+        };
+        let password_ok = ring::pbkdf2::verify(
+            ring::pbkdf2::PBKDF2_HMAC_SHA256,
+            iterations,
+            &salt,
+            password.as_bytes(),
+            &hash,
+        )
+        .is_ok();
+        // Check both so timing does not reveal which one was wrong.
+        let user_ok = constant_time_eq(self.username.as_bytes(), username.as_bytes());
+        password_ok && user_ok
+    }
+}
 
 pub struct WebAuth {
-    password: Option<String>,
+    credentials: RwLock<Option<Credentials>>,
+    file: Option<PathBuf>,
     allow_proxy_without_password: bool,
     sessions: Mutex<HashMap<String, Instant>>,
 }
 
 impl WebAuth {
+    /// In-memory account (tests, or no writable location).
     pub fn new(password: Option<String>, allow_proxy_without_password: bool) -> Self {
+        let credentials = password
+            .filter(|p| !p.is_empty())
+            .map(|p| Credentials::new(DEFAULT_USERNAME, &p));
         Self {
-            password: password.filter(|p| !p.is_empty()),
+            credentials: RwLock::new(credentials),
+            file: None,
+            allow_proxy_without_password,
+            sessions: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Account stored in `file`; env values seed it when the file is absent.
+    pub fn with_file(
+        file: PathBuf,
+        env_username: Option<String>,
+        env_password: Option<String>,
+        reset: bool,
+        allow_proxy_without_password: bool,
+    ) -> Self {
+        let stored = read_credentials(&file);
+        let env_password = env_password.filter(|p| !p.is_empty());
+        let username = env_username
+            .filter(|u| !u.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_USERNAME.to_string());
+        let credentials = match (stored, env_password) {
+            (Some(stored), Some(password)) if reset => {
+                tracing::warn!("PHONECONTROL_RESET_PASSWORD=1 — replacing the stored Rasiel account");
+                let fresh = Credentials::new(&username, &password);
+                write_or_warn(&file, &fresh);
+                drop(stored);
+                Some(fresh)
+            }
+            (Some(stored), Some(_)) => {
+                tracing::info!(
+                    path = %file.display(),
+                    "using the stored Rasiel account; PHONECONTROL_PASSWORD only sets the first password (PHONECONTROL_RESET_PASSWORD=1 to replace it)"
+                );
+                Some(stored)
+            }
+            (Some(stored), None) => Some(stored),
+            (None, Some(password)) => {
+                let fresh = Credentials::new(&username, &password);
+                write_or_warn(&file, &fresh);
+                Some(fresh)
+            }
+            (None, None) => None,
+        };
+        Self {
+            credentials: RwLock::new(credentials),
+            file: Some(file),
             allow_proxy_without_password,
             sessions: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn from_env() -> Self {
-        let password = std::env::var("PHONECONTROL_PASSWORD").ok();
         let allow = matches!(
             std::env::var("PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD").as_deref(),
             Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
         );
-        let auth = Self::new(password, allow);
+        let reset = matches!(
+            std::env::var("PHONECONTROL_RESET_PASSWORD").as_deref(),
+            Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+        );
+        let auth = Self::with_file(
+            auth_file_path(),
+            std::env::var("PHONECONTROL_USERNAME").ok(),
+            std::env::var("PHONECONTROL_PASSWORD").ok(),
+            reset,
+            allow,
+        );
         if auth.password_required() {
-            tracing::info!("PHONECONTROL_PASSWORD is set — the browser UI requires sign-in");
+            tracing::info!("Rasiel account configured — the browser UI requires sign-in");
         } else if !allow {
             tracing::info!(
-                "no PHONECONTROL_PASSWORD — requests through a reverse proxy are refused; set one for remote access"
+                "no Rasiel account yet — requests through a reverse proxy are refused; set a password from the UI on the LAN or with PHONECONTROL_PASSWORD"
             );
         }
         auth
     }
 
     pub fn password_required(&self) -> bool {
-        self.password.is_some()
+        self.credentials.read().unwrap_or_else(|e| e.into_inner()).is_some()
     }
 
-    pub fn check_password(&self, candidate: &str) -> bool {
-        match &self.password {
-            Some(password) => constant_time_eq(password.as_bytes(), candidate.as_bytes()),
+    pub fn username(&self) -> Option<String> {
+        self.credentials
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|c| c.username.clone())
+    }
+
+    pub fn check_login(&self, username: &str, password: &str) -> bool {
+        match self.credentials.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            Some(credentials) => credentials.verify(username.trim(), password),
             None => false,
         }
     }
 
-    /// Without a password, a proxied request may not receive the API token.
+    /// Replace the account. Ends every session; the caller signs in afresh.
+    pub fn set_credentials(&self, username: &str, password: &str) -> Result<(), String> {
+        let username = username.trim();
+        if username.is_empty() || username.len() > 64 {
+            return Err("Username must be 1–64 characters.".into());
+        }
+        if password.chars().count() < MIN_PASSWORD_LEN {
+            return Err(format!("Password must be at least {MIN_PASSWORD_LEN} characters."));
+        }
+        let fresh = Credentials::new(username, password);
+        if let Some(file) = &self.file {
+            write_credentials(file, &fresh)
+                .map_err(|e| format!("Could not save the account to {}: {e}", file.display()))?;
+        }
+        *self.credentials.write().unwrap_or_else(|e| e.into_inner()) = Some(fresh);
+        self.sessions.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        Ok(())
+    }
+
+    /// Without an account, a proxied request may not receive the API token.
     pub fn proxy_blocked(&self, headers: &HeaderMap) -> bool {
         !self.password_required() && !self.allow_proxy_without_password && is_proxied(headers)
     }
@@ -96,6 +247,47 @@ impl WebAuth {
             let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
             sessions.remove(&id);
         }
+    }
+}
+
+fn auth_file_path() -> PathBuf {
+    if let Ok(path) = std::env::var("PHONECONTROL_AUTH_FILE") {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("rasiel-auth.json")))
+        .unwrap_or_else(|| PathBuf::from("rasiel-auth.json"))
+}
+
+fn read_credentials(path: &Path) -> Option<Credentials> {
+    let text = std::fs::read_to_string(path).ok()?;
+    match serde_json::from_str::<Credentials>(&text) {
+        Ok(credentials) => Some(credentials),
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "ignoring unreadable Rasiel account file");
+            None
+        }
+    }
+}
+
+fn write_credentials(path: &Path, credentials: &Credentials) -> std::io::Result<()> {
+    let text = serde_json::to_string_pretty(credentials).map_err(std::io::Error::other)?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, text)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+    }
+    std::fs::rename(&tmp, path)
+}
+
+fn write_or_warn(path: &Path, credentials: &Credentials) {
+    if let Err(e) = write_credentials(path, credentials) {
+        tracing::warn!(path = %path.display(), error = %e, "could not save the Rasiel account; it lasts until restart");
     }
 }
 
@@ -156,6 +348,20 @@ pub fn session_clear_cookie(secure: bool) -> HeaderValue {
     .expect("cookie is ASCII")
 }
 
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn from_hex(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())
+        .collect()
+}
+
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     let mut diff = a.len() ^ b.len();
     for i in 0..a.len().max(b.len()) {
@@ -178,6 +384,10 @@ mod tests {
         map
     }
 
+    fn temp_file() -> PathBuf {
+        std::env::temp_dir().join(format!("rasiel-auth-test-{}.json", uuid::Uuid::new_v4().simple()))
+    }
+
     #[test]
     fn detects_proxy_and_https() {
         assert!(!is_proxied(&headers(&[("host", "127.0.0.1:3848")])));
@@ -189,11 +399,11 @@ mod tests {
     }
 
     #[test]
-    fn password_and_sessions() {
-        let auth = WebAuth::new(Some("hunter2".into()), false);
-        assert!(auth.check_password("hunter2"));
-        assert!(!auth.check_password("hunter"));
-        assert!(!auth.check_password("hunter22"));
+    fn login_and_sessions() {
+        let auth = WebAuth::new(Some("hunter2!".into()), false);
+        assert!(auth.check_login("admin", "hunter2!"));
+        assert!(!auth.check_login("admin", "hunter2"));
+        assert!(!auth.check_login("root", "hunter2!"));
         let id = auth.create_session();
         let cookie = format!("other=1; {SESSION_COOKIE}={id}");
         let with = headers(&[("cookie", &cookie)]);
@@ -204,13 +414,39 @@ mod tests {
     }
 
     #[test]
+    fn changing_the_password_persists_and_ends_sessions() {
+        let file = temp_file();
+        let auth = WebAuth::with_file(file.clone(), None, Some("first-pass".into()), false, false);
+        assert!(auth.check_login("admin", "first-pass"));
+        let id = auth.create_session();
+        let with = headers(&[("cookie", &format!("{SESSION_COOKIE}={id}"))]);
+
+        assert!(auth.set_credentials("ops", "short").is_err());
+        auth.set_credentials("ops", "second-pass").unwrap();
+        assert!(!auth.session_valid(&with));
+        assert!(auth.check_login("ops", "second-pass"));
+        assert!(!auth.check_login("admin", "first-pass"));
+
+        // A restart reads the file; the env password no longer applies.
+        let restarted = WebAuth::with_file(file.clone(), None, Some("first-pass".into()), false, false);
+        assert!(restarted.check_login("ops", "second-pass"));
+        assert!(!restarted.check_login("admin", "first-pass"));
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(!text.contains("second-pass"), "password must not be stored in clear");
+
+        // Reset replaces it.
+        let reset = WebAuth::with_file(file.clone(), None, Some("third-pass".into()), true, false);
+        assert!(reset.check_login("admin", "third-pass"));
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
     fn proxy_block_rules() {
         let proxied = headers(&[("x-forwarded-for", "1.2.3.4")]);
         assert!(WebAuth::new(None, false).proxy_blocked(&proxied));
         assert!(!WebAuth::new(None, true).proxy_blocked(&proxied));
-        assert!(!WebAuth::new(Some("pw".into()), false).proxy_blocked(&proxied));
+        assert!(!WebAuth::new(Some("password1".into()), false).proxy_blocked(&proxied));
         assert!(!WebAuth::new(None, false).proxy_blocked(&HeaderMap::new()));
-        // An empty password counts as unset.
         assert!(!WebAuth::new(Some(String::new()), false).password_required());
     }
 

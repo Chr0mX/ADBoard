@@ -11,6 +11,7 @@ mod paths;
 mod scrcpy_control;
 mod scrcpy_video;
 mod session;
+mod uploads;
 mod video;
 mod web_auth;
 

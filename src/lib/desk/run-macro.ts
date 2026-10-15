@@ -175,9 +175,7 @@ async function runStep(
       return;
     case "upload": {
       const hostPath = text(step.hostPath || step.text);
-      const response = await fetch(devicesClient.hostFileUrl(hostPath));
-      if (!response.ok) throw new Error(await response.text());
-      const blob = await response.blob();
+      const blob = await devicesClient.fetchHostFile(hostPath);
       const name = hostPath.split("/").pop() || "file";
       await devicesClient.pushToDevices(
         [device],
@@ -198,9 +196,7 @@ async function runStep(
       return;
     case "install": {
       const hostPath = text(step.hostPath || step.text);
-      const response = await fetch(devicesClient.hostFileUrl(hostPath));
-      if (!response.ok) throw new Error(await response.text());
-      const blob = await response.blob();
+      const blob = await devicesClient.fetchHostFile(hostPath);
       const name = hostPath.split("/").pop() || "app.apk";
       const result = await devicesClient.installApk("selected", [device], new File([blob], name));
       const failed = result.targets.find((target) => target.inject === "error");

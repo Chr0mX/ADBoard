@@ -1,5 +1,6 @@
 "use client";
 
+import { saveBlob } from "@/lib/api/download";
 import { useCallback, useEffect, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
 import type { Device, HostFileEntry } from "@/lib/devices/types";
@@ -71,9 +72,7 @@ export function FilesPanel() {
   async function sendSelected() {
     if (!selectedPc || selectedPc.dir) return;
     const targets = picked(desk.devices, checked).filter((device) => device.status === "online");
-    const response = await fetch(devicesClient.hostFileUrl(selectedPc.path));
-    if (!response.ok) throw new Error(await response.text());
-    const blob = await response.blob();
+    const blob = await devicesClient.fetchHostFile(selectedPc.path);
     const file = new File([blob], selectedPc.name);
     const dest = phonePath.endsWith("/") ? phonePath : `${phonePath}/`;
     const result = await devicesClient.pushToDevices(targets, file, dest);
@@ -141,9 +140,13 @@ export function FilesPanel() {
                   <span className="min-w-0 flex-1 truncate">{entry.dir ? `${entry.name}/` : entry.name}</span>
                 </button>
                 {!entry.dir && (
-                  <a className="inline-flex h-11 shrink-0 items-center text-xs text-[var(--pc-accent)]" href={devicesClient.hostFileUrl(entry.path)}>
+                  <button
+                    type="button"
+                    className="inline-flex h-11 shrink-0 items-center text-xs text-[var(--pc-accent)]"
+                    onClick={() => void devicesClient.fetchHostFile(entry.path).then((blob) => saveBlob(blob, entry.name))}
+                  >
                     Download
-                  </a>
+                  </button>
                 )}
                 <button
                   type="button"
@@ -324,9 +327,12 @@ export function FilesPanel() {
 
   async function sendFile(path: string, name: string) {
     const targets = picked(desk.devices, checked).filter((device) => device.status === "online");
-    const response = await fetch(devicesClient.hostFileUrl(path));
-    if (!response.ok) return;
-    const blob = await response.blob();
+    let blob: Blob;
+    try {
+      blob = await devicesClient.fetchHostFile(path);
+    } catch {
+      return;
+    }
     const dest = phonePath.endsWith("/") ? phonePath : `${phonePath}/`;
     const result = await devicesClient.pushToDevices(targets, new File([blob], name), dest);
     setRows(rowsFromCommand(desk.devices, checked, result.results));

@@ -21,7 +21,7 @@ import {
   agentFetch,
   agentWsUrl,
   ensureAgentToken,
-  withAgentToken,
+  agentWsProtocols,
 } from "@/lib/api/auth";
 
 /**
@@ -75,7 +75,8 @@ export interface DevicesClient {
   listHostFiles(path?: string): Promise<HostFileEntry[]>;
   uploadHostFile(file: File, dir: string): Promise<HostFileEntry>;
   deleteHostFile(path: string): Promise<void>;
-  hostFileUrl(path: string): string;
+  /** Download a host file with the API token in a header (never in the URL). */
+  fetchHostFile(path: string): Promise<Blob>;
   pushToDevices(targets: Device[], file: File, dest: string): Promise<DeviceCommandResponse>;
   pullFromDevice(deviceId: string, path: string): Promise<Blob>;
   hostFileOp(
@@ -134,6 +135,32 @@ export interface ControlInjectResult {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+
+/** Files above this go up in chunks: Cloudflare Free/Pro reject request bodies over 100 MB. */
+export const DIRECT_UPLOAD_MAX = 64 * 1024 * 1024;
+export const UPLOAD_CHUNK = 32 * 1024 * 1024;
+
+/**
+ * Small files are sent as the request body. Large ones are staged with
+ * PUT /api/uploads/{id} chunks and referenced by the x-phonecontrol-upload header.
+ */
+async function stageUpload(
+  base: string,
+  file: Blob,
+): Promise<{ body: Blob | null; headers: Record<string, string> }> {
+  if (file.size <= DIRECT_UPLOAD_MAX) return { body: file, headers: {} };
+  const id = crypto.randomUUID();
+  for (let offset = 0; offset < file.size; offset += UPLOAD_CHUNK) {
+    const res = await agentFetch(`${base}/api/uploads/${id}`, {
+      method: "PUT",
+      headers: { "X-Phonecontrol-Offset": String(offset) },
+      body: file.slice(offset, offset + UPLOAD_CHUNK),
+    });
+    if (!res.ok) throw await responseError(res, "upload failed");
+  }
+  return { body: null, headers: { "X-Phonecontrol-Upload": id } };
 }
 
 export function createMockDevicesClient(): DevicesClient {
@@ -276,8 +303,8 @@ export function createMockDevicesClient(): DevicesClient {
 
     async deleteHostFile() {},
 
-    hostFileUrl(path) {
-      return path;
+    async fetchHostFile(path) {
+      return new Blob([`mock host file: ${path}`], { type: "text/plain" });
     },
 
     async pushToDevices(targets) {
@@ -450,6 +477,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       if (!file.name.toLowerCase().endsWith(".apk")) {
         throw new Error("only .apk files can be installed");
       }
+      const upload = await stageUpload(base, file);
       const res = await agentFetch(`${base}/api/input/install`, {
         method: "POST",
         headers: {
@@ -457,8 +485,9 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
           "X-Phonecontrol-Mode": mode,
           "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
           "X-Phonecontrol-Filename": file.name,
+          ...upload.headers,
         },
-        body: file,
+        body: upload.body,
       });
       if (!res.ok) {
         throw await responseError(res, "agent install failed");
@@ -492,13 +521,15 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
     },
 
     async uploadHostFile(file, dir) {
+      const upload = await stageUpload(base, file);
       const res = await agentFetch(`${base}/api/host/files`, {
         method: "POST",
         headers: {
           "X-Phonecontrol-Filename": file.name,
           "X-Phonecontrol-Dir": dir,
+          ...upload.headers,
         },
-        body: file,
+        body: upload.body,
       });
       if (!res.ok) throw await responseError(res, "request failed");
       return (await res.json()) as HostFileEntry;
@@ -511,21 +542,23 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       if (!res.ok && res.status !== 204) throw await responseError(res, "request failed");
     },
 
-    hostFileUrl(path) {
-      return withAgentToken(
-        `${base}/api/host/files/raw?path=${encodeURIComponent(path)}`,
-      );
+    async fetchHostFile(path) {
+      const res = await agentFetch(`${base}/api/host/files/raw?path=${encodeURIComponent(path)}`);
+      if (!res.ok) throw await responseError(res, "download failed");
+      return res.blob();
     },
 
     async pushToDevices(targets, file, dest) {
+      const upload = await stageUpload(base, file);
       const res = await agentFetch(`${base}/api/device/push`, {
         method: "POST",
         headers: {
           "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
           "X-Phonecontrol-Filename": file.name,
           "X-Phonecontrol-Dest": dest,
+          ...upload.headers,
         },
-        body: file,
+        body: upload.body,
       });
       if (!res.ok) throw await responseError(res, "request failed");
       return (await res.json()) as DeviceCommandResponse;
@@ -636,7 +669,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         void agentWsUrl("/ws")
           .then((wsUrl) => {
             if (closed) return;
-            socket = new WebSocket(wsUrl);
+            socket = new WebSocket(wsUrl, agentWsProtocols());
             socket.onmessage = (event) => {
               try {
                 const msg = JSON.parse(String(event.data)) as {

@@ -15,6 +15,8 @@ interface DeviceGridProps {
   onToggleSelected: (deviceId: string, selected: boolean) => void;
   /** When true, group cards under HOSTS headings (Windows / LXC / …). */
   groupByHost?: boolean;
+  /** The container already titles the list "Devices": only show "Hosts". */
+  hostsHeadingOnly?: boolean;
 }
 
 function hostKey(device: Device): string {
@@ -32,6 +34,7 @@ export function DeviceGrid({
   onSelect,
   onToggleSelected,
   groupByHost = true,
+  hostsHeadingOnly = false,
 }: DeviceGridProps) {
   const groups = useMemo(() => {
     if (!groupByHost) {
@@ -56,9 +59,11 @@ export function DeviceGrid({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3">
-      <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
-        {multiHost ? "Hosts" : "Devices"}
-      </h2>
+      {(multiHost || !hostsHeadingOnly) && (
+        <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
+          {multiHost ? "Hosts" : "Devices"}
+        </h2>
+      )}
       <WirelessAdb />
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 pr-2">

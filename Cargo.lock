@@ -557,6 +557,7 @@ dependencies = [
  "http-body-util",
  "phonecontrol-protocol",
  "qrcode",
+ "ring",
  "rustls",
  "serde",
  "serde_json",

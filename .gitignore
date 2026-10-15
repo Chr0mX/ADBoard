@@ -68,3 +68,7 @@ next-env.d.ts
 !/dist/windows/vendor/scrcpy/README.md
 !/dist/windows/vendor/scrcpy/.gitkeep
 dist/windows/data/wireless-adb.json
+
+# Rasiel sign-in account (password hash)
+rasiel-auth.json
+rasiel-auth.json.tmp

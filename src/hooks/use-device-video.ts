@@ -13,7 +13,7 @@ import {
 import { MseH264Player } from "@/lib/video/mse-player";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
-import { agentBaseUrl, agentWsUrl } from "@/lib/api/auth";
+import { agentBaseUrl, agentWsUrl, agentWsProtocols } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
 
 export type VideoStreamState = "idle" | "starting" | "streaming" | "error";
@@ -284,7 +284,7 @@ export function useDeviceVideo(
     };
 
     const bindSocket = (url: string) => {
-      socket = new WebSocket(url);
+      socket = new WebSocket(url, agentWsProtocols());
       socket.binaryType = "arraybuffer";
 
       socket.onopen = () => {

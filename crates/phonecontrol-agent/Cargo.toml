@@ -21,6 +21,8 @@ tokio = { workspace = true }
 # (e.g. behind Cloudflare). ring cross-compiles with MinGW; aws-lc-rs needs CMake.
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# PBKDF2 password hashing for the browser sign-in (already pulled in by rustls).
+ring = "0.17"
 tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

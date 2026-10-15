@@ -20,7 +20,7 @@ param(
 
     [switch] $Mock,
 
-    # Browser sign-in, required when Rasiel is reached through a reverse proxy.
+    # First sign-in password (change it later in the UI); needed behind a reverse proxy.
     [string] $Password = "",
 
     [ValidateSet("auto", "testpattern", "scrcpy", "off")]

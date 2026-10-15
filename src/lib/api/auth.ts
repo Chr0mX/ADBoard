@@ -1,7 +1,7 @@
 /**
  * Shared agent auth for HTTP and WebSocket calls.
  * The agent exposes GET /api/bootstrap (same-origin or allow-listed Origin)
- * and expects x-phonecontrol-token (or ?token= on WebSockets).
+ * and expects x-phonecontrol-token (a `rasiel-token.<hex>` subprotocol on WebSockets).
  */
 
 import { httpErrorMessage } from "@/lib/api/http-error";
@@ -60,11 +60,15 @@ export function agentTokenSync(): string | null {
   return cachedToken;
 }
 
-export function withAgentToken(url: string): string {
-  if (!cachedToken) return url;
-  if (url.includes("token=")) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}token=${encodeURIComponent(cachedToken)}`;
+/**
+ * WebSocket subprotocols carrying the token. Browsers cannot set headers on a
+ * WebSocket, and a ?token= query would end up in proxy and Cloudflare logs.
+ * Hex keeps any PHONECONTROL_TOKEN value a valid protocol name.
+ */
+export function agentWsProtocols(): string[] {
+  if (!cachedToken) return [];
+  const hex = Array.from(new TextEncoder().encode(cachedToken), (b) => b.toString(16).padStart(2, "0")).join("");
+  return ["rasiel", `rasiel-token.${hex}`];
 }
 
 export async function agentFetch(input: string, init?: RequestInit): Promise<Response> {
@@ -84,7 +88,7 @@ export async function agentWsUrl(pathAndQuery: string): Promise<string> {
   await ensureAgentToken();
   const root = httpToWs(base);
   const path = pathAndQuery.startsWith("/") ? pathAndQuery : `/${pathAndQuery}`;
-  return withAgentToken(`${root}${path}`);
+  return `${root}${path}`;
 }
 
 export interface AgentSession {
@@ -92,6 +96,9 @@ export interface AgentSession {
   authenticated: boolean;
   /** Reached through a proxy while no password is configured. */
   proxyBlocked: boolean;
+  username?: string | null;
+  /** No account yet and this is a direct LAN visit: offer "Set password". */
+  canSetPassword?: boolean;
 }
 
 export async function fetchAgentSession(): Promise<AgentSession | null> {
@@ -104,13 +111,13 @@ export async function fetchAgentSession(): Promise<AgentSession | null> {
   return (await res.json()) as AgentSession;
 }
 
-export async function signIn(password: string): Promise<void> {
+export async function signIn(username: string, password: string): Promise<void> {
   const base = agentBaseUrl() ?? "";
   const res = await fetch(`${base}/api/login`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ username, password }),
   });
   if (!res.ok) throw new Error(httpErrorMessage(res.status, await res.text(), `sign-in failed: ${res.status}`));
   cachedToken = null;
@@ -125,5 +132,23 @@ export async function signOut(): Promise<void> {
     cachedToken = null;
     tokenPromise = null;
   }
+}
+
+/** Change the password (or set the first one on the LAN). Starts a new session. */
+export async function changePassword(change: {
+  currentPassword?: string;
+  username?: string;
+  newPassword: string;
+}): Promise<void> {
+  const base = agentBaseUrl() ?? "";
+  const res = await fetch(`${base}/api/account/password`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(change),
+  });
+  if (!res.ok) throw new Error(httpErrorMessage(res.status, await res.text(), `password change failed: ${res.status}`));
+  cachedToken = null;
+  tokenPromise = null;
 }
 

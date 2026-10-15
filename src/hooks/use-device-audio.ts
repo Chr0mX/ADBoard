@@ -1,5 +1,6 @@
 "use client";
 
+import { agentWsProtocols } from "@/lib/api/auth";
 import { useEffect, useRef, useState } from "react";
 import { defaultOpusHead, readOpusHead, webmCluster, webmInit } from "@/lib/audio/opus-webm";
 import { scrcpyWsUrlAsync } from "@/lib/scrcpy/client";
@@ -179,7 +180,7 @@ export function useDeviceAudio(serial: string | null, enabled: boolean) {
       void scrcpyWsUrlAsync(serial, "audio")
         .then((url) => {
           if (closed) return;
-          socket = new WebSocket(url);
+          socket = new WebSocket(url, agentWsProtocols());
           socket.binaryType = "arraybuffer";
           socket.onmessage = (event) => {
             if (typeof event.data === "string") {

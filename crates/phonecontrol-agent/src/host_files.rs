@@ -75,6 +75,7 @@ pub async fn upload_file(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<HostFileEntry>, (StatusCode, String)> {
+    let body = crate::uploads::request_body(&headers, body).await?;
     let filename =
         header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
     let dir = header_value(&headers, "x-phonecontrol-dir").unwrap_or_else(|| "Downloads".into());

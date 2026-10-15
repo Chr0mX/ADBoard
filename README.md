@@ -238,14 +238,15 @@ Mock without phones: `.\Start-RasielControl.ps1 -Mock` (testpattern video).
 
 Rasiel can be published on a hostname such as `rasiel.example.com` behind Nginx Proxy Manager, with Cloudflare's proxy in front. The UI talks to the same origin and switches to `wss://` on HTTPS, so no URLs need changing.
 
-**Set a password first.** Without one, Rasiel refuses to hand out its API token to any request that arrived through a proxy (it shows "Password required for remote access"). Anyone who reaches the site could otherwise control the phones, run ADB shell commands and browse host files.
+**Create an account first.** Without one, Rasiel refuses to hand out its API token to any request that arrived through a proxy (it shows "Password required for remote access"). Anyone who reaches the site could otherwise control the phones, run ADB shell commands and browse host files.
 
-```bash
-PHONECONTROL_PASSWORD='a long passphrase'      # browser sign-in, 30-day HttpOnly session cookie
-# PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1  # only if Cloudflare Access already guards the hostname
-```
+- Open Rasiel on the host's own network (e.g. `http://127.0.0.1:3848`) and click **Set password** in the header, or start it once with `PHONECONTROL_PASSWORD` (username `admin`, or `PHONECONTROL_USERNAME`).
+- Visitors through the proxy get a sign-in form (username and password). Sessions last 30 days in an HttpOnly, Secure, SameSite=Strict cookie.
+- Signed-in users change the password from the **account name** in the header. That needs the current password and signs out every other browser.
+- The account is stored as a salted PBKDF2-SHA256 hash in `rasiel-auth.json` next to the executable (`PHONECONTROL_AUTH_FILE` to move it). `PHONECONTROL_PASSWORD` only sets the first password; to recover a forgotten one, start with `PHONECONTROL_PASSWORD=… PHONECONTROL_RESET_PASSWORD=1`.
+- `PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1` skips all of this when Cloudflare Access already guards the hostname.
 
-On Windows: `.\Start-RasielControl.ps1 -Bind 0.0.0.0 -Password '…'`, or uncomment the password line in `run.bat`. LAN access without a proxy keeps working without a password.
+On Windows: `.\Start-RasielControl.ps1 -Bind 0.0.0.0 -Password '…'` sets the first password. LAN access without a proxy keeps working without an account.
 
 **Nginx Proxy Manager** (proxy host):
 - Scheme `http`, forward to the Rasiel host, port `3848`. Turn on **Websockets Support**.
@@ -263,10 +264,10 @@ On Windows: `.\Start-RasielControl.ps1 -Bind 0.0.0.0 -Password '…'`, or uncomm
 - Turn **Rocket Loader off** (it rewrites scripts).
 - Leave caching at defaults: Rasiel sends `no-cache` for the page, `sw.js` and the manifest, `no-store` for `/api/*`, and long-lived `immutable` caching only for hashed `/_next/static/*` files.
 - Bot Fight Mode or "I'm Under Attack" can challenge the app's background requests; skip them for this hostname or use Cloudflare Access.
-- Uploads (APK installs, file pushes) are limited to 100 MB per request on Free and Pro plans.
+- Cloudflare Free and Pro accept at most 100 MB per request. Rasiel sends files over 64 MB in 32 MB chunks, so APK installs and file pushes up to 256 MB still work.
 - Optional: firewall port 3848 so only the Nginx Proxy Manager host can reach it.
 
-Rasiel pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. Remote agents can join a controller published this way with `PHONECONTROL_CONTROLLER_URL=wss://rasiel.example.com/ws/agent` and the same `PHONECONTROL_TOKEN` on both sides.
+Rasiel pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. The API token never appears in URLs (browsers send it as a WebSocket subprotocol, servers as the `x-phonecontrol-token` header), so it stays out of proxy and Cloudflare logs. Remote agents can join a controller published this way with `PHONECONTROL_CONTROLLER_URL=wss://rasiel.example.com/ws/agent` and the same `PHONECONTROL_TOKEN` on both sides.
 
 ## Desktop shortcuts
 

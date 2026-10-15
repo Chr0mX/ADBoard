@@ -58,6 +58,7 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/session", get(session_status))
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
+        .route("/api/account/password", post(change_password))
         .route("/api/devices", get(list_devices))
         .route(
             "/api/devices/wireless",
@@ -83,6 +84,11 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
             post(input_install).layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
         )
         .route("/api/device/command", post(device_command))
+        .route(
+            "/api/uploads/{id}",
+            axum::routing::put(crate::uploads::put_chunk)
+                .layer(DefaultBodyLimit::max(crate::uploads::MAX_CHUNK_BYTES)),
+        )
         .route(
             "/api/device/push",
             post(device_push).layer(DefaultBodyLimit::max(256 * 1024 * 1024)),
@@ -149,6 +155,8 @@ fn build_cors_layer() -> CorsLayer {
             HeaderName::from_static("x-phonecontrol-filename"),
             HeaderName::from_static("x-phonecontrol-dest"),
             HeaderName::from_static("x-phonecontrol-dir"),
+            HeaderName::from_static("x-phonecontrol-upload"),
+            HeaderName::from_static("x-phonecontrol-offset"),
         ])
 }
 
@@ -171,7 +179,13 @@ fn allowed_dev_origins() -> Vec<HeaderValue> {
 fn path_is_open(path: &str) -> bool {
     matches!(
         path,
-        "/health" | "/api/health" | "/api/bootstrap" | "/api/session" | "/api/login" | "/api/logout"
+        "/health"
+            | "/api/health"
+            | "/api/bootstrap"
+            | "/api/session"
+            | "/api/login"
+            | "/api/logout"
+            | "/api/account/password"
     )
 }
 
@@ -210,7 +224,35 @@ fn from_hex(byte: u8) -> Option<u8> {
     }
 }
 
+/// Browsers cannot set headers on a WebSocket, so the UI offers the token as a
+/// subprotocol (`rasiel-token.<hex>`) instead of `?token=`, which proxies and
+/// Cloudflare would log. The server answers with the plain `rasiel` protocol.
+pub const WS_PROTOCOL: &str = "rasiel";
+const WS_TOKEN_PROTOCOL_PREFIX: &str = "rasiel-token.";
+
+fn token_from_ws_protocol(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get_all(header::SEC_WEBSOCKET_PROTOCOL)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+        .find_map(|item| {
+            let hex = item.trim().strip_prefix(WS_TOKEN_PROTOCOL_PREFIX)?;
+            if hex.len() % 2 != 0 {
+                return None;
+            }
+            let bytes: Option<Vec<u8>> = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())
+                .collect();
+            String::from_utf8(bytes?).ok().filter(|t| !t.is_empty())
+        })
+}
+
 fn token_from_request(headers: &HeaderMap, uri: &axum::http::Uri) -> Option<String> {
+    if let Some(token) = token_from_ws_protocol(headers) {
+        return Some(token);
+    }
     if let Some(value) = headers
         .get(TOKEN_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -326,6 +368,10 @@ struct SessionBody {
     auth_required: bool,
     authenticated: bool,
     proxy_blocked: bool,
+    /// Signed-in username (only when authenticated).
+    username: Option<String>,
+    /// No account yet and this is a direct LAN request: the UI may offer "Set password".
+    can_set_password: bool,
 }
 
 async fn session_status(
@@ -333,15 +379,20 @@ async fn session_status(
     headers: HeaderMap,
 ) -> Json<SessionBody> {
     let auth_required = auth.password_required();
+    let authenticated = auth_required && auth.session_valid(&headers);
     Json(SessionBody {
         auth_required,
-        authenticated: auth_required && auth.session_valid(&headers),
+        authenticated,
         proxy_blocked: auth.proxy_blocked(&headers),
+        username: if authenticated { auth.username() } else { None },
+        can_set_password: !auth_required && !web_auth::is_proxied(&headers),
     })
 }
 
 #[derive(serde::Deserialize)]
 struct LoginBody {
+    #[serde(default)]
+    username: Option<String>,
     password: String,
 }
 
@@ -356,14 +407,79 @@ async fn login(
     if !auth.password_required() {
         return auth_error(StatusCode::BAD_REQUEST, "No password is configured on this Rasiel host.");
     }
-    if !auth.check_password(&body.password) {
+    let username = body
+        .username
+        .as_deref()
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or(web_auth::DEFAULT_USERNAME);
+    if !auth.check_login(username, &body.password) {
         // Slow down guessing.
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         warn!(proxied = web_auth::is_proxied(&headers), "failed sign-in");
-        return auth_error(StatusCode::UNAUTHORIZED, "Wrong password.");
+        return auth_error(StatusCode::UNAUTHORIZED, "Wrong username or password.");
     }
     let id = auth.create_session();
     let mut response = Json(serde_json::json!({ "ok": true })).into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        web_auth::session_set_cookie(&id, web_auth::is_https(&headers)),
+    );
+    response
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangePasswordBody {
+    #[serde(default)]
+    current_password: String,
+    #[serde(default)]
+    username: Option<String>,
+    new_password: String,
+}
+
+/// Change the account password (signed in, with the current password), or set
+/// the first one from a direct LAN request. Ends every other session.
+async fn change_password(
+    Extension(auth): Extension<Arc<WebAuth>>,
+    headers: HeaderMap,
+    Json(body): Json<ChangePasswordBody>,
+) -> Response {
+    if !origin_allowed_for_bootstrap(&headers) {
+        return auth_error(StatusCode::FORBIDDEN, "This page's origin may not use Rasiel.");
+    }
+    let current_user = auth.username();
+    match &current_user {
+        Some(user) => {
+            if !auth.session_valid(&headers) {
+                return auth_error(StatusCode::UNAUTHORIZED, "Sign in to Rasiel.");
+            }
+            if !auth.check_login(user, &body.current_password) {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                return auth_error(StatusCode::UNAUTHORIZED, "Current password is wrong.");
+            }
+        }
+        None => {
+            if web_auth::is_proxied(&headers) {
+                return auth_error(
+                    StatusCode::FORBIDDEN,
+                    "Set the first password on the Rasiel host's network, or with PHONECONTROL_PASSWORD.",
+                );
+            }
+        }
+    }
+    let username = body
+        .username
+        .as_deref()
+        .filter(|u| !u.trim().is_empty())
+        .map(str::to_string)
+        .or(current_user)
+        .unwrap_or_else(|| web_auth::DEFAULT_USERNAME.to_string());
+    if let Err(message) = auth.set_credentials(&username, &body.new_password) {
+        return auth_error(StatusCode::BAD_REQUEST, &message);
+    }
+    info!(%username, "Rasiel account password changed");
+    let id = auth.create_session();
+    let mut response = Json(serde_json::json!({ "ok": true, "username": username })).into_response();
     response.headers_mut().insert(
         header::SET_COOKIE,
         web_auth::session_set_cookie(&id, web_auth::is_https(&headers)),
@@ -760,6 +876,7 @@ async fn input_install(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<InstallBroadcast>, (StatusCode, String)> {
+    let body = crate::uploads::request_body(&headers, body).await?;
     let filename = header_str(&headers, "x-phonecontrol-filename").unwrap_or("");
     let mode = header_str(&headers, "x-phonecontrol-mode").unwrap_or("selected");
     let targets = header_str(&headers, "x-phonecontrol-targets").unwrap_or("");
@@ -824,6 +941,7 @@ async fn device_push(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<phonecontrol_protocol::DeviceCommandResponse>, (StatusCode, String)> {
+    let body = crate::uploads::request_body(&headers, body).await?;
     let targets = header_list(&headers, "x-phonecontrol-targets")?;
     let filename =
         header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
@@ -887,7 +1005,7 @@ fn header_list(headers: &HeaderMap, name: &str) -> Result<Vec<String>, (StatusCo
 }
 
 async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+    ws.protocols([WS_PROTOCOL]).on_upgrade(move |socket| handle_socket(socket, state))
 }
 
 async fn ws_agent_upgrade(
@@ -896,7 +1014,7 @@ async fn ws_agent_upgrade(
 ) -> impl IntoResponse {
     if state.role() != Role::Controller {
         // Still upgrade so the peer gets a clean close rather than HTTP 404 mid-handshake.
-        return ws.on_upgrade(|mut socket| async move {
+        return ws.protocols([WS_PROTOCOL]).on_upgrade(|mut socket| async move {
             let _ = socket
                 .send(Message::Text(
                     r#"{"type":"notice","message":"not a controller"}"#.into(),
@@ -905,7 +1023,7 @@ async fn ws_agent_upgrade(
             let _ = socket.close().await;
         });
     }
-    ws.on_upgrade(move |socket| handle_agent_socket(socket, state))
+    ws.protocols([WS_PROTOCOL]).on_upgrade(move |socket| handle_agent_socket(socket, state))
 }
 
 async fn ws_video_upgrade(
@@ -913,7 +1031,7 @@ async fn ws_video_upgrade(
     State(state): State<AppState>,
     Path(serial): Path<String>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_video_socket(socket, state, serial))
+    ws.protocols([WS_PROTOCOL]).on_upgrade(move |socket| handle_video_socket(socket, state, serial))
 }
 
 async fn ws_audio_upgrade(
@@ -921,7 +1039,7 @@ async fn ws_audio_upgrade(
     State(state): State<AppState>,
     Path(serial): Path<String>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_audio_socket(socket, state, serial))
+    ws.protocols([WS_PROTOCOL]).on_upgrade(move |socket| handle_audio_socket(socket, state, serial))
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
@@ -1239,7 +1357,7 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
         match state.remote_http_base(&host_id).await {
             Some(base) => {
                 info!(%serial, %host_id, %base, "proxying video WS to agent");
-                proxy_remote_stream(sender, receiver, &base, &serial, "video").await;
+                proxy_remote_stream(sender, receiver, &base, &serial, "video", state.api_token()).await;
             }
             None => {
                 let frame = VideoStatusFrame {
@@ -1427,7 +1545,7 @@ async fn handle_audio_socket(socket: WebSocket, state: AppState, serial: String)
         match state.remote_http_base(&host_id).await {
             Some(base) => {
                 info!(%serial, %host_id, "proxying audio WS to agent");
-                proxy_remote_stream(sender, receiver, &base, &serial, "audio").await;
+                proxy_remote_stream(sender, receiver, &base, &serial, "audio", state.api_token()).await;
             }
             None => {
                 let mut frame = state.inner.sessions.audio_status(&serial).await;
@@ -1496,9 +1614,15 @@ async fn proxy_remote_stream(
     agent_http_base: &str,
     serial: &str,
     channel: &str,
+    token: &str,
 ) {
     let ws_url = http_to_ws_device_url(agent_http_base, serial, channel);
-    let (agent_ws, _) = match tokio_tungstenite::connect_async(&ws_url).await {
+    // Agents share PHONECONTROL_TOKEN with the controller; send it as a header.
+    let connected = match crate::mesh_client::ws_request_with_token(&ws_url, token) {
+        Ok(request) => tokio_tungstenite::connect_async(request).await,
+        Err(e) => Err(e),
+    };
+    let (agent_ws, _) = match connected {
         Ok(pair) => pair,
         Err(e) => {
             let frame = VideoStatusFrame {
@@ -2089,4 +2213,155 @@ mod tests {
             assert_eq!(response.headers()[header::CACHE_CONTROL], expected, "{path}");
         }
     }
+
+    fn hex(token: &str) -> String {
+        token.bytes().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[tokio::test]
+    async fn websocket_accepts_token_as_subprotocol() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let state = auth_state();
+        let token = state.api_token().to_string();
+        let app = router_with_auth(state, WebAuth::new(None, false));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        // No token anywhere: refused.
+        assert!(tokio_tungstenite::connect_async(format!("ws://{addr}/ws")).await.is_err());
+
+        // Token only in Sec-WebSocket-Protocol, nothing in the URL.
+        let mut request = format!("ws://{addr}/ws").into_client_request().unwrap();
+        request.headers_mut().insert(
+            "sec-websocket-protocol",
+            format!("rasiel, rasiel-token.{}", hex(&token)).parse().unwrap(),
+        );
+        let (_socket, response) = tokio_tungstenite::connect_async(request).await.unwrap();
+        assert_eq!(response.headers()["sec-websocket-protocol"], "rasiel");
+
+        // Wrong token in the subprotocol: refused.
+        let mut bad = format!("ws://{addr}/ws").into_client_request().unwrap();
+        bad.headers_mut().insert(
+            "sec-websocket-protocol",
+            format!("rasiel, rasiel-token.{}", hex("nope")).parse().unwrap(),
+        );
+        assert!(tokio_tungstenite::connect_async(bad).await.is_err());
+
+        // Server-to-server: the token header works too.
+        let header = crate::mesh_client::ws_request_with_token(&format!("ws://{addr}/ws"), &token).unwrap();
+        assert!(!header.uri().to_string().contains("token="));
+        assert!(tokio_tungstenite::connect_async(header).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn upload_chunks_go_through_the_router() {
+        let state = auth_state();
+        let token = state.api_token().to_string();
+        let app = router_with_auth(state, WebAuth::new(None, false));
+        let id = format!("router-{}", uuid::Uuid::new_v4().simple());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/uploads/{id}"))
+                    .header(TOKEN_HEADER, &token)
+                    .header("x-phonecontrol-offset", "0")
+                    .body(Body::from(vec![7u8; 1024]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(body_text(response).await.contains(r#""received":1024"#));
+        let mut headers = HeaderMap::new();
+        headers.insert(crate::uploads::UPLOAD_HEADER, id.parse().unwrap());
+        let staged = crate::uploads::request_body(&headers, Bytes::new()).await.unwrap();
+        assert_eq!(staged.len(), 1024);
+    }
+
+    fn change_request(body: &str, headers: &[(&str, &str)]) -> Request<Body> {
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri("/api/account/password")
+            .header("content-type", "application/json");
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        builder.body(Body::from(body.to_string())).unwrap()
+    }
+
+    #[tokio::test]
+    async fn password_can_be_set_and_changed() {
+        // No account: refused through a proxy, allowed on the LAN.
+        let app = router_with_auth(auth_state(), WebAuth::new(None, false));
+        let proxied = app
+            .clone()
+            .oneshot(change_request(
+                r#"{"newPassword":"lan-first-1"}"#,
+                &[("x-forwarded-for", "203.0.113.9")],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(proxied.status(), StatusCode::FORBIDDEN);
+        let lan = app
+            .clone()
+            .oneshot(change_request(r#"{"username":"ops","newPassword":"lan-first-1"}"#, &[]))
+            .await
+            .unwrap();
+        assert_eq!(lan.status(), StatusCode::OK);
+        let cookie = lan.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_string();
+
+        // Now an account exists: changing needs a session and the current password.
+        let anon = app
+            .clone()
+            .oneshot(change_request(r#"{"currentPassword":"lan-first-1","newPassword":"changed-22"}"#, &[]))
+            .await
+            .unwrap();
+        assert_eq!(anon.status(), StatusCode::UNAUTHORIZED);
+        let wrong = app
+            .clone()
+            .oneshot(change_request(
+                r#"{"currentPassword":"nope","newPassword":"changed-22"}"#,
+                &[("cookie", &cookie)],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+        let short = app
+            .clone()
+            .oneshot(change_request(
+                r#"{"currentPassword":"lan-first-1","newPassword":"short"}"#,
+                &[("cookie", &cookie)],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(short.status(), StatusCode::BAD_REQUEST);
+        let ok = app
+            .clone()
+            .oneshot(change_request(
+                r#"{"currentPassword":"lan-first-1","newPassword":"changed-22"}"#,
+                &[("cookie", &cookie)],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(ok.status(), StatusCode::OK);
+
+        // Old cookie is gone; new password signs in as the same user.
+        let old = app.clone().oneshot(get("/api/bootstrap", &[("cookie", &cookie)])).await.unwrap();
+        assert_eq!(old.status(), StatusCode::UNAUTHORIZED);
+        let mut login = Request::builder()
+            .method("POST")
+            .uri("/api/login")
+            .header("content-type", "application/json");
+        login = login.header("x-test", "1");
+        let signed = app
+            .oneshot(login.body(Body::from(r#"{"username":"ops","password":"changed-22"}"#)).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(signed.status(), StatusCode::OK);
+    }
 }
+

@@ -14,10 +14,16 @@ const RECONNECT_SECS: u64 = 3;
 
 /// Run forever: connect to controller, register, forward devices, handle proxies.
 pub async fn run_agent_client(state: AppState, url: String) {
-    let url = append_token_query(&url, state.api_token());
     loop {
         info!(%url, "agent connecting to controller");
-        match connect_async(&url).await {
+        let request = match ws_request_with_token(&url, state.api_token()) {
+            Ok(request) => request,
+            Err(e) => {
+                error!(error = %e, %url, "invalid controller URL");
+                return;
+            }
+        };
+        match connect_async(request).await {
             Ok((ws, _)) => {
                 info!(%url, "agent connected to controller");
                 if let Err(e) = session(state.clone(), ws).await {
@@ -314,27 +320,23 @@ where
         .map_err(|e| e.to_string())
 }
 
-fn append_token_query(url: &str, token: &str) -> String {
-    if token.is_empty() {
-        return url.to_string();
+/// Server-to-server WebSocket request carrying the token as a header rather
+/// than `?token=` (query strings end up in proxy and Cloudflare logs).
+pub fn ws_request_with_token(
+    url: &str,
+    token: &str,
+) -> Result<
+    tokio_tungstenite::tungstenite::handshake::client::Request,
+    tokio_tungstenite::tungstenite::Error,
+> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let mut request = url.into_client_request()?;
+    if !token.is_empty() {
+        if let Ok(value) = token.parse() {
+            request.headers_mut().insert("x-phonecontrol-token", value);
+        }
     }
-    if url.contains("token=") {
-        return url.to_string();
-    }
-    let encoded: String = token
-        .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect();
-    if url.contains('?') {
-        format!("{url}&token={encoded}")
-    } else {
-        format!("{url}?token={encoded}")
-    }
+    Ok(request)
 }
 
 #[cfg(test)]

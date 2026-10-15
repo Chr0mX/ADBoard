@@ -1,5 +1,6 @@
 "use client";
 
+import { saveBlob } from "@/lib/api/download";
 import { useEffect, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
 import { WirelessAdb } from "@/components/phone-control/wireless-adb";
@@ -159,9 +160,7 @@ function ScreenshotTools({
       }));
       if (mode === "clipboard" && rows[0]?.state === "ok" && response.results[0]?.output) {
         try {
-          const file = await fetch(devicesClient.hostFileUrl(response.results[0].output)).then((res) =>
-            res.blob(),
-          );
+          const file = await devicesClient.fetchHostFile(response.results[0].output);
           await navigator.clipboard.write([new ClipboardItem({ "image/png": file })]);
           rows[0].detail = "Copied to clipboard";
         } catch (error) {
@@ -172,10 +171,7 @@ function ScreenshotTools({
       if (mode === "local") {
         for (const result of response.results) {
           if (result.ok && result.output) {
-            const anchor = document.createElement("a");
-            anchor.href = devicesClient.hostFileUrl(result.output);
-            anchor.download = `${result.deviceName}.png`;
-            anchor.click();
+            saveBlob(await devicesClient.fetchHostFile(result.output), `${result.deviceName}.png`);
           }
         }
       }

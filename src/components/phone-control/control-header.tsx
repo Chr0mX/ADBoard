@@ -45,15 +45,36 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
         <span className="font-mono text-xs text-[var(--pc-ink)]">
           {onlineCount}/{totalCount} online
         </span>
-        {session.authRequired && (
+        {session.canSetPassword && (
           <button
             type="button"
-            data-sign-out
-            onClick={session.signOut}
+            data-set-password
+            onClick={session.openAccount}
             className="inline-flex h-11 items-center rounded-xl px-2.5 text-sm text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
           >
-            Sign out
+            Set password
           </button>
+        )}
+        {session.authRequired && (
+          <>
+            <button
+              type="button"
+              data-account
+              onClick={session.openAccount}
+              title="Change password"
+              className="inline-flex h-11 items-center rounded-xl px-2.5 text-sm text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
+            >
+              {session.username ?? "Account"}
+            </button>
+            <button
+              type="button"
+              data-sign-out
+              onClick={session.signOut}
+              className="inline-flex h-11 items-center rounded-xl px-2.5 text-sm text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
+            >
+              Sign out
+            </button>
+          </>
         )}
       </div>
     </header>

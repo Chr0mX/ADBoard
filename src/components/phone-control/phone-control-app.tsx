@@ -362,6 +362,7 @@ export function PhoneControlApp() {
                   </div>
                 )}
                 <DeviceGrid
+                  hostsHeadingOnly={wide}
                   devices={devices}
                   activeId={activeId}
                   selectedIds={selectedIds}

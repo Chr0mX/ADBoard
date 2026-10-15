@@ -1,5 +1,6 @@
 "use client";
 
+import { agentWsProtocols } from "@/lib/api/auth";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
@@ -55,7 +56,7 @@ export function ScrcpyOptions({
       void eventsWsUrlAsync()
         .then((url) => {
           if (closed) return;
-          socket = new WebSocket(url);
+          socket = new WebSocket(url, agentWsProtocols());
           socket.onmessage = (event) => {
             try {
               const msg = JSON.parse(String(event.data)) as {
