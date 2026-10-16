@@ -1066,9 +1066,8 @@ impl SessionManager {
             };
         };
 
-        let args = adb_install_args(serial, &apk.to_string_lossy());
         info!(serial, path = %apk.display(), "[adb-install] adb install -r");
-        match run_adb(&adb, &args).await {
+        match install_with_fallback(&adb, serial, apk).await {
             Ok(()) => {
                 info!(serial, "[adb-install] ok");
                 InjectResult {
@@ -1246,6 +1245,100 @@ fn session_failure_note(base: &str, log: Option<&ServerLog>) -> String {
     match log.map(ServerLog::tail).filter(|t| !t.is_empty()) {
         Some(tail) => format!("{base} | {tail}"),
         None => base.to_string(),
+    }
+}
+
+/// adb's streamed install (the default) fails on some phones with
+/// "failed to write; splice failed: EINVAL … Performing Streamed Install".
+fn streamed_install_failed(error: &str) -> bool {
+    let e = error.to_ascii_lowercase();
+    ["streamed install", "splice failed", "failed to write", "einval"]
+        .iter()
+        .any(|needle| e.contains(needle))
+}
+
+const DEVICE_STAGED_APK: &str = "/data/local/tmp/adboard-install.apk";
+
+/// `adb install -r`, then `--no-streaming` if the streamed path failed, then
+/// push + `pm install` as a last resort.
+async fn install_with_fallback(adb: &PathBuf, serial: &str, apk: &std::path::Path) -> Result<(), String> {
+    let apk_path = apk.to_string_lossy().to_string();
+    let first = match run_adb(adb, &adb_install_args(serial, &apk_path)).await {
+        Ok(()) => return Ok(()),
+        Err(error) => error,
+    };
+    if !streamed_install_failed(&first) {
+        return Err(first);
+    }
+    info!(serial, "[adb-install] streamed install failed — retrying with --no-streaming");
+    let no_streaming: Vec<String> = vec![
+        "-s".into(),
+        serial.into(),
+        "install".into(),
+        "-r".into(),
+        "--no-streaming".into(),
+        apk_path.clone(),
+    ];
+    let second = match run_adb(adb, &no_streaming).await {
+        Ok(()) => return Ok(()),
+        Err(error) => error,
+    };
+    info!(serial, error = %second, "[adb-install] --no-streaming failed — trying push + pm install");
+    let push: Vec<String> = vec![
+        "-s".into(),
+        serial.into(),
+        "push".into(),
+        apk_path,
+        DEVICE_STAGED_APK.into(),
+    ];
+    run_adb(adb, &push)
+        .await
+        .map_err(|e| format!("{second} | push fallback failed: {e}"))?;
+    let pm: Vec<String> = vec![
+        "-s".into(),
+        serial.into(),
+        "shell".into(),
+        "pm".into(),
+        "install".into(),
+        "-r".into(),
+        DEVICE_STAGED_APK.into(),
+    ];
+    let result = run_adb_output(adb, &pm).await;
+    let cleanup: Vec<String> = vec![
+        "-s".into(),
+        serial.into(),
+        "shell".into(),
+        "rm".into(),
+        "-f".into(),
+        DEVICE_STAGED_APK.into(),
+    ];
+    let _ = run_adb(adb, &cleanup).await;
+    match result {
+        // pm exits 0 even on failure; the text says "Success" or "Failure [...]".
+        Ok(output) if output.contains("Success") => Ok(()),
+        Ok(output) => Err(format!("pm install failed: {}", output.trim())),
+        Err(error) => Err(format!("pm install failed: {error}")),
+    }
+}
+
+/// Like `run_adb`, returning stdout + stderr on success.
+async fn run_adb_output(adb: &PathBuf, args: &[String]) -> Result<String, String> {
+    let output = Command::new(adb)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn adb: {e}"))?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if output.status.success() {
+        Ok(text)
+    } else {
+        Err(format!("adb {} failed ({}): {}", args.join(" "), output.status, text.trim()))
     }
 }
 
@@ -1442,3 +1535,72 @@ mod tests {
         let _ = mgr.stop("AUTO").await;
     }
 }
+
+#[cfg(all(test, unix))]
+mod install_fallback_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn fake_adb(dir: &std::path::Path, script: &str) -> PathBuf {
+        let path = dir.join("adb");
+        std::fs::write(&path, format!("#!/bin/sh\necho \"$@\" >> \"{}/calls\"\n{script}\n", dir.display())).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("adboard-fakeadb-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    const SPLICE: &str = "echo 'adb: failed to install x.apk: Error: failed to write; splice failed: EINVAL (Invalid argument)' >&2; echo 'Performing Streamed Install'; exit 1";
+
+    #[test]
+    fn detects_streamed_install_failures() {
+        assert!(streamed_install_failed("failed to write; splice failed: EINVAL (Invalid argument) | Performing Streamed Install"));
+        assert!(!streamed_install_failed("Failure [INSTALL_FAILED_VERSION_DOWNGRADE]"));
+    }
+
+    #[tokio::test]
+    async fn retries_without_streaming() {
+        let dir = temp_dir();
+        let adb = fake_adb(&dir, &format!("case \"$*\" in *--no-streaming*) echo Success; exit 0;; *) {SPLICE};; esac"));
+        let apk = dir.join("app.apk");
+        std::fs::write(&apk, b"PK").unwrap();
+        install_with_fallback(&adb, "SER1", &apk).await.unwrap();
+        let calls = std::fs::read_to_string(dir.join("calls")).unwrap();
+        assert_eq!(calls.lines().count(), 2, "{calls}");
+        assert!(calls.lines().nth(1).unwrap().contains("--no-streaming"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_push_and_pm_install() {
+        let dir = temp_dir();
+        let adb = fake_adb(
+            &dir,
+            &format!("case \"$*\" in *' push '*) exit 0;; *'pm install'*) echo Success; exit 0;; *' rm '*) exit 0;; *) {SPLICE};; esac"),
+        );
+        let apk = dir.join("app.apk");
+        std::fs::write(&apk, b"PK").unwrap();
+        install_with_fallback(&adb, "SER1", &apk).await.unwrap();
+        let calls = std::fs::read_to_string(dir.join("calls")).unwrap();
+        assert!(calls.contains("push") && calls.contains("pm install") && calls.contains("rm -f"), "{calls}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn other_failures_are_not_retried() {
+        let dir = temp_dir();
+        let adb = fake_adb(&dir, "echo 'Failure [INSTALL_FAILED_VERSION_DOWNGRADE]'; exit 1");
+        let apk = dir.join("app.apk");
+        std::fs::write(&apk, b"PK").unwrap();
+        let err = install_with_fallback(&adb, "SER1", &apk).await.unwrap_err();
+        assert!(err.contains("VERSION_DOWNGRADE"));
+        let calls = std::fs::read_to_string(dir.join("calls")).unwrap();
+        assert_eq!(calls.lines().count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+

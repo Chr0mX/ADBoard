@@ -24,11 +24,11 @@ fn valid_id(id: &str) -> bool {
 }
 
 fn staged_path(id: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("adboard-upload-{id}.part"))
+    crate::paths::app_temp_dir().join(format!("adboard-upload-{id}.part"))
 }
 
 fn remove_stale() {
-    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+    let Ok(entries) = std::fs::read_dir(crate::paths::app_temp_dir()) else {
         return;
     };
     let now = SystemTime::now();

@@ -843,7 +843,7 @@ impl AppState {
     }
 
     async fn install_local_group(&self, devices: &[Device], bytes: &[u8]) -> Vec<NavTargetResult> {
-        let path = std::env::temp_dir().join(format!("phonecontrol-{}.apk", uuid::Uuid::new_v4()));
+        let path = crate::paths::app_temp_dir().join(format!("adboard-{}.apk", uuid::Uuid::new_v4()));
         if let Err(e) = tokio::fs::write(&path, bytes).await {
             return devices
                 .iter()
@@ -1296,7 +1296,7 @@ impl AppState {
             .and_then(|n| n.to_str())
             .unwrap_or("upload.bin");
         let local =
-            std::env::temp_dir().join(format!("phonecontrol-push-{}", uuid::Uuid::new_v4()));
+            crate::paths::app_temp_dir().join(format!("adboard-push-{}", uuid::Uuid::new_v4()));
         tokio::fs::write(&local, bytes)
             .await
             .map_err(|e| format!("failed to store upload: {e}"))?;
@@ -1346,7 +1346,7 @@ impl AppState {
             return Err("adb is not available".into());
         };
         let local =
-            std::env::temp_dir().join(format!("phonecontrol-pull-{}", uuid::Uuid::new_v4()));
+            crate::paths::app_temp_dir().join(format!("adboard-pull-{}", uuid::Uuid::new_v4()));
         crate::device_ops::adb_pull(&adb, &device.serial, remote, &local).await?;
         let bytes = tokio::fs::read(&local)
             .await
