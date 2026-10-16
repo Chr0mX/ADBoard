@@ -40,7 +40,7 @@ export function ControlModes({
   };
 
   return (
-    <section>
+    <section className={stretch ? "min-w-0 flex-1 sm:flex-none" : undefined}>
       <div
         role="radiogroup"
         aria-label="Control mode"

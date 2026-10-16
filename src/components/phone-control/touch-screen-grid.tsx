@@ -332,7 +332,14 @@ export function TouchScreenGrid({
               </p>
             </div>
           )}
-          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
+          <div
+            data-grid-actions
+            className={cn(
+              "flex min-w-0 items-center gap-1.5",
+              // Phone: the action row spans the full width (labelled buttons grow).
+              desktop ? "ml-auto shrink-0" : "w-full sm:ml-auto sm:w-auto sm:shrink-0",
+            )}
+          >
             {fixed && pages > 1 && (
               <div className="flex items-center gap-1" data-grid-page={`${page + 1}/${pages}`}>
                 <button
@@ -362,7 +369,7 @@ export function TouchScreenGrid({
               role="group"
               aria-label="Arrangement"
               data-grid-layout={layoutKey}
-              className="relative"
+              className={cn("relative", !desktop && "min-w-0 flex-1 sm:flex-none")}
             >
               <button
                 type="button"
@@ -372,7 +379,7 @@ export function TouchScreenGrid({
                 title="Arrangement: how many phones per row and column"
                 data-grid-options-toggle
                 onClick={() => setOptionsOpen((open) => !open)}
-                className={barBtn}
+                className={cn(barBtn, !desktop && "w-full sm:w-auto")}
               >
                 <LayoutGrid className="size-3.5" />
                 <span>Arrangement</span>
@@ -390,7 +397,7 @@ export function TouchScreenGrid({
                 aria-label={macrosOpen ? "Hide macro" : "Macro"}
                 data-grid-macros
                 onClick={onToggleMacros}
-                className={barBtn}
+                className={cn(barBtn, !desktop && "min-w-0 flex-1 sm:flex-none")}
               >
                 <Zap className="size-3.5" />
                 <span data-macro-label>Macro</span>
