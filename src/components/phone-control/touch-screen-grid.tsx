@@ -250,11 +250,12 @@ export function TouchScreenGrid({
           type="button"
           data-grid-show-bar
           aria-label="Show grid controls"
+          title="Show grid controls"
           onClick={() => setStoredBar("shown")}
-          className="absolute right-3 top-3 z-20 inline-flex h-9 min-h-9 items-center gap-1.5 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)]/85 px-3 text-xs text-[var(--pc-ink)] shadow-lg backdrop-blur hover:bg-[var(--pc-accent-soft)]"
+          className="group absolute right-0 top-0 z-20 inline-flex size-8 min-h-8 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)]/90 text-xs text-[var(--pc-ink)] opacity-70 shadow-lg backdrop-blur transition-[width,opacity] hover:w-auto hover:px-3 hover:opacity-100 hover:bg-[var(--pc-accent-soft)] focus-visible:w-auto focus-visible:px-3 focus-visible:opacity-100"
         >
-          <SlidersHorizontal className="size-3.5" />
-          Controls
+          <SlidersHorizontal className="size-3.5 shrink-0" />
+          <span className="hidden whitespace-nowrap group-hover:inline group-focus-visible:inline">Controls</span>
         </button>
       ) : (
         <div
@@ -453,7 +454,8 @@ export function TouchScreenGrid({
       )}
       <div
         ref={stageRef}
-        className="min-h-0 flex-1 overflow-auto"
+        // Keep tiles out from under the corner chip while the bar is hidden.
+        className={cn("min-h-0 flex-1 overflow-auto", barHidden && "mr-7")}
       >
         {listed.length === 0 ? (
           <p className="px-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
