@@ -9,7 +9,6 @@ import { devicesClient } from "@/lib/api/client";
 import type { ControlMode, Device, NavAction, PointerPhase, PointerTool } from "@/lib/devices/types";
 import { ControlModes } from "@/components/phone-control/control-modes";
 import { StatsLine } from "@/components/phone-control/status-bar";
-import { PC_HIT_MIN } from "@/lib/ui/control-chrome";
 import { useStoredString } from "@/hooks/use-stored-flag";
 import {
   GRID_LAYOUT_MAX,
@@ -22,6 +21,7 @@ import {
 } from "@/lib/ui/grid-layout";
 import { cn } from "@/lib/utils";
 import { CheckboxVisual } from "@/components/ui/checkbox";
+import { FLOAT_RECLAMP_EVENT } from "@/components/phone-control/floating/floating-panel";
 
 interface TouchScreenGridProps {
   devices: Device[];
@@ -181,7 +181,14 @@ export function TouchScreenGrid({
   // One slim bar; layout lives in a popover, and the bar can be hidden.
   const [storedBar, setStoredBar] = useStoredString("adboard-grid-bar");
   const barHidden = storedBar === "hidden";
+  // Bar buttons: 44px on desktop, 36px on phones (unified .pc-toggle sizes).
+  const barBtn = cn("pc-toggle", desktop ? "pc-toggle-md" : "pc-toggle-sm");
   const [optionsOpen, setOptionsOpen] = useState(false);
+  // Floating Tools / Stats step out of the way of the bar and the strip.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => window.dispatchEvent(new Event(FLOAT_RECLAMP_EVENT)));
+    return () => cancelAnimationFrame(id);
+  }, [optionsOpen, barHidden, desktop]);
   useEffect(() => {
     if (!optionsOpen) return;
     // In-flow strip: it never covers tiles, so only Esc / ✕ / the button close it.
@@ -261,7 +268,13 @@ export function TouchScreenGrid({
       ) : (
         <div
           data-grid-bar
-          className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-[var(--pc-line)] pb-2 sm:flex-nowrap"
+          data-grid-bar-size={desktop ? "md" : "sm"}
+          className={cn(
+            "flex min-w-0 shrink-0 items-center border-b border-[var(--pc-line)] pb-2",
+            // Phone: modes on their own full-width row, actions on a second
+            // compact row. Desktop: one 44px row.
+            desktop ? "gap-2" : "flex-wrap gap-1.5 sm:flex-nowrap",
+          )}
         >
           {showTitle && (
             <h2 className="hidden shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)] xl:block">
@@ -275,9 +288,15 @@ export function TouchScreenGrid({
             {onlineCount}/{listed.length} online
           </p>
           {onControlModeChange && (
-            <div className="flex min-w-0 shrink items-center gap-2" data-grid-targets title={touchNote}>
+            <div
+              className={cn("flex min-w-0 items-center gap-2", desktop ? "shrink" : "w-full sm:w-auto sm:shrink")}
+              data-grid-targets
+              title={touchNote}
+            >
               <ControlModes
                 compact
+                size={desktop ? "md" : "sm"}
+                stretch={!desktop}
                 mode={controlMode}
                 onChange={onControlModeChange}
                 selectedCount={activeId ? 1 : 0}
@@ -298,7 +317,7 @@ export function TouchScreenGrid({
                       type="button"
                       aria-label={`${label} on target phones`}
                       onClick={() => onNav(action)}
-                      className={STEP_BTN}
+                      className={barBtn}
                     >
                       {label}
                     </button>
@@ -313,7 +332,7 @@ export function TouchScreenGrid({
               </p>
             </div>
           )}
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
             {fixed && pages > 1 && (
               <div className="flex items-center gap-1" data-grid-page={`${page + 1}/${pages}`}>
                 <button
@@ -321,7 +340,7 @@ export function TouchScreenGrid({
                   aria-label="Previous page"
                   disabled={page === 0}
                   onClick={() => setPage(page - 1)}
-                  className={cn(STEP_BTN, "pc-toggle-icon")}
+                  className={cn(barBtn, "pc-toggle-icon")}
                 >
                   <ChevronLeft className="size-4" />
                 </button>
@@ -333,7 +352,7 @@ export function TouchScreenGrid({
                   aria-label="Next page"
                   disabled={page >= pages - 1}
                   onClick={() => setPage(page + 1)}
-                  className={cn(STEP_BTN, "pc-toggle-icon")}
+                  className={cn(barBtn, "pc-toggle-icon")}
                 >
                   <ChevronRight className="size-4" />
                 </button>
@@ -341,7 +360,7 @@ export function TouchScreenGrid({
             )}
             <div
               role="group"
-              aria-label="Grid layout"
+              aria-label="Arrangement"
               data-grid-layout={layoutKey}
               className="relative"
             >
@@ -349,30 +368,32 @@ export function TouchScreenGrid({
                 type="button"
                 aria-expanded={optionsOpen}
                 aria-controls="pc-grid-options"
+                aria-label="Arrangement options"
+                title="Arrangement: how many phones per row and column"
                 data-grid-options-toggle
                 onClick={() => setOptionsOpen((open) => !open)}
-                className={cn(
-                  STEP_BTN,
-                  "gap-1.5 px-3 text-xs",
-                )}
+                className={barBtn}
               >
                 <LayoutGrid className="size-3.5" />
-                <span className="font-mono">{fixed ? `${fixed.cols}×${fixed.rows}` : "Auto"}</span>
+                <span>Arrangement</span>
+                {fixed && (
+                  <span className="rounded-md bg-[var(--pc-accent-soft)] px-1 text-[10px] text-[var(--pc-accent)]" data-grid-arrangement-value>
+                    {fixed.cols}×{fixed.rows}
+                  </span>
+                )}
               </button>
             </div>
             {onToggleMacros && (
               <button
                 type="button"
                 aria-pressed={macrosOpen}
+                aria-label={macrosOpen ? "Hide macro" : "Macro"}
                 data-grid-macros
                 onClick={onToggleMacros}
-                className={cn(
-                  STEP_BTN,
-                  "gap-1.5 px-3 text-xs",
-                )}
+                className={barBtn}
               >
                 <Zap className="size-3.5" />
-                <span className={desktop ? "inline" : "sr-only"}>Macros</span>
+                <span data-macro-label>Macro</span>
               </button>
             )}
             <button
@@ -383,7 +404,7 @@ export function TouchScreenGrid({
                 setOptionsOpen(false);
                 setStoredBar("hidden");
               }}
-              className={cn(STEP_BTN, "pc-toggle-icon")}
+              className={cn(barBtn, "pc-toggle-icon")}
             >
               <ChevronsUp className="size-4" />
             </button>
@@ -393,11 +414,11 @@ export function TouchScreenGrid({
                 variant="outline"
                 aria-label="Exit grid view"
                 data-grid-exit
-                className={cn(PC_HIT_MIN, "h-11 shrink-0 gap-1.5 border-[var(--pc-line)] px-2 text-[var(--pc-ink)]")}
+                className={cn(barBtn, !desktop && "pc-toggle-icon")}
                 onClick={onExit}
               >
                 <X className="size-3.5" />
-                <span className={desktop ? "inline text-xs" : "sr-only"}>Exit</span>
+                <span className={desktop ? "inline" : "sr-only"}>Exit</span>
               </Button>
             )}
           </div>
@@ -408,23 +429,25 @@ export function TouchScreenGrid({
           id="pc-grid-options"
           data-grid-options
           role="group"
-          aria-label="Grid layout options"
+          aria-label="Arrangement options"
           className="flex shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1.5"
         >
-          <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Layout</span>
+          <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Arrangement</span>
           <button
             type="button"
             aria-pressed={!fixed}
             data-grid-auto
+            title="Automatic arrangement: fit every phone on screen"
             onClick={() => {
               setStoredLayout("auto");
               setPage(0);
             }}
-            className={STEP_BTN}
+            className={barBtn}
           >
-            Auto
+            Fit all
           </button>
           <Stepper
+            small={!desktop}
             label="Columns"
             value={fixed ? fixed.cols : desktop ? pack.cols : mobileCols}
             dim={!fixed}
@@ -432,6 +455,7 @@ export function TouchScreenGrid({
           />
           <span aria-hidden className="font-mono text-xs text-[var(--pc-muted)]">×</span>
           <Stepper
+            small={!desktop}
             label="Rows"
             value={fixed ? fixed.rows : desktop ? pack.rows : Math.ceil(listed.length / mobileCols)}
             dim={!fixed}
@@ -442,10 +466,10 @@ export function TouchScreenGrid({
           </p>
           <button
             type="button"
-            aria-label="Close layout options"
+            aria-label="Close arrangement options"
             data-grid-options-close
             onClick={() => setOptionsOpen(false)}
-            className={cn(STEP_BTN, "pc-toggle-icon ml-auto")}
+            className={cn(barBtn, "pc-toggle-icon ml-auto")}
           >
             <X className="size-4" />
           </button>
@@ -504,15 +528,15 @@ export function TouchScreenGrid({
   );
 }
 
-/** Grid bar buttons: the unified 44px toggle (see .pc-toggle). */
-const STEP_BTN = "pc-toggle pc-toggle-md";
 
 function Stepper({
   label,
   value,
   dim,
   onStep,
+  small = false,
 }: {
+  small?: boolean;
   label: string;
   value: number;
   /** Auto mode: shows the automatic value; stepping switches to fixed. */
@@ -526,7 +550,7 @@ function Stepper({
         aria-label={`Fewer ${label.toLowerCase()}`}
         disabled={value <= 1}
         onClick={() => onStep(-1)}
-        className={cn(STEP_BTN, "pc-toggle-icon")}
+        className={cn("pc-toggle pc-toggle-icon", small ? "pc-toggle-sm" : "pc-toggle-md")}
       >
         <Minus className="size-3.5" />
       </button>
@@ -545,7 +569,7 @@ function Stepper({
         aria-label={`More ${label.toLowerCase()}`}
         disabled={value >= GRID_LAYOUT_MAX}
         onClick={() => onStep(1)}
-        className={cn(STEP_BTN, "pc-toggle-icon")}
+        className={cn("pc-toggle pc-toggle-icon", small ? "pc-toggle-sm" : "pc-toggle-md")}
       >
         <Plus className="size-3.5" />
       </button>
@@ -779,8 +803,8 @@ function TouchScreenTile({
             inTargets && "ring-2 ring-[var(--pc-accent)]/40",
       )}
     >
-      <div className="flex h-7 shrink-0 items-center gap-1 border-b border-[var(--pc-line)] px-1.5">
-        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--pc-ink)]">
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--pc-line)] px-1">
+        <span className="min-w-0 flex-1 truncate px-0.5 font-mono text-[10px] text-[var(--pc-ink)]">
           {device.name}
         </span>
         {canToggle && (
@@ -789,13 +813,14 @@ function TouchScreenTile({
             included={included}
             disabled={offline}
             onToggle={onToggleInclude}
+            compact
           />
         )}
         <Button
           type="button"
           variant="ghost"
           aria-label={`Focus ${device.name}`}
-          className="pc-toggle pc-toggle-md pc-toggle-icon"
+          className="pc-toggle pc-toggle-sm pc-toggle-icon"
           onClick={onFocus}
         >
           <Maximize2 className="size-3.5" />

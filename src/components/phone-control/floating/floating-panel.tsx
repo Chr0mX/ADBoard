@@ -25,6 +25,9 @@ import {
 } from "@/lib/ui/floating-clamp";
 import { cn } from "@/lib/utils";
 
+/** Dispatch on window when page chrome the floats avoid changes size. */
+export const FLOAT_RECLAMP_EVENT = "pc-float-reclamp";
+
 const PANEL_LABEL: Record<"stats" | "controls" | "nav", string> = {
   stats: "Stats",
   controls: "Tools",
@@ -54,6 +57,40 @@ function currentBounds(): FloatingBounds {
     insetLeft: insets.left,
     margin: 8,
   };
+}
+
+/**
+ * Move `rect` below (or else above) anything it would cover: the grid bar
+ * (its buttons must stay reachable) and, for Stats, the other panels.
+ */
+function avoidObstacles(
+  self: HTMLElement,
+  rect: FloatingRect,
+  bounds: FloatingBounds,
+  clamp: (x: number, y: number, w: number, h: number) => FloatingRect,
+  includePanels: boolean,
+): FloatingRect {
+  const gap = 8;
+  const others = [
+    ...document.querySelectorAll<HTMLElement>("[data-grid-bar], [data-grid-options]"),
+    ...(includePanels
+      ? [...document.querySelectorAll<HTMLElement>("[data-floating-panel]")].filter(
+          (el) => el !== self && el.dataset.edge === "",
+        )
+      : []),
+  ];
+  let next = rect;
+  for (const other of others) {
+    const o = other.getBoundingClientRect();
+    const hit =
+      next.x < o.right && next.x + next.width > o.left && next.y < o.bottom && next.y + next.height > o.top;
+    if (!hit) continue;
+    const below = o.bottom + gap;
+    const fitsBelow = below + next.height <= bounds.viewportHeight - (bounds.insetBottom ?? 0) - (bounds.margin ?? 8);
+    const y = fitsBelow ? below : o.top - gap - next.height;
+    next = clamp(next.x, y, next.width, next.height);
+  }
+  return next;
 }
 
 interface PanelPrefs {
@@ -144,6 +181,9 @@ export function FloatingPanel({
     const prefs = readPrefs(storageKey);
     if (prefs?.pinned) setPinned(true);
     if (prefs?.collapsed) setCollapsed(true);
+    // First visit on a short screen (phone landscape): Tools starts as a chip,
+    // because the full panel cannot fit without covering the page controls.
+    if (!prefs && kind === "controls" && window.innerHeight < 520) setCollapsed(true);
     if (prefs?.edge) setEdge(prefs.edge);
     // Recover panels stuck off-screen from the old wide-panel edge math.
     if (prefs?.edge && prefs.collapsed) {
@@ -201,6 +241,8 @@ export function FloatingPanel({
       } else {
         next = clampToViewport(base.x, base.y, width, height);
         nextEdge = null;
+        // Keep the grid bar reachable; Stats also gives way to Tools.
+        next = avoidObstacles(node, next, bounds, clampToViewport, kind === "stats");
       }
 
       if (edgeRef.current !== nextEdge) setEdge(nextEdge);
@@ -226,7 +268,13 @@ export function FloatingPanel({
     window.visualViewport?.addEventListener("resize", onResize);
     window.visualViewport?.addEventListener("scroll", onResize);
     window.addEventListener("resize", onResize);
+    // Page chrome that floats must not cover (grid bar, Arrangement strip) moved.
+    window.addEventListener(FLOAT_RECLAMP_EVENT, onResize);
+    // The page chrome may mount after the floats (portal): check once more.
+    const late = window.setTimeout(onResize, 400);
     return () => {
+      window.clearTimeout(late);
+      window.removeEventListener(FLOAT_RECLAMP_EVENT, onResize);
       window.removeEventListener("orientationchange", onOrient);
       window.visualViewport?.removeEventListener("resize", onResize);
       window.visualViewport?.removeEventListener("scroll", onResize);
@@ -428,9 +476,11 @@ export function FloatingPanel({
         // Override panel min-width utilities (e.g. Stats min-w-[10rem]) so the
         // peek strip is truly EDGE_PEEK wide — otherwise a right dock centers
         // the label in the off-screen portion of a wide panel.
-        width: edgeHidden ? EDGE_PEEK : undefined,
-        minWidth: edgeHidden ? EDGE_PEEK : undefined,
-        maxWidth: edgeHidden ? EDGE_PEEK : undefined,
+        // Collapsed: a chip as wide as its label and two buttons, not the
+        // expanded panel width.
+        width: edgeHidden ? EDGE_PEEK : collapsed ? "max-content" : undefined,
+        minWidth: edgeHidden ? EDGE_PEEK : collapsed ? 0 : undefined,
+        maxWidth: edgeHidden ? EDGE_PEEK : collapsed ? "calc(100vw - 16px)" : undefined,
         // Tall enough for a stacked 5-letter label inside EDGE_PEEK.
         height: edgeHidden ? Math.max(EDGE_PEEK * 2.5, 110) : undefined,
         overflow: edgeHidden ? "hidden" : undefined,
@@ -466,7 +516,10 @@ export function FloatingPanel({
         </button>
       ) : (
         <>
-          <div className="flex items-center gap-0.5 px-1.5 pt-1.5">
+          <div
+            data-float-header
+            className={cn("flex items-center gap-0.5 px-1.5", collapsed ? "py-1" : "pt-1.5")}
+          >
             <div
               data-float-handle
               role="separator"
@@ -479,7 +532,8 @@ export function FloatingPanel({
               }
               aria-disabled={pinned || undefined}
               className={cn(
-                "flex h-9 min-h-9 min-w-0 flex-1 items-center justify-center rounded-[calc(var(--pc-radius-control)-0.125rem)]",
+                "flex h-9 min-h-9 min-w-0 flex-1 items-center rounded-[calc(var(--pc-radius-control)-0.125rem)]",
+                collapsed ? "justify-start gap-2 pl-1.5 pr-1" : "justify-center",
                 pinned ? "cursor-default opacity-60" : "cursor-grab active:cursor-grabbing",
               )}
               onPointerDown={onHandlePointerDown}
@@ -488,11 +542,17 @@ export function FloatingPanel({
               onPointerCancel={endDrag}
             >
               <span
-                className="h-1 w-9 rounded-full bg-[color-mix(in_srgb,var(--pc-ink)_28%,transparent)]"
+                className={cn(
+                  "h-1 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--pc-ink)_28%,transparent)]",
+                  collapsed ? "w-4" : "w-9",
+                )}
                 aria-hidden
               />
               {collapsed && (
-                <span className="ml-2 shrink-0 whitespace-nowrap font-mono text-[11px] font-medium tracking-wide text-[var(--pc-muted)]">
+                <span
+                  data-float-label
+                  className="shrink-0 whitespace-nowrap font-mono text-xs font-medium tracking-wide text-[var(--pc-ink)]"
+                >
                   {label}
                 </span>
               )}
@@ -501,7 +561,7 @@ export function FloatingPanel({
               type="button"
               data-float-collapse
               aria-label={collapsed ? `Expand ${label}` : `Collapse ${label}`}
-              aria-pressed={collapsed}
+              aria-expanded={!collapsed}
               className="pc-float-chrome-btn touch-auto"
               onClick={toggleCollapsed}
             >
@@ -521,7 +581,8 @@ export function FloatingPanel({
           <div
             className={cn(
               "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
-              collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+              // Collapsed: hidden content must not widen the chip (w-0 adds no intrinsic width).
+              collapsed ? "w-0 min-w-full grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
             )}
           >
             <div className="min-h-0 overflow-hidden">

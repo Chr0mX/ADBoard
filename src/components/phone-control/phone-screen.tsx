@@ -878,14 +878,21 @@ export function PhoneScreen({
           size="none"
               pressed={macroDockOpen}
               onPressedChange={(on) => onMacroDockChange(on)}
-              aria-label={macroDockOpen ? "Hide macros" : "Macros"}
+              aria-label={macroDockOpen ? "Hide macro" : "Macro"}
               data-macro-dock-toggle={macroDockOpen ? "1" : "0"}
               className={cn(
                 toolControlClass,
-                )}
+                // Label always shows: under the icon in a square slot, beside it when there is room.
+                !sideDock && "flex-col gap-0.5 @5xl:flex-row @5xl:gap-1.5",
+              )}
             >
               <Zap className="size-4" />
-              <span className={toolLabelClass}>Macros</span>
+              <span
+                data-macro-label
+                className={sideDock ? "inline" : "text-[9px] leading-none @5xl:text-xs @5xl:leading-4"}
+              >
+                Macro
+              </span>
             </Toggle>
           )}
           {showScreensButton && (

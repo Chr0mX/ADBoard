@@ -294,9 +294,11 @@ body {
   color: var(--pc-ink);
 }
 
+@media (hover: hover) {
 .pc-float-chrome-btn:hover {
   background-color: var(--pc-accent-soft);
   color: var(--pc-ink);
+}
 }
 
 .pc-float-chrome-btn:focus-visible {
@@ -365,8 +367,10 @@ body {
   transform: scale(0.96);
 }
 
+@media (hover: hover) {
 .pc-taskbar-item:hover:not(:disabled) {
   background-color: var(--pc-accent-soft);
+}
 }
 
 .pc-taskbar-item:focus-visible {
@@ -462,9 +466,17 @@ body {
   }
 }
 
-/* Segmented control that sits in a 44px toolbar row. */
+/* Segmented control that sits in a 44px toolbar row … */
 .pc-segmented[data-size="md"] .pc-segment {
   min-height: 2.125rem;
+}
+/* … or a 36px phone toolbar row. */
+.pc-segmented[data-size="sm"] {
+  padding: 0.1875rem;
+}
+.pc-segmented[data-size="sm"] .pc-segment {
+  min-height: 1.75rem;
+  padding-inline: 0.5rem;
 }
 
 .pc-toggle {
@@ -485,8 +497,10 @@ body {
     color 120ms ease,
     transform 120ms ease;
 }
+@media (hover: hover) {
 .pc-toggle:hover:not(:disabled) {
   background-color: var(--pc-accent-soft);
+}
 }
 .pc-toggle:focus-visible {
   outline: 2px solid var(--pc-accent);
@@ -651,8 +665,10 @@ body {
   cursor: pointer;
   transition: background-color 120ms ease;
 }
+@media (hover: hover) {
 .pc-choice-row:hover:not([aria-disabled="true"]) {
   background-color: var(--pc-accent-soft);
+}
 }
 .pc-choice-row[aria-disabled="true"] {
   cursor: not-allowed;
@@ -682,9 +698,11 @@ body {
   cursor: pointer;
   transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
 }
+@media (hover: hover) {
 .pc-segment:hover {
   background-color: var(--pc-accent-soft);
   color: var(--pc-ink);
+}
 }
 .pc-segment:focus-visible,
 .pc-segment:has(input:focus-visible) {
