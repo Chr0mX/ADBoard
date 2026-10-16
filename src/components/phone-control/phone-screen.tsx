@@ -86,6 +86,8 @@ interface PhoneScreenProps {
     replay?: boolean;
   }) => void | Promise<unknown>;
   onStats?: (stats: StreamStats) => void;
+  /** Desktop: put nav + tool rows in a side column (a folded panel freed it). */
+  controlsDock?: "bottom" | "left" | "right";
   onNav: (action: NavAction["type"]) => void;
   onInstall: (file: File) => Promise<string>;
   lastTap: TapBroadcast | null;
@@ -115,6 +117,7 @@ export function PhoneScreen({
   onMouseChange,
   onPointer,
   onStats,
+  controlsDock = "bottom",
   onNav,
   onInstall,
   lastTap,
@@ -205,11 +208,18 @@ export function PhoneScreen({
   const showDockedChrome = !floatingChrome;
   const railClass = PC_HIT_LABELED;
   // Responsive tool row: square on narrow residual layouts; labeled on lg+.
-  const toolControlClass = PC_HIT_TOOL_RESPONSIVE;
-  // Tool labels show only when the row itself has room for all of them;
-  // otherwise icons (with tooltips) keep the row on a single line.
-  const toolLabelClass = "hidden @5xl:inline";
   const dockedTools = showDockedChrome && !fillWindow && !gridView;
+  // A folded Screens/Devices panel frees a side column for the controls.
+  const sideDock = dockedTools && controlsDock !== "bottom" ? controlsDock : null;
+  const toolControlClass = sideDock
+    ? cn(PC_HIT_LABELED, "w-full justify-start")
+    : PC_HIT_TOOL_RESPONSIVE;
+  // Tool labels show only when the row itself has room for all of them;
+  // otherwise icons (with tooltips) keep the row on a single line. The side
+  // column always has room for labels.
+  const toolLabelClass = sideDock ? "inline" : "hidden @5xl:inline";
+  // More popover only under the phone; the side column shows options inline.
+  const optionsPopover = dockedTools && !sideDock;
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const hint = useShortcutHint();
@@ -246,7 +256,7 @@ export function PhoneScreen({
     recent: navShortcut("recent"),
     grid: onToggleGrid,
     fill: gridView ? undefined : () => onFillWindowChange(!fillWindow),
-    more: dockedTools ? () => setMoreOpen((open) => !open) : undefined,
+    more: optionsPopover ? () => setMoreOpen((open) => !open) : undefined,
   });
   const navHint = (action: string, name: string) =>
     action === "back" || action === "home" || action === "recent" ? hint(name, action) : {};
@@ -572,6 +582,353 @@ export function PhoneScreen({
     );
   };
 
+  const navRowEl = showDockedChrome ? (
+          <div data-nav-row className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
+            {(sideControls
+              ? ([
+                  ["back", "Back"],
+                  ["home", "Home"],
+                  ["recent", "Recent"],
+                ] as const)
+              : ([
+                  ["back", "Back"],
+                  ["home", "Home"],
+                  ["recent", "Recent"],
+                  ["volume_down", "Vol−"],
+                  ["volume_up", "Vol+"],
+                  ["power", "Power"],
+                ] as const)
+            ).map(([action, name]) => (
+              <Button
+                key={action}
+                type="button"
+                variant="ghost"
+                disabled={offline}
+                onClick={() => onNav(action)}
+                {...navHint(action, name)}
+                aria-label={
+                  action === "volume_up"
+                    ? "Volume up"
+                    : action === "volume_down"
+                      ? "Volume down"
+                      : action === "power"
+                        ? "Power"
+                        : name
+                }
+                className={railClass}
+              >
+                {name}
+              </Button>
+            ))}
+            {fillWindow && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={offline || refreshing}
+                onClick={() => void refreshVideo()}
+                aria-label="Refresh video"
+                data-video-refresh
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
+              >
+                <RefreshCw className="size-4" />
+              </Button>
+            )}
+            {fillWindow && (
+              <Toggle
+                pressed={keyboardOn}
+                onPressedChange={onKeyboardChange}
+                aria-label="Toggle keyboard injection"
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
+              >
+                <Keyboard className="size-4" />
+              </Toggle>
+            )}
+            {fillWindow && (
+              <ApkFileButton disabled={offline || installing} onFile={pickApk} />
+            )}
+            {fillWindow && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={offline || capturing || captureTargets.length === 0}
+                onClick={() => void takeScreenshot()}
+                aria-label="Screenshot and download"
+                data-control-screenshot
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
+              >
+                <Camera className="size-4" />
+              </Button>
+            )}
+            {fillWindow && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={offline || capturing || captureTargets.length === 0}
+                onClick={() => void toggleScreenRecord()}
+                aria-label={screenRecording ? "Stop screen record" : "Start screen record"}
+                data-control-screenrecord
+                data-pressed={screenRecording ? "true" : undefined}
+                className={cn(
+                  PC_HIT_LABELED,
+                  "min-w-11 px-3",
+                  screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
+                )}
+              >
+                <Video className="size-4" />
+              </Button>
+            )}
+            {fillWindow && showScreensButton && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onOpenScreens}
+                aria-label="Screens"
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
+              >
+                Screens
+              </Button>
+            )}
+            {fillWindow && onToggleGrid && (
+              <Toggle
+                pressed={gridView}
+                onPressedChange={() => onToggleGrid()}
+                aria-label={gridView ? "Exit grid view" : "Grid view"}
+                {...hint(gridView ? "Exit grid view" : "Grid view", "grid")}
+                data-grid-view={gridView ? "1" : "0"}
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
+              >
+                <LayoutGrid className="size-4" />
+              </Toggle>
+            )}
+            {fillWindow && gestureButtons("nav")}
+            {fillWindow && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onFillWindowChange(false)}
+                aria-label="Exit fill"
+                {...hint("Exit fill", "fill")}
+                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
+              >
+                <Minimize2 className="size-4" />
+              </Button>
+            )}
+          </div>
+  ) : null;
+
+  const controlsEl = (
+    <>
+      {showDockedChrome && !gridView && <AppShortcuts />}
+
+      {showDockedChrome && !fillWindow && !gridView && gestures.length > 1 && (
+        <select
+          aria-label="Recorded touch"
+          data-gesture-pick
+          value={activeGestureId ?? ""}
+          onChange={(event) => setGestureId(event.target.value)}
+          className="h-9 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 font-mono text-xs text-[var(--pc-ink)] lg:mx-auto lg:h-11 lg:w-auto lg:max-w-[9rem]"
+        >
+          {gestures.map((macro) => (
+            <option key={macro.id} value={macro.id}>
+              {macro.name}
+            </option>
+          ))}
+        </select>
+      )}
+      {showDockedChrome && !gridView && (
+      <div className="relative flex w-full min-w-0 flex-col items-center gap-1">
+      {dockedTools && (
+        <div
+          data-tool-row
+          className={
+            sideDock
+              ? "flex w-full min-w-0 flex-col gap-1.5"
+              : "@container grid w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 lg:flex lg:flex-wrap lg:justify-center lg:gap-1.5"
+          }
+        >
+          <Toggle
+            pressed={keyboardOn}
+            onPressedChange={onKeyboardChange}
+            aria-label="Toggle keyboard injection"
+            className={cn(
+              toolControlClass,
+              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+            )}
+          >
+            <Keyboard className="size-4" />
+            <span className={toolLabelClass}>Keyboard</span>
+          </Toggle>
+          <Toggle
+            pressed={mouseOn}
+            onPressedChange={onMouseChange}
+            aria-label="Toggle touch"
+            className={cn(
+              toolControlClass,
+              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+            )}
+          >
+            <MousePointer2 className="size-4" />
+            <span className={toolLabelClass}>Touch</span>
+          </Toggle>
+          {gestureButtons("tool")}
+          {recording && (
+            <span
+              data-gesture-count
+              className="hidden font-mono text-[10px] text-[var(--pc-warn)] lg:inline"
+            >
+              {recordedCount}
+            </span>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={offline || refreshing}
+            onClick={() => void refreshVideo()}
+            aria-label="Refresh video"
+            data-video-refresh
+            className={toolControlClass}
+          >
+            <RefreshCw className="size-4" />
+            <span className={toolLabelClass}>Refresh</span>
+          </Button>
+          <ApkFileButton
+            disabled={offline || installing}
+            onFile={pickApk}
+            className={cn(toolControlClass, "font-mono text-[10px] leading-none lg:text-xs")}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={offline || capturing || captureTargets.length === 0}
+            onClick={() => void takeScreenshot()}
+            aria-label="Screenshot and download"
+            data-control-screenshot
+            className={toolControlClass}
+          >
+            <Camera className="size-4" />
+            <span className={toolLabelClass}>Shot</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={offline || capturing || captureTargets.length === 0}
+            onClick={() => void toggleScreenRecord()}
+            aria-label={screenRecording ? "Stop screen record" : "Start screen record"}
+            data-control-screenrecord
+            data-pressed={screenRecording ? "true" : undefined}
+            className={cn(
+              toolControlClass,
+              screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
+            )}
+          >
+            <Video className="size-4" />
+            <span className={toolLabelClass}>{screenRecording ? "Stop" : "Rec"}</span>
+          </Button>
+          <Toggle
+            pressed={fillWindow}
+            onPressedChange={onFillWindowChange}
+            aria-label="Fill window"
+            {...hint("Fill window", "fill")}
+            className={cn(
+              toolControlClass,
+              "hidden lg:inline-flex",
+              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+            )}
+          >
+            <Maximize2 className="size-4" />
+            <span className={toolLabelClass}>Fill</span>
+          </Toggle>
+          {onToggleGrid && (
+            <Toggle
+              pressed={gridView}
+              onPressedChange={() => onToggleGrid()}
+              aria-label={gridView ? "Exit grid view" : "Grid view"}
+              {...hint("Grid view", "grid")}
+              data-grid-view={gridView ? "1" : "0"}
+              className={cn(
+                toolControlClass,
+                "hidden lg:inline-flex",
+                "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+              )}
+            >
+              <LayoutGrid className="size-4" />
+              <span className={toolLabelClass}>Grid</span>
+            </Toggle>
+          )}
+          {showScreensButton && (
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Screens"
+              className={toolControlClass}
+              onClick={onOpenScreens}
+            >
+              <LayoutGrid className="size-4 @5xl:hidden" />
+              <span className={toolLabelClass}>Screens</span>
+            </Button>
+          )}
+          {showDevicesButton && (
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Devices"
+              className={toolControlClass}
+              onClick={onOpenDevices}
+            >
+              <Smartphone className="size-4 @5xl:hidden" />
+              <span className={toolLabelClass}>Devices</span>
+            </Button>
+          )}
+          {optionsPopover && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setMoreOpen((open) => !open)}
+            aria-label="More tools"
+            aria-expanded={moreOpen}
+            aria-controls="pc-more-tools"
+            {...hint("More tools", "more")}
+            data-more-tools
+            className={cn(
+              toolControlClass,
+              "aria-expanded:border-[var(--pc-accent)] aria-expanded:bg-[var(--pc-accent-soft)] aria-expanded:text-[var(--pc-accent)]",
+            )}
+          >
+            {moreOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+            <span className={toolLabelClass}>More</span>
+          </Button>
+          )}
+        </div>
+      )}
+      {/*
+        One mounted ScrcpyOptions for both layouts (it holds the clipboard
+        socket). Docked: a popover above the tool row, hidden until More.
+        Fill: inline under the nav row, as before.
+      */}
+      <div
+        ref={moreRef}
+        id="pc-more-tools"
+        role={optionsPopover ? "group" : undefined}
+        aria-label={optionsPopover ? "More tools" : undefined}
+        hidden={optionsPopover && !moreOpen}
+        data-more-tools-panel={optionsPopover ? (moreOpen ? "open" : "closed") : sideDock ? "inline" : undefined}
+        className={cn(
+          "w-full",
+          optionsPopover &&
+            "absolute bottom-full left-1/2 z-30 mb-2 w-[min(40rem,100%)] -translate-x-1/2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-2 shadow-lg",
+        )}
+      >
+        <ScrcpyOptions
+          targetIds={targetIds}
+          serial={device?.serial ?? null}
+          disabled={offline}
+        />
+      </div>
+      </div>
+      )}
+    </>
+  );
+
   return (
     <section
       data-fill={fillWindow ? "1" : "0"}
@@ -590,7 +947,11 @@ export function PhoneScreen({
         </p>
       )}
 
-      <div className="flex min-h-0 w-full flex-1 flex-col">
+      <div
+        data-controls-layout={sideDock ?? "bottom"}
+        className={sideDock ? cn("flex min-h-0 w-full flex-1 gap-3", sideDock === "left" && "flex-row-reverse") : "contents"}
+      >
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
         {gridView ? (
           <TouchScreenGrid
             devices={devices}
@@ -818,139 +1179,7 @@ export function PhoneScreen({
           )}
           </div>
 
-          {showDockedChrome && (
-          <div data-nav-row className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
-            {(sideControls
-              ? ([
-                  ["back", "Back"],
-                  ["home", "Home"],
-                  ["recent", "Recent"],
-                ] as const)
-              : ([
-                  ["back", "Back"],
-                  ["home", "Home"],
-                  ["recent", "Recent"],
-                  ["volume_down", "Vol−"],
-                  ["volume_up", "Vol+"],
-                  ["power", "Power"],
-                ] as const)
-            ).map(([action, name]) => (
-              <Button
-                key={action}
-                type="button"
-                variant="ghost"
-                disabled={offline}
-                onClick={() => onNav(action)}
-                {...navHint(action, name)}
-                aria-label={
-                  action === "volume_up"
-                    ? "Volume up"
-                    : action === "volume_down"
-                      ? "Volume down"
-                      : action === "power"
-                        ? "Power"
-                        : name
-                }
-                className={railClass}
-              >
-                {name}
-              </Button>
-            ))}
-            {fillWindow && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={offline || refreshing}
-                onClick={() => void refreshVideo()}
-                aria-label="Refresh video"
-                data-video-refresh
-                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
-              >
-                <RefreshCw className="size-4" />
-              </Button>
-            )}
-            {fillWindow && (
-              <Toggle
-                pressed={keyboardOn}
-                onPressedChange={onKeyboardChange}
-                aria-label="Toggle keyboard injection"
-                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
-              >
-                <Keyboard className="size-4" />
-              </Toggle>
-            )}
-            {fillWindow && (
-              <ApkFileButton disabled={offline || installing} onFile={pickApk} />
-            )}
-            {fillWindow && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={offline || capturing || captureTargets.length === 0}
-                onClick={() => void takeScreenshot()}
-                aria-label="Screenshot and download"
-                data-control-screenshot
-                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
-              >
-                <Camera className="size-4" />
-              </Button>
-            )}
-            {fillWindow && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={offline || capturing || captureTargets.length === 0}
-                onClick={() => void toggleScreenRecord()}
-                aria-label={screenRecording ? "Stop screen record" : "Start screen record"}
-                data-control-screenrecord
-                data-pressed={screenRecording ? "true" : undefined}
-                className={cn(
-                  PC_HIT_LABELED,
-                  "min-w-11 px-3",
-                  screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
-                )}
-              >
-                <Video className="size-4" />
-              </Button>
-            )}
-            {fillWindow && showScreensButton && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={onOpenScreens}
-                aria-label="Screens"
-                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
-              >
-                Screens
-              </Button>
-            )}
-            {fillWindow && onToggleGrid && (
-              <Toggle
-                pressed={gridView}
-                onPressedChange={() => onToggleGrid()}
-                aria-label={gridView ? "Exit grid view" : "Grid view"}
-                {...hint(gridView ? "Exit grid view" : "Grid view", "grid")}
-                data-grid-view={gridView ? "1" : "0"}
-                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
-              >
-                <LayoutGrid className="size-4" />
-              </Toggle>
-            )}
-            {fillWindow && gestureButtons("nav")}
-            {fillWindow && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => onFillWindowChange(false)}
-                aria-label="Exit fill"
-                {...hint("Exit fill", "fill")}
-                className={cn(PC_HIT_LABELED, "min-w-11 px-3")}
-              >
-                <Minimize2 className="size-4" />
-              </Button>
-            )}
-          </div>
-          )}
+          {!sideDock && navRowEl}
         </div>
         )}
         {floatingChrome && (
@@ -1008,208 +1237,17 @@ export function PhoneScreen({
         )}
       </div>
 
-      {showDockedChrome && !gridView && <AppShortcuts />}
-
-      {showDockedChrome && !fillWindow && !gridView && gestures.length > 1 && (
-        <select
-          aria-label="Recorded touch"
-          data-gesture-pick
-          value={activeGestureId ?? ""}
-          onChange={(event) => setGestureId(event.target.value)}
-          className="h-9 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 font-mono text-xs text-[var(--pc-ink)] lg:mx-auto lg:h-11 lg:w-auto lg:max-w-[9rem]"
+      {sideDock && (
+        <aside
+          data-controls-dock={sideDock}
+          className="flex min-h-0 w-[200px] shrink-0 flex-col gap-3 overflow-y-auto pb-2 xl:w-[240px]"
         >
-          {gestures.map((macro) => (
-            <option key={macro.id} value={macro.id}>
-              {macro.name}
-            </option>
-          ))}
-        </select>
+          {navRowEl}
+          {controlsEl}
+        </aside>
       )}
-      {showDockedChrome && !gridView && (
-      <div className="relative flex w-full min-w-0 flex-col items-center gap-1">
-      {dockedTools && (
-        <div
-          data-tool-row
-          className="@container grid w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 lg:flex lg:flex-wrap lg:justify-center lg:gap-1.5"
-        >
-          <Toggle
-            pressed={keyboardOn}
-            onPressedChange={onKeyboardChange}
-            aria-label="Toggle keyboard injection"
-            className={cn(
-              toolControlClass,
-              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
-            )}
-          >
-            <Keyboard className="size-4" />
-            <span className={toolLabelClass}>Keyboard</span>
-          </Toggle>
-          <Toggle
-            pressed={mouseOn}
-            onPressedChange={onMouseChange}
-            aria-label="Toggle touch"
-            className={cn(
-              toolControlClass,
-              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
-            )}
-          >
-            <MousePointer2 className="size-4" />
-            <span className={toolLabelClass}>Touch</span>
-          </Toggle>
-          {gestureButtons("tool")}
-          {recording && (
-            <span
-              data-gesture-count
-              className="hidden font-mono text-[10px] text-[var(--pc-warn)] lg:inline"
-            >
-              {recordedCount}
-            </span>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={offline || refreshing}
-            onClick={() => void refreshVideo()}
-            aria-label="Refresh video"
-            data-video-refresh
-            className={toolControlClass}
-          >
-            <RefreshCw className="size-4" />
-            <span className={toolLabelClass}>Refresh</span>
-          </Button>
-          <ApkFileButton
-            disabled={offline || installing}
-            onFile={pickApk}
-            className={cn(toolControlClass, "font-mono text-[10px] leading-none lg:text-xs")}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={offline || capturing || captureTargets.length === 0}
-            onClick={() => void takeScreenshot()}
-            aria-label="Screenshot and download"
-            data-control-screenshot
-            className={toolControlClass}
-          >
-            <Camera className="size-4" />
-            <span className={toolLabelClass}>Shot</span>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={offline || capturing || captureTargets.length === 0}
-            onClick={() => void toggleScreenRecord()}
-            aria-label={screenRecording ? "Stop screen record" : "Start screen record"}
-            data-control-screenrecord
-            data-pressed={screenRecording ? "true" : undefined}
-            className={cn(
-              toolControlClass,
-              screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
-            )}
-          >
-            <Video className="size-4" />
-            <span className={toolLabelClass}>{screenRecording ? "Stop" : "Rec"}</span>
-          </Button>
-          <Toggle
-            pressed={fillWindow}
-            onPressedChange={onFillWindowChange}
-            aria-label="Fill window"
-            {...hint("Fill window", "fill")}
-            className={cn(
-              toolControlClass,
-              "hidden lg:inline-flex",
-              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
-            )}
-          >
-            <Maximize2 className="size-4" />
-            <span className={toolLabelClass}>Fill</span>
-          </Toggle>
-          {onToggleGrid && (
-            <Toggle
-              pressed={gridView}
-              onPressedChange={() => onToggleGrid()}
-              aria-label={gridView ? "Exit grid view" : "Grid view"}
-              {...hint("Grid view", "grid")}
-              data-grid-view={gridView ? "1" : "0"}
-              className={cn(
-                toolControlClass,
-                "hidden lg:inline-flex",
-                "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
-              )}
-            >
-              <LayoutGrid className="size-4" />
-              <span className={toolLabelClass}>Grid</span>
-            </Toggle>
-          )}
-          {showScreensButton && (
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Screens"
-              className={toolControlClass}
-              onClick={onOpenScreens}
-            >
-              <LayoutGrid className="size-4 @5xl:hidden" />
-              <span className={toolLabelClass}>Screens</span>
-            </Button>
-          )}
-          {showDevicesButton && (
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Devices"
-              className={toolControlClass}
-              onClick={onOpenDevices}
-            >
-              <Smartphone className="size-4 @5xl:hidden" />
-              <span className={toolLabelClass}>Devices</span>
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setMoreOpen((open) => !open)}
-            aria-label="More tools"
-            aria-expanded={moreOpen}
-            aria-controls="pc-more-tools"
-            {...hint("More tools", "more")}
-            data-more-tools
-            className={cn(
-              toolControlClass,
-              "aria-expanded:border-[var(--pc-accent)] aria-expanded:bg-[var(--pc-accent-soft)] aria-expanded:text-[var(--pc-accent)]",
-            )}
-          >
-            {moreOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
-            <span className={toolLabelClass}>More</span>
-          </Button>
-        </div>
-      )}
-      {/*
-        One mounted ScrcpyOptions for both layouts (it holds the clipboard
-        socket). Docked: a popover above the tool row, hidden until More.
-        Fill: inline under the nav row, as before.
-      */}
-      <div
-        ref={moreRef}
-        id="pc-more-tools"
-        role={dockedTools ? "group" : undefined}
-        aria-label={dockedTools ? "More tools" : undefined}
-        hidden={dockedTools && !moreOpen}
-        data-more-tools-panel={dockedTools ? (moreOpen ? "open" : "closed") : undefined}
-        className={cn(
-          "w-full",
-          dockedTools &&
-            "absolute bottom-full left-1/2 z-30 mb-2 w-[min(40rem,100%)] -translate-x-1/2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-2 shadow-lg",
-        )}
-      >
-        <ScrcpyOptions
-          targetIds={targetIds}
-          serial={device?.serial ?? null}
-          disabled={offline}
-        />
       </div>
-      </div>
-      )}
+      {sideDock ? null : controlsEl}
       {floatingChrome && (
         <FloatingLayer
           device={device}

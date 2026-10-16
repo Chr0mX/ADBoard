@@ -316,6 +316,17 @@ On Windows: `.\Start-ADBoard.ps1 -Bind 0.0.0.0 -Password '…'` sets the first p
 
 ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. The API token never appears in URLs (browsers send it as a WebSocket subprotocol, servers as the `x-phonecontrol-token` header), so it stays out of proxy and Cloudflare logs. Remote agents can join a controller published this way with `PHONECONTROL_CONTROLLER_URL=wss://adboard.example.com/ws/agent` and the same `PHONECONTROL_TOKEN` on both sides.
 
+## Layout tips
+
+- **Folding side panels:** fold Screens or Devices (chevron in the panel header, or Alt+Shift+[ / ]) and the Back/Home/Recent row, tools and stream options move into that freed column, so the phone gets the full height. With both folded they sit on the right.
+- **Grid view:** pick **Auto** or set **Columns × Rows** in the grid header. With more phones than cells, Prev/Next pages through them. The choice is saved per browser.
+
+## Temporary files
+
+Staged APKs, file pushes/pulls and upload chunks go to `<repo root>/temp/` (git-ignored), or `temp/` next to the executable when the pack runs without the repo. Set `PHONECONTROL_TEMP` to use another folder.
+
+APK installs use adb's normal (streamed) install first. If a phone rejects that (`splice failed: EINVAL … Performing Streamed Install`), ADBoard retries with `--no-streaming`, then with push + `pm install`.
+
 ## Desktop shortcuts
 
 Control view on a desktop-width window. They use Alt+Shift (⌥⇧ on a Mac) so they still work while keyboard injection sends plain keys to the phone, and they are never forwarded to the phone. Buttons show their shortcut in the tooltip.

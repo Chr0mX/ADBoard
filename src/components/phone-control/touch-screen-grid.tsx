@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { Maximize2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize2, Minus, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { normalizePoint } from "@/lib/devices/coords";
@@ -9,6 +9,16 @@ import { devicesClient } from "@/lib/api/client";
 import type { Device, PointerPhase, PointerTool } from "@/lib/devices/types";
 import { StatsLine } from "@/components/phone-control/status-bar";
 import { PC_HIT_MIN } from "@/lib/ui/control-chrome";
+import { useStoredString } from "@/hooks/use-stored-flag";
+import {
+  GRID_LAYOUT_MAX,
+  clampPage,
+  fixedPack,
+  formatGridLayout,
+  pageCount,
+  pageSlice,
+  parseGridLayout,
+} from "@/lib/ui/grid-layout";
 import { cn } from "@/lib/utils";
 
 interface TouchScreenGridProps {
@@ -110,6 +120,19 @@ export function TouchScreenGrid({
     tileH: 0,
   });
 
+  // Auto, or a fixed columns × rows chosen in the header (saved per browser).
+  const [storedLayout, setStoredLayout] = useStoredString("adboard-grid-layout");
+  const gridLayout = parseGridLayout(storedLayout);
+  const layoutKey = formatGridLayout(gridLayout);
+  const fixed = gridLayout.mode === "fixed" ? gridLayout : null;
+  const perPage = fixed ? fixed.cols * fixed.rows : Math.max(1, listed.length);
+  const pages = pageCount(listed.length, perPage);
+  const [pageState, setPage] = useState(0);
+  const page = clampPage(pageState, listed.length, perPage);
+  const visible = fixed ? pageSlice(listed, page, perPage) : listed;
+  // A short last page or few phones should not shrink tiles into empty rows.
+  const fixedRows = fixed ? Math.min(fixed.rows, Math.ceil(Math.min(listed.length, perPage) / fixed.cols)) : 0;
+
   useLayoutEffect(() => {
     if (!desktop) return;
     const node = stageRef.current;
@@ -117,15 +140,32 @@ export function TouchScreenGrid({
 
     const measure = () => {
       const rect = node.getBoundingClientRect();
-      setPack(bestDesktopPack(listed.length, rect.width, rect.height, PORTRAIT));
+      setPack(
+        fixed
+          ? fixedPack(fixed.cols, Math.max(1, fixedRows), rect.width, rect.height, PORTRAIT, GAP, TILE_STATS_H)
+          : bestDesktopPack(listed.length, rect.width, rect.height, PORTRAIT),
+      );
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [desktop, listed.length]);
+    // layoutKey covers fixed.cols / fixed.rows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desktop, listed.length, layoutKey, fixedRows]);
 
-  const mobileCols = mobileColumnCount(listed.length);
+  const mobileCols = fixed ? fixed.cols : mobileColumnCount(listed.length);
+
+  const setLayout = (cols: number, rows: number) => {
+    setStoredLayout(formatGridLayout({ mode: "fixed", cols, rows }));
+    setPage(0);
+  };
+  const step = (axis: "cols" | "rows", delta: number) => {
+    const base = fixed ?? { cols: desktop ? pack.cols : mobileCols, rows: desktop ? pack.rows : Math.ceil(listed.length / mobileCols) };
+    const next = { cols: base.cols, rows: base.rows };
+    next[axis] = Math.min(GRID_LAYOUT_MAX, Math.max(1, next[axis] + delta));
+    setLayout(next.cols, next.rows);
+  };
 
   return (
     <section
@@ -133,8 +173,8 @@ export function TouchScreenGrid({
       data-touch-screen-layout={layout}
       className="relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2"
     >
-      <div className="flex shrink-0 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-baseline gap-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
           {showTitle && (
             <h2 className="shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)]">
               ADBoard
@@ -143,6 +183,63 @@ export function TouchScreenGrid({
           <p className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
             {listed.length} devices · {onlineCount} online · control each screen
           </p>
+        </div>
+        <div
+          role="group"
+          aria-label="Grid layout"
+          data-grid-layout={layoutKey}
+          className="flex shrink-0 flex-wrap items-center gap-1.5"
+        >
+          <button
+            type="button"
+            aria-pressed={!fixed}
+            data-grid-auto
+            onClick={() => {
+              setStoredLayout("auto");
+              setPage(0);
+            }}
+            className={cn(STEP_BTN, "px-3 text-xs", !fixed && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]")}
+          >
+            Auto
+          </button>
+          <Stepper
+            label="Columns"
+            value={fixed ? fixed.cols : desktop ? pack.cols : mobileCols}
+            dim={!fixed}
+            onStep={(delta) => step("cols", delta)}
+          />
+          <span aria-hidden className="font-mono text-xs text-[var(--pc-muted)]">×</span>
+          <Stepper
+            label="Rows"
+            value={fixed ? fixed.rows : desktop ? pack.rows : Math.ceil(listed.length / mobileCols)}
+            dim={!fixed}
+            onStep={(delta) => step("rows", delta)}
+          />
+          {fixed && pages > 1 && (
+            <div className="flex items-center gap-1" data-grid-page={`${page + 1}/${pages}`}>
+              <button
+                type="button"
+                aria-label="Previous page"
+                disabled={page === 0}
+                onClick={() => setPage(page - 1)}
+                className={cn(STEP_BTN, "w-11")}
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <span className="whitespace-nowrap font-mono text-[11px] text-[var(--pc-ink)]">
+                Page {page + 1} of {pages}
+              </span>
+              <button
+                type="button"
+                aria-label="Next page"
+                disabled={page >= pages - 1}
+                onClick={() => setPage(page + 1)}
+                className={cn(STEP_BTN, "w-11")}
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+          )}
         </div>
         {onExit && (
           <Button
@@ -170,7 +267,7 @@ export function TouchScreenGrid({
           <div
             data-touch-screen-cells={pack.cols}
             data-touch-screen-pack={`${pack.tileW}x${pack.tileH}`}
-            data-touch-screen-count={listed.length}
+            data-touch-screen-count={visible.length}
             className="grid h-full w-full place-content-center justify-items-center gap-3"
             style={{
               gridTemplateColumns:
@@ -180,7 +277,7 @@ export function TouchScreenGrid({
               gridAutoRows: "max-content",
             }}
           >
-            {listed.map((device) => (
+            {visible.map((device) => (
               <TouchScreenTile
                 key={device.id}
                 device={device}
@@ -195,11 +292,11 @@ export function TouchScreenGrid({
           </div>
         ) : (
           <div
-            data-touch-screen-count={listed.length}
+            data-touch-screen-count={visible.length}
             className="grid gap-2"
             style={{ gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))` }}
           >
-            {listed.map((device) => (
+            {visible.map((device) => (
               <TouchScreenTile
                 key={device.id}
                 device={device}
@@ -213,6 +310,55 @@ export function TouchScreenGrid({
         )}
       </div>
     </section>
+  );
+}
+
+const STEP_BTN =
+  "inline-flex h-11 min-h-11 items-center justify-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-40";
+
+function Stepper({
+  label,
+  value,
+  dim,
+  onStep,
+}: {
+  label: string;
+  value: number;
+  /** Auto mode: shows the automatic value; stepping switches to fixed. */
+  dim: boolean;
+  onStep: (delta: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-0.5" data-grid-stepper={label.toLowerCase()}>
+      <button
+        type="button"
+        aria-label={`Fewer ${label.toLowerCase()}`}
+        disabled={value <= 1}
+        onClick={() => onStep(-1)}
+        className={cn(STEP_BTN, "w-9 rounded-r-md")}
+      >
+        <Minus className="size-3.5" />
+      </button>
+      <span
+        className={cn(
+          "min-w-[3.25rem] text-center font-mono text-[11px] leading-tight",
+          dim ? "text-[var(--pc-muted)]" : "text-[var(--pc-ink)]",
+        )}
+        aria-live="polite"
+      >
+        <span className="block text-[9px] uppercase tracking-wider text-[var(--pc-muted)]">{label}</span>
+        <span data-grid-value>{value}</span>
+      </span>
+      <button
+        type="button"
+        aria-label={`More ${label.toLowerCase()}`}
+        disabled={value >= GRID_LAYOUT_MAX}
+        onClick={() => onStep(1)}
+        className={cn(STEP_BTN, "w-9 rounded-l-md")}
+      >
+        <Plus className="size-3.5" />
+      </button>
+    </div>
   );
 }
 

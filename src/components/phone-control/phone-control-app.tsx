@@ -193,7 +193,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v28"
+      data-ui-build="pc-shell-v29"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -308,6 +308,13 @@ export function PhoneControlApp() {
                 onMouseChange={setMouseOn}
                 onPointer={onPointer}
                 onStats={setStreamStats}
+                controlsDock={
+                  dockedScreens && devicesCollapsed
+                    ? "right"
+                    : dockedScreens && screensCollapsed
+                      ? "left"
+                      : "bottom"
+                }
                 onNav={handleNav}
                 onInstall={handleInstall}
                 lastTap={lastTap}
