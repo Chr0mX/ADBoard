@@ -61,11 +61,13 @@ The agent plays each step (`POST /api/input/gesture`) on all of a tab's phones a
 - With no live screen, a one-finger step falls back to `adb shell input swipe`. Multi-touch needs the scrcpy session, which the agent starts if needed.
 - A phone that fails drops out of the run and the rest continue. **Stop** waits for the gesture in flight, which always finishes with its fingers lifted.
 
-Stop conditions:
+**Repeat** sits next to the Run button, in the Macros editor and in the Control panel:
 
-- **When stopped:** runs until you press Stop.
-- **After time:** stops when the time is up.
-- **After cycles:** plays all enabled steps that many times.
+- **Loop forever:** plays all enabled steps over and over until you press Stop. The status shows `cycle N · ∞ until stopped`.
+- **Cycles:** plays all enabled steps that many times.
+- **For time:** repeats until the time is up.
+
+The Run button says what will happen ("Run forever on 3 phones", "Run ×10 …", "Run for 5 min …"). The setting is locked while the tab runs.
 
 **Random offset** moves each touch by up to N reference pixels, like Auto Clicker's anti-detection.
 

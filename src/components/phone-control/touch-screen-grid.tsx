@@ -181,21 +181,14 @@ export function TouchScreenGrid({
   const [storedBar, setStoredBar] = useStoredString("adboard-grid-bar");
   const barHidden = storedBar === "hidden";
   const [optionsOpen, setOptionsOpen] = useState(false);
-  const optionsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!optionsOpen) return;
-    const onDown = (event: PointerEvent) => {
-      if (!optionsRef.current?.contains(event.target as Node)) setOptionsOpen(false);
-    };
+    // In-flow strip: it never covers tiles, so only Esc / ✕ / the button close it.
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOptionsOpen(false);
     };
-    document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [optionsOpen]);
 
   const setLayout = (cols: number, rows: number) => {
@@ -345,7 +338,6 @@ export function TouchScreenGrid({
               </div>
             )}
             <div
-              ref={optionsRef}
               role="group"
               aria-label="Grid layout"
               data-grid-layout={layoutKey}
@@ -366,45 +358,6 @@ export function TouchScreenGrid({
                 <LayoutGrid className="size-3.5" />
                 <span className="font-mono">{fixed ? `${fixed.cols}×${fixed.rows}` : "Auto"}</span>
               </button>
-              {optionsOpen && (
-                <div
-                  id="pc-grid-options"
-                  data-grid-options
-                  className="absolute right-0 top-full z-30 mt-2 flex w-max flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3 shadow-lg"
-                >
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Grid layout</p>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      aria-pressed={!fixed}
-                      data-grid-auto
-                      onClick={() => {
-                        setStoredLayout("auto");
-                        setPage(0);
-                      }}
-                      className={cn(STEP_BTN, "px-3 text-xs", !fixed && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]")}
-                    >
-                      Auto
-                    </button>
-                    <Stepper
-                      label="Columns"
-                      value={fixed ? fixed.cols : desktop ? pack.cols : mobileCols}
-                      dim={!fixed}
-                      onStep={(delta) => step("cols", delta)}
-                    />
-                    <span aria-hidden className="font-mono text-xs text-[var(--pc-muted)]">×</span>
-                    <Stepper
-                      label="Rows"
-                      value={fixed ? fixed.rows : desktop ? pack.rows : Math.ceil(listed.length / mobileCols)}
-                      dim={!fixed}
-                      onStep={(delta) => step("rows", delta)}
-                    />
-                  </div>
-                  <p className="max-w-[18rem] text-[11px] leading-snug text-[var(--pc-muted)]">
-                    More phones than cells adds pages (‹ › in the bar).
-                  </p>
-                </div>
-              )}
             </div>
             {onToggleMacros && (
               <button
@@ -448,6 +401,54 @@ export function TouchScreenGrid({
               </Button>
             )}
           </div>
+        </div>
+      )}
+      {!barHidden && optionsOpen && (
+        <div
+          id="pc-grid-options"
+          data-grid-options
+          role="group"
+          aria-label="Grid layout options"
+          className="flex shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1.5"
+        >
+          <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Layout</span>
+          <button
+            type="button"
+            aria-pressed={!fixed}
+            data-grid-auto
+            onClick={() => {
+              setStoredLayout("auto");
+              setPage(0);
+            }}
+            className={cn(STEP_BTN, "px-3 text-xs", !fixed && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]")}
+          >
+            Auto
+          </button>
+          <Stepper
+            label="Columns"
+            value={fixed ? fixed.cols : desktop ? pack.cols : mobileCols}
+            dim={!fixed}
+            onStep={(delta) => step("cols", delta)}
+          />
+          <span aria-hidden className="font-mono text-xs text-[var(--pc-muted)]">×</span>
+          <Stepper
+            label="Rows"
+            value={fixed ? fixed.rows : desktop ? pack.rows : Math.ceil(listed.length / mobileCols)}
+            dim={!fixed}
+            onStep={(delta) => step("rows", delta)}
+          />
+          <p className="hidden min-w-0 flex-1 truncate text-[11px] text-[var(--pc-muted)] lg:block">
+            More phones than cells adds pages (‹ › in the bar).
+          </p>
+          <button
+            type="button"
+            aria-label="Close layout options"
+            data-grid-options-close
+            onClick={() => setOptionsOpen(false)}
+            className={cn(STEP_BTN, "ml-auto w-11")}
+          >
+            <X className="size-4" />
+          </button>
         </div>
       )}
       <div

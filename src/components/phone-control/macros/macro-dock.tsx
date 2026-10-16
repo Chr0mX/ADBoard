@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { IconButton, Segmented, formatMs, stepColor } from "@/components/phone-control/macros/fields";
 import { LivePreview } from "@/components/phone-control/macros/preview";
-import { RunStatus } from "@/components/phone-control/macros/macros-panel";
+import { LoopControl, RunStatus, runLabel } from "@/components/phone-control/macros/macros-panel";
 
 type TargetSource = "control" | "tab";
 
@@ -77,6 +77,8 @@ export function MacroDock({
         ]}
       />
 
+      <LoopControl tab={tab} disabled={running} />
+
       {running ? (
         <button
           type="button"
@@ -97,7 +99,7 @@ export function MacroDock({
           data-macro-dock-start
         >
           <Play className="size-4" aria-hidden />
-          Run on {online.length} phone{online.length === 1 ? "" : "s"}
+          {runLabel(tab, online.length)}
         </button>
       )}
       {!running && enabled === 0 && <p className="text-xs text-[var(--pc-muted)]">This tab has no enabled steps.</p>}

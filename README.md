@@ -319,7 +319,7 @@ ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's d
 ## Layout tips
 
 - **Folding side panels:** fold Screens or Devices (chevron in the panel header, or Alt+Shift+[ / ]) and the Back/Home/Recent row, tools and stream options move into that freed column, so the phone gets the full height. With both folded they sit on the right.
-- **Grid view:** one slim bar above the tiles holds who gets touches (Selected / Multi / All), Back/Home/Recent, pages, **Layout** (popover: Auto or Columns × Rows), **Macros** and Exit. **⌃⌃** hides the bar so the tiles use the full height; the **Controls** chip brings it back. With more phones than cells, ‹ › pages through them. The layout and the bar state are saved per browser.
+- **Grid view:** one slim bar above the tiles holds who gets touches (Selected / Multi / All), Back/Home/Recent, pages, **Layout** (opens a strip under the bar, Auto or Columns × Rows; the tiles shrink to make room instead of being covered), **Macros** and Exit. **⌃⌃** hides the bar so the tiles use the full height; the **Controls** chip brings it back. With more phones than cells, ‹ › pages through them. The layout and the bar state are saved per browser.
 
 ## Touch macros
 

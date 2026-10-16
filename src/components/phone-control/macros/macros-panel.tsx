@@ -543,40 +543,6 @@ function SettingsCard({
         />
       </div>
 
-      <div className="grid gap-2 @lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <Segmented
-          label="Stop"
-          name={`stop-${tab.id}`}
-          value={tab.stop.mode}
-          onChange={(mode) => onChange((t) => ({ ...t, stop: { ...t.stop, mode } }))}
-          options={[
-            { id: "infinite", label: "When stopped" },
-            { id: "time", label: "After time" },
-            { id: "cycles", label: "After cycles" },
-          ]}
-        />
-        {tab.stop.mode === "time" && (
-          <NumField
-            label="Seconds"
-            suffix="s"
-            value={tab.stop.seconds}
-            min={1}
-            max={86_400 * 7}
-            onChange={(seconds) => onChange((t) => ({ ...t, stop: { ...t.stop, seconds } }))}
-          />
-        )}
-        {tab.stop.mode === "cycles" && (
-          <NumField
-            label="Cycles"
-            value={tab.stop.cycles}
-            min={1}
-            max={1_000_000}
-            onChange={(cycles) => onChange((t) => ({ ...t, stop: { ...t.stop, cycles } }))}
-            data-stop-cycles
-          />
-        )}
-      </div>
-
       <div className="grid gap-2 @lg:grid-cols-[10rem_minmax(0,1fr)]">
         <NumField
           label="Random offset"
@@ -693,6 +659,8 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
         })}
       </fieldset>
 
+      <LoopControl tab={tab} disabled={running} />
+
       <div className="flex items-center gap-2">
         {running ? (
           <button
@@ -714,7 +682,7 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
             data-macro-start
           >
             <Play className="size-4" aria-hidden />
-            Run on {onlineTargets.length} phone{onlineTargets.length === 1 ? "" : "s"}
+            {runLabel(tab, onlineTargets.length)}
           </button>
         )}
       </div>
@@ -737,7 +705,12 @@ export function RunStatus({ tab }: { tab: MacroTab }) {
   const snapshot: RunSnapshot | null = runFor(tab.id);
   if (!snapshot) return null;
   const elapsed = Math.max(0, ((snapshot.finishedAt ?? now) - snapshot.startedAt) / 1000);
-  const cycles = tab.stop.mode === "cycles" ? `${snapshot.cycle}/${tab.stop.cycles}` : `${snapshot.cycle}`;
+  const cycles =
+    tab.stop.mode === "cycles"
+      ? `${snapshot.cycle}/${tab.stop.cycles}`
+      : tab.stop.mode === "infinite"
+        ? `${snapshot.cycle} · ∞ until stopped`
+        : `${snapshot.cycle}`;
   return (
     <>
         <div className="flex flex-col gap-2" data-macro-status={snapshot.status} aria-live="polite">
@@ -779,5 +752,55 @@ export function RunStatus({ tab }: { tab: MacroTab }) {
           </ul>
         </div>
     </>
+  );
+}
+
+/** "Run forever on 3 phones" / "Run ×10 on 3 phones" / "Run for 5 min on 3 phones". */
+export function runLabel(tab: MacroTab, phones: number) {
+  const on = `on ${phones} phone${phones === 1 ? "" : "s"}`;
+  if (tab.stop.mode === "infinite") return `Run forever ${on}`;
+  if (tab.stop.mode === "time") return `Run for ${formatMs(tab.stop.seconds * 1000)} ${on}`;
+  return `Run ×${tab.stop.cycles} ${on}`;
+}
+
+/** How long a tab plays: loop forever, a number of cycles, or a time limit. */
+export function LoopControl({ tab, disabled }: { tab: MacroTab; disabled?: boolean }) {
+  const setStop = (patch: Partial<MacroTab["stop"]>) => patchTab(tab.id, (t) => ({ ...t, stop: { ...t.stop, ...patch } }));
+  return (
+    <div className={cn("flex flex-col gap-2", disabled && "pointer-events-none opacity-60")} data-macro-loop={tab.stop.mode} aria-disabled={disabled || undefined}>
+      <Segmented
+        label="Repeat"
+        name={`loop-${tab.id}`}
+        value={tab.stop.mode}
+        onChange={(mode) => setStop({ mode })}
+        options={[
+          { id: "infinite", label: "Loop forever", hint: "Repeat all steps until you press Stop" },
+          { id: "cycles", label: "Cycles", hint: "Play all steps this many times" },
+          { id: "time", label: "For time", hint: "Repeat until the time is up" },
+        ]}
+      />
+      {tab.stop.mode === "cycles" && (
+        <NumField
+          label="Cycles"
+          suffix="×"
+          value={tab.stop.cycles}
+          min={1}
+          max={1_000_000}
+          onChange={(cycles) => setStop({ cycles })}
+          data-stop-cycles
+        />
+      )}
+      {tab.stop.mode === "time" && (
+        <NumField
+          label="Seconds"
+          suffix="s"
+          value={tab.stop.seconds}
+          min={1}
+          max={86_400 * 7}
+          onChange={(seconds) => setStop({ seconds })}
+          data-stop-seconds
+        />
+      )}
+    </div>
   );
 }
