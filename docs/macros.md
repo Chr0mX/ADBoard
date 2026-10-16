@@ -35,6 +35,22 @@ A step is 1–10 fingers played together, then a wait.
 
 **Add** has quick presets: Tap, Hold, Swipe, 2-finger tap, Pinch. **Add finger** turns any step into multi-touch. ▶ on a step plays just that step once on the tab's phones.
 
+## Live view
+
+- **Macros → Preview → Show on** a phone draws the touch markers over that phone's **live screen**. The frame follows the real video size, so it follows rotation too. A badge shows *Live*, *Waiting for picture…*, *Connecting…* or *Video unavailable*. Untick **Live** to edit without streaming. A tab opens on its first target phone.
+- While a tab runs, each touch flashes as a fading ring on the live preview and on the main Control screen.
+
+## Macros in Control
+
+**Macros** in the Control tool row (and in the grid bar) opens a Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet. The panel has:
+
+- **Macro tab** picker (● = running)
+- **Run on:** *Control targets* (whatever Selected / Multi / All points at, the default) or *Tab's phones*
+- **Run / Stop** and the live status (cycle, step, touches, each phone)
+- a live preview of the active phone with the tab's markers and touch rings
+- the steps, each with ▶ Test
+- **Edit in Macros**, which opens the full editor
+
 ## Running
 
 The agent plays each step (`POST /api/input/gesture`) on all of a tab's phones at once. It times touch-down, moves and release on its own clock.
@@ -92,5 +108,6 @@ Exporting back to Auto Clicker writes the same structure. A multi-touch step bec
 
 - Tabs live in the browser that made them. Use Export / Import to move them to another browser or machine.
 - Multi-touch and exact timing need the live scrcpy session. The ADB fallback covers one finger only.
-- The orientation check can't see the current rotation (see above).
+- The orientation check in runs uses the phone's reported size. The live preview warns using the real video size.
+- Live video needs a browser with H.264 WebCodecs (Chrome, Edge, Safari). Headless test browsers show the markers without the picture.
 - Mock fleet (`PHONECONTROL_FORCE_MOCK=1`): gestures keep their timing and report *Mock (not sent)*.

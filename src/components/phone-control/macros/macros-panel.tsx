@@ -49,7 +49,7 @@ import { cn } from "@/lib/utils";
 import { useDesk } from "@/components/phone-control/desk/desk-context";
 import { ConfirmDialog, PanelFrame } from "@/components/phone-control/desk/bits";
 import { Card, GhostButton, IconButton, NumField, Segmented, formatMs } from "@/components/phone-control/macros/fields";
-import { MacroPreview, type FingerEnd } from "@/components/phone-control/macros/preview";
+import { LivePreview, MacroPreview, type FingerEnd } from "@/components/phone-control/macros/preview";
 import { AddStepBar, StepList, makeStep } from "@/components/phone-control/macros/step-list";
 import { ImportDialog } from "@/components/phone-control/macros/import-dialog";
 
@@ -303,7 +303,7 @@ function TabStrip({
 function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
   const saved = viewState.get(tab.id);
   const [selectedStepId, setSelectedStepIdState] = useState<string | null>(saved?.stepId ?? tab.steps[0]?.id ?? null);
-  const [previewId, setPreviewIdState] = useState<string>(saved?.previewId ?? "reference");
+  const [previewId, setPreviewIdState] = useState<string>(saved?.previewId ?? tab.targetIds[0] ?? "reference");
   const [placing, setPlacing] = useState(false);
   const running = isRunning(tab.id);
 
@@ -321,7 +321,7 @@ function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
   const setSteps = (steps: MacroStep[]) => update((t) => ({ ...t, steps }));
 
   const previewDevice = devices.find((d) => d.id === previewId && d.resolution.width > 0) ?? null;
-  const frame: Size | null = previewDevice ? previewDevice.resolution : null;
+  const [live, setLive] = useState(true);
   const targets = devices.filter((d) => tab.targetIds.includes(d.id));
 
   const moveFinger = (stepId: string, fingerId: string, end: FingerEnd, point: { x: number; y: number }) =>
@@ -337,6 +337,20 @@ function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
             },
       ),
     );
+
+  const previewProps = {
+    tab,
+    selectedStepId,
+    placing,
+    onSelectStep: setSelectedStepId,
+    onMoveFinger: moveFinger,
+    onPlace: (point: { x: number; y: number }) => {
+      if (tab.steps.length >= MAX_STEPS) return;
+      const step = makeStep("tap", tab, point);
+      setSteps([...tab.steps, step]);
+      setSelectedStepId(step.id);
+    },
+  };
 
   return (
     <div className="@container flex min-w-0 flex-col gap-3" data-macro-workspace={tab.name}>
@@ -356,46 +370,44 @@ function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
               </GhostButton>
             }
           >
-            <label className="flex flex-col gap-1 text-xs text-[var(--pc-muted)]">
-              Show on
-              <select
-                value={previewDevice ? previewDevice.id : "reference"}
-                onChange={(event) => setPreviewId(event.target.value)}
-                className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-xs text-[var(--pc-ink)]"
-                data-macro-preview-select
-              >
-                <option value="reference">
-                  Reference screen ({tab.reference.width}×{tab.reference.height})
-                </option>
-                {devices
-                  .filter((d) => d.resolution.width > 0)
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} ({d.resolution.width}×{d.resolution.height}){d.status !== "online" ? ` · ${d.status}` : ""}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {previewDevice && tab.orientation === "match" && orientationMismatch(tab.reference, previewDevice.resolution) && (
-              <p className="rounded-lg bg-[var(--pc-warn-soft)] px-2 py-1.5 text-xs text-[var(--pc-warn)]">
-                {previewDevice.name} is in the other orientation; runs skip it unless “Run anyway” is set.
-              </p>
+            <div className="flex items-end gap-2">
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-[var(--pc-muted)]">
+                Show on
+                <select
+                  value={previewDevice ? previewDevice.id : "reference"}
+                  onChange={(event) => setPreviewId(event.target.value)}
+                  className="h-11 min-h-11 min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-xs text-[var(--pc-ink)]"
+                  data-macro-preview-select
+                >
+                  <option value="reference">
+                    Reference screen ({tab.reference.width}×{tab.reference.height})
+                  </option>
+                  {devices
+                    .filter((d) => d.resolution.width > 0)
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} ({d.resolution.width}×{d.resolution.height}){d.status !== "online" ? ` · ${d.status}` : ""}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {previewDevice && (
+                <label className="flex h-11 min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--pc-line)] px-2.5 text-xs text-[var(--pc-ink)]">
+                  <input type="checkbox" checked={live} onChange={() => setLive(!live)} data-macro-live-toggle />
+                  Live
+                </label>
+              )}
+            </div>
+            {previewDevice ? (
+              <LivePreview
+                key={previewDevice.id}
+                device={previewDevice}
+                live={live && previewDevice.status === "online"}
+                {...previewProps}
+              />
+            ) : (
+              <MacroPreview frame={null} frameLabel="Reference screen" {...previewProps} />
             )}
-            <MacroPreview
-              tab={tab}
-              frame={frame}
-              frameLabel={previewDevice ? previewDevice.name : "Reference screen"}
-              selectedStepId={selectedStepId}
-              placing={placing}
-              onSelectStep={setSelectedStepId}
-              onMoveFinger={moveFinger}
-              onPlace={(point) => {
-                if (tab.steps.length >= MAX_STEPS) return;
-                const step = makeStep("tap", tab, point);
-                setSteps([...tab.steps, step]);
-                setSelectedStepId(step.id);
-              }}
-            />
           </Card>
           <RunCard tab={tab} devices={devices} targets={targets} />
         </div>
@@ -626,7 +638,6 @@ function useNow(active: boolean) {
 function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; targets: Device[] }) {
   useRunVersion();
   const running = isRunning(tab.id);
-  const now = useNow(running);
   const snapshot: RunSnapshot | null = runFor(tab.id);
   const busy = busyPhones(tab.id);
   const onlineTargets = targets.filter((d) => d.status === "online");
@@ -638,8 +649,6 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
       targetIds: t.targetIds.includes(id) ? t.targetIds.filter((x) => x !== id) : [...t.targetIds, id],
     }));
 
-  const elapsed = snapshot ? Math.max(0, ((snapshot.finishedAt ?? now) - snapshot.startedAt) / 1000) : 0;
-  const cycles = tab.stop.mode === "cycles" ? `${snapshot?.cycle ?? 0}/${tab.stop.cycles}` : `${snapshot?.cycle ?? 0}`;
 
   return (
     <Card title="Run" data-macro-run>
@@ -715,7 +724,22 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
         </p>
       )}
 
-      {snapshot && (
+      <RunStatus tab={tab} />
+    </Card>
+  );
+}
+
+/** Cycle / step / touches and each phone's state for a tab's current or last run. */
+export function RunStatus({ tab }: { tab: MacroTab }) {
+  useRunVersion();
+  const running = isRunning(tab.id);
+  const now = useNow(running);
+  const snapshot: RunSnapshot | null = runFor(tab.id);
+  if (!snapshot) return null;
+  const elapsed = Math.max(0, ((snapshot.finishedAt ?? now) - snapshot.startedAt) / 1000);
+  const cycles = tab.stop.mode === "cycles" ? `${snapshot.cycle}/${tab.stop.cycles}` : `${snapshot.cycle}`;
+  return (
+    <>
         <div className="flex flex-col gap-2" data-macro-status={snapshot.status} aria-live="polite">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--pc-ink)]">
             <span className="font-semibold uppercase">{snapshot.status}</span>
@@ -754,7 +778,6 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
             ))}
           </ul>
         </div>
-      )}
-    </Card>
+    </>
   );
 }

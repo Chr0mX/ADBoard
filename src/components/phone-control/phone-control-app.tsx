@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { StreamStats } from "@/lib/devices/types";
@@ -12,6 +13,7 @@ import { StatusBar } from "@/components/phone-control/status-bar";
 import { AppsPanel } from "@/components/phone-control/desk/apps-panel";
 import { AutomatePanel } from "@/components/phone-control/desk/automate-panel";
 import { MacrosPanel } from "@/components/phone-control/macros/macros-panel";
+import { MacroDock } from "@/components/phone-control/macros/macro-dock";
 import {
   DESK_SECTIONS,
   DeskProvider,
@@ -72,6 +74,10 @@ export function PhoneControlApp() {
   // Mobile always fills; Fill toggle stays desktop-only.
   const fillWindow = wide ? storedFillWindow : true;
   const [devicesOpen, setDevicesOpen] = useState(false);
+  // Macros panel in Control: right side on desktop, a sheet on phones.
+  const [storedMacroDock, setStoredMacroDock] = useStoredString("adboard-macro-dock");
+  const macroDockOpen = storedMacroDock === "open";
+  const setMacroDockOpen = (open: boolean) => setStoredMacroDock(open ? "open" : "closed");
   // Desktop side panels fold to a thin rail so the phone gets the width.
   const [screensCollapsed, setScreensCollapsed] = useStoredFlag("phonecontrol-screens-collapsed", false);
   const [devicesCollapsed, setDevicesCollapsed] = useStoredFlag("phonecontrol-devices-collapsed", false);
@@ -157,7 +163,9 @@ export function PhoneControlApp() {
     );
   };
 
-  const showDevices = wide ? !fillWindow && !gridView : devicesOpen;
+  const macroDockSide = macroDockOpen && wide && !fillWindow;
+  const macroSheet = macroDockOpen && !wide;
+  const showDevices = wide ? !fillWindow && !gridView && !macroDockSide : devicesOpen && !macroSheet;
   const dockedScreens = wide && !fillWindow && !gridView;
   const screenSheet = screensOpen && !dockedScreens && wide && !gridView;
   const mobileControl = !wide && section === "control";
@@ -194,7 +202,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v31"
+      data-ui-build="pc-shell-v32"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -311,7 +319,7 @@ export function PhoneControlApp() {
                 onPointer={onPointer}
                 onStats={setStreamStats}
                 controlsDock={
-                  dockedScreens && devicesCollapsed
+                  dockedScreens && devicesCollapsed && !macroDockSide
                     ? "right"
                     : dockedScreens && screensCollapsed
                       ? "left"
@@ -327,8 +335,43 @@ export function PhoneControlApp() {
                 selectedIds={selectedIds}
                 onToggleSelected={toggleSelected}
                 broadcastTargets={broadcastTargets}
+                macroDockOpen={macroDockOpen}
+                onMacroDockChange={(open) => {
+                  if (open) setDevicesOpen(false);
+                  setMacroDockOpen(open);
+                }}
               />
             </div>
+
+            {macroDockSide && (
+              <aside
+                data-side-panel="macros"
+                className="flex min-h-0 w-[320px] shrink-0 flex-col gap-3 overflow-y-auto pb-2 xl:w-[360px]"
+              >
+                <PanelHeader title="Macros" side="right" onCollapse={() => setMacroDockOpen(false)} />
+                <MacroDock devices={devices} controlTargets={broadcastTargets} activeDevice={activeDevice} />
+              </aside>
+            )}
+            {macroSheet &&
+              // Portal: sits above the mobile floating controls (fixed, z-20 on body).
+              createPortal(
+              <aside
+                role="dialog"
+                aria-modal="true"
+                aria-label="Macros"
+                data-macro-sheet
+                className="fixed inset-0 z-40 flex flex-col gap-3 overflow-y-auto bg-[var(--pc-paper)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">Macros</h2>
+                  <Button type="button" variant="outline" className="h-11 min-w-11" onClick={() => setMacroDockOpen(false)}>
+                    Close
+                  </Button>
+                </div>
+                <MacroDock devices={devices} controlTargets={broadcastTargets} activeDevice={activeDevice} />
+              </aside>,
+              document.body,
+            )}
 
             {showDevices && wide && devicesCollapsed && (
               <PanelRail
@@ -465,7 +508,7 @@ function PanelHeader({
   title: string;
   side: "left" | "right";
   onCollapse: () => void;
-  hintProps: HintProps;
+  hintProps?: HintProps;
 }) {
   const icon: ReactNode =
     side === "left" ? <ChevronLeft className="size-4" /> : <ChevronRight className="size-4" />;

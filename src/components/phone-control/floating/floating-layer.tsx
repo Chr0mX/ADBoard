@@ -35,6 +35,7 @@ export interface FloatingLayerProps {
   onScreenshot?: () => void;
   onScreenRecordToggle?: () => void;
   onOpenDevices: () => void;
+  onOpenMacros?: () => void;
   onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
 }
@@ -82,6 +83,7 @@ export function FloatingLayer(props: FloatingLayerProps) {
         onScreenshot={props.onScreenshot}
         onScreenRecordToggle={props.onScreenRecordToggle}
         onOpenDevices={props.onOpenDevices}
+        onOpenMacros={props.onOpenMacros}
         onToggleGrid={props.onToggleGrid}
         onOpenDesk={props.onOpenDesk}
       />

@@ -60,6 +60,52 @@ export function busyPhones(tabId: string): Record<string, string> {
   return busy;
 }
 
+/* Touch feed: the points each gesture sent, for ripples on live screens. */
+
+export interface MacroTouch {
+  id: number;
+  tabId: string;
+  deviceIds: string[];
+  /** 0–1 of each target screen. */
+  points: Array<{ x: number; y: number }>;
+  at: number;
+}
+
+const TOUCH_TTL_MS = 700;
+let touchSeq = 0;
+let touches: MacroTouch[] = [];
+const touchListeners = new Set<() => void>();
+
+function pushTouch(touch: Omit<MacroTouch, "id" | "at">) {
+  const at = Date.now();
+  touchSeq += 1;
+  touches = [...touches.filter((t) => at - t.at < TOUCH_TTL_MS), { ...touch, id: touchSeq, at }];
+  touchListeners.forEach((listener) => listener());
+  // Drop it again once it has faded.
+  setTimeout(() => {
+    const now = Date.now();
+    const next = touches.filter((t) => now - t.at < TOUCH_TTL_MS);
+    if (next.length !== touches.length) {
+      touches = next;
+      touchListeners.forEach((listener) => listener());
+    }
+  }, TOUCH_TTL_MS + 20);
+}
+
+function subscribeTouches(listener: () => void) {
+  touchListeners.add(listener);
+  return () => touchListeners.delete(listener);
+}
+
+const NO_TOUCHES: MacroTouch[] = [];
+
+/** Macro touches sent to `deviceId` in the last moment (null = any device). */
+export function useMacroTouches(deviceId: string | null): MacroTouch[] {
+  const all = useSyncExternalStore(subscribeTouches, () => touches, () => NO_TOUCHES);
+  if (deviceId === null) return all;
+  return all.filter((t) => t.deviceIds.includes(deviceId));
+}
+
 function toRunDevice(device: Device): RunDevice {
   return { id: device.id, name: device.name, status: device.status, resolution: device.resolution };
 }
@@ -103,6 +149,13 @@ export function startRun(tab: MacroTab, devices: Device[], onlyStepId?: string) 
       notify();
     },
     send: async (targets, strokes) => {
+      pushTouch({
+        tabId: tab.id,
+        deviceIds: targets.map((t) => t.id),
+        points: strokes.map((stroke) => stroke.points[stroke.points.length - 1] ?? { x: 0, y: 0 }).concat(
+          strokes.filter((stroke) => stroke.points.length > 1).map((stroke) => stroke.points[0]),
+        ),
+      });
       const result = await devicesClient.sendGesture(
         targets.length > 1 ? "multi" : "selected",
         targets.map((t) => byId.get(t.id)).filter((d): d is Device => Boolean(d)),

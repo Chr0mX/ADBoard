@@ -3,12 +3,17 @@
 import { useState } from "react";
 import {
   fromNormalized,
+  orientationMismatch,
+  orientationOf,
   placement,
   toNormalized,
   type MacroTab,
   type Size,
 } from "@/lib/macro/core";
 import { cn } from "@/lib/utils";
+import { useDeviceVideo } from "@/hooks/use-device-video";
+import { useMacroTouches, type MacroTouch } from "@/lib/macro/runs";
+import type { Device } from "@/lib/devices/types";
 import { stepColor } from "@/components/phone-control/macros/fields";
 
 export type FingerEnd = "start" | "end";
@@ -22,6 +27,10 @@ export function MacroPreview({
   tab,
   frame,
   frameLabel,
+  backdrop,
+  badge,
+  ripples,
+  readOnly = false,
   selectedStepId,
   placing,
   onSelectStep,
@@ -31,6 +40,14 @@ export function MacroPreview({
   tab: MacroTab;
   frame: Size | null;
   frameLabel: string;
+  /** Drawn under the markers, e.g. the phone's live video. */
+  backdrop?: React.ReactNode;
+  /** Top-left status chip, e.g. Live. */
+  badge?: React.ReactNode;
+  /** Recent macro touches, 0–1 of this screen. */
+  ripples?: MacroTouch[];
+  /** Show markers only (Control dock); no dragging. */
+  readOnly?: boolean;
   selectedStepId: string | null;
   placing: boolean;
   onSelectStep: (stepId: string) => void;
@@ -80,6 +97,7 @@ export function MacroPreview({
             if (point) onPlace(point);
           }}
         >
+          {backdrop}
           {/* Reference screen area (letterboxed in keep-aspect mode). */}
           <div
             aria-hidden
@@ -124,6 +142,8 @@ export function MacroPreview({
               }),
             )}
           </svg>
+          <TouchRipples touches={ripples ?? []} />
+          {badge && <div className="pointer-events-none absolute left-2 top-2 z-30">{badge}</div>}
           {tab.steps.map((step, index) =>
             step.fingers.map((finger, fingerIndex) => {
               const selected = step.id === selectedStepId;
@@ -141,8 +161,11 @@ export function MacroPreview({
                     data-macro-marker={label + (end === "end" ? "→" : "")}
                     aria-label={`${name} at ${x}, ${y}. Drag or use arrow keys to move.`}
                     aria-pressed={selected}
+                    tabIndex={readOnly ? -1 : undefined}
+                    aria-hidden={readOnly || undefined}
                     className={cn(
                       "absolute flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none",
+                      readOnly && "pointer-events-none",
                       selected ? "z-20" : "z-10",
                     )}
                     style={{ left: p.left, top: p.top }}
@@ -211,6 +234,88 @@ export function MacroPreview({
         {frameLabel} · {screen.width}×{screen.height}
         {device && tab.scale === "fit" && (box.width < 1 || box.height < 1) ? " · keep aspect (dashed = macro area)" : ""}
       </p>
+    </div>
+  );
+}
+
+/** Fading rings where a macro just touched (points are 0–1 of the screen). */
+export function TouchRipples({ touches }: { touches: MacroTouch[] }) {
+  if (touches.length === 0) return null;
+  return (
+    <div aria-hidden data-macro-ripples={touches.length} className="pointer-events-none absolute inset-0 z-[6] overflow-hidden">
+      {touches.flatMap((touch) =>
+        touch.points.map((p, i) => (
+          <span key={`${touch.id}-${i}`} className="pc-ripple" style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }} />
+        )),
+      )}
+    </div>
+  );
+}
+
+/**
+ * The preview on a phone's live screen: its video under the markers, sized
+ * by the real (rotation-aware) video frame, with ripples while a macro runs.
+ */
+export function LivePreview({
+  device,
+  live,
+  ...rest
+}: {
+  device: Device;
+  live: boolean;
+} & Omit<Parameters<typeof MacroPreview>[0], "frame" | "frameLabel" | "backdrop" | "badge" | "ripples">) {
+  const { canvasRef, configured, decodeState, frameSize } = useDeviceVideo(live ? device.serial : null);
+  const touches = useMacroTouches(device.id);
+  const frame = (live && frameSize) || device.resolution;
+  const playing = live && configured && decodeState === "decoding";
+  const mismatch = rest.tab.orientation === "match" && orientationMismatch(rest.tab.reference, frame);
+  const state = !configured
+    ? { key: "off", text: "No video (mock UI)" }
+    : decodeState === "decoding"
+      ? { key: "live", text: "Live" }
+      : decodeState === "error" || decodeState === "unsupported"
+        ? { key: "unavailable", text: "Video unavailable" }
+        : decodeState === "waiting"
+          ? { key: "waiting", text: "Waiting for picture…" }
+          : { key: "connecting", text: "Connecting…" };
+  const badge = live ? (
+    <span
+      data-macro-live={state.key}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider",
+        playing ? "bg-[var(--pc-signal)] text-[#04140c]" : "bg-[var(--pc-panel)]/90 text-[var(--pc-muted)]",
+      )}
+    >
+      {playing && <span className="size-1.5 animate-pulse rounded-full bg-[#04140c]" />}
+      {state.text}
+    </span>
+  ) : null;
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {mismatch && (
+        <p className="rounded-lg bg-[var(--pc-warn-soft)] px-2 py-1.5 text-xs text-[var(--pc-warn)]">
+          {device.name} is {orientationOf(frame)} right now and this tab is {orientationOf(rest.tab.reference)}; runs skip it unless “Run anyway” is set.
+        </p>
+      )}
+      <MacroPreview
+        {...rest}
+        frame={frame}
+        frameLabel={`${device.name}${live && frameSize ? " · live" : ""}`}
+        badge={badge}
+        ripples={touches}
+        backdrop={
+          live && configured ? (
+            <canvas
+              ref={canvasRef}
+              data-macro-live-canvas
+              className={cn(
+                "pointer-events-none absolute inset-0 h-full w-full object-contain transition-opacity",
+                playing ? "opacity-100" : "opacity-0",
+              )}
+            />
+          ) : null
+        }
+      />
     </div>
   );
 }

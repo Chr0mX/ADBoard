@@ -16,6 +16,7 @@ import {
   Smartphone,
   Square,
   Video,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
@@ -40,6 +41,8 @@ import {
 } from "@/lib/desk/capture";
 import { offlineOverlayCopy } from "@/lib/ui/connection-copy";
 import { useDeviceVideo } from "@/hooks/use-device-video";
+import { useMacroTouches } from "@/lib/macro/runs";
+import { TouchRipples } from "@/components/phone-control/macros/preview";
 import { fitVideoBox } from "@/lib/video/fit-box";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
@@ -93,6 +96,9 @@ interface PhoneScreenProps {
   selectedIds?: Set<string>;
   onToggleSelected?: (deviceId: string, selected: boolean) => void;
   broadcastTargets?: Device[];
+  /** Macros panel next to the phone (Control mode). */
+  macroDockOpen?: boolean;
+  onMacroDockChange?: (open: boolean) => void;
   /** Desktop: put nav + tool rows in a side column (a folded panel freed it). */
   controlsDock?: "bottom" | "left" | "right";
   onNav: (action: NavAction["type"]) => void;
@@ -130,6 +136,8 @@ export function PhoneScreen({
   selectedIds,
   onToggleSelected,
   broadcastTargets,
+  macroDockOpen = false,
+  onMacroDockChange,
   onNav,
   onInstall,
   lastTap,
@@ -867,6 +875,21 @@ export function PhoneScreen({
               <span className={toolLabelClass}>Grid</span>
             </Toggle>
           )}
+          {onMacroDockChange && (
+            <Toggle
+              pressed={macroDockOpen}
+              onPressedChange={(on) => onMacroDockChange(on)}
+              aria-label={macroDockOpen ? "Hide macros" : "Macros"}
+              data-macro-dock-toggle={macroDockOpen ? "1" : "0"}
+              className={cn(
+                toolControlClass,
+                "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
+              )}
+            >
+              <Zap className="size-4" />
+              <span className={toolLabelClass}>Macros</span>
+            </Toggle>
+          )}
           {showScreensButton && (
             <Button
               type="button"
@@ -953,7 +976,7 @@ export function PhoneScreen({
         floatingChrome ? "gap-0" : "gap-2",
       )}
     >
-      {!fillWindow && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
+      {!fillWindow && !gridView && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
         <p className="truncate text-center font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
           {videoError || streamLabel}
         </p>
@@ -979,6 +1002,8 @@ export function PhoneScreen({
             onToggleSelected={onToggleSelected}
             broadcastTargets={broadcastTargets}
             onNav={floatingChrome ? undefined : onNav}
+            macrosOpen={macroDockOpen}
+            onToggleMacros={onMacroDockChange ? () => onMacroDockChange(!macroDockOpen) : undefined}
           />
         ) : (
         <div className="flex min-h-0 w-full max-w-full flex-1 flex-col">
@@ -1062,6 +1087,7 @@ export function PhoneScreen({
                 )}
               />
             )}
+            {device && <MacroRipples deviceId={device.id} />}
 
             {awaitingPicture && (
               <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 font-mono text-[10px] uppercase tracking-wider text-white/70">
@@ -1296,6 +1322,7 @@ export function PhoneScreen({
           onScreenshot={() => void takeScreenshot()}
           onScreenRecordToggle={() => void toggleScreenRecord()}
           onOpenDevices={() => onOpenDevices?.()}
+          onOpenMacros={onMacroDockChange ? () => onMacroDockChange(true) : undefined}
           onToggleGrid={() => onToggleGrid?.()}
           onOpenDesk={(section) => desk?.open(section)}
         />
@@ -1363,4 +1390,10 @@ function ApkFileButton({
       />
     </label>
   );
+}
+
+/** Where a running macro is touching this phone, over the live picture. */
+function MacroRipples({ deviceId }: { deviceId: string }) {
+  const touches = useMacroTouches(deviceId);
+  return <TouchRipples touches={touches} />;
 }

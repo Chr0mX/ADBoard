@@ -319,11 +319,11 @@ ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's d
 ## Layout tips
 
 - **Folding side panels:** fold Screens or Devices (chevron in the panel header, or Alt+Shift+[ / ]) and the Back/Home/Recent row, tools and stream options move into that freed column, so the phone gets the full height. With both folded they sit on the right.
-- **Grid view:** pick **Auto** or set **Columns × Rows** in the grid header. With more phones than cells, Prev/Next pages through them. The choice is saved per browser.
+- **Grid view:** one slim bar above the tiles holds who gets touches (Selected / Multi / All), Back/Home/Recent, pages, **Layout** (popover: Auto or Columns × Rows), **Macros** and Exit. **⌃⌃** hides the bar so the tiles use the full height; the **Controls** chip brings it back. With more phones than cells, ‹ › pages through them. The layout and the bar state are saved per browser.
 
 ## Touch macros
 
-**Macros** in the desk header holds virtual tabs of single- and multi-touch steps. You can preview and drag touch points, scale them to each phone's resolution, and import or export Auto Clicker `config.txt` files. See [docs/macros.md](docs/macros.md).
+**Macros** in the desk header holds virtual tabs of single- and multi-touch steps. You can preview and drag touch points, scale them to each phone's resolution, and import or export Auto Clicker `config.txt` files. The preview can show a phone's live screen under the touch points. **Macros** in the Control tool row opens a side panel to run a tab on the phones you're controlling. See [docs/macros.md](docs/macros.md).
 
 ## Temporary files
 

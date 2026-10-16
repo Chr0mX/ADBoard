@@ -1,7 +1,7 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Maximize2, Minus, Plus, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, ChevronsUp, LayoutGrid, Maximize2, Minus, Plus, SlidersHorizontal, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { normalizePoint } from "@/lib/devices/coords";
@@ -41,6 +41,9 @@ interface TouchScreenGridProps {
   broadcastTargets?: Device[];
   /** Desktop grid: Back / Home / Recent to the current targets. */
   onNav?: (action: NavAction["type"]) => void;
+  /** Macros panel toggle (Control mode). */
+  macrosOpen?: boolean;
+  onToggleMacros?: () => void;
 }
 
 interface DesktopPack {
@@ -123,6 +126,8 @@ export function TouchScreenGrid({
   onToggleSelected,
   broadcastTargets = [],
   onNav,
+  macrosOpen = false,
+  onToggleMacros,
 }: TouchScreenGridProps) {
   // Show every known device — offline tiles stay visible so nothing disappears.
   const listed = devices;
@@ -171,6 +176,27 @@ export function TouchScreenGrid({
   }, [desktop, listed.length, layoutKey, fixedRows]);
 
   const mobileCols = fixed ? fixed.cols : mobileColumnCount(listed.length);
+
+  // One slim bar; layout lives in a popover, and the bar can be hidden.
+  const [storedBar, setStoredBar] = useStoredString("adboard-grid-bar");
+  const barHidden = storedBar === "hidden";
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!optionsOpen) return;
+    const onDown = (event: PointerEvent) => {
+      if (!optionsRef.current?.contains(event.target as Node)) setOptionsOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOptionsOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [optionsOpen]);
 
   const setLayout = (cols: number, rows: number) => {
     setStoredLayout(formatGridLayout({ mode: "fixed", cols, rows }));
@@ -226,122 +252,202 @@ export function TouchScreenGrid({
       data-touch-screen-layout={layout}
       className="relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2"
     >
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+      {barHidden ? (
+        <button
+          type="button"
+          data-grid-show-bar
+          aria-label="Show grid controls"
+          onClick={() => setStoredBar("shown")}
+          className="absolute right-3 top-3 z-20 inline-flex h-9 min-h-9 items-center gap-1.5 rounded-full border border-[var(--pc-line)] bg-[var(--pc-panel)]/85 px-3 text-xs text-[var(--pc-ink)] shadow-lg backdrop-blur hover:bg-[var(--pc-accent-soft)]"
+        >
+          <SlidersHorizontal className="size-3.5" />
+          Controls
+        </button>
+      ) : (
+        <div
+          data-grid-bar
+          className="flex min-h-11 min-w-0 shrink-0 flex-wrap items-center gap-2 sm:h-11 sm:flex-nowrap"
+        >
           {showTitle && (
-            <h2 className="shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)]">
+            <h2 className="hidden shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)] xl:block">
               ADBoard
             </h2>
           )}
-          <p className="truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
-            {listed.length} devices · {onlineCount} online · control each screen
-          </p>
-        </div>
-        <div
-          role="group"
-          aria-label="Grid layout"
-          data-grid-layout={layoutKey}
-          className="flex shrink-0 flex-wrap items-center gap-1.5"
-        >
-          <button
-            type="button"
-            aria-pressed={!fixed}
-            data-grid-auto
-            onClick={() => {
-              setStoredLayout("auto");
-              setPage(0);
-            }}
-            className={cn(STEP_BTN, "px-3 text-xs", !fixed && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]")}
+          <p
+            className="hidden shrink-0 whitespace-nowrap font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)] xl:block"
+            title={`${listed.length} devices · ${onlineCount} online`}
           >
-            Auto
-          </button>
-          <Stepper
-            label="Columns"
-            value={fixed ? fixed.cols : desktop ? pack.cols : mobileCols}
-            dim={!fixed}
-            onStep={(delta) => step("cols", delta)}
-          />
-          <span aria-hidden className="font-mono text-xs text-[var(--pc-muted)]">×</span>
-          <Stepper
-            label="Rows"
-            value={fixed ? fixed.rows : desktop ? pack.rows : Math.ceil(listed.length / mobileCols)}
-            dim={!fixed}
-            onStep={(delta) => step("rows", delta)}
-          />
-          {fixed && pages > 1 && (
-            <div className="flex items-center gap-1" data-grid-page={`${page + 1}/${pages}`}>
-              <button
-                type="button"
-                aria-label="Previous page"
-                disabled={page === 0}
-                onClick={() => setPage(page - 1)}
-                className={cn(STEP_BTN, "w-11")}
+            {onlineCount}/{listed.length} online
+          </p>
+          {onControlModeChange && (
+            <div className="flex min-w-0 shrink items-center gap-2" data-grid-targets title={touchNote}>
+              <ControlModes
+                compact
+                mode={controlMode}
+                onChange={onControlModeChange}
+                selectedCount={activeId ? 1 : 0}
+                multiCount={selectedIds?.size ?? 0}
+                onlineCount={onlineCount}
+              />
+              {onNav && (
+                <div className="flex shrink-0 items-center gap-1" data-grid-nav>
+                  {(
+                    [
+                      ["back", "Back"],
+                      ["home", "Home"],
+                      ["recent", "Recent"],
+                    ] as const
+                  ).map(([action, label]) => (
+                    <button
+                      key={action}
+                      type="button"
+                      aria-label={`${label} on target phones`}
+                      onClick={() => onNav(action)}
+                      className={cn(STEP_BTN, "px-3 font-mono text-xs")}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p
+                className="hidden min-w-0 truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)] 2xl:block"
+                data-grid-touch-note
               >
-                <ChevronLeft className="size-4" />
-              </button>
-              <span className="whitespace-nowrap font-mono text-[11px] text-[var(--pc-ink)]">
-                Page {page + 1} of {pages}
-              </span>
-              <button
-                type="button"
-                aria-label="Next page"
-                disabled={page >= pages - 1}
-                onClick={() => setPage(page + 1)}
-                className={cn(STEP_BTN, "w-11")}
-              >
-                <ChevronRight className="size-4" />
-              </button>
+                {touchNote}
+              </p>
             </div>
           )}
-        </div>
-        {onExit && (
-          <Button
-            type="button"
-            variant="outline"
-            aria-label="Exit grid view"
-            data-grid-exit
-            className={cn(PC_HIT_MIN, "h-11 shrink-0 gap-1.5 border-[var(--pc-line)] px-2 text-[var(--pc-ink)]")}
-            onClick={onExit}
-          >
-            <X className="size-3.5" />
-            <span className={desktop ? "inline text-xs" : "sr-only"}>Exit</span>
-          </Button>
-        )}
-      </div>
-      {onControlModeChange && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2" data-grid-targets>
-          <ControlModes
-            compact
-            mode={controlMode}
-            onChange={onControlModeChange}
-            selectedCount={activeId ? 1 : 0}
-            multiCount={selectedIds?.size ?? 0}
-            onlineCount={onlineCount}
-          />
-          {onNav && (
-            <div className="flex items-center gap-1" data-grid-nav>
-              {(
-                [
-                  ["back", "Back"],
-                  ["home", "Home"],
-                  ["recent", "Recent"],
-                ] as const
-              ).map(([action, label]) => (
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {fixed && pages > 1 && (
+              <div className="flex items-center gap-1" data-grid-page={`${page + 1}/${pages}`}>
                 <button
-                  key={action}
                   type="button"
-                  aria-label={`${label} on target phones`}
-                  onClick={() => onNav(action)}
-                  className={cn(STEP_BTN, "px-3 font-mono text-xs")}
+                  aria-label="Previous page"
+                  disabled={page === 0}
+                  onClick={() => setPage(page - 1)}
+                  className={cn(STEP_BTN, "w-9")}
                 >
-                  {label}
+                  <ChevronLeft className="size-4" />
                 </button>
-              ))}
+                <span className="whitespace-nowrap font-mono text-[11px] text-[var(--pc-ink)]" aria-label={`Page ${page + 1} of ${pages}`}>
+                  {page + 1}/{pages}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next page"
+                  disabled={page >= pages - 1}
+                  onClick={() => setPage(page + 1)}
+                  className={cn(STEP_BTN, "w-9")}
+                >
+                  <ChevronRight className="size-4" />
+                </button>
+              </div>
+            )}
+            <div
+              ref={optionsRef}
+              role="group"
+              aria-label="Grid layout"
+              data-grid-layout={layoutKey}
+              className="relative"
+            >
+              <button
+                type="button"
+                aria-expanded={optionsOpen}
+                aria-controls="pc-grid-options"
+                data-grid-options-toggle
+                onClick={() => setOptionsOpen((open) => !open)}
+                className={cn(
+                  STEP_BTN,
+                  "gap-1.5 px-3 text-xs",
+                  optionsOpen && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
+                )}
+              >
+                <LayoutGrid className="size-3.5" />
+                <span className="font-mono">{fixed ? `${fixed.cols}×${fixed.rows}` : "Auto"}</span>
+              </button>
+              {optionsOpen && (
+                <div
+                  id="pc-grid-options"
+                  data-grid-options
+                  className="absolute right-0 top-full z-30 mt-2 flex w-max flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3 shadow-lg"
+                >
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Grid layout</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      aria-pressed={!fixed}
+                      data-grid-auto
+                      onClick={() => {
+                        setStoredLayout("auto");
+                        setPage(0);
+                      }}
+                      className={cn(STEP_BTN, "px-3 text-xs", !fixed && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]")}
+                    >
+                      Auto
+                    </button>
+                    <Stepper
+                      label="Columns"
+                      value={fixed ? fixed.cols : desktop ? pack.cols : mobileCols}
+                      dim={!fixed}
+                      onStep={(delta) => step("cols", delta)}
+                    />
+                    <span aria-hidden className="font-mono text-xs text-[var(--pc-muted)]">×</span>
+                    <Stepper
+                      label="Rows"
+                      value={fixed ? fixed.rows : desktop ? pack.rows : Math.ceil(listed.length / mobileCols)}
+                      dim={!fixed}
+                      onStep={(delta) => step("rows", delta)}
+                    />
+                  </div>
+                  <p className="max-w-[18rem] text-[11px] leading-snug text-[var(--pc-muted)]">
+                    More phones than cells adds pages (‹ › in the bar).
+                  </p>
+                </div>
+              )}
             </div>
-          )}
-          <p className="min-w-0 truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]" data-grid-touch-note>
-            {touchNote}
-          </p>
+            {onToggleMacros && (
+              <button
+                type="button"
+                aria-pressed={macrosOpen}
+                data-grid-macros
+                onClick={onToggleMacros}
+                className={cn(
+                  STEP_BTN,
+                  "gap-1.5 px-3 text-xs",
+                  macrosOpen && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
+                )}
+              >
+                <Zap className="size-3.5" />
+                <span className={desktop ? "inline" : "sr-only"}>Macros</span>
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="Hide grid controls"
+              data-grid-hide-bar
+              onClick={() => {
+                setOptionsOpen(false);
+                setStoredBar("hidden");
+              }}
+              className={cn(STEP_BTN, "w-11")}
+            >
+              <ChevronsUp className="size-4" />
+            </button>
+            {onExit && (
+              <Button
+                type="button"
+                variant="outline"
+                aria-label="Exit grid view"
+                data-grid-exit
+                className={cn(PC_HIT_MIN, "h-11 shrink-0 gap-1.5 border-[var(--pc-line)] px-2 text-[var(--pc-ink)]")}
+                onClick={onExit}
+              >
+                <X className="size-3.5" />
+                <span className={desktop ? "inline text-xs" : "sr-only"}>Exit</span>
+              </Button>
+            )}
+          </div>
         </div>
       )}
       <div

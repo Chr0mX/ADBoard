@@ -22,6 +22,7 @@ import {
   Video,
   Volume2,
   VolumeX,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
@@ -64,6 +65,7 @@ interface ControlPanelFloatProps {
   onScreenshot?: () => void;
   onScreenRecordToggle?: () => void;
   onOpenDevices: () => void;
+  onOpenMacros?: () => void;
   onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
 }
@@ -142,6 +144,7 @@ export function ControlPanelFloat({
   onScreenshot,
   onScreenRecordToggle,
   onOpenDevices,
+  onOpenMacros,
   onToggleGrid,
   onOpenDesk,
 }: ControlPanelFloatProps) {
@@ -463,6 +466,18 @@ export function ControlPanelFloat({
               <Smartphone className="size-5" />
             </Button>
           </PinableTool>
+          {onOpenMacros && !taskbarEdit && (
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Macros"
+              data-open-macros
+              className={HIT}
+              onClick={onOpenMacros}
+            >
+              <Zap className="size-5" />
+            </Button>
+          )}
           <PinableTool {...pinProps("desk")}>
             <Button
               type="button"

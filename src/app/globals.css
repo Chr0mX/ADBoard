@@ -378,3 +378,32 @@ body {
   background: var(--pc-line);
   flex: 0 0 auto;
 }
+
+/* Macro touch ripple on live screens. */
+@keyframes pc-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0.35);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.6);
+    opacity: 0;
+  }
+}
+.pc-ripple {
+  position: absolute;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  border: 3px solid var(--pc-accent);
+  background: color-mix(in srgb, var(--pc-accent) 25%, transparent);
+  pointer-events: none;
+  animation: pc-ripple 650ms ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-ripple {
+    animation: none;
+    opacity: 0.8;
+    transform: translate(-50%, -50%);
+  }
+}
