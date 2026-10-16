@@ -321,6 +321,10 @@ ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's d
 - **Folding side panels:** fold Screens or Devices (chevron in the panel header, or Alt+Shift+[ / ]) and the Back/Home/Recent row, tools and stream options move into that freed column, so the phone gets the full height. With both folded they sit on the right.
 - **Grid view:** pick **Auto** or set **Columns × Rows** in the grid header. With more phones than cells, Prev/Next pages through them. The choice is saved per browser.
 
+## Touch macros
+
+**Macros** in the desk header holds virtual tabs of single- and multi-touch steps. You can preview and drag touch points, scale them to each phone's resolution, and import or export Auto Clicker `config.txt` files. See [docs/macros.md](docs/macros.md).
+
 ## Temporary files
 
 Staged APKs, file pushes/pulls and upload chunks go to `<repo root>/temp/` (git-ignored), or `temp/` next to the executable when the pack runs without the repo. Set `PHONECONTROL_TEMP` to use another folder.
@@ -377,6 +381,7 @@ Control view on a desktop-width window. They use Alt+Shift (⌥⇧ on a Mac) so 
 | POST | `/api/sessions/{serial}/start\|stop\|restart` | Proxied to owning agent when remote |
 | POST | `/api/input/tap` | Normalized 0–1 → pixels; local inject + remote proxy |
 | POST | `/api/input/nav` | `back`/`home`/`recent` → keyevent (proxied) |
+| POST | `/api/input/gesture` | Timed single/multi-touch strokes (finger slots 0–9), played on the agent; every finger released (proxied) |
 | WS | `/ws` | UI: `devices`, `hosts`, `session_updated`, tap/nav |
 | WS | `/ws/agent` | Agent registration / heartbeats / command proxy |
 | WS | `/ws/devices/{serial}/video` | Status JSON + Annex-B H264; remote proxied via agent `http_base` |

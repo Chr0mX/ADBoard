@@ -1056,6 +1056,93 @@ impl SessionManager {
         }
     }
 
+    /// ADB was found. Without it the mock fleet stubs input.
+    pub fn adb_available(&self) -> bool {
+        self.adb_path.is_some()
+    }
+
+    /// The scrcpy control socket is open for this phone.
+    pub async fn has_control(&self, serial: &str) -> bool {
+        let guard = self.sessions.read().await;
+        guard
+            .get(serial)
+            .map(|live| live.control.is_some())
+            .unwrap_or(false)
+    }
+
+    /// One finger on slot `slot` (0–9) for multi-touch macros.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn inject_slot(
+        &self,
+        serial: &str,
+        phase: PointerPhase,
+        slot: u8,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    ) -> InjectResult {
+        let sender = {
+            let guard = self.sessions.read().await;
+            guard.get(serial).and_then(|live| live.control.clone())
+        };
+        let Some(sender) = sender else {
+            return InjectResult {
+                status: InjectStatus::Error,
+                detail: Some("scrcpy control is not connected".into()),
+            };
+        };
+        match sender.touch_slot(phase, slot, x, y, width, height).await {
+            Ok(()) => InjectResult {
+                status: InjectStatus::Ok,
+                detail: Some("scrcpy".into()),
+            },
+            Err(e) => InjectResult {
+                status: InjectStatus::Error,
+                detail: Some(e),
+            },
+        }
+    }
+
+    /// `adb shell input swipe X1 Y1 X2 Y2 MS` in device pixels. Plays a
+    /// one-finger tap, hold or swipe when the live screen is not running.
+    pub async fn adb_swipe(
+        &self,
+        serial: &str,
+        from: (u32, u32),
+        to: (u32, u32),
+        duration_ms: u32,
+    ) -> InjectResult {
+        let Some(adb) = self.adb_path.clone() else {
+            return InjectResult {
+                status: InjectStatus::Stub,
+                detail: Some("no ADB — mock fleet stub inject".into()),
+            };
+        };
+        let args: Vec<String> = vec![
+            "-s".into(),
+            serial.into(),
+            "shell".into(),
+            "input".into(),
+            "swipe".into(),
+            from.0.to_string(),
+            from.1.to_string(),
+            to.0.to_string(),
+            to.1.to_string(),
+            duration_ms.max(1).to_string(),
+        ];
+        match run_adb(&adb, &args).await {
+            Ok(()) => InjectResult {
+                status: InjectStatus::Ok,
+                detail: Some("adb input".into()),
+            },
+            Err(e) => InjectResult {
+                status: InjectStatus::Error,
+                detail: Some(e),
+            },
+        }
+    }
+
     /// `adb -s SERIAL install -r PATH`. Missing ADB is an error, not a fake success.
     pub async fn install_apk(&self, serial: &str, apk: &std::path::Path) -> InjectResult {
         let Some(adb) = self.adb_path.clone() else {

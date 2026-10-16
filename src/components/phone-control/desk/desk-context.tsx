@@ -9,6 +9,7 @@ export const DESK_SECTIONS = [
   { id: "manage", label: "Manage" },
   { id: "apps", label: "Apps" },
   { id: "files", label: "Files" },
+  { id: "macros", label: "Macros" },
   { id: "automate", label: "Automate" },
   { id: "developer", label: "Developer" },
   { id: "hosts", label: "Hosts" },

@@ -6,6 +6,8 @@ import type {
   MappedTap,
   NavAction,
   NavBroadcast,
+  GestureResult,
+  GestureStroke,
   NormalizedPoint,
   PointerPhase,
   PointerTool,
@@ -51,6 +53,12 @@ export interface DevicesClient {
     targets: Device[],
     action: NavAction,
   ): Promise<NavBroadcast | void>;
+  /** Timed single/multi-touch gesture, played by the agent. Resolves when it has finished. */
+  sendGesture(
+    mode: ControlMode,
+    targets: Device[],
+    strokes: GestureStroke[],
+  ): Promise<GestureResult>;
   sendText(
     mode: ControlMode,
     targets: Device[],
@@ -210,6 +218,25 @@ export function createMockDevicesClient(): DevicesClient {
       };
       console.info("[mock-control] pointer", broadcast);
       return broadcast;
+    },
+
+    async sendGesture(mode, targets, strokes) {
+      const total = Math.max(0, ...strokes.map((s) => s.startMs + Math.max(10, s.durationMs)));
+      await delay(total);
+      const result: GestureResult = {
+        id: `gesture-${Date.now()}`,
+        at: Date.now(),
+        mode,
+        targetIds: targets.map((t) => t.id),
+        targets: targets.map((t) => ({
+          deviceId: t.id,
+          deviceName: t.name,
+          inject: "stub",
+          detail: "mock client",
+        })),
+      };
+      console.info("[mock-control] gesture", strokes.length, result);
+      return result;
     },
 
     async sendNav(mode, targets, action) {
@@ -420,6 +447,18 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         throw await responseError(res, "agent sendPointer failed");
       }
       return (await res.json()) as TapBroadcast;
+    },
+
+    async sendGesture(mode, targets, strokes) {
+      const res = await agentFetch(`${base}/api/input/gesture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, targetIds: targets.map((t) => t.id), strokes }),
+      });
+      if (!res.ok) {
+        throw await responseError(res, "agent sendGesture failed");
+      }
+      return (await res.json()) as GestureResult;
     },
 
     async sendNav(mode, targets, action) {

@@ -11,6 +11,7 @@ import { ScreenGrid } from "@/components/phone-control/screen-grid";
 import { StatusBar } from "@/components/phone-control/status-bar";
 import { AppsPanel } from "@/components/phone-control/desk/apps-panel";
 import { AutomatePanel } from "@/components/phone-control/desk/automate-panel";
+import { MacrosPanel } from "@/components/phone-control/macros/macros-panel";
 import {
   DESK_SECTIONS,
   DeskProvider,
@@ -193,7 +194,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v30"
+      data-ui-build="pc-shell-v31"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -224,6 +225,7 @@ export function PhoneControlApp() {
             {section === "manage" && <ManagePanel />}
             {section === "apps" && <AppsPanel />}
             {section === "files" && <FilesPanel />}
+            {section === "macros" && <MacrosPanel />}
             {section === "automate" && <AutomatePanel />}
             {section === "developer" && <DeveloperPanel />}
             {section === "hosts" && <HostsPanel />}

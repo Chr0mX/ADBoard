@@ -104,6 +104,22 @@ impl ControlSender {
         self.send_raw(msg).await
     }
 
+    /// A finger on slot `slot` (0–9). Scrcpy tracks each id separately and
+    /// turns a second finger into `ACTION_POINTER_DOWN`, so slots give
+    /// real multi-touch.
+    pub async fn touch_slot(
+        &self,
+        phase: PointerPhase,
+        slot: u8,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        let msg = encode_finger_slot(phase, slot, x, y, width, height)?.to_vec();
+        self.send_raw(msg).await
+    }
+
     /// Scrcpy `RESET_VIDEO`. The server emits a new keyframe without exiting.
     pub async fn reset_video(&self) -> Result<(), String> {
         self.send_raw(vec![RESET_VIDEO]).await
@@ -388,6 +404,23 @@ pub fn encode_pointer(
     Ok(buf)
 }
 
+/// A finger touch with pointer id `slot` instead of the generic finger (-2).
+pub fn encode_finger_slot(
+    phase: PointerPhase,
+    slot: u8,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Result<[u8; 32], String> {
+    if slot > 9 {
+        return Err("finger slot must be 0–9".into());
+    }
+    let mut buf = encode_pointer(phase, PointerTool::Finger, x, y, width, height)?;
+    buf[2..10].copy_from_slice(&u64::from(slot).to_be_bytes());
+    Ok(buf)
+}
+
 /// Connect the video socket and the control socket, then read the dummy byte
 /// from the video socket.
 ///
@@ -475,6 +508,18 @@ mod tests {
         assert_eq!(&buf[20..22], &1280u16.to_be_bytes());
         assert_eq!(&buf[22..24], &0xffffu16.to_be_bytes());
         assert_eq!(&buf[24..], &[0u8; 8]);
+    }
+
+    #[test]
+    fn finger_slot_sets_pointer_id() {
+        let buf = encode_finger_slot(PointerPhase::Down, 3, 10, 20, 576, 1280).unwrap();
+        assert_eq!(buf[1], 0);
+        assert_eq!(&buf[2..10], &3u64.to_be_bytes());
+        assert_eq!(&buf[22..24], &0xffffu16.to_be_bytes());
+        let up = encode_finger_slot(PointerPhase::Up, 3, 10, 20, 576, 1280).unwrap();
+        assert_eq!(up[1], 1);
+        assert_eq!(&up[22..24], &0u16.to_be_bytes());
+        assert!(encode_finger_slot(PointerPhase::Down, 10, 0, 0, 576, 1280).is_err());
     }
 
     #[test]

@@ -242,6 +242,41 @@ pub struct PointerRequest {
     pub tool: PointerTool,
 }
 
+/// One finger of a timed gesture. Points are 0–1 of the screen; the finger
+/// goes down on the first point, moves along the rest, and lifts on the last.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GestureStroke {
+    /// Finger slot 0–9. Strokes on one slot must not overlap in time.
+    pub pointer: u8,
+    /// Milliseconds from the start of the gesture.
+    #[serde(default)]
+    pub start_ms: u32,
+    pub duration_ms: u32,
+    pub points: Vec<NormalizedPoint>,
+}
+
+/// POST /api/input/gesture — single- or multi-touch, timed on the agent so
+/// every touch-down has its release even when the browser stalls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GestureRequest {
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+    pub strokes: Vec<GestureStroke>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GestureResult {
+    pub id: String,
+    pub at: u64,
+    pub mode: ControlMode,
+    pub target_ids: Vec<String>,
+    #[serde(default)]
+    pub targets: Vec<NavTargetResult>,
+}
+
 /// POST /api/input/refresh — scrcpy `RESET_VIDEO` (a new keyframe, not a new server).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -558,6 +593,18 @@ impl NavBroadcast {
             at: now_ms(),
             mode,
             action,
+            target_ids,
+            targets,
+        }
+    }
+}
+
+impl GestureResult {
+    pub fn new(mode: ControlMode, target_ids: Vec<String>, targets: Vec<NavTargetResult>) -> Self {
+        Self {
+            id: format!("gesture-{}", Uuid::new_v4()),
+            at: now_ms(),
+            mode,
             target_ids,
             targets,
         }

@@ -7,7 +7,7 @@ use crate::session::{scrcpy_binary, ScrcpyPrefs, SessionManager};
 use crate::video::VideoHub;
 use phonecontrol_protocol::{
     map_to_devices, AdbAvailability, ClipboardPullRequest, ClipboardResponse, ClipboardSetRequest,
-    ControlMode, Device, DeviceCommandRequest, DeviceCommandResponse, DeviceOpResult, DeviceStatus,
+    ControlMode, Device, DeviceCommandRequest, GestureRequest, GestureResult, GestureStroke, DeviceCommandResponse, DeviceOpResult, DeviceStatus,
     HostInfo, InjectMode, InjectStatus, InstallBroadcast, KeyInjectRequest, MappedTap,
     NavActionType, NavBroadcast, NavTargetResult, NormalizedPoint, PointerPhase, PointerTool, Role,
     ScrcpyAvailability, ScrcpyOptionsRequest, ScrcpyOptionsResponse, ServerEvent, SessionAction,
@@ -673,6 +673,202 @@ impl AppState {
             mapped.push(tap);
         }
         mapped
+    }
+
+    /// Play a timed single- or multi-touch gesture on every target at once.
+    /// Each phone runs on its own task, so a browser that disconnects
+    /// mid-gesture still gets every finger lifted.
+    pub async fn handle_gesture(&self, request: GestureRequest) -> Result<GestureResult, String> {
+        crate::gesture::validate(&request.strokes)?;
+        let devices = self.resolve_targets(&request.target_ids).await?;
+        if devices.is_empty() {
+            return Err("no online targets for gesture".into());
+        }
+        let local_serials = self.local_serial_set().await;
+        let mut tasks = Vec::new();
+        let mut by_remote: HashMap<String, Vec<Device>> = HashMap::new();
+        for device in devices {
+            if local_serials.contains(&device.serial) {
+                let state = self.clone();
+                let strokes = request.strokes.clone();
+                tasks.push(tokio::spawn(async move {
+                    state.play_gesture_local(&device, &strokes).await
+                }));
+            } else {
+                by_remote
+                    .entry(device.effective_host_id().to_string())
+                    .or_default()
+                    .push(device);
+            }
+        }
+        let mut remote_tasks = Vec::new();
+        for (host_id, group) in by_remote {
+            if self.inner.role != Role::Controller {
+                return Err(format!("cannot reach remote host {host_id} from agent"));
+            }
+            let state = self.clone();
+            let body = GestureRequest {
+                mode: request.mode,
+                target_ids: group.iter().map(|d| d.id.clone()).collect(),
+                strokes: request.strokes.clone(),
+            };
+            remote_tasks.push(tokio::spawn(async move {
+                match state.proxy_gesture_http(&host_id, &body).await {
+                    Ok(targets) => targets,
+                    Err(e) => group
+                        .iter()
+                        .map(|d| NavTargetResult {
+                            device_id: d.id.clone(),
+                            device_name: d.name.clone(),
+                            inject: InjectStatus::Error,
+                            detail: Some(e.clone()),
+                        })
+                        .collect(),
+                }
+            }));
+        }
+        let mut targets = Vec::new();
+        for task in tasks {
+            match task.await {
+                Ok(result) => targets.push(result),
+                Err(e) => warn!(error = %e, "[gesture] task failed"),
+            }
+        }
+        for task in remote_tasks {
+            if let Ok(result) = task.await {
+                targets.extend(result);
+            }
+        }
+        Ok(GestureResult::new(request.mode, request.target_ids, targets))
+    }
+
+    async fn play_gesture_local(&self, device: &Device, strokes: &[GestureStroke]) -> NavTargetResult {
+        let lock = crate::gesture::device_lock(&device.serial);
+        let _held = lock.lock().await;
+        let result = |inject: InjectStatus, detail: Option<String>| NavTargetResult {
+            device_id: device.id.clone(),
+            device_name: device.name.clone(),
+            inject,
+            detail,
+        };
+        let sessions = &self.inner.sessions;
+
+        if !sessions.adb_available() {
+            // Mock fleet: keep the timing so a macro runs at its real pace.
+            tokio::time::sleep(Duration::from_millis(u64::from(crate::gesture::total_ms(strokes))))
+                .await;
+            info!(serial = %device.serial, strokes = strokes.len(), "[stub-inject] gesture");
+            return result(InjectStatus::Stub, Some("no ADB — mock fleet stub inject".into()));
+        }
+
+        let mut size = sessions.video_display_size(&device.serial).await;
+        if size.is_none() || !sessions.has_control(&device.serial).await {
+            let _ = sessions.ensure_streaming(&device.serial).await;
+            for _ in 0..20 {
+                size = sessions.video_display_size(&device.serial).await;
+                if size.is_some() && sessions.has_control(&device.serial).await {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        let live = match size {
+            Some(size) if sessions.has_control(&device.serial).await => Some(size),
+            _ => None,
+        };
+
+        let Some((width, height)) = live else {
+            // No live screen: one finger still works through `adb input`.
+            if let Some((from, to, ms)) = crate::gesture::single_line(strokes) {
+                let w = device.resolution.width.max(1);
+                let h = device.resolution.height.max(1);
+                let px = |p: NormalizedPoint| {
+                    (
+                        (p.x.clamp(0.0, 1.0) * f64::from(w - 1)).round() as u32,
+                        (p.y.clamp(0.0, 1.0) * f64::from(h - 1)).round() as u32,
+                    )
+                };
+                let start = strokes[0].start_ms;
+                if start > 0 {
+                    tokio::time::sleep(Duration::from_millis(u64::from(start))).await;
+                }
+                let r = sessions.adb_swipe(&device.serial, px(from), px(to), ms).await;
+                return result(r.status, r.detail);
+            }
+            return result(
+                InjectStatus::Error,
+                Some("multi-touch needs the live screen (scrcpy) — open the phone first".into()),
+            );
+        };
+
+        let events = match crate::gesture::timeline(strokes) {
+            Ok(events) => events,
+            Err(e) => return result(InjectStatus::Error, Some(e)),
+        };
+        let started = tokio::time::Instant::now();
+        let mut down: HashMap<u8, (u32, u32)> = HashMap::new();
+        let to_px = |v: f64, size: u32| (v * f64::from(size.saturating_sub(1))).round() as u32;
+        let mut failure: Option<String> = None;
+        for event in &events {
+            tokio::time::sleep_until(started + Duration::from_millis(u64::from(event.at_ms))).await;
+            let x = to_px(event.x, width);
+            let y = to_px(event.y, height);
+            let r = sessions
+                .inject_slot(&device.serial, event.phase, event.slot, x, y, width, height)
+                .await;
+            if r.status == InjectStatus::Error {
+                failure = Some(r.detail.unwrap_or_else(|| "touch failed".into()));
+                break;
+            }
+            match event.phase {
+                PointerPhase::Down | PointerPhase::Move => {
+                    down.insert(event.slot, (x, y));
+                }
+                _ => {
+                    down.remove(&event.slot);
+                }
+            }
+        }
+        // Lift anything still down so the phone is never left with a stuck finger.
+        for (slot, (x, y)) in down {
+            let _ = sessions
+                .inject_slot(&device.serial, PointerPhase::Up, slot, x, y, width, height)
+                .await;
+        }
+        match failure {
+            Some(e) => {
+                warn!(serial = %device.serial, error = %e, "[gesture] failed");
+                result(InjectStatus::Error, Some(e))
+            }
+            None => {
+                info!(serial = %device.serial, strokes = strokes.len(), "[gesture] played");
+                result(InjectStatus::Ok, Some("scrcpy".into()))
+            }
+        }
+    }
+
+    async fn proxy_gesture_http(
+        &self,
+        host_id: &str,
+        request: &GestureRequest,
+    ) -> Result<Vec<NavTargetResult>, String> {
+        let Some(base) = self.inner.mesh.http_base(host_id).await else {
+            return Err(format!("agent {host_id} has no http_base"));
+        };
+        let url = format!("{}/api/input/gesture", base.trim_end_matches('/'));
+        let body = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+        let (status, text) =
+            http_post_bytes(&url, &[("Content-Type", "application/json")], &body).await?;
+        if !(200..300).contains(&status) {
+            return Err(if text.trim().is_empty() {
+                format!("gesture proxy HTTP {status}")
+            } else {
+                text
+            });
+        }
+        let response: GestureResult =
+            serde_json::from_str(&text).map_err(|e| format!("gesture proxy JSON: {e}"))?;
+        Ok(response.targets)
     }
 
     pub async fn handle_nav(
@@ -2554,6 +2750,65 @@ pub fn inject_summary(targets: &[MappedTap]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn gesture_plays_on_every_target_with_its_timing() {
+        let state = AppState::new(
+            Role::Controller,
+            "gesture-test".into(),
+            "gesture-test".into(),
+            0,
+            None,
+        );
+        let online: Vec<String> = state
+            .list_devices()
+            .await
+            .into_iter()
+            .filter(|d| d.status == DeviceStatus::Online)
+            .map(|d| d.id)
+            .collect();
+        assert!(online.len() >= 2, "mock fleet has two online phones");
+        let strokes = vec![
+            GestureStroke {
+                pointer: 0,
+                start_ms: 0,
+                duration_ms: 120,
+                points: vec![NormalizedPoint { x: 0.2, y: 0.5 }],
+            },
+            GestureStroke {
+                pointer: 1,
+                start_ms: 20,
+                duration_ms: 100,
+                points: vec![
+                    NormalizedPoint { x: 0.8, y: 0.5 },
+                    NormalizedPoint { x: 0.8, y: 0.2 },
+                ],
+            },
+        ];
+        let started = std::time::Instant::now();
+        let result = state
+            .handle_gesture(GestureRequest {
+                mode: ControlMode::Multi,
+                target_ids: online.clone(),
+                strokes,
+            })
+            .await
+            .expect("gesture runs");
+        assert!(started.elapsed() >= Duration::from_millis(120));
+        // Both phones play at once, not one after the other.
+        assert!(started.elapsed() < Duration::from_millis(1000));
+        assert_eq!(result.targets.len(), online.len());
+        assert!(result.targets.iter().all(|t| t.inject == InjectStatus::Stub));
+
+        let bad = state
+            .handle_gesture(GestureRequest {
+                mode: ControlMode::Selected,
+                target_ids: online[..1].to_vec(),
+                strokes: vec![],
+            })
+            .await;
+        assert!(bad.is_err());
+    }
 
     #[tokio::test]
     async fn pointer_rejects_unknown_video_size_and_accepts_real_frame() {

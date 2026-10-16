@@ -77,6 +77,7 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/sessions/{serial}/restart", post(restart_session))
         .route("/api/input/tap", post(input_tap))
         .route("/api/input/pointer", post(input_pointer))
+        .route("/api/input/gesture", post(input_gesture))
         .route("/api/input/refresh", post(input_refresh))
         .route("/api/input/nav", post(input_nav))
         .route(
@@ -782,6 +783,17 @@ async fn input_pointer(
             body.frame_width,
             body.frame_height,
         )
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+async fn input_gesture(
+    State(state): State<AppState>,
+    Json(body): Json<phonecontrol_protocol::GestureRequest>,
+) -> Result<Json<phonecontrol_protocol::GestureResult>, (StatusCode, String)> {
+    state
+        .handle_gesture(body)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))

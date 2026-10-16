@@ -3,6 +3,7 @@ mod api;
 mod audio;
 mod device_manager;
 mod device_ops;
+mod gesture;
 mod host_files;
 mod mesh;
 mod mesh_client;

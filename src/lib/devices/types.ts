@@ -95,6 +95,23 @@ export interface NavBroadcast {
   targets?: NavTargetResult[];
 }
 
+/** One finger of a timed gesture (POST /api/input/gesture). Points are 0–1. */
+export interface GestureStroke {
+  /** Finger slot 0–9. */
+  pointer: number;
+  startMs: number;
+  durationMs: number;
+  points: NormalizedPoint[];
+}
+
+export interface GestureResult {
+  id: string;
+  at: number;
+  mode: ControlMode;
+  targetIds: string[];
+  targets: NavTargetResult[];
+}
+
 export interface InstallBroadcast {
   id: string;
   at: number;
