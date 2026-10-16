@@ -86,9 +86,9 @@ export function DeviceNavBar({
 }: DeviceNavBarProps) {
   const hasPins = Boolean(toolHandlers && pinnedTools.length > 0);
   const iconClass = compact ? "size-3.5" : "size-4";
-  // Explicit Tailwind sizes beat Button/Toggle default size variants.
+  // Unified toggle look (.pc-toggle) at taskbar size: 36px, compact 32px.
   const itemClass = cn(
-    "pc-taskbar-item border-[var(--pc-line)] bg-[color-mix(in_srgb,var(--pc-panel)_80%,transparent)] p-0 text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]",
+    "pc-toggle pc-taskbar-item p-0",
     compact ? "h-8 w-8 min-h-8 min-w-8" : "h-9 w-9 min-h-9 min-w-9",
   );
 
@@ -158,7 +158,7 @@ function PinnedToolButton({
           onPressedChange={handlers.onKeyboardChange}
           aria-label="Toggle keyboard injection"
           data-taskbar-tool="keyboard"
-          size="sm"
+          size="none"
           className={hit}
         >
           <Keyboard className={iconClass} />
@@ -171,7 +171,7 @@ function PinnedToolButton({
           onPressedChange={handlers.onMouseChange}
           aria-label="Toggle touch"
           data-taskbar-tool="mouse"
-          size="sm"
+          size="none"
           className={hit}
         >
           <MousePointer2 className={iconClass} />
@@ -186,7 +186,7 @@ function PinnedToolButton({
           aria-label={handlers.recording ? "Stop recording" : "Record gesture"}
           data-taskbar-tool="record"
           data-pressed={handlers.recording ? "true" : undefined}
-          className={cn(hit, handlers.recording && "border-[var(--pc-warn)] text-[var(--pc-warn)]")}
+          className={cn(hit, "pc-toggle-warn")}
           onClick={handlers.onRecordToggle}
         >
           <Circle className={cn(iconClass, handlers.recording && "fill-current")} />
@@ -250,7 +250,7 @@ function PinnedToolButton({
           onPressedChange={() => handlers.onToggleGrid()}
           aria-label={handlers.gridView ? "Exit grid view" : "Grid view"}
           data-taskbar-tool="grid"
-          size="sm"
+          size="none"
           className={hit}
         >
           <LayoutGrid className={iconClass} />

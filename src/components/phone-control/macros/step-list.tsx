@@ -1,5 +1,7 @@
 "use client";
 
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { ArrowDown, ArrowUp, Copy, Hand, MousePointerClick, Move, Play, Plus, Trash2, X } from "lucide-react";
 import {
   MAX_DELAY_MS,
@@ -133,9 +135,8 @@ export function StepList({
             )}
           >
             <div className="flex items-center gap-1 p-1">
-              <label className="flex size-9 shrink-0 cursor-pointer items-center justify-center" title={step.enabled ? "Skip this step" : "Play this step"}>
-                <input
-                  type="checkbox"
+              <label className="flex size-11 shrink-0 cursor-pointer items-center justify-center" title={step.enabled ? "Skip this step" : "Play this step"}>
+                <Checkbox
                   aria-label={`Step ${index + 1} enabled`}
                   checked={step.enabled}
                   onChange={() => patchStep(step.id, (s) => ({ ...s, enabled: !s.enabled }))}
@@ -284,9 +285,9 @@ function StepEditor({
                 <span className="font-medium">
                   {step.fingers.length > 1 ? `Finger ${fingerIndex + 1}` : "Touch"}
                 </span>
-                <label className="ml-auto flex min-h-9 cursor-pointer items-center gap-1.5 text-[var(--pc-muted)]">
-                  <input
-                    type="checkbox"
+                <label className="ml-auto flex min-h-11 cursor-pointer items-center gap-2 text-[var(--pc-muted)]">
+                  Swipe
+                  <Switch
                     checked={swipe}
                     aria-label={`Finger ${fingerIndex + 1} swipes`}
                     onChange={() =>
@@ -302,7 +303,6 @@ function StepEditor({
                       )
                     }
                   />
-                  Swipe
                 </label>
                 {step.fingers.length > 1 && (
                   <IconButton

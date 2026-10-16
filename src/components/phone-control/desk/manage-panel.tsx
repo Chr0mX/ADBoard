@@ -1,5 +1,6 @@
 "use client";
 
+import { SwitchRow } from "@/components/ui/switch";
 import { saveBlob } from "@/lib/api/download";
 import { useEffect, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
@@ -279,10 +280,7 @@ function RecordTools({
         Format
         <input value="mp4" readOnly className="mt-1 h-11 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] px-2" />
       </label>
-      <label className="flex min-h-11 items-center gap-2 text-sm">
-        <input type="checkbox" disabled />
-        Audio (screenrecord has no audio)
-      </label>
+      <SwitchRow label="Audio" description="Android screenrecord has no audio" disabled checked={false} readOnly className="-mx-2" />
       <label className="text-sm">
         Output directory
         <input

@@ -132,7 +132,7 @@ export function ImportDialog({
                       type="button"
                       onClick={() => setReference({ ...p })}
                       aria-pressed={shown.width === p.width && shown.height === p.height}
-                      className="h-8 rounded-lg border border-[var(--pc-line)] px-2 font-mono text-[10px] text-[var(--pc-ink)] aria-pressed:border-[var(--pc-accent)] aria-pressed:text-[var(--pc-accent)]"
+                      className="pc-toggle pc-toggle-sm"
                     >
                       {p.width}×{p.height}
                     </button>
@@ -144,7 +144,7 @@ export function ImportDialog({
                         key={d.id}
                         type="button"
                         onClick={() => setReference({ ...d.resolution })}
-                        className="h-8 rounded-lg border border-[var(--pc-line)] px-2 text-[10px] text-[var(--pc-ink)]"
+                        className="pc-toggle pc-toggle-sm"
                       >
                         {d.name} {d.resolution.width}×{d.resolution.height}
                       </button>

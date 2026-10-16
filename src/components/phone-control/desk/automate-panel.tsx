@@ -358,16 +358,18 @@ function MacroBuilder({
                 ))}
               </div>
             )}
-            <fieldset className="mt-2 flex gap-4 text-sm">
-              <legend className="sr-only">Execution</legend>
-              <label className="flex min-h-11 items-center gap-2">
-                <input type="radio" name="macro-mode" checked={parallel} onChange={() => setParallel(true)} />
-                Parallel
-              </label>
-              <label className="flex min-h-11 items-center gap-2">
-                <input type="radio" name="macro-mode" checked={!parallel} onChange={() => setParallel(false)} />
-                Sequential
-              </label>
+            <fieldset className="mt-2 flex flex-col gap-1">
+              <legend className="mb-1 text-xs text-[var(--pc-muted)]">Execution</legend>
+              <div className="pc-segmented max-w-sm" role="radiogroup" aria-label="Execution">
+                <label className="pc-segment">
+                  <input type="radio" name="macro-mode" className="sr-only" checked={parallel} onChange={() => setParallel(true)} />
+                  Parallel
+                </label>
+                <label className="pc-segment">
+                  <input type="radio" name="macro-mode" className="sr-only" checked={!parallel} onChange={() => setParallel(false)} />
+                  Sequential
+                </label>
+              </div>
             </fieldset>
             <PrimaryButton
               disabled={running}

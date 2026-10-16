@@ -1,5 +1,6 @@
 "use client";
 
+import { Checkbox } from "@/components/ui/checkbox";
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { formatResolution } from "@/lib/devices/coords";
@@ -60,12 +61,10 @@ export function DeviceCard({
     >
       <div className="flex items-start">
         <label className="flex h-11 w-11 shrink-0 items-center justify-center">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={isSelected}
             data-device-check={device.id}
             aria-label={`Select ${device.name}`}
-            className="size-4 accent-[var(--pc-accent-fill)]"
             onChange={(event) => onToggleSelected(device.id, event.target.checked)}
             onClick={(event) => event.stopPropagation()}
           />

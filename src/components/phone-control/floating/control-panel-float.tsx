@@ -200,6 +200,7 @@ export function ControlPanelFloat({
           </label>
           <div className="flex flex-wrap gap-1.5">
             <Toggle
+              size="none"
               pressed={options.audio}
               onPressedChange={(on) => {
                 void apply({ ...options, audio: on });
@@ -212,6 +213,7 @@ export function ControlPanelFloat({
               {options.audio ? <Volume2 className="size-5" /> : <VolumeX className="size-5" />}
             </Toggle>
             <Toggle
+              size="none"
               pressed={options.screenOff}
               onPressedChange={(on) => {
                 void apply({ ...options, screenOff: on });
@@ -246,6 +248,7 @@ export function ControlPanelFloat({
           )}
           <PinableTool {...pinProps("keyboard")}>
             <Toggle
+              size="none"
               pressed={keyboardOn}
               onPressedChange={onKeyboardChange}
               aria-label={
@@ -255,13 +258,14 @@ export function ControlPanelFloat({
               }
               aria-pressed={taskbarEdit ? pins.includes("keyboard") : keyboardOn}
               data-taskbar-pin="keyboard"
-              className={cn(HIT, taskbarEdit && pins.includes("keyboard") && "border-[var(--pc-accent)] text-[var(--pc-accent)]")}
+              className={HIT}
             >
               <Keyboard className="size-5" />
             </Toggle>
           </PinableTool>
           <PinableTool {...pinProps("mouse")}>
             <Toggle
+              size="none"
               pressed={mouseOn}
               onPressedChange={onMouseChange}
               aria-label={
@@ -271,7 +275,7 @@ export function ControlPanelFloat({
               }
               aria-pressed={taskbarEdit ? pins.includes("mouse") : mouseOn}
               data-taskbar-pin="mouse"
-              className={cn(HIT, taskbarEdit && pins.includes("mouse") && "border-[var(--pc-accent)] text-[var(--pc-accent)]")}
+              className={HIT}
             >
               <MousePointer2 className="size-5" />
             </Toggle>
@@ -293,8 +297,7 @@ export function ControlPanelFloat({
               data-pressed={!taskbarEdit && recording ? "true" : undefined}
               className={cn(
                 HIT,
-                !taskbarEdit && recording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
-                taskbarEdit && pins.includes("record") && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
+                !taskbarEdit && "pc-toggle-warn",
               )}
               onClick={onRecordToggle}
             >
@@ -316,7 +319,7 @@ export function ControlPanelFloat({
               data-gesture-replay
               data-taskbar-pin="replay"
               disabled={!taskbarEdit && replaying}
-              className={cn(HIT, taskbarEdit && pins.includes("replay") && "border-[var(--pc-accent)] text-[var(--pc-accent)]")}
+              className={HIT}
               onClick={onReplay}
             >
               <Play className="size-5" />
@@ -335,7 +338,7 @@ export function ControlPanelFloat({
               data-video-refresh
               data-taskbar-pin="refresh"
               disabled={!taskbarEdit && (offline || refreshing)}
-              className={cn(HIT, taskbarEdit && pins.includes("refresh") && "border-[var(--pc-accent)] text-[var(--pc-accent)]")}
+              className={HIT}
               onClick={onRefresh}
             >
               <RefreshCw className={cn("size-5", !taskbarEdit && refreshing && "animate-spin")} />
@@ -361,7 +364,7 @@ export function ControlPanelFloat({
                 data-control-screenrecord
                 data-pressed={screenRecording ? "true" : undefined}
                 disabled={offline || capturing || targetIds.length === 0}
-                className={cn(HIT, screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]")}
+                className={cn(HIT, "pc-toggle-warn")}
                 onClick={() => onScreenRecordToggle?.()}
               >
                 <Video className="size-5" />
@@ -371,6 +374,7 @@ export function ControlPanelFloat({
           <PinableTool {...pinProps("apk")}>
             <label
               data-taskbar-pin="apk"
+              data-pressed={taskbarEdit && pins.includes("apk") ? "true" : undefined}
               aria-label={
                 taskbarEdit
                   ? `${pins.includes("apk") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.apk}`
@@ -380,7 +384,6 @@ export function ControlPanelFloat({
                 HIT,
                 "cursor-pointer",
                 !taskbarEdit && (offline || installing) && "pointer-events-none opacity-40",
-                taskbarEdit && pins.includes("apk") && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
               )}
             >
               <span className="font-mono text-[10px] font-semibold">APK</span>
@@ -402,6 +405,7 @@ export function ControlPanelFloat({
           </PinableTool>
           <PinableTool {...pinProps("grid")}>
             <Toggle
+              size="none"
               pressed={gridView}
               onPressedChange={() => onToggleGrid()}
               aria-label={
@@ -414,7 +418,7 @@ export function ControlPanelFloat({
               aria-pressed={taskbarEdit ? pins.includes("grid") : gridView}
               data-grid-view={gridView ? "1" : "0"}
               data-taskbar-pin="grid"
-              className={cn(HIT, taskbarEdit && pins.includes("grid") && "border-[var(--pc-accent)] text-[var(--pc-accent)]")}
+              className={HIT}
             >
               <LayoutGrid className="size-5" />
             </Toggle>
@@ -435,8 +439,6 @@ export function ControlPanelFloat({
               data-taskbar-pin="stats"
               className={cn(
                 HIT,
-                !taskbarEdit && statsMode === "bar" && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
-                taskbarEdit && pins.includes("stats") && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
               )}
               onClick={() =>
                 onStatsModeChange?.(statsMode === "bar" ? "float" : "bar")
@@ -460,7 +462,7 @@ export function ControlPanelFloat({
               }
               aria-pressed={taskbarEdit ? pins.includes("devices") : undefined}
               data-taskbar-pin="devices"
-              className={cn(HIT, taskbarEdit && pins.includes("devices") && "border-[var(--pc-accent)] text-[var(--pc-accent)]")}
+              className={HIT}
               onClick={onOpenDevices}
             >
               <Smartphone className="size-5" />
@@ -493,8 +495,6 @@ export function ControlPanelFloat({
               data-pressed={!taskbarEdit && deskOpen ? "true" : "false"}
               className={cn(
                 HIT,
-                !taskbarEdit && deskOpen && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
-                taskbarEdit && pins.includes("desk") && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
               )}
               onClick={() => setDeskOpen((open) => !open)}
             >
@@ -532,9 +532,8 @@ export function ControlPanelFloat({
               data-taskbar-customize
               data-pressed={taskbarEdit ? "true" : "false"}
               className={cn(
-                HIT,
+                "pc-toggle pc-toggle-lg",
                 "min-w-0 flex-1 gap-1.5 px-2",
-                taskbarEdit && "border-[var(--pc-accent)] text-[var(--pc-accent)]",
               )}
               onClick={() => {
                 setTaskbarEdit((open) => !open);
@@ -552,7 +551,7 @@ export function ControlPanelFloat({
                 variant="ghost"
                 aria-label="Reset taskbar pins"
                 data-taskbar-reset
-                className={cn(HIT, "px-2")}
+                className="pc-toggle pc-toggle-lg px-2"
                 onClick={resetPins}
               >
                 <span className="font-mono text-[10px]">Reset</span>

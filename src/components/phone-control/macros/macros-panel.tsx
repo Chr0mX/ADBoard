@@ -1,5 +1,7 @@
 "use client";
 
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch, SwitchRow } from "@/components/ui/switch";
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
@@ -362,7 +364,6 @@ function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
               <GhostButton
                 aria-pressed={placing}
                 onClick={() => setPlacing(!placing)}
-                className={cn(placing && "border-[var(--pc-accent)] text-[var(--pc-accent)]")}
                 data-macro-place
               >
                 <Crosshair className="size-3.5" aria-hidden />
@@ -392,9 +393,9 @@ function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
                 </select>
               </label>
               {previewDevice && (
-                <label className="flex h-11 min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--pc-line)] px-2.5 text-xs text-[var(--pc-ink)]">
-                  <input type="checkbox" checked={live} onChange={() => setLive(!live)} data-macro-live-toggle />
+                <label className="pc-choice-row shrink-0 gap-2 border border-[var(--pc-line)] px-3 text-xs">
                   Live
+                  <Switch checked={live} onChange={() => setLive(!live)} data-macro-live-toggle aria-label="Live video" />
                 </label>
               )}
             </div>
@@ -514,10 +515,13 @@ function SettingsCard({
             </select>
           </label>
         </div>
-        <label className="flex min-h-9 items-center gap-2 text-xs text-[var(--pc-ink)]">
-          <input type="checkbox" checked={moveTouches} onChange={() => setMoveTouches(!moveTouches)} />
-          Move touches with the resolution (keep them on the same spot)
-        </label>
+        <SwitchRow
+          label="Move touches with the resolution"
+          description="Keeps every touch on the same spot when the reference size changes"
+          checked={moveTouches}
+          onChange={() => setMoveTouches(!moveTouches)}
+          className="-mx-2"
+        />
       </div>
 
       <div className="grid gap-2 @lg:grid-cols-2">
@@ -637,11 +641,8 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
           const otherTab = busy[device.id];
           const mismatch = tab.orientation === "match" && orientationMismatch(tab.reference, device.resolution);
           return (
-            <label
-              key={device.id}
-              className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
-            >
-              <input type="checkbox" checked={checked} disabled={running} onChange={() => toggleTarget(device.id)} data-macro-target={device.name} />
+            <label key={device.id} className="pc-choice-row" aria-disabled={running || undefined}>
+              <Checkbox checked={checked} disabled={running} onChange={() => toggleTarget(device.id)} data-macro-target={device.name} />
               <span className="font-medium">{device.name}</span>
               <span className="font-mono text-[10px] text-[var(--pc-muted)]">
                 {device.resolution.width}×{device.resolution.height}

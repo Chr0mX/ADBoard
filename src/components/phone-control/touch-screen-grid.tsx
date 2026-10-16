@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, ChevronsUp, LayoutGrid, Maximize2, Minus, Plus, SlidersHorizontal, X, Zap } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsUp, LayoutGrid, Maximize2, Minus, Plus, SlidersHorizontal, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { normalizePoint } from "@/lib/devices/coords";
@@ -21,6 +21,7 @@ import {
   parseGridLayout,
 } from "@/lib/ui/grid-layout";
 import { cn } from "@/lib/utils";
+import { CheckboxVisual } from "@/components/ui/checkbox";
 
 interface TouchScreenGridProps {
   devices: Device[];
@@ -297,7 +298,7 @@ export function TouchScreenGrid({
                       type="button"
                       aria-label={`${label} on target phones`}
                       onClick={() => onNav(action)}
-                      className={cn(STEP_BTN, "px-3 font-mono text-xs")}
+                      className={STEP_BTN}
                     >
                       {label}
                     </button>
@@ -320,7 +321,7 @@ export function TouchScreenGrid({
                   aria-label="Previous page"
                   disabled={page === 0}
                   onClick={() => setPage(page - 1)}
-                  className={cn(STEP_BTN, "w-9")}
+                  className={cn(STEP_BTN, "pc-toggle-icon")}
                 >
                   <ChevronLeft className="size-4" />
                 </button>
@@ -332,7 +333,7 @@ export function TouchScreenGrid({
                   aria-label="Next page"
                   disabled={page >= pages - 1}
                   onClick={() => setPage(page + 1)}
-                  className={cn(STEP_BTN, "w-9")}
+                  className={cn(STEP_BTN, "pc-toggle-icon")}
                 >
                   <ChevronRight className="size-4" />
                 </button>
@@ -353,7 +354,6 @@ export function TouchScreenGrid({
                 className={cn(
                   STEP_BTN,
                   "gap-1.5 px-3 text-xs",
-                  optionsOpen && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
                 )}
               >
                 <LayoutGrid className="size-3.5" />
@@ -369,7 +369,6 @@ export function TouchScreenGrid({
                 className={cn(
                   STEP_BTN,
                   "gap-1.5 px-3 text-xs",
-                  macrosOpen && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
                 )}
               >
                 <Zap className="size-3.5" />
@@ -384,7 +383,7 @@ export function TouchScreenGrid({
                 setOptionsOpen(false);
                 setStoredBar("hidden");
               }}
-              className={cn(STEP_BTN, "w-11")}
+              className={cn(STEP_BTN, "pc-toggle-icon")}
             >
               <ChevronsUp className="size-4" />
             </button>
@@ -421,7 +420,7 @@ export function TouchScreenGrid({
               setStoredLayout("auto");
               setPage(0);
             }}
-            className={cn(STEP_BTN, "px-3 text-xs", !fixed && "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]")}
+            className={STEP_BTN}
           >
             Auto
           </button>
@@ -446,7 +445,7 @@ export function TouchScreenGrid({
             aria-label="Close layout options"
             data-grid-options-close
             onClick={() => setOptionsOpen(false)}
-            className={cn(STEP_BTN, "ml-auto w-11")}
+            className={cn(STEP_BTN, "pc-toggle-icon ml-auto")}
           >
             <X className="size-4" />
           </button>
@@ -505,8 +504,8 @@ export function TouchScreenGrid({
   );
 }
 
-const STEP_BTN =
-  "inline-flex h-11 min-h-11 items-center justify-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-40";
+/** Grid bar buttons: the unified 44px toggle (see .pc-toggle). */
+const STEP_BTN = "pc-toggle pc-toggle-md";
 
 function Stepper({
   label,
@@ -527,7 +526,7 @@ function Stepper({
         aria-label={`Fewer ${label.toLowerCase()}`}
         disabled={value <= 1}
         onClick={() => onStep(-1)}
-        className={cn(STEP_BTN, "w-9 rounded-r-md")}
+        className={cn(STEP_BTN, "pc-toggle-icon")}
       >
         <Minus className="size-3.5" />
       </button>
@@ -546,7 +545,7 @@ function Stepper({
         aria-label={`More ${label.toLowerCase()}`}
         disabled={value >= GRID_LAYOUT_MAX}
         onClick={() => onStep(1)}
-        className={cn(STEP_BTN, "w-9 rounded-l-md")}
+        className={cn(STEP_BTN, "pc-toggle-icon")}
       >
         <Plus className="size-3.5" />
       </button>
@@ -566,7 +565,7 @@ function IncludeToggle({
   included: boolean;
   disabled: boolean;
   onToggle: () => void;
-  /** Desktop tile footer: smaller, mouse-sized. */
+  /** Desktop tile footer: the 36px toggle size. */
   compact?: boolean;
 }) {
   return (
@@ -577,21 +576,9 @@ function IncludeToggle({
       data-grid-include={name}
       disabled={disabled}
       onClick={onToggle}
-      className={cn(
-        "inline-flex shrink-0 items-center justify-center border border-[var(--pc-line)] text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-40",
-        compact ? "size-8 min-h-8 rounded-lg" : "h-11 min-h-11 w-11 min-w-11 rounded-xl",
-        included && "border-[var(--pc-accent)] bg-[var(--pc-accent-fill)] text-white hover:bg-[var(--pc-accent-fill)]",
-      )}
+      className={cn("pc-toggle pc-toggle-icon", compact ? "pc-toggle-sm" : "pc-toggle-md")}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "inline-flex size-4 items-center justify-center rounded-[4px] border",
-          included ? "border-white bg-white text-[var(--pc-accent-fill)]" : "border-current",
-        )}
-      >
-        {included && <Check className="size-3" strokeWidth={3} />}
-      </span>
+      <CheckboxVisual checked={included} />
     </button>
   );
 }
@@ -773,7 +760,7 @@ function TouchScreenTile({
             variant="ghost"
             aria-label={`Focus ${device.name}`}
             title={`Open ${device.name}`}
-            className="size-8 min-h-8 min-w-8 shrink-0 rounded-lg border border-[var(--pc-line)] p-0 text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+            className="pc-toggle pc-toggle-sm pc-toggle-icon"
             onClick={onFocus}
           >
             <Maximize2 className="size-3.5" />
@@ -808,7 +795,7 @@ function TouchScreenTile({
           type="button"
           variant="ghost"
           aria-label={`Focus ${device.name}`}
-          className="h-11 min-h-11 w-11 min-w-11 rounded-xl p-0 text-[var(--pc-ink)]"
+          className="pc-toggle pc-toggle-md pc-toggle-icon"
           onClick={onFocus}
         >
           <Maximize2 className="size-3.5" />

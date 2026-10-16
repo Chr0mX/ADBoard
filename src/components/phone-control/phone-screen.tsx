@@ -544,17 +544,11 @@ export function PhoneScreen({
       variant === "side"
         ? cn(
             PC_HIT_LABELED,
-            "w-11 min-w-11 px-0 aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
+            "w-11 min-w-11 px-0",
           )
         : variant === "nav"
-          ? cn(
-              PC_HIT_LABELED,
-              "aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
-            )
-          : cn(
-              toolControlClass,
-              "aria-pressed:border-[var(--pc-warn)] aria-pressed:bg-[var(--pc-warn)]/25 aria-pressed:text-[var(--pc-warn)]",
-            );
+          ? PC_HIT_LABELED
+          : toolControlClass;
     const replayClass =
       variant === "side"
         ? cn(PC_HIT_LABELED, "w-11 min-w-11 px-0")
@@ -566,6 +560,8 @@ export function PhoneScreen({
     return (
       <>
         <Toggle
+          size="none"
+          tone="warn"
           pressed={recording}
           onPressedChange={(on) => {
             if (on) startRecording();
@@ -655,6 +651,7 @@ export function PhoneScreen({
             )}
             {fillWindow && (
               <Toggle
+          size="none"
                 pressed={keyboardOn}
                 onPressedChange={onKeyboardChange}
                 aria-label="Toggle keyboard injection"
@@ -691,7 +688,7 @@ export function PhoneScreen({
                 className={cn(
                   PC_HIT_LABELED,
                   "min-w-11 px-3",
-                  screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
+                  "pc-toggle-warn",
                 )}
               >
                 <Video className="size-4" />
@@ -710,6 +707,7 @@ export function PhoneScreen({
             )}
             {fillWindow && onToggleGrid && (
               <Toggle
+          size="none"
                 pressed={gridView}
                 onPressedChange={() => onToggleGrid()}
                 aria-label={gridView ? "Exit grid view" : "Grid view"}
@@ -767,24 +765,24 @@ export function PhoneScreen({
           }
         >
           <Toggle
+          size="none"
             pressed={keyboardOn}
             onPressedChange={onKeyboardChange}
             aria-label="Toggle keyboard injection"
             className={cn(
               toolControlClass,
-              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
             )}
           >
             <Keyboard className="size-4" />
             <span className={toolLabelClass}>Keyboard</span>
           </Toggle>
           <Toggle
+          size="none"
             pressed={mouseOn}
             onPressedChange={onMouseChange}
             aria-label="Toggle touch"
             className={cn(
               toolControlClass,
-              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
             )}
           >
             <MousePointer2 className="size-4" />
@@ -838,13 +836,14 @@ export function PhoneScreen({
             data-pressed={screenRecording ? "true" : undefined}
             className={cn(
               toolControlClass,
-              screenRecording && "border-[var(--pc-warn)] text-[var(--pc-warn)]",
+              "pc-toggle-warn",
             )}
           >
             <Video className="size-4" />
             <span className={toolLabelClass}>{screenRecording ? "Stop" : "Rec"}</span>
           </Button>
           <Toggle
+          size="none"
             pressed={fillWindow}
             onPressedChange={onFillWindowChange}
             aria-label="Fill window"
@@ -852,7 +851,6 @@ export function PhoneScreen({
             className={cn(
               toolControlClass,
               "hidden lg:inline-flex",
-              "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
             )}
           >
             <Maximize2 className="size-4" />
@@ -860,6 +858,7 @@ export function PhoneScreen({
           </Toggle>
           {onToggleGrid && (
             <Toggle
+          size="none"
               pressed={gridView}
               onPressedChange={() => onToggleGrid()}
               aria-label={gridView ? "Exit grid view" : "Grid view"}
@@ -868,8 +867,7 @@ export function PhoneScreen({
               className={cn(
                 toolControlClass,
                 "hidden lg:inline-flex",
-                "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
-              )}
+                )}
             >
               <LayoutGrid className="size-4" />
               <span className={toolLabelClass}>Grid</span>
@@ -877,14 +875,14 @@ export function PhoneScreen({
           )}
           {onMacroDockChange && (
             <Toggle
+          size="none"
               pressed={macroDockOpen}
               onPressedChange={(on) => onMacroDockChange(on)}
               aria-label={macroDockOpen ? "Hide macros" : "Macros"}
               data-macro-dock-toggle={macroDockOpen ? "1" : "0"}
               className={cn(
                 toolControlClass,
-                "aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]",
-              )}
+                )}
             >
               <Zap className="size-4" />
               <span className={toolLabelClass}>Macros</span>
@@ -926,7 +924,6 @@ export function PhoneScreen({
             data-more-tools
             className={cn(
               toolControlClass,
-              "aria-expanded:border-[var(--pc-accent)] aria-expanded:bg-[var(--pc-accent-soft)] aria-expanded:text-[var(--pc-accent)]",
             )}
           >
             {moreOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}

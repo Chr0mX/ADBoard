@@ -1,5 +1,6 @@
 "use client";
 
+import { Checkbox } from "@/components/ui/checkbox";
 import { useEffect, useId, useRef, useState } from "react";
 import type { Device, DeviceOpResult } from "@/lib/devices/types";
 import { cn } from "@/lib/utils";
@@ -39,12 +40,8 @@ export function TargetChecks({
         Target devices
       </legend>
       {devices.map((device) => (
-        <label
-          key={device.id}
-          className="flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm text-[var(--pc-ink)]"
-        >
-          <input
-            type="checkbox"
+        <label key={device.id} className="pc-choice-row">
+          <Checkbox
             checked={checked.has(device.id)}
             onChange={() => {
               const next = new Set(checked);
@@ -54,7 +51,7 @@ export function TargetChecks({
             }}
           />
           <span className="font-medium">{device.name}</span>
-          <span className="font-mono text-[10px] uppercase text-[var(--pc-muted)]">
+          <span className="ml-auto font-mono text-[10px] uppercase text-[var(--pc-muted)]">
             {device.status}
           </span>
         </label>

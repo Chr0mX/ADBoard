@@ -218,7 +218,7 @@ export function ScrcpyOptions({
           disabled={disabled}
           aria-label="Audio forwarding"
           data-scrcpy-audio
-          className="h-11 shrink-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+          size="md"
         >
           Audio
         </Toggle>
@@ -230,7 +230,7 @@ export function ScrcpyOptions({
           disabled={disabled}
           aria-label="Screen off"
           data-scrcpy-screen
-          className="h-11 shrink-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 aria-pressed:border-[var(--pc-accent)] aria-pressed:bg-[var(--pc-accent-soft)] aria-pressed:text-[var(--pc-accent)]"
+          size="md"
         >
           Screen off
         </Toggle>

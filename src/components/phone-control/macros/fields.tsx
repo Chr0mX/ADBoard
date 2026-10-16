@@ -121,17 +121,12 @@ export function Segmented<T extends string>({
   return (
     <fieldset className="flex min-w-0 flex-col gap-1">
       <legend className="mb-1 text-xs text-[var(--pc-muted)]">{label}</legend>
-      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1">
+      <div className="pc-segmented" role="radiogroup" aria-label={label}>
         {options.map((option) => (
           <label
             key={option.id}
             title={option.hint}
-            className={cn(
-              "flex min-h-9 flex-1 cursor-pointer items-center justify-center rounded-lg px-2 text-center text-xs",
-              value === option.id
-                ? "bg-[var(--pc-accent-fill)] font-semibold text-white"
-                : "text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]",
-            )}
+            className="pc-segment"
           >
             <input
               type="radio"
@@ -203,7 +198,7 @@ export function GhostButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "inline-flex h-9 min-h-9 items-center gap-1.5 rounded-lg border border-[var(--pc-line)] px-2.5 text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-50",
+        "pc-toggle pc-toggle-sm",
         className,
       )}
     >
