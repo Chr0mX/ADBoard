@@ -202,7 +202,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v33"
+      data-ui-build="pc-shell-v34"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (

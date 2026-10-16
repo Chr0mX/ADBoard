@@ -55,8 +55,8 @@ interface DesktopPack {
 
 const GAP = 12;
 const PORTRAIT = 9 / 16;
-/** Reserved strip under each desktop tile for fps/bitrate/battery. */
-const TILE_STATS_H = 22;
+/** Footer under each desktop tile: Include, name, stats, Focus (kept off the picture). */
+const TILE_STATS_H = 40;
 
 /** Pick cols/rows that maximize tile area while keeping phone aspect (no side bars). */
 function bestDesktopPack(
@@ -243,7 +243,7 @@ export function TouchScreenGrid({
     <section
       data-touch-screen-grid
       data-touch-screen-layout={layout}
-      className="relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2"
+      className="relative flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-2"
     >
       {barHidden ? (
         <button
@@ -259,7 +259,7 @@ export function TouchScreenGrid({
       ) : (
         <div
           data-grid-bar
-          className="flex min-h-11 min-w-0 shrink-0 flex-wrap items-center gap-2 sm:h-11 sm:flex-nowrap"
+          className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-[var(--pc-line)] pb-2 sm:flex-nowrap"
         >
           {showTitle && (
             <h2 className="hidden shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)] xl:block">
@@ -558,14 +558,14 @@ function IncludeToggle({
   included,
   disabled,
   onToggle,
-  overlay = false,
+  compact = false,
 }: {
   name: string;
   included: boolean;
   disabled: boolean;
   onToggle: () => void;
-  /** Sits over the video (desktop tile): light-on-dark styling. */
-  overlay?: boolean;
+  /** Desktop tile footer: smaller, mouse-sized. */
+  compact?: boolean;
 }) {
   return (
     <button
@@ -576,8 +576,8 @@ function IncludeToggle({
       disabled={disabled}
       onClick={onToggle}
       className={cn(
-        "pointer-events-auto inline-flex h-11 min-h-11 w-11 min-w-11 items-center justify-center rounded-xl border disabled:opacity-40",
-        overlay ? "border-white/20 bg-black/40 text-white hover:bg-white/15" : "border-[var(--pc-line)] text-[var(--pc-ink)]",
+        "inline-flex shrink-0 items-center justify-center border border-[var(--pc-line)] text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-40",
+        compact ? "size-8 min-h-8 rounded-lg" : "h-11 min-h-11 w-11 min-w-11 rounded-xl",
         included && "border-[var(--pc-accent)] bg-[var(--pc-accent-fill)] text-white hover:bg-[var(--pc-accent-fill)]",
       )}
     >
@@ -681,29 +681,6 @@ function TouchScreenTile({
               : { aspectRatio: `${width} / ${height}`, height: "40vh", width: "auto" }
           }
         >
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-7 items-center gap-1 bg-gradient-to-b from-black/70 to-transparent px-1.5">
-            <span className="pointer-events-none min-w-0 flex-1 truncate font-mono text-[10px] text-white">
-              {device.name}
-            </span>
-            {canToggle && (
-              <IncludeToggle
-                name={device.name}
-                included={included}
-                disabled={offline}
-                onToggle={onToggleInclude}
-                overlay
-              />
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label={`Focus ${device.name}`}
-              className="pointer-events-auto h-11 min-h-11 w-11 min-w-11 rounded-xl border border-white/20 bg-black/40 p-0 text-white hover:bg-white/15 hover:text-white"
-              onClick={onFocus}
-            >
-              <Maximize2 className="size-3.5" />
-            </Button>
-          </div>
           <div
             ref={paneRef}
             role="application"
@@ -768,16 +745,37 @@ function TouchScreenTile({
             )}
           </div>
         </div>
+        {/* Controls live under the picture so nothing covers the phone's screen. */}
         <div
-          data-tile-stats={device.id}
-          className="min-w-0 overflow-hidden px-0.5"
-          style={{ height: TILE_STATS_H }}
+          data-tile-footer={device.id}
+          className="flex min-w-0 items-center gap-1.5 px-0.5"
+          style={{ height: TILE_STATS_H - 4 }}
         >
-          <StatsLine
-            device={device}
-            stats={stats}
-            className="text-[10px] text-[var(--pc-muted)]"
-          />
+          {canToggle && (
+            <IncludeToggle
+              name={device.name}
+              included={included}
+              disabled={offline}
+              onToggle={onToggleInclude}
+              compact
+            />
+          )}
+          <span className="shrink-0 truncate font-mono text-[11px] font-semibold text-[var(--pc-ink)]" style={{ maxWidth: "40%" }}>
+            {device.name}
+          </span>
+          <div data-tile-stats={device.id} className="min-w-0 flex-1 overflow-hidden">
+            <StatsLine device={device} stats={stats} className="truncate text-[10px] text-[var(--pc-muted)]" />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label={`Focus ${device.name}`}
+            title={`Open ${device.name}`}
+            className="size-8 min-h-8 min-w-8 shrink-0 rounded-lg border border-[var(--pc-line)] p-0 text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+            onClick={onFocus}
+          >
+            <Maximize2 className="size-3.5" />
+          </Button>
         </div>
       </div>
     );
