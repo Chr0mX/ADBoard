@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CheckboxVisual } from "@/components/ui/checkbox";
 import { FLOAT_RECLAMP_EVENT } from "@/components/phone-control/floating/floating-panel";
+import { OPEN_ARRANGEMENT_EVENT, takeArrangementRequest } from "@/components/phone-control/device-actions";
 
 interface TouchScreenGridProps {
   devices: Device[];
@@ -42,6 +43,8 @@ interface TouchScreenGridProps {
   broadcastTargets?: Device[];
   /** Desktop grid: Back / Home / Recent to the current targets. */
   onNav?: (action: NavAction["type"]) => void;
+  /** Cursor mode: send tile pointers as a mouse. */
+  cursorMode?: boolean;
   /** Macros panel toggle (Control mode). */
   macrosOpen?: boolean;
   onToggleMacros?: () => void;
@@ -129,6 +132,7 @@ export function TouchScreenGrid({
   onNav,
   macrosOpen = false,
   onToggleMacros,
+  cursorMode = false,
 }: TouchScreenGridProps) {
   // Show every known device — offline tiles stay visible so nothing disappears.
   const listed = devices;
@@ -183,7 +187,17 @@ export function TouchScreenGrid({
   const barHidden = storedBar === "hidden";
   // Bar buttons: 44px on desktop, 36px on phones (unified .pc-toggle sizes).
   const barBtn = cn("pc-toggle", desktop ? "pc-toggle-md" : "pc-toggle-sm");
-  const [optionsOpen, setOptionsOpen] = useState(false);
+  // Opened from here, or by Tools → Arrangement (possibly before the grid mounted).
+  const [optionsOpen, setOptionsOpen] = useState(() => (typeof window === "undefined" ? false : takeArrangementRequest()));
+  useEffect(() => {
+    const open = () => {
+      if (!takeArrangementRequest()) return;
+      setStoredBar("shown");
+      setOptionsOpen(true);
+    };
+    window.addEventListener(OPEN_ARRANGEMENT_EVENT, open);
+    return () => window.removeEventListener(OPEN_ARRANGEMENT_EVENT, open);
+  }, [setStoredBar]);
   // Floating Tools / Stats step out of the way of the bar and the strip.
   useEffect(() => {
     const id = requestAnimationFrame(() => window.dispatchEvent(new Event(FLOAT_RECLAMP_EVENT)));
@@ -244,6 +258,7 @@ export function TouchScreenGrid({
       ? { mode: controlMode, targets: broadcastTargets }
       : { mode: "selected" as ControlMode, targets: [device] },
     mouseOn,
+    cursorMode,
     onFocus: () => onFocusDevice(device.id),
   });
 
@@ -623,6 +638,7 @@ function TouchScreenTile({
   onToggleInclude,
   sendTo,
   mouseOn,
+  cursorMode = false,
   layout,
   tileWidth,
   tileHeight,
@@ -637,6 +653,7 @@ function TouchScreenTile({
   onToggleInclude: () => void;
   sendTo: { mode: ControlMode; targets: Device[] };
   mouseOn: boolean;
+  cursorMode?: boolean;
   layout: "mobile" | "desktop";
   tileWidth?: number;
   tileHeight?: number;
@@ -714,7 +731,7 @@ function TouchScreenTile({
             onPointerDown={(event) => {
               if (offline || !mouseOn) return;
               event.currentTarget.setPointerCapture(event.pointerId);
-              const tool: PointerTool = event.pointerType === "touch" ? "finger" : "mouse";
+              const tool: PointerTool = cursorMode || event.pointerType !== "touch" ? "mouse" : "finger";
               dragRef.current = { id: event.pointerId, tool };
               emit("down", event.clientX, event.clientY, tool);
             }}
@@ -847,7 +864,7 @@ function TouchScreenTile({
         onPointerDown={(event) => {
           if (offline || !mouseOn) return;
           event.currentTarget.setPointerCapture(event.pointerId);
-          const tool: PointerTool = event.pointerType === "touch" ? "finger" : "mouse";
+          const tool: PointerTool = cursorMode || event.pointerType !== "touch" ? "mouse" : "finger";
           dragRef.current = { id: event.pointerId, tool };
           emit("down", event.clientX, event.clientY, tool);
         }}

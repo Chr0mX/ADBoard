@@ -3,7 +3,11 @@
 import {
   ChevronLeft,
   Circle,
+  Columns3,
   House,
+  Info,
+  Minimize2,
+  Mouse,
   Keyboard,
   LayoutGrid,
   Minus,
@@ -15,9 +19,12 @@ import {
   Plus,
   Power,
   RefreshCw,
+  RotateCcw,
   Smartphone,
+  Sparkles,
   Square,
 } from "lucide-react";
+import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import type { NavAction } from "@/lib/devices/types";
@@ -53,6 +60,13 @@ export interface TaskbarToolHandlers {
   onStatsModeChange: (mode: MobileStatsMode) => void;
   onOpenDevices: () => void;
   onOpenDesk: () => void;
+  cursorMode?: boolean;
+  onCursorModeChange?: (on: boolean) => void;
+  onRestart?: () => void;
+  onOpenInfo?: () => void;
+  onOpenArrangement?: () => void;
+  /** Opens the Quick actions menu anchored to the clicked button. */
+  onQuickActions?: (anchor: HTMLElement) => void;
 }
 
 interface DeviceNavBarProps {
@@ -68,6 +82,8 @@ interface DeviceNavBarProps {
   /** Tools pinned from the floating Tools panel. */
   pinnedTools?: TaskbarToolId[];
   toolHandlers?: TaskbarToolHandlers;
+  /** Fold the floating Tools / Stats panels to chips (taskbar "Minimize"). */
+  onMinimize?: () => void;
 }
 
 /**
@@ -83,6 +99,7 @@ export function DeviceNavBar({
   compact = false,
   pinnedTools = [],
   toolHandlers,
+  onMinimize,
 }: DeviceNavBarProps) {
   const hasPins = Boolean(toolHandlers && pinnedTools.length > 0);
   const iconClass = compact ? "size-3.5" : "size-4";
@@ -105,18 +122,33 @@ export function DeviceNavBar({
       )}
     >
       {NAV_ACTIONS.map(([action, label, Icon]) => (
-        <Button
-          key={action}
-          type="button"
-          variant="ghost"
-          size="icon"
-          disabled={offline}
-          aria-label={label}
-          className={itemClass}
-          onClick={() => onNav(action)}
-        >
-          <Icon className={iconClass} />
-        </Button>
+        <Fragment key={action}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={offline}
+            aria-label={label}
+            className={itemClass}
+            onClick={() => onNav(action)}
+          >
+            <Icon className={iconClass} />
+          </Button>
+          {action === "recent" && onMinimize && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Minimize floating panels"
+              title="Minimize: fold Tools and Stats to small chips"
+              data-taskbar-minimize
+              className={itemClass}
+              onClick={onMinimize}
+            >
+              <Minimize2 className={iconClass} />
+            </Button>
+          )}
+        </Fragment>
       ))}
       {hasPins && toolHandlers && (
         <>
@@ -293,6 +325,78 @@ function PinnedToolButton({
           onClick={handlers.onOpenDevices}
         >
           <Smartphone className={iconClass} />
+        </Button>
+      );
+    case "cursor":
+      return (
+        <Toggle
+          pressed={Boolean(handlers.cursorMode)}
+          onPressedChange={(on) => handlers.onCursorModeChange?.(on)}
+          aria-label="Cursor mode"
+          data-taskbar-tool="cursor"
+          size="none"
+          className={hit}
+        >
+          <Mouse className={iconClass} />
+        </Toggle>
+      );
+    case "restart":
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={offline}
+          aria-label="Restart device"
+          data-taskbar-tool="restart"
+          className={hit}
+          onClick={handlers.onRestart}
+        >
+          <RotateCcw className={iconClass} />
+        </Button>
+      );
+    case "info":
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Device information"
+          data-taskbar-tool="info"
+          className={hit}
+          onClick={handlers.onOpenInfo}
+        >
+          <Info className={iconClass} />
+        </Button>
+      );
+    case "arrangement":
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Arrangement"
+          data-taskbar-tool="arrangement"
+          className={hit}
+          onClick={handlers.onOpenArrangement}
+        >
+          <Columns3 className={iconClass} />
+        </Button>
+      );
+    case "quick":
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={offline}
+          aria-label="Quick actions"
+          aria-haspopup="menu"
+          data-taskbar-tool="quick"
+          className={hit}
+          onClick={(event) => handlers.onQuickActions?.(event.currentTarget)}
+        >
+          <Sparkles className={iconClass} />
         </Button>
       );
     case "desk":

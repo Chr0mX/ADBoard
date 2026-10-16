@@ -73,6 +73,14 @@ export function StatsWidget({ device, session, stats }: StatsWidgetProps) {
             <dd data-temperature className="text-right">
               {fields.temperature}
             </dd>
+            <dt className="text-[var(--pc-muted)]">CPU</dt>
+            <dd data-cpu className="text-right">
+              {fields.cpu ? fields.cpu.replace("CPU ", "") : "—"}
+            </dd>
+            <dt className="text-[var(--pc-muted)]">Memory</dt>
+            <dd data-memory className="text-right">
+              {fields.memory ? fields.memory.replace("RAM ", "") : "—"}
+            </dd>
             <dt className="text-[var(--pc-muted)]">FPS</dt>
             <dd className="text-right">{fields.fps}</dd>
             <dt className="text-[var(--pc-muted)]">Rate</dt>

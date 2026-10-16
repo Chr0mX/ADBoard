@@ -133,6 +133,12 @@ pub struct Device {
     pub status: DeviceStatus,
     pub battery: Option<u8>,
     pub temperature_c: Option<f32>,
+    /// Whole-device CPU busy %, from /proc/stat deltas between polls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_percent: Option<f32>,
+    /// RAM in use %, from /proc/meminfo (MemTotal − MemAvailable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_percent: Option<f32>,
     pub resolution: DeviceResolution,
     pub fps: Option<u32>,
     pub bitrate_mbps: Option<f32>,
@@ -840,6 +846,8 @@ mod tests {
             status: DeviceStatus::Online,
             battery: Some(78),
             temperature_c: None,
+            cpu_percent: None,
+            memory_percent: None,
             resolution: DeviceResolution { width, height },
             fps: Some(60),
             bitrate_mbps: Some(12.0),

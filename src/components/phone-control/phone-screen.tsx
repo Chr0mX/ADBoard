@@ -17,7 +17,17 @@ import {
   Square,
   Video,
   Zap,
+  Mouse,
+  RotateCcw,
+  Info,
+  Columns3,
 } from "lucide-react";
+import {
+  QUICK_ACTIONS,
+  QuickActionsMenu,
+  minimizeFloatingPanels,
+  useDeviceActions,
+} from "@/components/phone-control/device-actions";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
@@ -81,6 +91,9 @@ interface PhoneScreenProps {
   onOpenScreens?: () => void;
   onKeyboardChange: (on: boolean) => void;
   onMouseChange: (on: boolean) => void;
+  /** Send every pointer as a mouse (Android cursor), even from touch. */
+  cursorMode?: boolean;
+  onCursorModeChange?: (on: boolean) => void;
   onPointer: (event: {
     phase: PointerPhase;
     point: { x: number; y: number };
@@ -128,6 +141,8 @@ export function PhoneScreen({
   onOpenScreens,
   onKeyboardChange,
   onMouseChange,
+  cursorMode = false,
+  onCursorModeChange,
   onPointer,
   onStats,
   controlsDock = "bottom",
@@ -181,6 +196,15 @@ export function PhoneScreen({
     desk?.targets?.length
       ? desk.targets
       : devices.filter((item) => targetIds.includes(item.id));
+  // Restart / device info / quick actions / arrangement, shared with the
+  // floating Tools panel and taskbar pins.
+  const actions = useDeviceActions({
+    targets: captureTargets,
+    activeDevice: device,
+    gridView: Boolean(gridView),
+    onShowGrid: onToggleGrid,
+  });
+  const [quickAnchor, setQuickAnchor] = useState<HTMLElement | null>(null);
   const showingVideo =
     !offline &&
     configured &&
@@ -492,7 +516,7 @@ export function PhoneScreen({
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (offline || !mouseOn || e.button !== 0 || replaying) return;
     e.preventDefault();
-    const tool: PointerTool = e.pointerType === "touch" ? "finger" : "mouse";
+    const tool: PointerTool = cursorMode ? "mouse" : e.pointerType === "touch" ? "finger" : "mouse";
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = {
       id: e.pointerId,
@@ -962,6 +986,52 @@ export function PhoneScreen({
           serial={device?.serial ?? null}
           disabled={offline}
         />
+        <div
+          data-device-actions
+          className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-[var(--pc-line)] pt-2"
+        >
+          {onCursorModeChange && (
+            <Toggle
+              size="md"
+              pressed={cursorMode}
+              onPressedChange={(on) => onCursorModeChange(on)}
+              aria-label="Cursor mode"
+              title="Cursor: send clicks as a mouse so the phone shows a pointer"
+              data-cursor-mode={cursorMode ? "1" : "0"}
+            >
+              <Mouse className="size-4" />
+              Cursor
+            </Toggle>
+          )}
+          <button type="button" className="pc-toggle pc-toggle-md" disabled={offline || actions.busy} onClick={actions.restart} data-device-restart>
+            <RotateCcw className="size-4" />
+            Restart device
+          </button>
+          <button type="button" className="pc-toggle pc-toggle-md" onClick={actions.openInfo} data-device-info-open>
+            <Info className="size-4" />
+            Device info
+          </button>
+          {onToggleGrid && (
+            <button type="button" className="pc-toggle pc-toggle-md" onClick={actions.openArrangement} data-open-arrangement>
+              <Columns3 className="size-4" />
+              Arrangement
+            </button>
+          )}
+          <span className="mx-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Quick</span>
+          {QUICK_ACTIONS.map((item) => (
+            <button
+              key={item.op}
+              type="button"
+              title={item.hint}
+              className={cn("pc-toggle pc-toggle-md", item.op === "shutdown" && "pc-toggle-warn")}
+              disabled={offline || actions.busy}
+              data-quick-action={item.op}
+              onClick={() => actions.quick(item.op)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
       </div>
       )}
@@ -1007,6 +1077,7 @@ export function PhoneScreen({
             broadcastTargets={broadcastTargets}
             onNav={floatingChrome ? undefined : onNav}
             macrosOpen={macroDockOpen}
+            cursorMode={cursorMode}
             onToggleMacros={onMacroDockChange ? () => onMacroDockChange(!macroDockOpen) : undefined}
           />
         ) : (
@@ -1236,6 +1307,7 @@ export function PhoneScreen({
             className="flex w-full max-w-full shrink-0 flex-col items-center gap-1 bg-gradient-to-t from-[color-mix(in_srgb,var(--pc-frame)_70%,transparent)] via-[color-mix(in_srgb,var(--pc-frame)_35%,transparent)] to-transparent px-2 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5"
           >
             <DeviceNavBar
+              onMinimize={minimizeFloatingPanels}
               offline={offline}
               onNav={onNav}
               className="mx-auto"
@@ -1270,6 +1342,12 @@ export function PhoneScreen({
                 onStatsModeChange: (mode) => onStatsModeChange?.(mode),
                 onOpenDevices: () => onOpenDevices?.(),
                 onOpenDesk: () => desk?.open("manage"),
+                cursorMode,
+                onCursorModeChange,
+                onRestart: actions.restart,
+                onOpenInfo: actions.openInfo,
+                onOpenArrangement: onToggleGrid ? actions.openArrangement : undefined,
+                onQuickActions: (anchor) => setQuickAnchor(anchor),
               }}
             />
             {statsMode === "bar" && (
@@ -1327,9 +1405,39 @@ export function PhoneScreen({
           onScreenRecordToggle={() => void toggleScreenRecord()}
           onOpenDevices={() => onOpenDevices?.()}
           onOpenMacros={onMacroDockChange ? () => onMacroDockChange(true) : undefined}
+          cursorMode={cursorMode}
+          onCursorModeChange={onCursorModeChange}
+          onRestart={actions.restart}
+          onOpenInfo={actions.openInfo}
+          onOpenArrangement={onToggleGrid ? actions.openArrangement : undefined}
+          onQuickActions={(anchor) => setQuickAnchor(anchor)}
           onToggleGrid={() => onToggleGrid?.()}
           onOpenDesk={(section) => desk?.open(section)}
         />
+      )}
+      {actions.dialog}
+      {quickAnchor && (
+        <QuickActionsMenu
+          anchor={quickAnchor}
+          busy={actions.busy}
+          onPick={actions.quick}
+          onClose={() => setQuickAnchor(null)}
+        />
+      )}
+      {actions.note && (
+        <p
+          data-device-action-note
+          role="status"
+          className={cn(
+            "mx-auto flex max-w-lg items-center justify-center gap-2 text-center font-mono text-[10px] leading-snug",
+            /fail|error|no online|no phone/i.test(actions.note) ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]",
+          )}
+        >
+          {actions.note}
+          <button type="button" className="underline" onClick={actions.clearNote}>
+            dismiss
+          </button>
+        </p>
       )}
       {(installNote || captureNote) && (
         <p

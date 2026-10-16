@@ -14,6 +14,8 @@ import { AppsPanel } from "@/components/phone-control/desk/apps-panel";
 import { AutomatePanel } from "@/components/phone-control/desk/automate-panel";
 import { MacrosPanel } from "@/components/phone-control/macros/macros-panel";
 import { MacroDock } from "@/components/phone-control/macros/macro-dock";
+import { MultiDeviceToolbar } from "@/components/phone-control/multi-device-toolbar";
+import { SettingsPanel } from "@/components/phone-control/desk/settings-panel";
 import {
   DESK_SECTIONS,
   DeskProvider,
@@ -55,8 +57,13 @@ export function PhoneControlApp() {
     setKeyboardOn,
     mouseOn,
     setMouseOn,
+    cursorMode,
+    setCursorMode,
     selectDevice,
     toggleSelected,
+    selectAll,
+    clearSelected,
+    selectGroup,
     broadcastTargets,
     handlePointer,
     handleNav,
@@ -202,7 +209,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v38"
+      data-ui-build="pc-shell-v39"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -237,6 +244,7 @@ export function PhoneControlApp() {
             {section === "automate" && <AutomatePanel />}
             {section === "developer" && <DeveloperPanel />}
             {section === "hosts" && <HostsPanel />}
+            {section === "settings" && <SettingsPanel />}
           </div>
         )}
 
@@ -316,6 +324,8 @@ export function PhoneControlApp() {
                 }}
                 onKeyboardChange={setKeyboardOn}
                 onMouseChange={setMouseOn}
+                cursorMode={cursorMode}
+                onCursorModeChange={setCursorMode}
                 onPointer={onPointer}
                 onStats={setStreamStats}
                 controlsDock={
@@ -442,6 +452,15 @@ export function PhoneControlApp() {
                   selectedCount={activeId ? 1 : 0}
                   multiCount={selectedIds.size}
                   onlineCount={onlineCount}
+                />
+                <MultiDeviceToolbar
+                  devices={devices}
+                  selectedIds={selectedIds}
+                  controlMode={controlMode}
+                  targets={broadcastTargets}
+                  onSelectAll={selectAll}
+                  onClear={clearSelected}
+                  onSelectGroup={selectGroup}
                 />
               </aside>
             )}

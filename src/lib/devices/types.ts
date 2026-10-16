@@ -20,6 +20,10 @@ export interface Device {
   status: DeviceStatus;
   battery: number | null;
   temperatureC: number | null;
+  /** Whole-device CPU busy % (agent /proc/stat between polls); absent when unknown. */
+  cpuPercent?: number | null;
+  /** RAM in use % (agent /proc/meminfo); absent when unknown. */
+  memoryPercent?: number | null;
   resolution: DeviceResolution;
   fps: number | null;
   bitrateMbps: number | null;

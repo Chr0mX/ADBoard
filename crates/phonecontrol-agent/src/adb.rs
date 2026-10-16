@@ -119,10 +119,65 @@ pub fn parse_adb_devices_l(stdout: &str) -> Vec<AdbDeviceLine> {
     devices
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BatterySample {
     pub level: Option<u8>,
     pub temperature_c: Option<f32>,
+    /// Filled from the change in `cpu_times` between two polls.
+    pub cpu_percent: Option<f32>,
+    pub memory_percent: Option<f32>,
+    /// Raw `/proc/stat` (total, idle) jiffies from this poll.
+    pub cpu_times: Option<(u64, u64)>,
+}
+
+/// Marker between `dumpsys battery` and the /proc reads in one adb shell.
+const VITALS_SPLIT: &str = "__ADBOARD_VITALS__";
+
+/// `cpu  user nice system idle iowait irq softirq steal` → (total, idle+iowait).
+pub fn parse_proc_stat_cpu(text: &str) -> Option<(u64, u64)> {
+    let line = text.lines().find(|l| l.starts_with("cpu "))?;
+    let nums: Vec<u64> = line.split_whitespace().skip(1).take(8).filter_map(|n| n.parse().ok()).collect();
+    if nums.len() < 4 {
+        return None;
+    }
+    let total: u64 = nums.iter().sum();
+    let idle = nums[3] + nums.get(4).copied().unwrap_or(0);
+    Some((total, idle))
+}
+
+/// Busy % between two `/proc/stat` samples.
+pub fn cpu_percent_between(prev: (u64, u64), now: (u64, u64)) -> Option<f32> {
+    let total = now.0.checked_sub(prev.0)?;
+    let idle = now.1.checked_sub(prev.1)?;
+    if total == 0 || idle > total {
+        return None;
+    }
+    Some(((total - idle) as f32 / total as f32 * 1000.0).round() / 10.0)
+}
+
+/// RAM in use % from `MemTotal` / `MemAvailable` (kB).
+pub fn parse_meminfo_percent(text: &str) -> Option<f32> {
+    let value = |key: &str| -> Option<f64> {
+        text.lines()
+            .find(|l| l.starts_with(key))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|n| n.parse().ok())
+    };
+    let total = value("MemTotal:")?;
+    let available = value("MemAvailable:")?;
+    if total <= 0.0 || available > total {
+        return None;
+    }
+    Some((((total - available) / total) * 1000.0).round() as f32 / 10.0)
+}
+
+/// Battery plus CPU counters and memory from one combined adb shell output.
+pub fn parse_vitals(text: &str) -> BatterySample {
+    let (battery, rest) = text.split_once(VITALS_SPLIT).unwrap_or((text, ""));
+    let mut sample = parse_dumpsys_battery(battery);
+    sample.cpu_times = parse_proc_stat_cpu(rest);
+    sample.memory_percent = parse_meminfo_percent(rest);
+    sample
 }
 
 /// `dumpsys battery` level (percent) and temperature (tenths of a degree).
@@ -142,24 +197,24 @@ pub fn parse_dumpsys_battery(text: &str) -> BatterySample {
     BatterySample {
         level,
         temperature_c,
+        ..Default::default()
     }
 }
 
+/// Battery, CPU counters and memory in a single adb round trip.
 pub async fn query_battery(adb: &PathBuf, serial: &str) -> BatterySample {
+    let script = format!(
+        "dumpsys battery; echo {VITALS_SPLIT}; head -n 1 /proc/stat; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo"
+    );
     let output = Command::new(adb)
-        .args(["-s", serial, "shell", "dumpsys", "battery"])
+        .args(["-s", serial, "shell", script.as_str()])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
         .await;
     match output {
-        Ok(out) if out.status.success() => {
-            parse_dumpsys_battery(&String::from_utf8_lossy(&out.stdout))
-        }
-        _ => BatterySample {
-            level: None,
-            temperature_c: None,
-        },
+        Ok(out) if out.status.success() => parse_vitals(&String::from_utf8_lossy(&out.stdout)),
+        _ => BatterySample::default(),
     }
 }
 
@@ -275,6 +330,8 @@ pub fn adb_line_to_device(
         status: line.status,
         battery: if online { battery.level } else { None },
         temperature_c: if online { battery.temperature_c } else { None },
+        cpu_percent: if online { battery.cpu_percent } else { None },
+        memory_percent: if online { battery.memory_percent } else { None },
         resolution,
         fps: if online { Some(60) } else { None },
         bitrate_mbps: if online { Some(8.0) } else { None },
@@ -915,6 +972,7 @@ OFFLINE1               offline usb:1-3 transport_id:4
         let parsed = parse_dumpsys_battery(sample);
         assert_eq!(parsed.level, Some(78));
         assert_eq!(parsed.temperature_c, Some(34.2));
+        assert_eq!(parsed.cpu_percent, None);
     }
 
     #[test]
@@ -1064,6 +1122,30 @@ legacy              _adb._tcp                192.168.1.20:5555\n";
         assert!(args.contains("pair 10.1.2.3:41000 1234567890\n"), "{args}");
         assert!(args.contains("connect 10.1.2.3:41001\n"), "{args}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+
+    #[test]
+    fn vitals_parse_battery_cpu_and_memory() {
+        let text = "Current Battery Service state:\n  level: 81\n  temperature: 312\n__ADBOARD_VITALS__\ncpu  100 0 50 800 50 0 0 0 0 0\nMemTotal:        7800000 kB\nMemAvailable:    1950000 kB\n";
+        let s = parse_vitals(text);
+        assert_eq!(s.level, Some(81));
+        assert_eq!(s.temperature_c, Some(31.2));
+        assert_eq!(s.cpu_times, Some((1000, 850)));
+        assert_eq!(s.memory_percent, Some(75.0));
+        // 400 more jiffies, 100 of them idle → 75 % busy.
+        assert_eq!(cpu_percent_between((1000, 850), (1400, 950)), Some(75.0));
+        assert_eq!(cpu_percent_between((1000, 850), (1000, 850)), None);
+        assert_eq!(cpu_percent_between((1000, 850), (900, 800)), None, "counter reset");
+    }
+
+    #[test]
+    fn vitals_tolerate_missing_proc_reads() {
+        let s = parse_vitals("  level: 50\n");
+        assert_eq!(s.level, Some(50));
+        assert_eq!(s.cpu_times, None);
+        assert_eq!(s.memory_percent, None);
+        assert_eq!(parse_meminfo_percent("MemTotal: 0 kB\nMemAvailable: 0 kB"), None);
     }
 }
 

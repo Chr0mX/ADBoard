@@ -8,6 +8,11 @@ import {
 import {
   Camera,
   Circle,
+  Columns3,
+  Info,
+  Mouse,
+  RotateCcw,
+  Sparkles,
   Keyboard,
   LayoutGrid,
   MonitorOff,
@@ -66,6 +71,12 @@ interface ControlPanelFloatProps {
   onScreenRecordToggle?: () => void;
   onOpenDevices: () => void;
   onOpenMacros?: () => void;
+  cursorMode?: boolean;
+  onCursorModeChange?: (on: boolean) => void;
+  onRestart?: () => void;
+  onOpenInfo?: () => void;
+  onOpenArrangement?: () => void;
+  onQuickActions?: (anchor: HTMLElement) => void;
   onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
 }
@@ -145,6 +156,12 @@ export function ControlPanelFloat({
   onScreenRecordToggle,
   onOpenDevices,
   onOpenMacros,
+  cursorMode = false,
+  onCursorModeChange,
+  onRestart,
+  onOpenInfo,
+  onOpenArrangement,
+  onQuickActions,
   onToggleGrid,
   onOpenDesk,
 }: ControlPanelFloatProps) {
@@ -468,6 +485,90 @@ export function ControlPanelFloat({
               <Smartphone className="size-5" />
             </Button>
           </PinableTool>
+          {onCursorModeChange && (
+            <PinableTool {...pinProps("cursor")}>
+              <Toggle
+                size="none"
+                pressed={taskbarEdit ? pins.includes("cursor") : cursorMode}
+                onPressedChange={(on) => {
+                  if (!taskbarEdit) onCursorModeChange(on);
+                }}
+                aria-label={taskbarEdit ? `${pins.includes("cursor") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.cursor}` : "Cursor mode"}
+                data-taskbar-pin="cursor"
+                data-cursor-mode={cursorMode ? "1" : "0"}
+                className={HIT}
+              >
+                <Mouse className="size-5" />
+              </Toggle>
+            </PinableTool>
+          )}
+          {onRestart && (
+            <PinableTool {...pinProps("restart")}>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={taskbarEdit ? `${pins.includes("restart") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.restart}` : "Restart device"}
+                aria-pressed={taskbarEdit ? pins.includes("restart") : undefined}
+                data-taskbar-pin="restart"
+                data-device-restart
+                disabled={!taskbarEdit && offline}
+                className={HIT}
+                onClick={onRestart}
+              >
+                <RotateCcw className="size-5" />
+              </Button>
+            </PinableTool>
+          )}
+          {onOpenInfo && (
+            <PinableTool {...pinProps("info")}>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={taskbarEdit ? `${pins.includes("info") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.info}` : "Device information"}
+                aria-pressed={taskbarEdit ? pins.includes("info") : undefined}
+                data-taskbar-pin="info"
+                data-device-info-open
+                className={HIT}
+                onClick={onOpenInfo}
+              >
+                <Info className="size-5" />
+              </Button>
+            </PinableTool>
+          )}
+          {onOpenArrangement && (
+            <PinableTool {...pinProps("arrangement")}>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={taskbarEdit ? `${pins.includes("arrangement") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.arrangement}` : "Arrangement"}
+                aria-pressed={taskbarEdit ? pins.includes("arrangement") : undefined}
+                data-taskbar-pin="arrangement"
+                data-open-arrangement
+                className={HIT}
+                onClick={onOpenArrangement}
+              >
+                <Columns3 className="size-5" />
+              </Button>
+            </PinableTool>
+          )}
+          {onQuickActions && (
+            <PinableTool {...pinProps("quick")}>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={taskbarEdit ? `${pins.includes("quick") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.quick}` : "Quick actions"}
+                aria-pressed={taskbarEdit ? pins.includes("quick") : undefined}
+                data-taskbar-pin="quick"
+                aria-haspopup="menu"
+                data-open-quick-actions
+                disabled={!taskbarEdit && offline}
+                className={HIT}
+                onClick={(event) => onQuickActions?.(event.currentTarget)}
+              >
+                <Sparkles className="size-5" />
+              </Button>
+            </PinableTool>
+          )}
           {onOpenMacros && !taskbarEdit && (
             <Button
               type="button"

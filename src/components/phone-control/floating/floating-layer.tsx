@@ -36,6 +36,12 @@ export interface FloatingLayerProps {
   onScreenRecordToggle?: () => void;
   onOpenDevices: () => void;
   onOpenMacros?: () => void;
+  cursorMode?: boolean;
+  onCursorModeChange?: (on: boolean) => void;
+  onRestart?: () => void;
+  onOpenInfo?: () => void;
+  onOpenArrangement?: () => void;
+  onQuickActions?: (anchor: HTMLElement) => void;
   onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
 }
@@ -84,6 +90,12 @@ export function FloatingLayer(props: FloatingLayerProps) {
         onScreenRecordToggle={props.onScreenRecordToggle}
         onOpenDevices={props.onOpenDevices}
         onOpenMacros={props.onOpenMacros}
+        cursorMode={props.cursorMode}
+        onCursorModeChange={props.onCursorModeChange}
+        onRestart={props.onRestart}
+        onOpenInfo={props.onOpenInfo}
+        onOpenArrangement={props.onOpenArrangement}
+        onQuickActions={props.onQuickActions}
         onToggleGrid={props.onToggleGrid}
         onOpenDesk={props.onOpenDesk}
       />

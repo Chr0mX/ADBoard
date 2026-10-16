@@ -39,6 +39,8 @@ export function StatsLine({
       <span>{fields.size}</span>
       <span data-battery>{fields.battery}</span>
       <span data-temperature>{fields.temperature}</span>
+      {fields.cpu ? <span data-cpu>{fields.cpu}</span> : null}
+      {fields.memory ? <span data-memory>{fields.memory}</span> : null}
       <span>{fields.fps}</span>
       <span>{fields.rate}</span>
       <span>{fields.codec}</span>

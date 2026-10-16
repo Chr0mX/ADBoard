@@ -2536,6 +2536,8 @@ fn devices_equal(a: &[Device], b: &[Device]) -> bool {
             && x.host_id == y.host_id
             && x.battery == y.battery
             && temp_same(x.temperature_c, y.temperature_c)
+            && temp_same(x.cpu_percent, y.cpu_percent)
+            && temp_same(x.memory_percent, y.memory_percent)
     })
 }
 
@@ -2550,10 +2552,7 @@ async fn battery_sample(
     batteries: &mut HashMap<String, CachedBattery>,
 ) -> adb::BatterySample {
     if line.status != DeviceStatus::Online {
-        return adb::BatterySample {
-            level: None,
-            temperature_c: None,
-        };
+        return adb::BatterySample::default();
     }
     let fresh = batteries
         .get(&line.serial)
@@ -2562,7 +2561,14 @@ async fn battery_sample(
     if fresh {
         return batteries.get(&line.serial).unwrap().sample;
     }
-    let sample = adb::query_battery(adb, &line.serial).await;
+    let mut sample = adb::query_battery(adb, &line.serial).await;
+    // CPU % is the busy share since the previous poll (about 15 s ago).
+    if let (Some(prev), Some(now)) = (
+        batteries.get(&line.serial).and_then(|cached| cached.sample.cpu_times),
+        sample.cpu_times,
+    ) {
+        sample.cpu_percent = adb::cpu_percent_between(prev, now);
+    }
     batteries.insert(
         line.serial.clone(),
         CachedBattery {
@@ -2945,6 +2951,8 @@ mod tests {
             status,
             battery: None,
             temperature_c: None,
+            cpu_percent: None,
+            memory_percent: None,
             resolution: phonecontrol_protocol::DeviceResolution {
                 width: 1080,
                 height: 1920,

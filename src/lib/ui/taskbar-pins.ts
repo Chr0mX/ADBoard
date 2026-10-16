@@ -8,7 +8,7 @@ export const LEGACY_TASKBAR_PINS_KEY = "rasiel-taskbar-pins";
  * Max extra icons beside the fixed nav actions.
  * The bottom bar scrolls horizontally when pins overflow.
  */
-export const MAX_TASKBAR_PINS = 10;
+export const MAX_TASKBAR_PINS = 15;
 
 /** Every tool in the floating Tools icon grid (pin-from-icon targets). */
 export const TASKBAR_TOOL_IDS = [
@@ -22,6 +22,11 @@ export const TASKBAR_TOOL_IDS = [
   "stats",
   "devices",
   "desk",
+  "cursor",
+  "restart",
+  "info",
+  "arrangement",
+  "quick",
 ] as const;
 
 export type TaskbarToolId = (typeof TASKBAR_TOOL_IDS)[number];
@@ -37,6 +42,11 @@ export const TASKBAR_TOOL_LABELS: Record<TaskbarToolId, string> = {
   stats: "Stats mode",
   devices: "Devices",
   desk: "Desk",
+  cursor: "Cursor",
+  restart: "Restart device",
+  info: "Device info",
+  arrangement: "Arrangement",
+  quick: "Quick actions",
 };
 
 const ID_SET = new Set<string>(TASKBAR_TOOL_IDS);

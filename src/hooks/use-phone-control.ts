@@ -81,6 +81,8 @@ export function usePhoneControl() {
   );
   const [keyboardOn, setKeyboardOn] = useStoredFlag("phonecontrol-keyboard", true);
   const [mouseOn, setMouseOn] = useState(true);
+  /** Cursor mode: every pointer is sent as a mouse (Android shows a cursor), even from touch. */
+  const [cursorMode, setCursorMode] = useStoredFlag("adboard-cursor-mode", false);
   const [lastTap, setLastTap] = useState<TapBroadcast | null>(null);
   const [tapLog, setTapLog] = useState<TapBroadcast[]>([]);
   const [sessions, setSessions] = useState<Map<string, SessionStatus>>(
@@ -208,6 +210,28 @@ export function usePhoneControl() {
     });
     if (storedMode(readControlMode()) === "selected") setControlMode("multi");
   }, [setControlMode]);
+
+  /** Tick every online device and control them together (Multi). */
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(controllable(devices).map((d) => d.id)));
+    setControlMode("multi");
+  }, [devices, setControlMode]);
+
+  /** Untick everything; Multi/All fall back to the focused phone. */
+  const clearSelected = useCallback(() => {
+    setSelectedIds(new Set());
+    if (storedMode(readControlMode()) !== "selected") setControlMode("selected");
+  }, [setControlMode]);
+
+  /** Control exactly a saved group's devices (Multi). Unknown ids are ignored. */
+  const selectGroup = useCallback(
+    (deviceIds: string[]) => {
+      const known = new Set(devices.map((d) => d.id));
+      setSelectedIds(new Set(deviceIds.filter((id) => known.has(id))));
+      setControlMode("multi");
+    },
+    [devices, setControlMode],
+  );
 
   const broadcastTargets = useMemo(() => {
     const online = controllable(devices);
@@ -451,8 +475,13 @@ export function usePhoneControl() {
     setKeyboardOn,
     mouseOn,
     setMouseOn,
+    cursorMode,
+    setCursorMode,
     selectDevice,
     toggleSelected,
+    selectAll,
+    clearSelected,
+    selectGroup,
     broadcastTargets,
     handlePointer,
     handleNav,

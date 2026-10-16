@@ -55,6 +55,8 @@ fn s24(host_id: &str, host_name: &str) -> Device {
             status: DeviceStatus::Online,
             battery: Some(78),
             temperature_c: Some(34.2),
+            cpu_percent: Some(23.0),
+            memory_percent: Some(61.0),
             resolution: DeviceResolution {
                 width: 1920,
                 height: 1080,
@@ -83,6 +85,8 @@ fn s23(host_id: &str, host_name: &str) -> Device {
             status: DeviceStatus::Online,
             battery: Some(54),
             temperature_c: Some(36.8),
+            cpu_percent: Some(41.0),
+            memory_percent: Some(72.0),
             resolution: DeviceResolution {
                 width: 2340,
                 height: 1080,
@@ -111,6 +115,8 @@ fn pixel(host_id: &str, host_name: &str) -> Device {
             status: DeviceStatus::Online,
             battery: Some(91),
             temperature_c: Some(31.5),
+            cpu_percent: Some(12.0),
+            memory_percent: Some(48.0),
             resolution: DeviceResolution {
                 width: 2400,
                 height: 1080,
@@ -139,6 +145,8 @@ fn a52(host_id: &str, host_name: &str) -> Device {
             status: DeviceStatus::Offline,
             battery: None,
             temperature_c: None,
+            cpu_percent: None,
+            memory_percent: None,
             resolution: DeviceResolution {
                 width: 2400,
                 height: 1080,

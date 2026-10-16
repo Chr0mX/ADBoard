@@ -13,6 +13,7 @@ export const DESK_SECTIONS = [
   { id: "automate", label: "Automate" },
   { id: "developer", label: "Developer" },
   { id: "hosts", label: "Hosts" },
+  { id: "settings", label: "Settings" },
 ] as const;
 
 export type DeskSection = (typeof DESK_SECTIONS)[number]["id"];
