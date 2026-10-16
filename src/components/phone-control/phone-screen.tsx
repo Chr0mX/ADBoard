@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { PC_HIT_LABELED, PC_HIT_TOOL_RESPONSIVE } from "@/lib/ui/control-chrome";
 import { normalizePoint } from "@/lib/devices/coords";
 import type {
+  ControlMode,
   Device,
   NavAction,
   PointerPhase,
@@ -86,6 +87,12 @@ interface PhoneScreenProps {
     replay?: boolean;
   }) => void | Promise<unknown>;
   onStats?: (stats: StreamStats) => void;
+  /** Grid view: who receives touches (Selected / Multi / All) and per-tile toggles. */
+  controlMode?: ControlMode;
+  onControlModeChange?: (mode: ControlMode) => void;
+  selectedIds?: Set<string>;
+  onToggleSelected?: (deviceId: string, selected: boolean) => void;
+  broadcastTargets?: Device[];
   /** Desktop: put nav + tool rows in a side column (a folded panel freed it). */
   controlsDock?: "bottom" | "left" | "right";
   onNav: (action: NavAction["type"]) => void;
@@ -118,6 +125,11 @@ export function PhoneScreen({
   onPointer,
   onStats,
   controlsDock = "bottom",
+  controlMode,
+  onControlModeChange,
+  selectedIds,
+  onToggleSelected,
+  broadcastTargets,
   onNav,
   onInstall,
   lastTap,
@@ -961,6 +973,12 @@ export function PhoneScreen({
             showTitle={floatingChrome || fillWindow}
             onFocusDevice={(deviceId) => onFocusDevice?.(deviceId)}
             onExit={onToggleGrid}
+            controlMode={controlMode}
+            onControlModeChange={onControlModeChange}
+            selectedIds={selectedIds}
+            onToggleSelected={onToggleSelected}
+            broadcastTargets={broadcastTargets}
+            onNav={floatingChrome ? undefined : onNav}
           />
         ) : (
         <div className="flex min-h-0 w-full max-w-full flex-1 flex-col">

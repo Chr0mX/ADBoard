@@ -193,7 +193,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v29"
+      data-ui-build="pc-shell-v30"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -320,6 +320,11 @@ export function PhoneControlApp() {
                 lastTap={lastTap}
                 broadcastLabel={`${broadcastTargets.length} target${broadcastTargets.length === 1 ? "" : "s"}`}
                 targetIds={broadcastTargets.map((device) => device.id)}
+                controlMode={controlMode}
+                onControlModeChange={setControlMode}
+                selectedIds={selectedIds}
+                onToggleSelected={toggleSelected}
+                broadcastTargets={broadcastTargets}
               />
             </div>
 

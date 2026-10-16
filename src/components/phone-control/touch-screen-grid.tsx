@@ -1,12 +1,13 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Maximize2, Minus, Plus, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Maximize2, Minus, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { normalizePoint } from "@/lib/devices/coords";
 import { devicesClient } from "@/lib/api/client";
-import type { Device, PointerPhase, PointerTool } from "@/lib/devices/types";
+import type { ControlMode, Device, NavAction, PointerPhase, PointerTool } from "@/lib/devices/types";
+import { ControlModes } from "@/components/phone-control/control-modes";
 import { StatsLine } from "@/components/phone-control/status-bar";
 import { PC_HIT_MIN } from "@/lib/ui/control-chrome";
 import { useStoredString } from "@/hooks/use-stored-flag";
@@ -31,6 +32,15 @@ interface TouchScreenGridProps {
   /** Hide the app name when the desk header above already shows it. */
   showTitle?: boolean;
   onExit?: () => void;
+  /** Who receives touches: the touched phone, the checked phones, or all. */
+  controlMode?: ControlMode;
+  onControlModeChange?: (mode: ControlMode) => void;
+  selectedIds?: Set<string>;
+  onToggleSelected?: (deviceId: string, selected: boolean) => void;
+  /** Online phones for the current mode (from usePhoneControl). */
+  broadcastTargets?: Device[];
+  /** Desktop grid: Back / Home / Recent to the current targets. */
+  onNav?: (action: NavAction["type"]) => void;
 }
 
 interface DesktopPack {
@@ -107,6 +117,12 @@ export function TouchScreenGrid({
   layout = "mobile",
   showTitle = true,
   onExit,
+  controlMode = "selected",
+  onControlModeChange,
+  selectedIds,
+  onToggleSelected,
+  broadcastTargets = [],
+  onNav,
 }: TouchScreenGridProps) {
   // Show every known device — offline tiles stay visible so nothing disappears.
   const listed = devices;
@@ -166,6 +182,43 @@ export function TouchScreenGrid({
     next[axis] = Math.min(GRID_LAYOUT_MAX, Math.max(1, next[axis] + delta));
     setLayout(next.cols, next.rows);
   };
+
+  const groupMode = controlMode === "all" || controlMode === "multi";
+  const targetIds = new Set(broadcastTargets.map((d) => d.id));
+  const included = (device: Device) =>
+    device.status === "online" &&
+    (controlMode === "all" ? true : (selectedIds?.has(device.id) ?? false));
+  const toggleInclude = (device: Device) => {
+    if (!onToggleSelected) return;
+    if (controlMode === "all") {
+      // "All but this one": check every other online phone, then drop this one.
+      for (const other of listed) {
+        if (other.status === "online" && other.id !== device.id) onToggleSelected(other.id, true);
+      }
+      onToggleSelected(device.id, false);
+      onControlModeChange?.("multi");
+      return;
+    }
+    onToggleSelected(device.id, !included(device));
+  };
+  const touchNote = groupMode
+    ? broadcastTargets.length === 0
+      ? "No phones checked — tick Include on a tile"
+      : `Touch on a highlighted tile goes to ${broadcastTargets.length} phone${broadcastTargets.length === 1 ? "" : "s"}`
+    : "Touch goes to the phone you touch";
+  const tileProps = (device: Device) => ({
+    device,
+    isActive: device.id === activeId,
+    inTargets: groupMode && targetIds.has(device.id),
+    included: included(device),
+    canToggle: Boolean(onToggleSelected),
+    onToggleInclude: () => toggleInclude(device),
+    sendTo: groupMode && targetIds.has(device.id)
+      ? { mode: controlMode, targets: broadcastTargets }
+      : { mode: "selected" as ControlMode, targets: [device] },
+    mouseOn,
+    onFocus: () => onFocusDevice(device.id),
+  });
 
   return (
     <section
@@ -255,6 +308,42 @@ export function TouchScreenGrid({
           </Button>
         )}
       </div>
+      {onControlModeChange && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2" data-grid-targets>
+          <ControlModes
+            compact
+            mode={controlMode}
+            onChange={onControlModeChange}
+            selectedCount={activeId ? 1 : 0}
+            multiCount={selectedIds?.size ?? 0}
+            onlineCount={onlineCount}
+          />
+          {onNav && (
+            <div className="flex items-center gap-1" data-grid-nav>
+              {(
+                [
+                  ["back", "Back"],
+                  ["home", "Home"],
+                  ["recent", "Recent"],
+                ] as const
+              ).map(([action, label]) => (
+                <button
+                  key={action}
+                  type="button"
+                  aria-label={`${label} on target phones`}
+                  onClick={() => onNav(action)}
+                  className={cn(STEP_BTN, "px-3 font-mono text-xs")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="min-w-0 truncate font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]" data-grid-touch-note>
+            {touchNote}
+          </p>
+        </div>
+      )}
       <div
         ref={stageRef}
         className="min-h-0 flex-1 overflow-auto"
@@ -280,13 +369,10 @@ export function TouchScreenGrid({
             {visible.map((device) => (
               <TouchScreenTile
                 key={device.id}
-                device={device}
-                isActive={device.id === activeId}
-                mouseOn={mouseOn}
+                {...tileProps(device)}
                 layout="desktop"
                 tileWidth={pack.tileW}
                 tileHeight={pack.tileH}
-                onFocus={() => onFocusDevice(device.id)}
               />
             ))}
           </div>
@@ -299,11 +385,8 @@ export function TouchScreenGrid({
             {visible.map((device) => (
               <TouchScreenTile
                 key={device.id}
-                device={device}
-                isActive={device.id === activeId}
-                mouseOn={mouseOn}
+                {...tileProps(device)}
                 layout="mobile"
-                onFocus={() => onFocusDevice(device.id)}
               />
             ))}
           </div>
@@ -362,9 +445,56 @@ function Stepper({
   );
 }
 
+/** Per-tile checkbox: include this phone in the group that receives touches. */
+function IncludeToggle({
+  name,
+  included,
+  disabled,
+  onToggle,
+  overlay = false,
+}: {
+  name: string;
+  included: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  /** Sits over the video (desktop tile): light-on-dark styling. */
+  overlay?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`Include ${name}`}
+      aria-pressed={included}
+      data-grid-include={name}
+      disabled={disabled}
+      onClick={onToggle}
+      className={cn(
+        "pointer-events-auto inline-flex h-11 min-h-11 w-11 min-w-11 items-center justify-center rounded-xl border disabled:opacity-40",
+        overlay ? "border-white/20 bg-black/40 text-white hover:bg-white/15" : "border-[var(--pc-line)] text-[var(--pc-ink)]",
+        included && "border-[var(--pc-accent)] bg-[var(--pc-accent-fill)] text-white hover:bg-[var(--pc-accent-fill)]",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "inline-flex size-4 items-center justify-center rounded-[4px] border",
+          included ? "border-white bg-white text-[var(--pc-accent-fill)]" : "border-current",
+        )}
+      >
+        {included && <Check className="size-3" strokeWidth={3} />}
+      </span>
+    </button>
+  );
+}
+
 function TouchScreenTile({
   device,
   isActive,
+  inTargets,
+  included,
+  canToggle,
+  onToggleInclude,
+  sendTo,
   mouseOn,
   layout,
   tileWidth,
@@ -373,6 +503,12 @@ function TouchScreenTile({
 }: {
   device: Device;
   isActive: boolean;
+  /** Part of the group that receives this tile's touches. */
+  inTargets: boolean;
+  included: boolean;
+  canToggle: boolean;
+  onToggleInclude: () => void;
+  sendTo: { mode: ControlMode; targets: Device[] };
   mouseOn: boolean;
   layout: "mobile" | "desktop";
   tileWidth?: number;
@@ -405,8 +541,8 @@ function TouchScreenTile({
     const size = frameSizeRef.current;
     void devicesClient
       .sendPointer(
-        "selected",
-        [device],
+        sendTo.mode,
+        sendTo.targets,
         phase,
         point,
         size?.width ?? width,
@@ -429,7 +565,8 @@ function TouchScreenTile({
         <div
           className={cn(
             "relative overflow-hidden rounded-xl border",
-            isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
+            isActive || inTargets ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
+            inTargets && "ring-2 ring-[var(--pc-accent)]/40",
           )}
           style={
             sized
@@ -441,6 +578,15 @@ function TouchScreenTile({
             <span className="pointer-events-none min-w-0 flex-1 truncate font-mono text-[10px] text-white">
               {device.name}
             </span>
+            {canToggle && (
+              <IncludeToggle
+                name={device.name}
+                included={included}
+                disabled={offline}
+                onToggle={onToggleInclude}
+                overlay
+              />
+            )}
             <Button
               type="button"
               variant="ghost"
@@ -535,13 +681,22 @@ function TouchScreenTile({
       data-touch-screen-tile={device.id}
       className={cn(
         "flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[var(--pc-panel)]",
-        isActive ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
+        isActive || inTargets ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]",
+            inTargets && "ring-2 ring-[var(--pc-accent)]/40",
       )}
     >
       <div className="flex h-7 shrink-0 items-center gap-1 border-b border-[var(--pc-line)] px-1.5">
         <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--pc-ink)]">
           {device.name}
         </span>
+        {canToggle && (
+          <IncludeToggle
+            name={device.name}
+            included={included}
+            disabled={offline}
+            onToggle={onToggleInclude}
+          />
+        )}
         <Button
           type="button"
           variant="ghost"
