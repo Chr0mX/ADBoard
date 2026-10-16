@@ -17,9 +17,7 @@ import {
   LayoutGrid,
   MonitorOff,
   MousePointer2,
-  PanelBottom,
   PanelsTopLeft,
-  PictureInPicture2,
   Pin,
   Play,
   RefreshCw,
@@ -29,6 +27,7 @@ import {
   VolumeX,
   Zap,
 } from "lucide-react";
+import { StatsBarsIcon } from "@/components/phone-control/stats-bars-icon";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { FloatingPanel } from "@/components/phone-control/floating/floating-panel";
@@ -461,11 +460,7 @@ export function ControlPanelFloat({
                 onStatsModeChange?.(statsMode === "bar" ? "float" : "bar")
               }
             >
-              {statsMode === "bar" ? (
-                <PanelBottom className="size-5" />
-              ) : (
-                <PictureInPicture2 className="size-5" />
-              )}
+              <StatsBarsIcon className="size-5" />
             </Button>
           </PinableTool>
           <PinableTool {...pinProps("devices")}>

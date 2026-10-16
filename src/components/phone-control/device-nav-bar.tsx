@@ -12,9 +12,7 @@ import {
   LayoutGrid,
   Minus,
   MousePointer2,
-  PanelBottom,
   PanelsTopLeft,
-  PictureInPicture2,
   Play,
   Plus,
   Power,
@@ -24,6 +22,7 @@ import {
   Sparkles,
   Square,
 } from "lucide-react";
+import { StatsBarsIcon } from "@/components/phone-control/stats-bars-icon";
 import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
@@ -306,11 +305,7 @@ function PinnedToolButton({
             handlers.onStatsModeChange(handlers.statsMode === "bar" ? "float" : "bar")
           }
         >
-          {handlers.statsMode === "bar" ? (
-            <PanelBottom className={iconClass} />
-          ) : (
-            <PictureInPicture2 className={iconClass} />
-          )}
+          <StatsBarsIcon className={iconClass} />
         </Button>
       );
     case "devices":
