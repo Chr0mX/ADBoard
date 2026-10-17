@@ -41,8 +41,10 @@ interface Options {
   /**
    * Combine this browser's real data with the agent's copy (nothing dropped).
    * Used when both have data that differ; without it the agent's copy wins.
+   * `base` is the last copy this browser and the agent agreed on (null when
+   * unknown), so an item deleted on one side is not brought back.
    */
-  merge?: (local: unknown, remote: unknown) => unknown;
+  merge?: (local: unknown, remote: unknown, base: unknown) => unknown;
 }
 
 const BACKUP_LIMIT = 5;
@@ -70,16 +72,41 @@ function saveBackup(name: string, value: unknown) {
   }
 }
 
+/** The last copy this browser and the agent agreed on, for three-way merges. */
+function readBase(name: string): unknown {
+  try {
+    const raw = localStorage.getItem(`adboard-sync-base-${name}`);
+    return raw ? (JSON.parse(raw) as unknown) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBase(name: string, value: unknown) {
+  try {
+    localStorage.setItem(`adboard-sync-base-${name}`, JSON.stringify(value));
+  } catch {
+    // Storage full: merges keep everything instead.
+    try {
+      localStorage.removeItem(`adboard-sync-base-${name}`);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 const PULL_MS = 10_000;
 const PUSH_DELAY_MS = 600;
 
-export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, isMeaningful, merge }: Options) {
+export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, isMeaningful, merge: mergeRaw }: Options) {
   // Whatever replaces this browser's copy, keep the old one first if it held real data.
-  const applyRemote = (value: unknown) => {
+  const applyRemote = (value: unknown, agreed = true) => {
     const local = getLocal();
     if (isMeaningful(local) && JSON.stringify(local) !== JSON.stringify(value)) saveBackup(name, local);
     applyRemoteRaw(value);
+    if (agreed) writeBase(name, value);
   };
+  const merge = mergeRaw && ((local: unknown, remote: unknown) => mergeRaw(local, remote, readBase(name)));
   /** Whether the agent's last known copy holds real data. */
   let serverMeaningful = false;
   let started = false;
@@ -128,6 +155,7 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
       });
       if (res.ok) {
         rev = ((await res.json()) as { rev: number }).rev;
+        writeBase(name, getLocal());
         serverMeaningful = serverMeaningful || isMeaningful(getLocal());
         setStatus(name, "shared");
       } else if (res.status === 409) {
@@ -139,7 +167,7 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
         // Keep this browser's edit too: merge onto the newer copy and try again.
         const local = getLocal();
         if (merge && isMeaningful(local) && serverMeaningful) {
-          applyRemote(merge(local, current.value));
+          applyRemote(merge(local, current.value), false);
           dirty = true;
         } else {
           applyRemote(current.value);
@@ -188,7 +216,7 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
     if (action === "adopt") {
       if (merge && localMeaningful && serverMeaningful && JSON.stringify(local) !== JSON.stringify(shared.value)) {
         // Both sides have real data: keep all of it, then share the result.
-        applyRemote(merge(local, shared.value));
+        applyRemote(merge(local, shared.value), false);
         await upload();
       } else if (localMeaningful && !serverMeaningful) {
         // The agent only holds a starter: this browser's real data wins.
@@ -216,6 +244,24 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
     setInterval(() => {
       if (document.visibilityState === "visible") void pull();
     }, PULL_MS);
+    // Leaving or reloading with an edit still waiting: send it now.
+    window.addEventListener("pagehide", () => {
+      if (!pushTimer || !synced) return;
+      clearTimeout(pushTimer);
+      pushTimer = null;
+      const local = getLocal();
+      if (serverMeaningful && !isMeaningful(local)) return;
+      try {
+        void agentFetch(url(), {
+          method: "PUT",
+          keepalive: true,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value: local, baseRev: rev }),
+        }).catch(() => {});
+      } catch {
+        // Too large for a keepalive request: the next load merges it.
+      }
+    });
   }
 
   /** Call after every local save. */

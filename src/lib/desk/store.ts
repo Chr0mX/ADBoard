@@ -179,15 +179,16 @@ const sync = createAgentSync({
   name: "desk",
   getLocal: () => read(),
   applyRemote: (value) => storeLibrary(normalize((value ?? {}) as Partial<DeskLibrary>)),
-  merge: (localRaw, remoteRaw) => {
+  merge: (localRaw, remoteRaw, baseRaw) => {
     const local = normalize((localRaw ?? {}) as Partial<DeskLibrary>);
     const remote = normalize((remoteRaw ?? {}) as Partial<DeskLibrary>);
+    const base = baseRaw ? normalize(baseRaw as Partial<DeskLibrary>) : null;
     return {
       ...remote,
-      apps: mergeById(local.apps, remote.apps),
-      macros: mergeById(local.macros, remote.macros),
-      groups: mergeById(local.groups, remote.groups),
-      history: mergeById(local.history, remote.history).slice(0, 30),
+      apps: mergeById(local.apps, remote.apps, base?.apps),
+      macros: mergeById(local.macros, remote.macros, base?.macros),
+      groups: mergeById(local.groups, remote.groups, base?.groups),
+      history: mergeById(local.history, remote.history, base?.history).slice(0, 30),
       variables: { ...local.variables, ...remote.variables },
       deviceVariables: { ...local.deviceVariables, ...remote.deviceVariables },
       tags: { ...local.tags, ...remote.tags },

@@ -67,14 +67,14 @@ const queueSync = createAgentSync({
   name: "macro-queue",
   getLocal: () => read().queue,
   applyRemote: (value) => applyShared(QUEUE_KEY, normalizeQueue(value)),
-  merge: (local, remote) => mergeById(normalizeQueue(local), normalizeQueue(remote)),
+  merge: (local, remote, base) => mergeById(normalizeQueue(local), normalizeQueue(remote), base ? normalizeQueue(base) : null),
   isMeaningful: (value) => Array.isArray(value) && value.length > 0,
 });
 const scheduleSync = createAgentSync({
   name: "macro-schedules",
   getLocal: () => read().schedules,
   applyRemote: (value) => applyShared(SCHEDULE_KEY, normalizeSchedules(value)),
-  merge: (local, remote) => mergeById(normalizeSchedules(local), normalizeSchedules(remote)),
+  merge: (local, remote, base) => mergeById(normalizeSchedules(local), normalizeSchedules(remote), base ? normalizeSchedules(base) : null),
   isMeaningful: (value) => Array.isArray(value) && value.length > 0,
 });
 

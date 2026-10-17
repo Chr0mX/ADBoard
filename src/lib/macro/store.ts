@@ -64,7 +64,8 @@ const sync = createAgentSync({
     const keep = cached?.activeId && next.tabs.some((t) => t.id === cached?.activeId) ? cached.activeId : next.activeId;
     store({ ...next, activeId: keep });
   },
-  merge: (local, remote) => mergeWorkspaces(normalizeWorkspace(local), normalizeWorkspace(remote)),
+  merge: (local, remote, base) =>
+    mergeWorkspaces(normalizeWorkspace(local), normalizeWorkspace(remote), base ? normalizeWorkspace(base) : null),
   isMeaningful: (value) => {
     const ws = value as MacroWorkspace;
     if (!ws || !Array.isArray(ws.tabs)) return false;

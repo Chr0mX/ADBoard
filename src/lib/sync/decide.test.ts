@@ -37,3 +37,19 @@ describe("merge (no data loss when copies meet)", () => {
     assert.deepEqual(mergeById(starter, real).map((t) => t.id), ["farm", "collect", "tab-1"]);
   });
 });
+
+it("merge with the last agreed copy does not bring back deleted or replaced items", () => {
+  const a = { id: "a", updatedAt: 1 };
+  const b = { id: "b", updatedAt: 1 };
+  const c = { id: "c", updatedAt: 1 };
+  // This browser deleted b; the agent still has it from before.
+  assert.deepEqual(mergeById([a], [a, b], [a, b]).map((x) => x.id), ["a"]);
+  // Another browser deleted b; this browser still has it.
+  assert.deepEqual(mergeById([a, b], [a], [a, b]).map((x) => x.id), ["a"]);
+  // Replaced everything with new ids (import → replace) before the upload.
+  assert.deepEqual(mergeById([c], [a, b], [a, b]).map((x) => x.id), ["c"]);
+  // New on either side since the base: kept.
+  assert.deepEqual(mergeById([a, c], [a, b], [a]).map((x) => x.id), ["a", "b", "c"]);
+  // No base known: nothing dropped.
+  assert.deepEqual(mergeById([a], [a, b], null).map((x) => x.id), ["a", "b"]);
+});
