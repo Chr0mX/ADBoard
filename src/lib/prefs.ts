@@ -200,7 +200,12 @@ function perBrowserSync(name: "browser-state" | "builder-state", keys: readonly 
       const value = get(key);
       if (value !== null) values[key] = value;
     }
-    const updatedAt = Number(get(stampKey) ?? 0);
+    let updatedAt = Number(get(stampKey) ?? 0);
+    // A layout this browser already had (set before saving started) counts from now.
+    if (!updatedAt && Object.keys(values).length > 0) {
+      updatedAt = Date.now();
+      set(stampKey, String(updatedAt));
+    }
     const browsers = { ...(known?.browsers ?? {}) };
     if (Object.keys(values).length > 0 || updatedAt > 0) browsers[browserId()] = { label: browserLabel(), updatedAt, values };
     return { version: 1, browsers };

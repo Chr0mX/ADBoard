@@ -108,6 +108,20 @@ function write(next: { queue?: QueueItem[]; schedules?: MacroSchedule[] }) {
   notify();
 }
 
+/** Wait (briefly) until the agent's queue and schedules have been loaded. */
+export function automationReady() {
+  read();
+  return Promise.all([queueSync.ready(), scheduleSync.ready()]).then(() => undefined);
+}
+
+/** Queue and schedules as stored (whole-library export/import). */
+export function getAutomation() {
+  return read();
+}
+export function setAutomation(next: { queue: QueueItem[]; schedules: MacroSchedule[] }) {
+  write({ queue: normalizeQueue(next.queue), schedules: normalizeSchedules(next.schedules) });
+}
+
 const EMPTY = { queue: [] as QueueItem[], schedules: [] as MacroSchedule[] };
 export function useAutomation() {
   useSyncExternalStore(subscribe, () => version, () => 0);

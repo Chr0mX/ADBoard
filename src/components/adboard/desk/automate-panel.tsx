@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { readUiState, writeUiState } from "@/lib/ui-state";
+import { exportShellScript, mergeShellLibrary, parseShellImport, shellFileName, uniqueName } from "@/lib/adboard-files";
+import { saveTextFile } from "@/lib/api/download";
+import { exportWholeLibrary } from "@/lib/library";
+import { FolderHint } from "@/components/adboard/desk/data-storage";
 import { ACTIONS, CATEGORIES, newStep } from "@/lib/desk/actions";
 import {
-  MACRO_KINDS,
   emptyProfile,
-  exportDeskJson,
-  importDeskJson,
   newId,
+  parseDeskExport,
   updateLibrary,
   useLibrary,
   type DeviceProfile,
@@ -155,35 +157,29 @@ export function AutomatePanel() {
 }
 
 /** Check a single exported job before adding it. */
-function parseJobFile(text: string): SavedMacro {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error("The file is not valid JSON");
-  }
-  const job = parsed as Partial<SavedMacro>;
-  if (!job || typeof job !== "object" || typeof job.name !== "string" || !Array.isArray(job.steps)) {
-    throw new Error("Not a Shell Automation job (needs a name and steps). A whole desk export goes in Import desk.");
-  }
-  const unknown = job.steps.filter((step) => !step || !MACRO_KINDS.has(String(step.kind)));
-  if (unknown.length > 0) throw new Error(`Unknown step type: ${String(unknown[0]?.kind)}`);
-  return {
-    ...(job as SavedMacro),
-    id: newId("macro"),
-    folder: job.folder || "Custom",
-    steps: job.steps.map((step) => ({ ...step, id: newId("step") })),
-  };
-}
-
-function download(name: string, text: string) {
-  const blob = new Blob([text], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
+/**
+ * Shell Automation → Import: an ADBoard script file, one raw job, an older
+ * PhoneControl desk export or adboard-library.json, told apart by contents.
+ * Everything is added to the library (never replaced); items already here
+ * are skipped and name clashes get " 2".
+ */
+function importShellFile(text: string): string {
+  const read = parseShellImport(text);
+  const incoming = read.kind === "scripts" ? { macros: read.scripts } : read.library;
+  // Same checks as the agent and older imports: step kinds, arrays, objects.
+  const checked = parseDeskExport(JSON.stringify({ ...incoming, macros: incoming.macros ?? [] }));
+  let summary = "";
+  updateLibrary((current) => {
+    const merged = mergeShellLibrary(current, read.kind === "scripts" ? { macros: checked.macros } : checked, newId);
+    const c = merged.scripts;
+    const what = read.kind === "scripts" && read.scripts.length === 1 ? `“${read.scripts[0].name}”` : `${c.added} script${c.added === 1 ? "" : "s"}`;
+    summary =
+      c.added === 0
+        ? "Nothing new: every script in the file is already in the library."
+        : `Imported ${what}${c.renamed ? ` (${c.renamed} renamed to avoid a duplicate name)` : ""}${c.skipped ? `; ${c.skipped} already here` : ""}.`;
+    return merged.library;
+  });
+  return summary;
 }
 
 function JobLibrary({
@@ -241,20 +237,19 @@ function JobLibrary({
             <button type="button" className="pc-toggle pc-toggle-sm" onClick={() => onOpen(null)} data-shell-new-job>
               New job
             </button>
-            {importInput("Import job", "data-shell-import-job", (text) => {
-              const job = parseJobFile(text);
-              updateLibrary((current) => ({ ...current, macros: [...current.macros, job] }));
-              setNotice({ tone: "ok", text: `Imported “${job.name}” (${job.steps.length} steps).` });
-            })}
-            {importInput("Import desk", "data-shell-import-desk", (text) => {
-              const next = importDeskJson(text);
-              setNotice({ tone: "ok", text: `Imported the desk: ${next.macros.length} jobs.` });
-            })}
-            <button type="button" className="pc-toggle pc-toggle-sm" onClick={() => download("phonecontrol-desk.json", exportDeskJson(library))}>
-              Export desk
+            {importInput("Import", "data-shell-import", (text) => setNotice({ tone: "ok", text: importShellFile(text) }))}
+            <button
+              type="button"
+              className="pc-toggle pc-toggle-sm"
+              title="Everything: touch macros, Shell Automation, queue and schedules"
+              onClick={() => void exportWholeLibrary()}
+              data-shell-export-library
+            >
+              Export library
             </button>
           </div>
         </div>
+        <FolderHint folder="shell_scripts" store="desk" itemId={openId} />
         {notice && (
           <p role="status" className={notice.tone === "error" ? "text-xs text-[var(--pc-warn)]" : "text-xs text-[var(--pc-signal)]"} data-shell-library-notice>
             {notice.text}
@@ -289,7 +284,12 @@ function JobLibrary({
                           ...current,
                           macros: [
                             ...current.macros,
-                            { ...macro, id: newId("macro"), name: `${macro.name} copy`, steps: macro.steps.map((step) => ({ ...step, id: newId("step") })) },
+                            {
+                              ...macro,
+                              id: newId("macro"),
+                              name: uniqueName(`${macro.name} copy`, current.macros.map((m) => m.name)),
+                              steps: macro.steps.map((step) => ({ ...step, id: newId("step") })),
+                            },
                           ],
                         }))
                       }
@@ -299,13 +299,15 @@ function JobLibrary({
                       onClick={() => {
                         const name = window.prompt("Rename job", macro.name);
                         if (!name?.trim()) return;
-                        updateLibrary((current) => ({
-                          ...current,
-                          macros: current.macros.map((item) => (item.id === macro.id ? { ...item, name: name.trim() } : item)),
-                        }));
+                        updateLibrary((current) => {
+                          const others = current.macros.filter((item) => item.id !== macro.id).map((item) => item.name);
+                          const unique = uniqueName(name, others);
+                          if (unique !== name.trim()) setNotice({ tone: "ok", text: `“${name.trim()}” is taken; renamed to “${unique}”.` });
+                          return { ...current, macros: current.macros.map((item) => (item.id === macro.id ? { ...item, name: unique } : item)) };
+                        });
                       }}
                     />
-                    <Mini label="Export" onClick={() => download(`${macro.name}.json`, JSON.stringify(macro, null, 2))} />
+                    <Mini label="Export" onClick={() => void saveTextFile(exportShellScript(macro), shellFileName(macro.name))} />
                     <Mini label="Delete" onClick={() => setDeleting(macro)} />
                   </li>
                 ))}

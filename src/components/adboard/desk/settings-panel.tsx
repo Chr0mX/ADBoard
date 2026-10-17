@@ -13,6 +13,7 @@ import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
 import { Segmented } from "@/components/adboard/macros/fields";
 import { TOUCH_DIAGNOSTICS_KEY } from "@/components/adboard/touch-diagnostics";
 import { InstallOnIphone } from "@/components/adboard/desk/install-on-iphone";
+import { DataStorageCard } from "@/components/adboard/desk/data-storage";
 
 /**
  * One place for the app's existing settings. Nothing here has its own
@@ -144,6 +145,8 @@ export function SettingsPanel() {
             </div>
           </section>
         )}
+
+        <DataStorageCard />
       </div>
     </PanelFrame>
   );

@@ -18,7 +18,8 @@ import {
   Upload,
   History,
 } from "lucide-react";
-import { saveBlob } from "@/lib/api/download";
+import { saveTextFile } from "@/lib/api/download";
+import { ALL_MACROS_FILE, UNTITLED_MACRO, macroFileName, safeFileStem, uniqueName } from "@/lib/adboard-files";
 import { devicesClient } from "@/lib/api/client";
 import {
   MAX_REFERENCE,
@@ -29,7 +30,6 @@ import {
   cycleMs,
   exportAutoClickerFile,
   exportMacroFile,
-  fileSafeName,
   orientationMismatch,
   rescaleTab,
   type ImportResult,
@@ -76,6 +76,7 @@ import { PhoneRunsCard } from "@/components/adboard/macros/phone-runs-card";
 import { readBackups, useSyncStatus } from "@/lib/sync/agent-store";
 import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 import { readUiState, writeUiState } from "@/lib/ui-state";
+import { FolderHint } from "@/components/adboard/desk/data-storage";
 
 /**
  * Per-tab view state (selected step, preview screen) survives switching tabs
@@ -126,6 +127,7 @@ export function MacrosPanel() {
         onImportFile={(name, text) => setPendingImport({ name, text })}
         onNotice={setNotice}
       />
+      <FolderHint folder="macros" store="macros" itemId={active?.id ?? null} />
       {notice && (
         <p role="status" className="flex items-center justify-between gap-2 rounded-xl bg-[var(--pc-accent-soft)] px-3 py-2 text-xs text-[var(--pc-ink)]">
           {notice}
@@ -180,7 +182,7 @@ function TabStrip({
   const active = tabs.find((t) => t.id === activeId) ?? null;
   const index = active ? tabs.indexOf(active) : -1;
 
-  const download = (text: string, name: string, type = "application/json") => saveBlob(new Blob([text], { type }), name);
+  const download = (text: string, name: string, type = "application/json") => void saveTextFile(text, name, type);
 
   return (
     <div className="flex flex-col gap-2" data-macro-tabs>
@@ -199,8 +201,13 @@ function TabStrip({
                   maxLength={60}
                   className="h-10 w-40 shrink-0 rounded-xl border border-[var(--pc-accent)] bg-[var(--pc-paper)] px-2 text-sm text-[var(--pc-ink)] outline-none"
                   onBlur={(event) => {
+                    // A blank name keeps the old one; a taken name gets " 2" (each macro has its own file).
                     const name = event.target.value.trim();
-                    if (name) patchTab(tab.id, (t) => ({ ...t, name }));
+                    if (name) {
+                      const unique = uniqueName(name, tabs.filter((t) => t.id !== tab.id).map((t) => t.name));
+                      patchTab(tab.id, (t) => ({ ...t, name: unique }));
+                      if (unique !== name) onNotice(`“${name}” is taken; renamed to “${unique}”.`);
+                    }
                     setRenaming(null);
                   }}
                   onKeyDown={(event) => {
@@ -236,7 +243,11 @@ function TabStrip({
         <IconButton
           label="New tab"
           disabled={tabs.length >= MAX_TABS}
-          onClick={() => addTab()}
+          onClick={() => {
+            // New macros start as "Untitled macro" with the name field open.
+            const created = addTab({ name: UNTITLED_MACRO });
+            if (created) setRenaming(created.id);
+          }}
           className="size-10 border-[var(--pc-line)]"
           data-macro-new-tab
         >
@@ -295,15 +306,15 @@ function TabStrip({
             </summary>
             <div className="absolute right-0 z-30 mt-1 flex w-60 flex-col rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg">
               {[
-                { label: "This tab", disabled: !active, run: () => active && download(exportMacroFile([active]), `${fileSafeName(active.name)}.adboard-macros.json`) },
-                { label: "All tabs", disabled: tabs.length === 0, run: () => download(exportMacroFile(tabs), "adboard-macros.json") },
+                { label: "This tab", disabled: !active, run: () => active && download(exportMacroFile([active]), macroFileName(active.name)) },
+                { label: "All tabs", disabled: tabs.length === 0, run: () => download(exportMacroFile(tabs), ALL_MACROS_FILE) },
                 {
                   label: "This tab for Auto Clicker",
                   disabled: !active,
                   run: () => {
                     if (!active) return;
                     const warnings: string[] = [];
-                    download(exportAutoClickerFile([active], warnings), `${fileSafeName(active.name)}-autoclicker.txt`, "text/plain");
+                    download(exportAutoClickerFile([active], warnings), `${safeFileStem(active.name, UNTITLED_MACRO)}-autoclicker.txt`, "text/plain");
                     if (warnings.length) onNotice(`${warnings[0]}${warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ""}`);
                   },
                 },

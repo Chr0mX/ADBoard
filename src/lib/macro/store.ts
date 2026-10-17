@@ -10,6 +10,7 @@ import {
   type MacroTab,
 } from "@/lib/macro/core";
 import { createAgentSync } from "@/lib/sync/agent-store";
+import { UNTITLED_MACRO, uniqueName as uniqueDisplayName } from "@/lib/adboard-files";
 import { mergeWorkspaces } from "@/lib/sync/decide";
 
 /** Saved in this browser. Each tab keeps its own settings, steps and phones. */
@@ -120,6 +121,12 @@ export function pullMacrosFromAgent() {
   return sync.pull();
 }
 
+/** Wait (briefly) until the agent's copy has been loaded. */
+export function macrosReady() {
+  sync.start();
+  return sync.ready();
+}
+
 /** Make sure the agent has this browser's latest macros. */
 export function flushMacrosToAgent() {
   return sync.flush();
@@ -163,14 +170,8 @@ export function setActiveTab(id: string) {
   update((ws) => (ws.tabs.some((t) => t.id === id) ? { ...ws, activeId: id } : ws));
 }
 
-function uniqueName(ws: MacroWorkspace, base: string) {
-  const names = new Set(ws.tabs.map((t) => t.name));
-  if (!names.has(base)) return base;
-  for (let n = 2; ; n += 1) {
-    const name = `${base} ${n}`;
-    if (!names.has(name)) return name;
-  }
-}
+/** Display names are unique (case-insensitive): each macro is saved as its own file. */
+const uniqueName = (ws: MacroWorkspace, base: string) => uniqueDisplayName(base, ws.tabs.map((t) => t.name), UNTITLED_MACRO);
 
 export function addTab(patch: Partial<MacroTab> = {}): MacroTab | null {
   const ws = read();
@@ -211,6 +212,11 @@ export function moveTab(id: string, delta: -1 | 1) {
     [tabs[index], tabs[target]] = [tabs[target], tabs[index]];
     return { ...ws, tabs };
   });
+}
+
+/** Replace the whole workspace (whole-library import). */
+export function replaceWorkspace(next: MacroWorkspace) {
+  save(normalizeWorkspace(next));
 }
 
 /** Add imported tabs as new tabs (fresh ids, so nothing collides), or replace all. */

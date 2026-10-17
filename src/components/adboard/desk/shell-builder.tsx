@@ -16,10 +16,11 @@ import {
   type Mechanism,
 } from "@/lib/desk/actions";
 import { runMacro, type MacroProgress, type StepLog } from "@/lib/desk/run-macro";
-import { MACRO_FOLDERS, newId, updateLibrary, useLibrary, type MacroStep, type MacroStepKind, type SavedMacro } from "@/lib/desk/store";
+import { MACRO_FOLDERS, getLibrary, newId, updateLibrary, useLibrary, type MacroStep, type MacroStepKind, type SavedMacro } from "@/lib/desk/store";
 import type { Device } from "@/lib/devices/types";
 import { cn } from "@/lib/utils";
 import { readUiState, writeUiState } from "@/lib/ui-state";
+import { UNTITLED_SCRIPT, uniqueName } from "@/lib/adboard-files";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { useDesk } from "@/components/adboard/desk/desk-context";
@@ -101,7 +102,8 @@ function CreateJob({ onCreate }: { onCreate: (macro: SavedMacro) => void }) {
       data-macro-builder
       onSubmit={(event) => {
         event.preventDefault();
-        const created: SavedMacro = { id: newId("macro"), name: name.trim() || "New job", folder, steps: [] };
+        const unique = uniqueName(name, getLibrary().macros.map((m) => m.name), UNTITLED_SCRIPT);
+        const created: SavedMacro = { id: newId("macro"), name: unique, folder, steps: [] };
         updateLibrary((current) => ({ ...current, macros: [...current.macros, created] }));
         onCreate(created);
       }}
@@ -533,7 +535,10 @@ function JobHeader({ macro, onPatch }: { macro: SavedMacro; onPatch: (change: (j
           value={macro.name}
           onChange={(event) => onPatch((job) => ({ ...job, name: event.target.value }))}
           onBlur={(event) => {
-            if (!event.target.value.trim()) onPatch((job) => ({ ...job, name: "Untitled job" }));
+            // No blank names, and no two scripts with the same name (their files would clash).
+            const others = getLibrary().macros.filter((m) => m.id !== macro.id).map((m) => m.name);
+            const unique = uniqueName(event.target.value, others, UNTITLED_SCRIPT);
+            if (unique !== event.target.value) onPatch((job) => ({ ...job, name: unique }));
           }}
           className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 font-display text-base font-semibold text-[var(--pc-ink)]"
           data-shell-job-name

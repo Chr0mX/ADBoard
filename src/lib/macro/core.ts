@@ -822,11 +822,6 @@ export function exportAutoClickerFile(tabs: MacroTab[], warnings: string[] = [])
   return JSON.stringify(toAutoClicker(tabs, warnings));
 }
 
-/** Friendly file name for a tab. */
-export function fileSafeName(name: string): string {
-  return name.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "macros";
-}
-
 /* ------------------------------------------------------------------ */
 /* Running                                                             */
 /* ------------------------------------------------------------------ */

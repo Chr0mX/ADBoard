@@ -252,6 +252,12 @@ function read(): DeskLibrary {
   return cached;
 }
 
+/** Wait (briefly) until the agent's copy has been loaded. */
+export function deskReady() {
+  if (typeof window !== "undefined") sync.start();
+  return sync.ready();
+}
+
 export function getLibrary(): DeskLibrary {
   return read();
 }

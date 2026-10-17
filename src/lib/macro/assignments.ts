@@ -89,6 +89,22 @@ export function assignMacro(deviceId: string, tabId: string | null) {
   sync.push();
 }
 
+/** Wait (briefly) until the agent's copy has been loaded. */
+export function assignmentsReady() {
+  read();
+  return sync.ready();
+}
+
+export function getAssignments(): Assignments {
+  return read();
+}
+
+/** Replace every phone's choice (whole-library import). */
+export function setAssignments(next: Assignments) {
+  store(normalizeAssignments(next));
+  sync.push();
+}
+
 /** Hand this browser's latest choices to the agent now. */
 export function flushAssignments() {
   return sync.flush();
