@@ -537,7 +537,7 @@ export function phoneRun(deviceId: string): PhoneRun | null {
 }
 
 /** Start `tab` on one phone; the agent refuses (409) when that phone is already running. */
-export async function startPhone(device: Device, tab: MacroTab): Promise<boolean> {
+export async function startPhone(device: Device, tab: MacroTab, onlyStepId?: string): Promise<boolean> {
   phoneErrors.delete(device.id);
   if (!agentMode()) {
     if (owners.has(device.id) || runs.has(tab.id)) {
@@ -545,12 +545,12 @@ export async function startPhone(device: Device, tab: MacroTab): Promise<boolean
       notify();
       return false;
     }
-    void localStartRun(tab, [device]);
+    void localStartRun(tab, [device], onlyStepId);
     return true;
   }
   startPolling();
   try {
-    await agentPostUrl(deviceUrl(device.id, "start"), { tab });
+    await agentPostUrl(deviceUrl(device.id, "start"), { tab, onlyStepId });
     return true;
   } catch (error) {
     phoneErrors.set(device.id, error instanceof Error ? error.message : "could not start");

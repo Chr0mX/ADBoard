@@ -79,6 +79,20 @@ import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 /** Per-tab view state (selected step, preview screen) survives switching tabs. */
 const viewState = new Map<string, { stepId: string | null; previewId: string }>();
 
+/** Open `tabId` previewing `deviceId` next time the Macros page shows it (e.g. "Edit in Macros"). */
+export function focusMacroPreview(tabId: string, deviceId: string) {
+  viewState.set(tabId, { stepId: viewState.get(tabId)?.stepId ?? null, previewId: deviceId });
+}
+
+const hasScreen = (d: Device) => d.resolution.width > 0;
+
+/** The phone to preview first: the one being controlled, else an online ticked phone, else any online phone. */
+function defaultPreviewId(tab: MacroTab, devices: Device[], activeDevice: Device | null) {
+  if (activeDevice && hasScreen(activeDevice)) return activeDevice.id;
+  const online = devices.filter((d) => d.status === "online" && hasScreen(d));
+  return (online.find((d) => tab.targetIds.includes(d.id)) ?? online[0])?.id ?? "reference";
+}
+
 export function MacrosPanel() {
   const workspace = useMacroWorkspace();
   useRunVersion();
@@ -104,7 +118,7 @@ export function MacrosPanel() {
           </button>
         </p>
       )}
-      {active && <TabWorkspace key={active.id} tab={active} devices={desk.devices} />}
+      {active && <TabWorkspace key={active.id} tab={active} devices={desk.devices} activeDevice={desk.activeDevice} />}
       <PhoneRunsCard tabs={workspace.tabs} devices={desk.devices} />
       <div className="grid gap-3 lg:grid-cols-2" data-macro-automation>
         <QueueCard tabs={workspace.tabs} activeTab={active} />
@@ -330,10 +344,10 @@ function TabStrip({
 
 /* ------------------------------------------------------------------ */
 
-function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
+function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: Device[]; activeDevice: Device | null }) {
   const saved = viewState.get(tab.id);
   const [selectedStepId, setSelectedStepIdState] = useState<string | null>(saved?.stepId ?? tab.steps[0]?.id ?? null);
-  const [previewId, setPreviewIdState] = useState<string>(saved?.previewId ?? tab.targetIds[0] ?? "reference");
+  const [previewId, setPreviewIdState] = useState<string>(() => saved?.previewId ?? defaultPreviewId(tab, devices, activeDevice));
   const [placing, setPlacing] = useState(false);
   const running = isRunning(tab.id);
 
@@ -399,33 +413,64 @@ function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
               </GhostButton>
             }
           >
-            <div className="flex items-end gap-2">
-              <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-[var(--pc-muted)]">
-                Show on
-                <select
-                  value={previewDevice ? previewDevice.id : "reference"}
-                  onChange={(event) => setPreviewId(event.target.value)}
-                  className="h-11 min-h-11 min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-xs text-[var(--pc-ink)]"
-                  data-macro-preview-select
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-2 text-xs text-[var(--pc-muted)]">
+                <span id={`macro-preview-label-${tab.id}`}>Show on</span>
+                {previewDevice && (
+                  <label className="pc-choice-row shrink-0 gap-2 border border-[var(--pc-line)] px-3 text-xs">
+                    Live
+                    <Switch checked={live} onChange={() => setLive(!live)} data-macro-live-toggle aria-label="Live video" />
+                  </label>
+                )}
+              </div>
+              <div
+                role="group"
+                aria-labelledby={`macro-preview-label-${tab.id}`}
+                className="flex gap-1.5 overflow-x-auto pb-1"
+                data-macro-preview-chips
+              >
+                {devices.map((d) => {
+                  const selected = previewDevice?.id === d.id;
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={!hasScreen(d)}
+                      title={hasScreen(d) ? `${d.name} · ${d.resolution.width}×${d.resolution.height} · ${d.status}` : `${d.name}: screen size unknown`}
+                      onClick={() => setPreviewId(d.id)}
+                      className={cn(
+                        "inline-flex h-9 min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs disabled:opacity-40",
+                        selected
+                          ? "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-ink)]"
+                          : "border-[var(--pc-line)] text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]",
+                      )}
+                      data-macro-preview-chip={d.id}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn("size-1.5 rounded-full", d.status === "online" ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-muted)]")}
+                      />
+                      <span className="font-medium">{d.name}</span>
+                      {d.id === activeDevice?.id && <span className="font-mono text-[10px] text-[var(--pc-muted)]">in Control</span>}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  aria-pressed={!previewDevice}
+                  onClick={() => setPreviewId("reference")}
+                  className={cn(
+                    "inline-flex h-9 min-h-9 shrink-0 items-center rounded-full border px-3 text-xs",
+                    !previewDevice
+                      ? "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-ink)]"
+                      : "border-[var(--pc-line)] text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)]",
+                  )}
+                  data-macro-preview-chip="reference"
                 >
-                  <option value="reference">
-                    Reference screen ({tab.reference.width}×{tab.reference.height})
-                  </option>
-                  {devices
-                    .filter((d) => d.resolution.width > 0)
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} ({d.resolution.width}×{d.resolution.height}){d.status !== "online" ? ` · ${d.status}` : ""}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              {previewDevice && (
-                <label className="pc-choice-row shrink-0 gap-2 border border-[var(--pc-line)] px-3 text-xs">
-                  Live
-                  <Switch checked={live} onChange={() => setLive(!live)} data-macro-live-toggle aria-label="Live video" />
-                </label>
-              )}
+                  Reference {tab.reference.width}×{tab.reference.height}
+                </button>
+              </div>
             </div>
             {previewDevice ? (
               <LivePreview

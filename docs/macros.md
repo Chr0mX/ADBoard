@@ -36,20 +36,25 @@ A step is 1–10 fingers played together, then a wait.
 
 ## Live view
 
-- **Macros → Preview → Show on** a phone draws the touch markers over that phone's **live screen**. The frame follows the real video size, so it follows rotation too. A badge shows *Live*, *Waiting for picture…*, *Connecting…* or *Video unavailable*. Untick **Live** to edit without streaming. A tab opens on its first target phone.
+- **Macros → Preview** has a row of phone chips (name, online dot; "in Control" marks the phone you are controlling) and a **Reference** chip. Tap a phone to draw the touch markers over its **live screen**; Reference shows the blank reference frame. The frame follows the real video size, so it follows rotation too. A badge shows *Live*, *Waiting for picture…*, *Connecting…* or *Video unavailable*. Untick **Live** to edit without streaming.
+- The preview opens on the phone you are controlling, else the first online ticked phone, else any online phone. Each tab remembers the last chip you picked.
 - While a tab runs, each touch flashes as a fading ring on the live preview and on the main Control screen.
 
 ## Macros in Control
 
-**Macros** in the Control tool row (and in the grid bar) opens a Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet. The panel has:
+**Macros** in the Control tool row (and in the grid bar) opens a Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet.
 
-- **Macro tab** picker (● = running)
-- **Run on:** *Control targets* (whatever Selected / Multi / All points at, the default) or *Tab's phones*
-- **Run / Stop** and the live status (cycle, step, touches, each phone)
-- a live preview of the active phone with the tab's markers and touch rings
-- the steps, each with ▶ Test
-- the **Phones** card (below)
-- **Edit in Macros**, which opens the full editor
+Opened while a phone is selected, the panel belongs to **that phone**. Selecting another phone switches the panel to it. It has:
+
+- **Macro for S23:** the phone's own macro (its saved choice). Changing it changes only this phone. The Macros page, other phones and other browsers stay where they are.
+- **Run on:** *This phone* (the default), *Control targets* (whatever Selected / Multi / All points at) or *Tab's phones*
+- **Start / Pause / Stop** for this phone alone, with its live status (cycle, step, touches). With the other two choices, Run / Stop act on the tab's phones as before.
+- the phone's live screen with the macro's markers and touch rings
+- the steps, each with ▶ Test (this phone only in *This phone* mode)
+- the **Phones** card
+- **Edit in Macros**, which opens the full editor on this phone's macro and live screen
+
+With no phone selected, the panel works on the shared tab and the Control targets.
 
 ## Phones: a macro per phone
 

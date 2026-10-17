@@ -215,7 +215,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v47"
+      data-ui-build="pc-shell-v48"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -366,7 +366,7 @@ export function PhoneControlApp() {
                 className="flex min-h-0 w-[320px] shrink-0 flex-col gap-3 overflow-y-auto pb-2 xl:w-[360px]"
               >
                 <PanelHeader title="Macros" side="right" onCollapse={() => setMacroDockOpen(false)} />
-                <MacroDock devices={devices} controlTargets={broadcastTargets} activeDevice={activeDevice} />
+                <MacroDock key={activeDevice?.id ?? "none"} devices={devices} controlTargets={broadcastTargets} activeDevice={activeDevice} />
               </aside>
             )}
             {macroSheet &&
@@ -385,7 +385,7 @@ export function PhoneControlApp() {
                     Close
                   </Button>
                 </div>
-                <MacroDock devices={devices} controlTargets={broadcastTargets} activeDevice={activeDevice} />
+                <MacroDock key={activeDevice?.id ?? "none"} devices={devices} controlTargets={broadcastTargets} activeDevice={activeDevice} />
               </aside>,
               document.body,
             )}

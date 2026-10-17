@@ -1,24 +1,52 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, Play, Square } from "lucide-react";
+import { ExternalLink, Pause, Play, Square } from "lucide-react";
 import { stepKind, stepTouchMs, type MacroTab } from "@/lib/macro/core";
 import { setActiveTab, useMacroWorkspace } from "@/lib/macro/store";
-import { isRunning, runFor, startRun, stopRun, useRunVersion } from "@/lib/macro/runs";
+import {
+  isRunning,
+  pausePhone,
+  phoneRun,
+  phoneStartError,
+  resumePhone,
+  runFor,
+  startPhone,
+  startRun,
+  stopPhone,
+  stopRun,
+  useRunVersion,
+} from "@/lib/macro/runs";
+import { assignMacro, useAssignments } from "@/lib/macro/assignments";
 import type { Device } from "@/lib/devices/types";
 import { cn } from "@/lib/utils";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { IconButton, Segmented, formatMs, stepColor } from "@/components/phone-control/macros/fields";
 import { LivePreview } from "@/components/phone-control/macros/preview";
 import { PhoneRunsCard } from "@/components/phone-control/macros/phone-runs-card";
-import { LoopControl, MacroSyncNote, PauseButton, RunStatus, runLabel } from "@/components/phone-control/macros/macros-panel";
+import {
+  LoopControl,
+  MacroSyncNote,
+  PauseButton,
+  RunStatus,
+  focusMacroPreview,
+  runLabel,
+} from "@/components/phone-control/macros/macros-panel";
 
-type TargetSource = "control" | "tab";
+type TargetSource = "phone" | "control" | "tab";
+
+const STATUS_TONE: Record<string, string> = {
+  running: "text-[var(--pc-accent)]",
+  done: "text-[var(--pc-signal)]",
+  failed: "text-[var(--pc-warn)]",
+};
 
 /**
- * Macros docked next to the phone in Control: pick a tab, run it on the
- * phones you are controlling (or the tab's own phones), watch it live.
- * Editing stays in the Macros section.
+ * Macros docked next to the phone in Control. Opened from a phone, it is that
+ * phone's panel: its own macro (the per-phone choice, so other phones and the
+ * Macros page don't move), its live screen and Start / Pause / Stop for it
+ * alone. "Control targets" and "Tab's phones" still run a tab on several
+ * phones. Editing stays in the Macros section.
  */
 export function MacroDock({
   devices,
@@ -32,27 +60,55 @@ export function MacroDock({
 }) {
   const workspace = useMacroWorkspace();
   useRunVersion();
+  const assignments = useAssignments();
   const desk = useDeskOptional();
-  const tab = workspace.tabs.find((t) => t.id === workspace.activeId) ?? workspace.tabs[0] ?? null;
-  const [source, setSource] = useState<TargetSource>("control");
+  const phone = activeDevice;
+  const assignedTab = phone ? workspace.tabs.find((t) => t.id === assignments[phone.id]) : undefined;
+  const tab = assignedTab ?? workspace.tabs.find((t) => t.id === workspace.activeId) ?? workspace.tabs[0] ?? null;
+  const [sourceChoice, setSource] = useState<TargetSource>("phone");
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
 
   if (!tab) return null;
-  const running = isRunning(tab.id);
+  const source: TargetSource = !phone && sourceChoice === "phone" ? "control" : sourceChoice;
+  const phoneMode = source === "phone" && phone !== null;
+  const run = phone ? phoneRun(phone.id) : null;
+  const phoneLive = Boolean(run?.live);
+  const tabRunning = isRunning(tab.id);
+  const running = phoneMode ? phoneLive : tabRunning;
   const snapshot = runFor(tab.id);
   const targets = source === "control" ? controlTargets : devices.filter((d) => tab.targetIds.includes(d.id));
-  const online = targets.filter((d) => d.status === "online");
+  const online = phoneMode ? (phone.status === "online" ? [phone] : []) : targets.filter((d) => d.status === "online");
   const enabled = tab.steps.filter((s) => s.enabled).length;
-  const previewDevice = activeDevice && activeDevice.resolution.width > 0 ? activeDevice : online[0] ?? null;
+  const previewDevice =
+    phone && phone.resolution.width > 0 ? phone : online.find((d) => d.resolution.width > 0) ?? null;
+  const startError = phone ? phoneStartError(phone.id) : null;
+
+  const startOnPhone = (stepId?: string) => {
+    if (!phone) return;
+    // Starting keeps this macro as the phone's choice.
+    if (!assignedTab) assignMacro(phone.id, tab.id);
+    void startPhone(phone, tab, stepId);
+  };
 
   return (
-    <div className="flex min-w-0 flex-col gap-3" data-macro-dock>
+    <div className="flex min-w-0 flex-col gap-3" data-macro-dock data-macro-dock-phone={phone?.id ?? ""}>
+      {phone && (
+        <div className="flex items-center gap-2" data-macro-dock-header>
+          <span className="font-display text-sm font-semibold text-[var(--pc-ink)]">Macros · {phone.name}</span>
+          <span className={cn("font-mono text-[10px] uppercase", phone.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
+            {phone.status}
+          </span>
+        </div>
+      )}
       <label className="flex flex-col gap-1 text-xs text-[var(--pc-muted)]">
-        Macro tab
+        {phone ? `Macro for ${phone.name}` : "Macro tab"}
         <select
           value={tab.id}
+          disabled={phone !== null && phoneLive}
           onChange={(event) => {
-            setActiveTab(event.target.value);
+            // From a phone: change only that phone's macro, not the shared tab.
+            if (phone) assignMacro(phone.id, event.target.value);
+            else setActiveTab(event.target.value);
             setSelectedStepId(null);
           }}
           className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-sm text-[var(--pc-ink)]"
@@ -65,6 +121,7 @@ export function MacroDock({
             </option>
           ))}
         </select>
+        {phone && !assignedTab && <span className="text-[10px]">Not chosen yet: Start keeps it as {phone.name}&apos;s macro.</span>}
       </label>
 
       <Segmented
@@ -73,8 +130,9 @@ export function MacroDock({
         value={source}
         onChange={setSource}
         options={[
-          { id: "control", label: `Control targets (${controlTargets.length})`, hint: "The phones Selected / Multi / All points at" },
-          { id: "tab", label: `Tab's phones (${tab.targetIds.length})`, hint: "The phones ticked in the Macros section" },
+          ...(phone ? [{ id: "phone" as const, label: `This phone (${phone.name})`, hint: "Only this phone; the others keep their own runs" }] : []),
+          { id: "control" as const, label: `Control targets (${controlTargets.length})`, hint: "The phones Selected / Multi / All points at" },
+          { id: "tab" as const, label: `Tab's phones (${tab.targetIds.length})`, hint: "The phones ticked in the Macros section" },
         ]}
       />
 
@@ -82,7 +140,44 @@ export function MacroDock({
 
       <LoopControl tab={tab} disabled={running} />
 
-      {running ? (
+      {phoneMode ? (
+        phoneLive ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="pc-toggle pc-toggle-md flex-1 gap-2"
+              aria-pressed={run!.paused}
+              disabled={run!.status === "stopping"}
+              onClick={() => (run!.paused ? resumePhone(phone.id) : pausePhone(phone.id))}
+              data-macro-dock-pause={run!.paused ? "paused" : "running"}
+            >
+              {run!.paused ? <Play className="size-4" aria-hidden /> : <Pause className="size-4" aria-hidden />}
+              {run!.paused ? "Resume" : "Pause"}
+            </button>
+            <button
+              type="button"
+              onClick={() => stopPhone(phone.id)}
+              disabled={run!.status === "stopping"}
+              className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08] disabled:opacity-70"
+              data-macro-dock-stop
+            >
+              <Square className="size-4" aria-hidden />
+              {run!.status === "stopping" ? "Stopping…" : `Stop on ${phone.name}`}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={online.length === 0 || enabled === 0}
+            onClick={() => startOnPhone()}
+            className="inline-flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold text-white disabled:opacity-50"
+            data-macro-dock-start
+          >
+            <Play className="size-4" aria-hidden />
+            {runLabel(tab, 1).replace(/ on 1 phones?$/, "")} on {phone.name}
+          </button>
+        )
+      ) : tabRunning ? (
         <div className="flex items-center gap-2">
           <PauseButton tabId={tab.id} attr="data-macro-dock-pause" />
           <button
@@ -110,10 +205,32 @@ export function MacroDock({
       )}
       {!running && enabled === 0 && <p className="text-xs text-[var(--pc-muted)]">This tab has no enabled steps.</p>}
       {!running && enabled > 0 && online.length === 0 && (
-        <p className="text-xs text-[var(--pc-muted)]">No online phone in {source === "control" ? "the control targets" : "this tab's phones"}.</p>
+        <p className="text-xs text-[var(--pc-muted)]">
+          {phoneMode ? `${phone.name} is offline.` : `No online phone in ${source === "control" ? "the control targets" : "this tab's phones"}.`}
+        </p>
+      )}
+      {phoneMode && !phoneLive && startError && (
+        <p className="text-xs text-[var(--pc-warn)]" data-macro-dock-error>
+          {startError}
+        </p>
       )}
 
-      <RunStatus tab={tab} />
+      {phoneMode ? (
+        run && (
+          <p className="flex flex-wrap gap-x-3 font-mono text-[11px]" data-macro-dock-status={run.status} aria-live="polite">
+            <span className={cn("font-semibold uppercase", STATUS_TONE[run.status] ?? "text-[var(--pc-muted)]")}>{run.status}</span>
+            <span className="truncate">“{run.tabName}”</span>
+            <span>cycle {run.cycle}</span>
+            <span>
+              step {Math.min(run.stepIndex + 1, run.stepCount)}/{run.stepCount}
+            </span>
+            <span data-macro-dock-touches={run.touches}>{run.touches} touches</span>
+            {run.message && !phoneLive && <span className="text-[var(--pc-muted)]">{run.message}</span>}
+          </p>
+        )
+      ) : (
+        <RunStatus tab={tab} />
+      )}
 
       {previewDevice && (
         <LivePreview
@@ -135,7 +252,7 @@ export function MacroDock({
         selectedStepId={selectedStepId}
         canTest={!running && online.length > 0}
         onSelect={setSelectedStepId}
-        onTest={(stepId) => void startRun(tab, targets, stepId)}
+        onTest={(stepId) => (phoneMode ? startOnPhone(stepId) : void startRun(tab, targets, stepId))}
       />
 
       <PhoneRunsCard tabs={workspace.tabs} devices={devices} compact />
@@ -143,7 +260,14 @@ export function MacroDock({
       {desk && (
         <button
           type="button"
-          onClick={() => desk.open("macros")}
+          onClick={() => {
+            if (phone) {
+              // Open the editor on this phone's macro and live screen.
+              setActiveTab(tab.id);
+              focusMacroPreview(tab.id, phone.id);
+              desk.open("macros", undefined, phone.id);
+            } else desk.open("macros");
+          }}
           className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-[var(--pc-line)] text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
           data-macro-dock-edit
         >
