@@ -77,8 +77,8 @@ pub async fn upload_file(
 ) -> Result<Json<HostFileEntry>, (StatusCode, String)> {
     let body = crate::uploads::request_body(&headers, body).await?;
     let filename =
-        header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
-    let dir = header_value(&headers, "x-phonecontrol-dir").unwrap_or_else(|| "Downloads".into());
+        header_value(&headers, "x-adboard-filename").unwrap_or_else(|| "upload.bin".into());
+    let dir = header_value(&headers, "x-adboard-dir").unwrap_or_else(|| "Downloads".into());
     if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
         return Err((StatusCode::BAD_REQUEST, "invalid filename".into()));
     }

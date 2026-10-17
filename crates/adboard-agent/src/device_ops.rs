@@ -51,7 +51,7 @@ pub fn safe_input_text(text: &str) -> bool {
 }
 
 pub fn files_root() -> PathBuf {
-    let base = std::env::var("PHONECONTROL_FILES")
+    let base = crate::env::var("FILES")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             std::env::current_dir()
@@ -403,7 +403,7 @@ async fn capture_screenshot(
     files_root: &Path,
 ) -> Result<String, String> {
     if arg == Some("device") {
-        let remote = format!("/sdcard/Pictures/phonecontrol-{}.png", now_ms());
+        let remote = format!("/sdcard/Pictures/adboard-{}.png", now_ms());
         let command = format!("screencap -p {}", sh_quote(&remote));
         adb_text(adb, &adb_args(serial, &["shell", &command])).await?;
         return Ok(remote);
@@ -469,12 +469,12 @@ async fn start_record(
         Some(dir) => {
             let dir = device_path(dir)?;
             format!(
-                "{}/phonecontrol-{}.mp4",
+                "{}/adboard-{}.mp4",
                 dir.trim_end_matches('/'),
                 now_ms()
             )
         }
-        None => format!("/sdcard/Movies/phonecontrol-{}.mp4", now_ms()),
+        None => format!("/sdcard/Movies/adboard-{}.mp4", now_ms()),
     };
     let mut command = format!("screenrecord --bit-rate {bitrate} --time-limit 180");
     if let Some(size) = size {

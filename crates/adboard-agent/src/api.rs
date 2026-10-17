@@ -27,7 +27,13 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, warn};
 
-const TOKEN_HEADER: &str = "x-phonecontrol-token";
+const TOKEN_HEADER: &str = "x-adboard-token";
+/// Legacy compatibility: request headers from before the rename
+/// (`x-phonecontrol-*`). Accepted by [`legacy_headers`] and allowed by CORS so
+/// older UIs and agents keep working; never sent by this UI.
+pub const LEGACY_HEADER_PREFIX: &str = "x-phonecontrol-";
+pub const LEGACY_TOKEN_HEADER: &str = "x-phonecontrol-token";
+const HEADER_SUFFIXES: [&str; 8] = ["token", "mode", "targets", "filename", "dest", "dir", "upload", "offset"];
 /// Ping browser sockets this often. Cloudflare drops a WebSocket after 100 s
 /// without traffic and nginx (Nginx Proxy Manager) after 60 s by default; a
 /// still phone screen sends no video frames at all.
@@ -140,6 +146,7 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
 
     router
         .layer(middleware::from_fn_with_state(state.clone(), require_api_token))
+        .layer(middleware::from_fn(legacy_headers))
         .layer(Extension(Arc::new(auth)))
         .layer(middleware::from_fn(cache_headers))
         .layer(cors)
@@ -160,24 +167,37 @@ fn build_cors_layer() -> CorsLayer {
             Method::OPTIONS,
             Method::PUT,
         ])
-        .allow_headers([
-            header::CONTENT_TYPE,
-            HeaderName::from_static(TOKEN_HEADER),
-            HeaderName::from_static("x-phonecontrol-mode"),
-            HeaderName::from_static("x-phonecontrol-targets"),
-            HeaderName::from_static("x-phonecontrol-filename"),
-            HeaderName::from_static("x-phonecontrol-dest"),
-            HeaderName::from_static("x-phonecontrol-dir"),
-            HeaderName::from_static("x-phonecontrol-upload"),
-            HeaderName::from_static("x-phonecontrol-offset"),
-        ])
+        .allow_headers(
+            std::iter::once(header::CONTENT_TYPE)
+                .chain(HEADER_SUFFIXES.iter().flat_map(|suffix| {
+                    [format!("x-adboard-{suffix}"), format!("{LEGACY_HEADER_PREFIX}{suffix}")]
+                }).filter_map(|name| HeaderName::from_bytes(name.as_bytes()).ok()))
+                .collect::<Vec<_>>(),
+        )
+}
+
+/// Legacy compatibility: copy `x-phonecontrol-<x>` request headers to
+/// `x-adboard-<x>` (when the new one is absent), so handlers read one name.
+async fn legacy_headers(mut request: Request, next: Next) -> Response {
+    let headers = request.headers_mut();
+    for suffix in HEADER_SUFFIXES {
+        let new_name = format!("x-adboard-{suffix}");
+        if headers.contains_key(new_name.as_str()) {
+            continue;
+        }
+        let old = headers.get(format!("{LEGACY_HEADER_PREFIX}{suffix}").as_str()).cloned();
+        if let (Some(value), Ok(name)) = (old, HeaderName::from_bytes(new_name.as_bytes())) {
+            headers.insert(name, value);
+        }
+    }
+    next.run(request).await
 }
 
 fn allowed_dev_origins() -> Vec<HeaderValue> {
     static ORIGINS: OnceLock<Vec<HeaderValue>> = OnceLock::new();
     ORIGINS
         .get_or_init(|| {
-            let raw = std::env::var("PHONECONTROL_DEV_ORIGINS").unwrap_or_else(|_| {
+            let raw = crate::env::var("DEV_ORIGINS").unwrap_or_else(|_| {
                 "http://127.0.0.1:3847,http://localhost:3847".into()
             });
             raw.split(',')
@@ -353,7 +373,7 @@ struct BootstrapBody {
     token: String,
 }
 
-const PROXY_NEEDS_PASSWORD: &str = "ADBoard is being reached through a reverse proxy without a password. Set PHONECONTROL_PASSWORD on the ADBoard host (or PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1 if Cloudflare Access or similar already protects it).";
+const PROXY_NEEDS_PASSWORD: &str = "ADBoard is being reached through a reverse proxy without a password. Set ADBOARD_PASSWORD on the ADBoard host (or ADBOARD_ALLOW_PROXY_WITHOUT_PASSWORD=1 if Cloudflare Access or similar already protects it).";
 
 fn auth_error(status: StatusCode, message: &str) -> Response {
     (status, Json(serde_json::json!({ "error": message }))).into_response()
@@ -480,7 +500,7 @@ async fn change_password(
             if web_auth::is_proxied(&headers) {
                 return auth_error(
                     StatusCode::FORBIDDEN,
-                    "Set the first password on the ADBoard host's network, or with PHONECONTROL_PASSWORD.",
+                    "Set the first password on the ADBoard host's network, or with ADBOARD_PASSWORD.",
                 );
             }
         }
@@ -1086,9 +1106,9 @@ async fn input_install(
     body: Bytes,
 ) -> Result<Json<InstallBroadcast>, (StatusCode, String)> {
     let body = crate::uploads::request_body(&headers, body).await?;
-    let filename = header_str(&headers, "x-phonecontrol-filename").unwrap_or("");
-    let mode = header_str(&headers, "x-phonecontrol-mode").unwrap_or("selected");
-    let targets = header_str(&headers, "x-phonecontrol-targets").unwrap_or("");
+    let filename = header_str(&headers, "x-adboard-filename").unwrap_or("");
+    let mode = header_str(&headers, "x-adboard-mode").unwrap_or("selected");
+    let targets = header_str(&headers, "x-adboard-targets").unwrap_or("");
     validate_apk_upload(filename, &body).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let mode = parse_control_mode(mode).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let target_ids: Vec<String> = targets
@@ -1151,11 +1171,11 @@ async fn device_push(
     body: Bytes,
 ) -> Result<Json<adboard_protocol::DeviceCommandResponse>, (StatusCode, String)> {
     let body = crate::uploads::request_body(&headers, body).await?;
-    let targets = header_list(&headers, "x-phonecontrol-targets")?;
+    let targets = header_list(&headers, "x-adboard-targets")?;
     let filename =
-        header_value(&headers, "x-phonecontrol-filename").unwrap_or_else(|| "upload.bin".into());
+        header_value(&headers, "x-adboard-filename").unwrap_or_else(|| "upload.bin".into());
     let dest =
-        header_value(&headers, "x-phonecontrol-dest").unwrap_or_else(|| "/sdcard/Download/".into());
+        header_value(&headers, "x-adboard-dest").unwrap_or_else(|| "/sdcard/Download/".into());
     if filename.contains('/') || filename.contains('\\') {
         return Err((StatusCode::BAD_REQUEST, "invalid filename".into()));
     }
@@ -1381,7 +1401,7 @@ async fn handle_agent_socket(socket: WebSocket, state: AppState) {
 
     let welcome = ControllerToAgent::Welcome {
         controller_host_id: state.host_id().into(),
-        message: "phonecontrol mesh v1".into(),
+        message: "adboard mesh v1".into(),
     };
     if send_json(&mut sender, &welcome).await.is_err() {
         return;
@@ -1826,7 +1846,7 @@ async fn proxy_remote_stream(
     token: &str,
 ) {
     let ws_url = http_to_ws_device_url(agent_http_base, serial, channel);
-    // Agents share PHONECONTROL_TOKEN with the controller; send it as a header.
+    // Agents share ADBOARD_TOKEN with the controller; send it as a header.
     let connected = match crate::mesh_client::ws_request_with_token(&ws_url, token) {
         Ok(request) => tokio_tungstenite::connect_async(request).await,
         Err(e) => Err(e),
@@ -1950,9 +1970,9 @@ mod tests {
         Request::builder()
             .method("POST")
             .uri("/api/input/install")
-            .header("x-phonecontrol-mode", "selected")
-            .header("x-phonecontrol-targets", targets)
-            .header("x-phonecontrol-filename", filename)
+            .header("x-adboard-mode", "selected")
+            .header("x-adboard-targets", targets)
+            .header("x-adboard-filename", filename)
             .header(TOKEN_HEADER, token)
             .body(Body::from(bytes))
             .unwrap()
@@ -2113,6 +2133,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(health.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn api_accepts_new_and_legacy_token_headers() {
+        let state = AppState::new(Role::Controller, "hdr-test".into(), "hdr-test".into(), 0, None);
+        let token = state.api_token().to_string();
+        let app = router_with_auth(state, WebAuth::new(None, false));
+        for name in [TOKEN_HEADER, LEGACY_TOKEN_HEADER] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/devices")
+                        .header(name, &token)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{name}");
+        }
     }
 
     #[tokio::test]
@@ -2331,7 +2372,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(proxied.status(), StatusCode::FORBIDDEN);
-        assert!(body_text(proxied).await.contains("PHONECONTROL_PASSWORD"));
+        assert!(body_text(proxied).await.contains("ADBOARD_PASSWORD"));
 
         let session = app
             .oneshot(get("/api/session", &[("x-forwarded-for", "203.0.113.9")]))
@@ -2486,7 +2527,7 @@ mod tests {
                     .method("PUT")
                     .uri(format!("/api/uploads/{id}"))
                     .header(TOKEN_HEADER, &token)
-                    .header("x-phonecontrol-offset", "0")
+                    .header("x-adboard-offset", "0")
                     .body(Body::from(vec![7u8; 1024]))
                     .unwrap(),
             )

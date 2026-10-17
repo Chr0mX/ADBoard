@@ -459,7 +459,7 @@ pub fn parse_role() -> Role {
             return parse_role_str(v);
         }
     }
-    std::env::var("PHONECONTROL_ROLE")
+    crate::env::var("ROLE")
         .ok()
         .map(|v| parse_role_str(&v))
         .unwrap_or(Role::Controller)
@@ -473,7 +473,7 @@ fn parse_role_str(v: &str) -> Role {
 }
 
 pub fn controller_ws_url() -> Option<String> {
-    std::env::var("PHONECONTROL_CONTROLLER_URL")
+    crate::env::var("CONTROLLER_URL")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -512,9 +512,9 @@ mod tests {
     fn parses_controller_url_variants() {
         assert_eq!(
             {
-                std::env::set_var("PHONECONTROL_CONTROLLER_URL", "http://127.0.0.1:3848");
+                std::env::set_var("ADBOARD_CONTROLLER_URL", "http://127.0.0.1:3848");
                 let u = controller_ws_url();
-                std::env::remove_var("PHONECONTROL_CONTROLLER_URL");
+                std::env::remove_var("ADBOARD_CONTROLLER_URL");
                 u
             },
             Some("ws://127.0.0.1:3848/ws/agent".into())
@@ -522,11 +522,11 @@ mod tests {
         assert_eq!(
             {
                 std::env::set_var(
-                    "PHONECONTROL_CONTROLLER_URL",
+                    "ADBOARD_CONTROLLER_URL",
                     "ws://127.0.0.1:3848/ws/agent",
                 );
                 let u = controller_ws_url();
-                std::env::remove_var("PHONECONTROL_CONTROLLER_URL");
+                std::env::remove_var("ADBOARD_CONTROLLER_URL");
                 u
             },
             Some("ws://127.0.0.1:3848/ws/agent".into())

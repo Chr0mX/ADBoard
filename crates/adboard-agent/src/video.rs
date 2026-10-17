@@ -40,7 +40,7 @@ pub enum VideoSourceKind {
 
 impl VideoSourceKind {
     pub fn from_env() -> Self {
-        match std::env::var("PHONECONTROL_VIDEO_SOURCE")
+        match crate::env::var("VIDEO_SOURCE")
             .unwrap_or_else(|_| "auto".into())
             .to_ascii_lowercase()
             .as_str()

@@ -647,7 +647,7 @@ async fn adb_output(adb: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 fn wireless_store_path() -> PathBuf {
-    if let Ok(path) = std::env::var("PHONECONTROL_WIRELESS") {
+    if let Ok(path) = crate::env::var("WIRELESS") {
         return PathBuf::from(path);
     }
     std::env::current_dir()
@@ -1096,8 +1096,8 @@ OFFLINE1               offline usb:1-3 transport_id:4
     fn wireless_list_remembers_and_forgets() {
         let path = std::env::temp_dir().join(format!("pc-wireless-{}.json", std::process::id()));
         let _ = std::fs::remove_file(&path);
-        let previous = std::env::var("PHONECONTROL_WIRELESS").ok();
-        std::env::set_var("PHONECONTROL_WIRELESS", &path);
+        let previous = crate::env::var("WIRELESS").ok();
+        std::env::set_var("ADBOARD_WIRELESS", &path);
         let endpoint = parse_wireless_endpoint("10.0.0.8", None).unwrap();
         remember_wireless(&endpoint).unwrap();
         remember_wireless(&endpoint).unwrap();
@@ -1105,8 +1105,8 @@ OFFLINE1               offline usb:1-3 transport_id:4
         forget_wireless(&endpoint).unwrap();
         assert!(load_wireless().is_empty());
         match previous {
-            Some(value) => std::env::set_var("PHONECONTROL_WIRELESS", value),
-            None => std::env::remove_var("PHONECONTROL_WIRELESS"),
+            Some(value) => std::env::set_var("ADBOARD_WIRELESS", value),
+            None => std::env::remove_var("ADBOARD_WIRELESS"),
         }
         let _ = std::fs::remove_file(&path);
     }

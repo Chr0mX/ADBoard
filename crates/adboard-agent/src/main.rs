@@ -3,6 +3,7 @@ mod api;
 mod audio;
 mod device_manager;
 mod device_ops;
+mod env;
 mod gesture;
 mod host_files;
 mod mesh;
@@ -42,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let role = parse_role();
-    let port: u16 = std::env::var("PHONECONTROL_PORT")
+    let port: u16 = crate::env::var("PORT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(match role {
@@ -50,8 +51,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Role::Agent => DEFAULT_PORT + 1,
         });
 
-    let host_name = std::env::var("PHONECONTROL_HOST").unwrap_or_else(|_| hostname_fallback());
-    let host_id = std::env::var("PHONECONTROL_HOST_ID").unwrap_or_else(|_| host_name.clone());
+    let host_name = crate::env::var("HOST").unwrap_or_else(|_| hostname_fallback());
+    let host_id = crate::env::var("HOST_ID").unwrap_or_else(|_| host_name.clone());
     let bind_ip = parse_bind_ip();
 
     let adb = adb_binary();
@@ -113,11 +114,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// `PHONECONTROL_BIND` — IP to listen on.
+/// `ADBOARD_BIND` — IP to listen on.
 /// - `127.0.0.1` — local UI / loopback only (safer default on a Windows USB host)
 /// - `0.0.0.0` — all interfaces (needed so a remote Linux LXC agent can reach `/ws/agent`)
 fn parse_bind_ip() -> [u8; 4] {
-    match std::env::var("PHONECONTROL_BIND")
+    match crate::env::var("BIND")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -129,7 +130,7 @@ fn parse_bind_ip() -> [u8; 4] {
             if let Ok(ip) = other.parse::<std::net::Ipv4Addr>() {
                 ip.octets()
             } else {
-                tracing::warn!(bind = other, "invalid PHONECONTROL_BIND — using 0.0.0.0");
+                tracing::warn!(bind = other, "invalid ADBOARD_BIND — using 0.0.0.0");
                 [0, 0, 0, 0]
             }
         }

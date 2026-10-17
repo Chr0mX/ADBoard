@@ -103,7 +103,7 @@ export function FilesPanel() {
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
-              const raw = event.dataTransfer.getData("application/x-phonecontrol");
+              const raw = event.dataTransfer.getData("application/x-adboard-file");
               if (!raw || !phone) return;
               const item = JSON.parse(raw) as { side: string; path: string; name: string };
               if (item.side !== "phone") return;
@@ -127,7 +127,7 @@ export function FilesPanel() {
                   draggable={!entry.dir}
                   onDragStart={(event) => {
                     event.dataTransfer.setData(
-                      "application/x-phonecontrol",
+                      "application/x-adboard-file",
                       JSON.stringify({ side: "pc", path: entry.path, name: entry.name }),
                     );
                   }}
@@ -212,7 +212,7 @@ export function FilesPanel() {
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
-              const raw = event.dataTransfer.getData("application/x-phonecontrol");
+              const raw = event.dataTransfer.getData("application/x-adboard-file");
               if (!raw) return;
               const item = JSON.parse(raw) as { side: string; path: string; name: string };
               if (item.side !== "pc") return;
@@ -234,7 +234,7 @@ export function FilesPanel() {
                   draggable={!entry.dir}
                   onDragStart={(event) => {
                     event.dataTransfer.setData(
-                      "application/x-phonecontrol",
+                      "application/x-adboard-file",
                       JSON.stringify({ side: "phone", path: entry.path, name: entry.name }),
                     );
                   }}

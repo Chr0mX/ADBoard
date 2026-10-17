@@ -25,12 +25,12 @@ use tracing::{info, warn};
 const ADB_POLL_SECS: u64 = 2;
 const SESSION_REAP_SECS: u64 = 3;
 /// Optional `wm size` applied whenever a phone comes online, from
-/// `PHONECONTROL_CONNECT_DISPLAY_SIZE` (e.g. `900x1600`). Off by default:
+/// `ADBOARD_CONNECT_DISPLAY_SIZE` (e.g. `900x1600`). Off by default:
 /// changing every phone's real resolution must be a deliberate choice.
 fn connect_display_size() -> Option<&'static str> {
     static SIZE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     SIZE.get_or_init(|| {
-        let spec = std::env::var("PHONECONTROL_CONNECT_DISPLAY_SIZE").ok()?;
+        let spec = crate::env::var("CONNECT_DISPLAY_SIZE").ok()?;
         let spec = spec.trim().to_string();
         if spec.is_empty() || spec == "native" || spec == "reset" {
             return None;
@@ -41,7 +41,7 @@ fn connect_display_size() -> Option<&'static str> {
                 Some(spec)
             }
             Err(error) => {
-                warn!(size = %spec, %error, "ignoring PHONECONTROL_CONNECT_DISPLAY_SIZE");
+                warn!(size = %spec, %error, "ignoring ADBOARD_CONNECT_DISPLAY_SIZE");
                 None
             }
         }
@@ -68,11 +68,11 @@ pub struct InnerState {
     pub mesh: Arc<MeshRegistry>,
     /// Serials whose `wm size` changed and must be read again on the next poll.
     pub resolution_refresh: Mutex<HashSet<String>>,
-    /// Serials where Phone Control applied a non-native `wm size` override.
+    /// Serials where ADBoard applied a non-native `wm size` override.
     /// Cleared on successful `wm size reset` (manual or on disconnect/reconnect).
     pub display_size_overrides: Mutex<HashSet<String>>,
     pub qr_pairs: Mutex<HashMap<String, QrPairSlot>>,
-    /// Shared secret for HTTP and WebSocket API calls (`PHONECONTROL_TOKEN`).
+    /// Shared secret for HTTP and WebSocket API calls (`ADBOARD_TOKEN`).
     pub api_token: String,
 }
 
@@ -105,9 +105,9 @@ impl AppState {
         adb_path: Option<PathBuf>,
     ) -> Self {
         let (events, _) = broadcast::channel(256);
-        let force_mock = env_truthy("PHONECONTROL_FORCE_MOCK");
+        let force_mock = crate::env::truthy("FORCE_MOCK");
         let adb_path = if force_mock {
-            info!("PHONECONTROL_FORCE_MOCK set — using mock fleet");
+            info!("ADBOARD_FORCE_MOCK set — using mock fleet");
             None
         } else {
             adb_path
@@ -1079,12 +1079,17 @@ impl AppState {
             ControlMode::Multi => "multi",
             ControlMode::All => "all",
         };
+        let targets_joined = target_ids.join(",");
         let (status, body) = http_post_bytes(
             &url,
             &[
                 ("Content-Type", "application/vnd.android.package-archive"),
+                ("X-Adboard-Mode", mode_name),
+                ("X-Adboard-Targets", &targets_joined),
+                ("X-Adboard-Filename", filename),
+                // Legacy compatibility: agents from before the rename read these names.
                 ("X-Phonecontrol-Mode", mode_name),
-                ("X-Phonecontrol-Targets", &target_ids.join(",")),
+                ("X-Phonecontrol-Targets", &targets_joined),
                 ("X-Phonecontrol-Filename", filename),
             ],
             bytes,
@@ -1366,7 +1371,7 @@ impl AppState {
         }
     }
 
-    /// Set `wm size` to PHONECONTROL_CONNECT_DISPLAY_SIZE when a phone comes online.
+    /// Set `wm size` to ADBOARD_CONNECT_DISPLAY_SIZE when a phone comes online.
     async fn apply_connect_display_size(&self, serial: &str) {
         let Some(size) = connect_display_size() else {
             return;
@@ -2461,7 +2466,7 @@ impl AppState {
             ));
         }
 
-        let auto = env_truthy("PHONECONTROL_AUTO_SESSION");
+        let auto = crate::env::truthy("AUTO_SESSION");
         for device in &next {
             let existing = self.inner.sessions.get_session(&device.serial).await;
             if existing.is_none() {
@@ -2507,7 +2512,7 @@ impl RecoveryAction {
     }
 }
 
-/// Track Phone Control `wm size` overrides so disconnect can restore the panel.
+/// Track ADBoard `wm size` overrides so disconnect can restore the panel.
 fn note_display_size_override(overrides: &mut HashSet<String>, serial: &str, spec: &str) {
     let spec = spec.trim();
     if spec.is_empty() || spec == "reset" || spec == "native" {
@@ -2754,26 +2759,19 @@ async fn http_post_bytes(
 }
 
 fn resolve_api_token() -> String {
-    match std::env::var("PHONECONTROL_TOKEN") {
+    match crate::env::var("TOKEN") {
         Ok(value) if !value.trim().is_empty() => {
-            info!("PHONECONTROL_TOKEN is set — API calls require x-phonecontrol-token");
+            info!("ADBOARD_TOKEN is set — API calls require x-adboard-token");
             value
         }
         _ => {
             let token = uuid::Uuid::new_v4().to_string();
             info!(
-                "generated API token — same-origin UI reads it from GET /api/bootstrap; set PHONECONTROL_TOKEN when the bind is not loopback"
+                "generated API token — same-origin UI reads it from GET /api/bootstrap; set ADBOARD_TOKEN when the bind is not loopback"
             );
             token
         }
     }
-}
-
-fn env_truthy(key: &str) -> bool {
-    matches!(
-        std::env::var(key).as_deref(),
-        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
-    )
 }
 
 #[allow(dead_code)]

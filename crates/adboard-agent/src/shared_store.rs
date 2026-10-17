@@ -208,7 +208,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 fn data_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("PHONECONTROL_DATA_DIR") {
+    if let Ok(dir) = crate::env::var("DATA_DIR") {
         if !dir.trim().is_empty() {
             return PathBuf::from(dir);
         }

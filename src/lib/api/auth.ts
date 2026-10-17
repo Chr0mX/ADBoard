@@ -1,7 +1,7 @@
 /**
  * Shared agent auth for HTTP and WebSocket calls.
  * The agent exposes GET /api/bootstrap (same-origin or allow-listed Origin)
- * and expects x-phonecontrol-token (a `adboard-token.<hex>` subprotocol on WebSockets).
+ * and expects x-adboard-token (a `adboard-token.<hex>` subprotocol on WebSockets).
  */
 
 import { httpErrorMessage } from "@/lib/api/http-error";
@@ -63,7 +63,7 @@ export function agentTokenSync(): string | null {
 /**
  * WebSocket subprotocols carrying the token. Browsers cannot set headers on a
  * WebSocket, and a ?token= query would end up in proxy and Cloudflare logs.
- * Hex keeps any PHONECONTROL_TOKEN value a valid protocol name.
+ * Hex keeps any ADBOARD_TOKEN value a valid protocol name.
  */
 export function agentWsProtocols(): string[] {
   if (!cachedToken) return [];
@@ -75,7 +75,7 @@ export async function agentFetch(input: string, init?: RequestInit): Promise<Res
   const token = await ensureAgentToken();
   const headers = new Headers(init?.headers);
   if (token) {
-    headers.set("x-phonecontrol-token", token);
+    headers.set("x-adboard-token", token);
   }
   return fetch(input, { ...init, headers });
 }

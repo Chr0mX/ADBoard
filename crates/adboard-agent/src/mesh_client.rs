@@ -54,7 +54,7 @@ async fn session(
         scrcpy: state.scrcpy_availability(),
         inject: state.inject_mode(),
         http_base: Some(
-            std::env::var("PHONECONTROL_HTTP_BASE").unwrap_or_else(|_| {
+            crate::env::var("HTTP_BASE").unwrap_or_else(|_| {
                 format!("http://127.0.0.1:{}", state.inner.port)
             }),
         ),
@@ -333,7 +333,11 @@ pub fn ws_request_with_token(
     let mut request = url.into_client_request()?;
     if !token.is_empty() {
         if let Ok(value) = token.parse() {
-            request.headers_mut().insert("x-phonecontrol-token", value);
+            request.headers_mut().insert("x-adboard-token", value);
+        }
+        // Legacy compatibility: controllers from before the rename read this name.
+        if let Ok(value) = token.parse() {
+            request.headers_mut().insert(crate::api::LEGACY_TOKEN_HEADER, value);
         }
     }
     Ok(request)

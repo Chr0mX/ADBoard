@@ -5,7 +5,7 @@
 //! `raw_stream=true` (see Genymobile/scrcpy `doc/develop.md`):
 //!
 //! ```text
-//! adb -s SERIAL push scrcpy-server /data/local/tmp/phonecontrol-scrcpy-server.jar
+//! adb -s SERIAL push scrcpy-server /data/local/tmp/adboard-scrcpy-server.jar
 //! adb -s SERIAL forward tcp:PORT localabstract:NAME
 //! adb -s SERIAL shell CLASSPATH=... app_process / com.genymobile.scrcpy.Server VER \
 //!     tunnel_forward=true audio=false control=true cleanup=false \
@@ -35,7 +35,7 @@ use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tracing::{info, warn};
 
-const REMOTE_SERVER_PATH: &str = "/data/local/tmp/phonecontrol-scrcpy-server.jar";
+const REMOTE_SERVER_PATH: &str = "/data/local/tmp/adboard-scrcpy-server.jar";
 const DEFAULT_MAX_SIZE: u32 = 1280;
 
 /// Video-server launch. Audio stays off here so the Annex-B parser is unchanged.

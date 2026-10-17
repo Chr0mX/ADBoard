@@ -88,9 +88,9 @@ export function SignInGate({ children }: { children: ReactNode }) {
           <p className="text-sm leading-relaxed text-[var(--pc-muted)]">
             Open ADBoard on the host&apos;s own network and choose <strong className="text-[var(--pc-ink)]">Set password</strong>,
             or start it with{" "}
-            <code className="font-mono text-[var(--pc-ink)] [overflow-wrap:anywhere]">PHONECONTROL_PASSWORD</code>. If
+            <code className="font-mono text-[var(--pc-ink)] [overflow-wrap:anywhere]">ADBOARD_PASSWORD</code>. If
             Cloudflare Access already protects this address, set{" "}
-            <code className="font-mono text-[var(--pc-ink)] [overflow-wrap:anywhere]">PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1</code>{" "}
+            <code className="font-mono text-[var(--pc-ink)] [overflow-wrap:anywhere]">ADBOARD_ALLOW_PROXY_WITHOUT_PASSWORD=1</code>{" "}
             instead.
           </p>
         </Card>

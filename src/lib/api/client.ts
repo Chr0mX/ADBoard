@@ -152,7 +152,7 @@ export const UPLOAD_CHUNK = 32 * 1024 * 1024;
 
 /**
  * Small files are sent as the request body. Large ones are staged with
- * PUT /api/uploads/{id} chunks and referenced by the x-phonecontrol-upload header.
+ * PUT /api/uploads/{id} chunks and referenced by the x-adboard-upload header.
  */
 async function stageUpload(
   base: string,

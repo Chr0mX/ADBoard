@@ -36,12 +36,12 @@ fn project_roots() -> &'static [PathBuf] {
 }
 
 /// Working folder for staged APKs, file pushes/pulls and upload chunks:
-/// `PHONECONTROL_TEMP`, else `<repo root>/temp`, else `temp/` next to the
+/// `ADBOARD_TEMP`, else `<repo root>/temp`, else `temp/` next to the
 /// executable. Falls back to the OS temp dir if none can be created.
 pub fn app_temp_dir() -> PathBuf {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
-        let preferred = std::env::var("PHONECONTROL_TEMP")
+        let preferred = crate::env::var("TEMP")
             .ok()
             .filter(|v| !v.trim().is_empty())
             .map(PathBuf::from)
@@ -175,7 +175,7 @@ mod tests {
 mod temp_dir_tests {
     #[test]
     fn temp_dir_is_repo_temp() {
-        if std::env::var("PHONECONTROL_TEMP").is_ok() {
+        if crate::env::var("TEMP").is_ok() {
             return;
         }
         let dir = super::app_temp_dir();

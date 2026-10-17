@@ -5,12 +5,12 @@
 //! That is fine on a LAN, not on a public hostname. Once an account exists,
 //! bootstrap requires a session cookie from `POST /api/login` (username and
 //! password form). Without an account, bootstrap refuses requests that
-//! arrived through a proxy unless `PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1`.
+//! arrived through a proxy unless `ADBOARD_ALLOW_PROXY_WITHOUT_PASSWORD=1`.
 //!
 //! The account lives in `adboard-auth.json` (salted PBKDF2-SHA256), next to
-//! the executable unless `PHONECONTROL_AUTH_FILE` says otherwise, so a password
-//! changed in the UI survives restarts. `PHONECONTROL_PASSWORD` creates the
-//! first account; `PHONECONTROL_RESET_PASSWORD=1` makes it overwrite the file
+//! the executable unless `ADBOARD_AUTH_FILE` says otherwise, so a password
+//! changed in the UI survives restarts. `ADBOARD_PASSWORD` creates the
+//! first account; `ADBOARD_RESET_PASSWORD=1` makes it overwrite the file
 //! (for a forgotten password).
 
 use axum::http::{header, HeaderMap, HeaderValue};
@@ -118,7 +118,7 @@ impl WebAuth {
             .unwrap_or_else(|| DEFAULT_USERNAME.to_string());
         let credentials = match (stored, env_password) {
             (Some(stored), Some(password)) if reset => {
-                tracing::warn!("PHONECONTROL_RESET_PASSWORD=1 — replacing the stored ADBoard account");
+                tracing::warn!("ADBOARD_RESET_PASSWORD=1 — replacing the stored ADBoard account");
                 let fresh = Credentials::new(&username, &password);
                 write_or_warn(&file, &fresh);
                 drop(stored);
@@ -127,7 +127,7 @@ impl WebAuth {
             (Some(stored), Some(_)) => {
                 tracing::info!(
                     path = %file.display(),
-                    "using the stored ADBoard account; PHONECONTROL_PASSWORD only sets the first password (PHONECONTROL_RESET_PASSWORD=1 to replace it)"
+                    "using the stored ADBoard account; ADBOARD_PASSWORD only sets the first password (ADBOARD_RESET_PASSWORD=1 to replace it)"
                 );
                 Some(stored)
             }
@@ -149,17 +149,17 @@ impl WebAuth {
 
     pub fn from_env() -> Self {
         let allow = matches!(
-            std::env::var("PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD").as_deref(),
+            crate::env::var("ALLOW_PROXY_WITHOUT_PASSWORD").as_deref(),
             Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
         );
         let reset = matches!(
-            std::env::var("PHONECONTROL_RESET_PASSWORD").as_deref(),
+            crate::env::var("RESET_PASSWORD").as_deref(),
             Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
         );
         let auth = Self::with_file(
             auth_file_path(),
-            std::env::var("PHONECONTROL_USERNAME").ok(),
-            std::env::var("PHONECONTROL_PASSWORD").ok(),
+            crate::env::var("USERNAME").ok(),
+            crate::env::var("PASSWORD").ok(),
             reset,
             allow,
         );
@@ -167,7 +167,7 @@ impl WebAuth {
             tracing::info!("ADBoard account configured — the browser UI requires sign-in");
         } else if !allow {
             tracing::info!(
-                "no ADBoard account yet — requests through a reverse proxy are refused; set a password from the UI on the LAN or with PHONECONTROL_PASSWORD"
+                "no ADBoard account yet — requests through a reverse proxy are refused; set a password from the UI on the LAN or with ADBOARD_PASSWORD"
             );
         }
         auth
@@ -251,7 +251,7 @@ impl WebAuth {
 }
 
 fn auth_file_path() -> PathBuf {
-    if let Ok(path) = std::env::var("PHONECONTROL_AUTH_FILE") {
+    if let Ok(path) = crate::env::var("AUTH_FILE") {
         if !path.trim().is_empty() {
             return PathBuf::from(path);
         }
@@ -272,7 +272,7 @@ fn migrate_legacy_auth_file(path: &Path) {
     }
     match std::fs::rename(&legacy, path) {
         Ok(()) => tracing::info!(from = %legacy.display(), to = %path.display(), "moved the sign-in account to its new file name"),
-        Err(e) => tracing::warn!(error = %e, "could not rename rasiel-auth.json; sign in may need PHONECONTROL_RESET_PASSWORD"),
+        Err(e) => tracing::warn!(error = %e, "could not rename rasiel-auth.json; sign in may need ADBOARD_RESET_PASSWORD"),
     }
 }
 

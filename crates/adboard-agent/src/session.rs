@@ -1,6 +1,6 @@
 //! Scrcpy session manager + ADB input injection + local H264 video pumps.
 //!
-//! - When `PHONECONTROL_VIDEO_SOURCE=testpattern` (or `auto` without scrcpy-server+ADB):
+//! - When `ADBOARD_VIDEO_SOURCE=testpattern` (or `auto` without scrcpy-server+ADB):
 //!   pump synthetic Annex-B H264 (`backend: testpattern`).
 //! - When scrcpy-server + ADB are ready and source is `auto|scrcpy`: start standalone
 //!   scrcpy-server with `raw_stream=true`, demux Annex-B AUs into the video hub
@@ -215,7 +215,7 @@ impl SessionManager {
     fn stub_note(&self) -> String {
         match self.video_source {
             VideoSourceKind::Off => {
-                "video source off — set PHONECONTROL_VIDEO_SOURCE=testpattern to enable synthetic H264"
+                "video source off — set ADBOARD_VIDEO_SOURCE=testpattern to enable synthetic H264"
                     .into()
             }
             VideoSourceKind::Scrcpy => {
@@ -223,7 +223,7 @@ impl SessionManager {
                     .into()
             }
             _ => {
-                "no video backend — set PHONECONTROL_VIDEO_SOURCE=testpattern or install scrcpy-server + ADB"
+                "no video backend — set ADBOARD_VIDEO_SOURCE=testpattern or install scrcpy-server + ADB"
                     .into()
             }
         }
@@ -363,7 +363,7 @@ impl SessionManager {
 
         // Forced scrcpy without hardware: optional fixture mock for CI.
         if !self.scrcpy_ready() {
-            if env_truthy("PHONECONTROL_SCRCPY_FIXTURE") {
+            if crate::env::truthy("SCRCPY_FIXTURE") {
                 return self.start_scrcpy_fixture(serial).await;
             }
             return self
@@ -445,7 +445,7 @@ impl SessionManager {
         self.set_status(
             serial,
             StreamState::Starting,
-            "starting scrcpy fixture mock (PHONECONTROL_SCRCPY_FIXTURE)".into(),
+            "starting scrcpy fixture mock (ADBOARD_SCRCPY_FIXTURE)".into(),
         )
         .await;
         let pump = start_scrcpy_fixture_pump(self.video_hub.clone(), serial.to_string()).await;
@@ -1544,13 +1544,6 @@ fn which(bin: &str) -> Option<PathBuf> {
     })
 }
 
-fn env_truthy(key: &str) -> bool {
-    matches!(
-        std::env::var(key).as_deref(),
-        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1635,7 +1628,7 @@ mod tests {
 
     #[tokio::test]
     async fn scrcpy_fixture_mock_streams_as_scrcpy() {
-        std::env::set_var("PHONECONTROL_SCRCPY_FIXTURE", "1");
+        std::env::set_var("ADBOARD_SCRCPY_FIXTURE", "1");
         let hub = VideoHub::new();
         let mgr = SessionManager::new_with_source(None, None, hub.clone(), VideoSourceKind::Scrcpy);
         let session = mgr.start("SCRCPY-MOCK").await;
@@ -1658,7 +1651,7 @@ mod tests {
         }
         assert!(got_binary, "expected annex-B from scrcpy fixture path");
         let _ = mgr.stop("SCRCPY-MOCK").await;
-        std::env::remove_var("PHONECONTROL_SCRCPY_FIXTURE");
+        std::env::remove_var("ADBOARD_SCRCPY_FIXTURE");
     }
 
     #[tokio::test]

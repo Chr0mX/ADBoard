@@ -17,7 +17,7 @@ pub enum MockProfile {
 
 impl MockProfile {
     pub fn from_env() -> Self {
-        match std::env::var("PHONECONTROL_MOCK_PROFILE")
+        match crate::env::var("MOCK_PROFILE")
             .unwrap_or_default()
             .to_ascii_lowercase()
             .as_str()

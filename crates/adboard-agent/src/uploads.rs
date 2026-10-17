@@ -1,7 +1,7 @@
 //! Chunked uploads so large files pass proxies with a per-request body cap
 //! (Cloudflare Free/Pro: 100 MB). The browser sends `PUT /api/uploads/{id}`
-//! chunks with `x-phonecontrol-offset`, then calls the real endpoint (install,
-//! push, host upload) with `x-phonecontrol-upload: {id}` and an empty body.
+//! chunks with `x-adboard-offset`, then calls the real endpoint (install,
+//! push, host upload) with `x-adboard-upload: {id}` and an empty body.
 
 use axum::body::Bytes;
 use axum::extract::Path;
@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use tokio::io::AsyncWriteExt;
 
-pub const UPLOAD_HEADER: &str = "x-phonecontrol-upload";
-const OFFSET_HEADER: &str = "x-phonecontrol-offset";
+pub const UPLOAD_HEADER: &str = "x-adboard-upload";
+const OFFSET_HEADER: &str = "x-adboard-offset";
 /// Same cap as a single-request upload.
 pub const MAX_UPLOAD_BYTES: u64 = 256 * 1024 * 1024;
 /// Per-chunk body limit (the browser sends 32 MB chunks).
@@ -67,7 +67,7 @@ pub async fn put_chunk(
         .get(OFFSET_HEADER)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.trim().parse().ok())
-        .ok_or((StatusCode::BAD_REQUEST, "missing x-phonecontrol-offset".into()))?;
+        .ok_or((StatusCode::BAD_REQUEST, "missing x-adboard-offset".into()))?;
     let path = staged_path(&id);
     if offset == 0 {
         remove_stale();
@@ -100,7 +100,7 @@ pub async fn put_chunk(
     }))
 }
 
-/// The request body, or the staged upload named by `x-phonecontrol-upload`.
+/// The request body, or the staged upload named by `x-adboard-upload`.
 /// A staged file is consumed (deleted) once read.
 pub async fn request_body(headers: &HeaderMap, body: Bytes) -> Result<Bytes, (StatusCode, String)> {
     let Some(id) = headers.get(UPLOAD_HEADER).and_then(|v| v.to_str().ok()) else {
