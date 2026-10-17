@@ -23,11 +23,11 @@ import { InstallOnIphone } from "@/components/adboard/desk/install-on-iphone";
 export function SettingsPanel() {
   const desk = useDesk();
   const session = useAgentSessionInfo();
-  const [statsRaw, setStatsRaw] = useStoredString("phonecontrol-mobile-stats-mode");
+  const [statsRaw, setStatsRaw] = useStoredString("adboard-mobile-stats-mode");
   const [layoutRaw, setLayoutRaw] = useStoredString("adboard-grid-layout");
   const [barRaw, setBarRaw] = useStoredString("adboard-grid-bar");
   const [cursorMode, setCursorMode] = useStoredFlag("adboard-cursor-mode", false);
-  const [keyboardOn, setKeyboardOn] = useStoredFlag("phonecontrol-keyboard", true);
+  const [keyboardOn, setKeyboardOn] = useStoredFlag("adboard-keyboard", true);
   const [touchDiagnostics, setTouchDiagnostics] = useStoredFlag(TOUCH_DIAGNOSTICS_KEY, false);
   const { pins, togglePin, resetPins, atLimit } = useTaskbarPins();
   const layout = parseGridLayout(layoutRaw);

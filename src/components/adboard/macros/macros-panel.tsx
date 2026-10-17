@@ -75,9 +75,25 @@ import { QueueCard, ScheduleCard } from "@/components/adboard/macros/automation-
 import { PhoneRunsCard } from "@/components/adboard/macros/phone-runs-card";
 import { readBackups, useSyncStatus } from "@/lib/sync/agent-store";
 import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
+import { readUiState, writeUiState } from "@/lib/ui-state";
 
-/** Per-tab view state (selected step, preview screen) survives switching tabs. */
-const viewState = new Map<string, { stepId: string | null; previewId: string }>();
+/**
+ * Per-tab view state (selected step, preview screen) survives switching tabs
+ * and reloads: it is kept in browser storage, which prefs.ts saves to
+ * builder_state.json.
+ */
+type TabView = { stepId: string | null; previewId: string };
+const VIEW_KEY = "adboard-macro-view";
+const viewState = {
+  all: () => readUiState<Record<string, TabView>>(VIEW_KEY, {}),
+  get: (tabId: string): TabView | undefined => viewState.all()[tabId],
+  set: (tabId: string, view: TabView) => writeUiState(VIEW_KEY, { ...viewState.all(), [tabId]: view }),
+  delete: (tabId: string) => {
+    const all = viewState.all();
+    delete all[tabId];
+    writeUiState(VIEW_KEY, all);
+  },
+};
 
 /** Open `tabId` previewing `deviceId` next time the Macros page shows it (e.g. "Edit in Macros"). */
 export function focusMacroPreview(tabId: string, deviceId: string) {

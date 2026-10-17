@@ -15,7 +15,7 @@ import {
   type ResultRow,
 } from "@/components/adboard/desk/bits";
 
-const HISTORY_KEY = "phonecontrol-shell-history";
+const HISTORY_KEY = "adboard-shell-history";
 
 function readHistory(): string[] {
   try {

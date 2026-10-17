@@ -19,6 +19,7 @@ import { runMacro, type MacroProgress, type StepLog } from "@/lib/desk/run-macro
 import { MACRO_FOLDERS, newId, updateLibrary, useLibrary, type MacroStep, type MacroStepKind, type SavedMacro } from "@/lib/desk/store";
 import type { Device } from "@/lib/devices/types";
 import { cn } from "@/lib/utils";
+import { readUiState, writeUiState } from "@/lib/ui-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { useDesk } from "@/components/adboard/desk/desk-context";
@@ -120,17 +121,38 @@ function CreateJob({ onCreate }: { onCreate: (macro: SavedMacro) => void }) {
   );
 }
 
+const BUILDER_KEY = "adboard-shell-builder";
+interface BuilderView {
+  jobs: Record<string, { selectedStepId: string | null; previewId: string | null; live: boolean }>;
+  targets: string[];
+  parallel: boolean;
+}
+
 function JobEditor({ macro, focusStepId }: { macro: SavedMacro; focusStepId: string | null }) {
   const desk = useDesk();
   const library = useLibrary();
   const devices = desk.devices;
-  const [selectedStepId, setSelectedStepId] = useState<string | null>(focusStepId ?? macro.steps[0]?.id ?? null);
+  // Selected step, preview phone, Live, run targets and parallel are remembered
+  // per job (builder_state.json), so a reload reopens the editor as it was.
+  const [saved] = useState(() => readUiState<BuilderView>(BUILDER_KEY, { jobs: {}, targets: [], parallel: true }));
+  const savedJob = saved.jobs?.[macro.id];
+  const savedStep = macro.steps.some((s) => s.id === savedJob?.selectedStepId) ? savedJob!.selectedStepId : null;
+  const savedTargets = devices.filter((d) => saved.targets?.includes(d.id));
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(focusStepId ?? savedStep ?? macro.steps[0]?.id ?? null);
   const [addKind, setAddKind] = useState<MacroStepKind>("tap");
   const [placing, setPlacing] = useState<PointEnd | null>(null);
-  const [previewId, setPreviewId] = useState<string | null>(null);
-  const [live, setLive] = useState(true);
-  const [checked, setChecked] = useChecked(devices, desk.targets);
-  const [parallel, setParallel] = useState(true);
+  const [previewId, setPreviewId] = useState<string | null>(savedJob?.previewId ?? null);
+  const [live, setLive] = useState(savedJob?.live ?? true);
+  const [checked, setChecked] = useChecked(devices, desk.targets.length > 0 ? desk.targets : savedTargets);
+  const [parallel, setParallel] = useState(saved.parallel ?? true);
+  useEffect(() => {
+    const current = readUiState<BuilderView>(BUILDER_KEY, { jobs: {}, targets: [], parallel: true });
+    writeUiState(BUILDER_KEY, {
+      jobs: { ...current.jobs, [macro.id]: { selectedStepId, previewId, live } },
+      targets: [...checked],
+      parallel,
+    });
+  }, [macro.id, selectedStepId, previewId, live, checked, parallel]);
   const [progress, setProgress] = useState<Record<string, MacroProgress>>({});
   const [logs, setLogs] = useState<StepLog[]>([]);
   const [running, setRunning] = useState(false);

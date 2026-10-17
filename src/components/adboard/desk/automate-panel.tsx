@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { readUiState, writeUiState } from "@/lib/ui-state";
 import { ACTIONS, CATEGORIES, newStep } from "@/lib/desk/actions";
 import {
   MACRO_KINDS,
@@ -67,11 +68,18 @@ const TABS = [
   },
 ] as const;
 
+const VIEW_KEY = "adboard-automate-view";
+
 export function AutomatePanel() {
   const library = useLibrary();
   const desk = useDesk();
-  const [tab, setTab] = useState(desk.focusTool || "library");
-  const [macroId, setMacroId] = useState<string | null>(library.macros[0]?.id ?? null);
+  // The open tab and job are remembered (builder_state.json) across reloads.
+  const [saved] = useState(() => readUiState<{ tab: string; jobId: string | null }>(VIEW_KEY, { tab: "library", jobId: null }));
+  const [tab, setTab] = useState(desk.focusTool || saved.tab);
+  const [macroId, setMacroId] = useState<string | null>(
+    library.macros.some((m) => m.id === saved.jobId) ? saved.jobId : (library.macros[0]?.id ?? null),
+  );
+  useEffect(() => writeUiState(VIEW_KEY, { tab, jobId: macroId }), [tab, macroId]);
   const [focusStepId, setFocusStepId] = useState<string | null>(null);
   const macro = library.macros.find((item) => item.id === macroId) ?? null;
 

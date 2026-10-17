@@ -26,7 +26,7 @@ import { useStoredFlag } from "@/hooks/use-stored-flag";
 import { CLIPBOARD_SYNC_KEY, useClipboardSyncStatus } from "@/hooks/use-clipboard-sync";
 import { SwitchRow } from "@/components/ui/switch";
 
-const SIZE_KEY = "phonecontrol-display-size";
+const SIZE_KEY = "adboard-display-size";
 const DISPLAY_SIZES = [
   { id: "native", label: "Each phone", arg: "reset" },
   { id: "900x1600", label: "900×1600", arg: "900x1600" },

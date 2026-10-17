@@ -21,7 +21,7 @@ import {
   type KeyInject,
 } from "@/lib/scrcpy/keyboard";
 
-const DEVICE_KEY = "phonecontrol-active-device";
+const DEVICE_KEY = "adboard-active-device";
 
 function readSavedDevice(): string | null {
   try {
@@ -46,7 +46,7 @@ function storedMode(value: string | null): ControlMode {
 
 function readControlMode(): string | null {
   try {
-    return localStorage.getItem("phonecontrol-control-mode");
+    return localStorage.getItem("adboard-control-mode");
   } catch {
     return null;
   }
@@ -73,13 +73,13 @@ export function useADBoard() {
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [storedControlMode, writeControlMode] = useStoredString("phonecontrol-control-mode");
+  const [storedControlMode, writeControlMode] = useStoredString("adboard-control-mode");
   const controlMode = storedMode(storedControlMode);
   const setControlMode = useCallback(
     (mode: ControlMode) => writeControlMode(mode),
     [writeControlMode],
   );
-  const [keyboardOn, setKeyboardOn] = useStoredFlag("phonecontrol-keyboard", true);
+  const [keyboardOn, setKeyboardOn] = useStoredFlag("adboard-keyboard", true);
   const [mouseOn, setMouseOn] = useState(true);
   /** Cursor mode: every pointer is sent as a mouse (Android shows a cursor), even from touch. */
   const [cursorMode, setCursorMode] = useStoredFlag("adboard-cursor-mode", false);

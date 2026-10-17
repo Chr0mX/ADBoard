@@ -78,7 +78,7 @@ export function ADBoardApp() {
   // Macro scheduler tick + device list for the task queue.
   useMacroAutomation(devices);
 
-  const [storedFillWindow, setFillWindow] = useStoredFlag("phonecontrol-fill-window", false);
+  const [storedFillWindow, setFillWindow] = useStoredFlag("adboard-fill-window", false);
   const wide = useSyncExternalStore(
     subscribeWide,
     () => window.matchMedia("(min-width: 1024px)").matches,
@@ -92,10 +92,10 @@ export function ADBoardApp() {
   const macroDockOpen = storedMacroDock === "open";
   const setMacroDockOpen = (open: boolean) => setStoredMacroDock(open ? "open" : "closed");
   // Desktop side panels fold to a thin rail so the phone gets the width.
-  const [screensCollapsed, setScreensCollapsed] = useStoredFlag("phonecontrol-screens-collapsed", false);
-  const [devicesCollapsed, setDevicesCollapsed] = useStoredFlag("phonecontrol-devices-collapsed", false);
+  const [screensCollapsed, setScreensCollapsed] = useStoredFlag("adboard-screens-collapsed", false);
+  const [devicesCollapsed, setDevicesCollapsed] = useStoredFlag("adboard-devices-collapsed", false);
   const [screensOpen, setScreensOpen] = useState(false);
-  const [gridView, setGridView] = useStoredFlag("phonecontrol-grid-view", false);
+  const [gridView, setGridView] = useStoredFlag("adboard-grid-view", false);
 
   const setFill = (on: boolean) => {
     if (!wide) return;
@@ -103,12 +103,12 @@ export function ADBoardApp() {
     if (on) setDevicesOpen(false);
   };
 
-  const [storedStatsMode, setStoredStatsMode] = useStoredString("phonecontrol-mobile-stats-mode");
+  const [storedStatsMode, setStoredStatsMode] = useStoredString("adboard-mobile-stats-mode");
   const mobileStatsMode = parseMobileStatsMode(storedStatsMode);
   const setMobileStatsMode = (mode: MobileStatsMode) => setStoredStatsMode(mode);
 
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
-  const [storedSection, setStoredSection] = useStoredString("phonecontrol-section");
+  const [storedSection, setStoredSection] = useStoredString("adboard-section");
   const section = asSection(storedSection);
   const [focusTool, setFocusTool] = useState<string | null>(null);
   const [lastSeen, setLastSeen] = useState<Record<string, number>>({});

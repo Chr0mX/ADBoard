@@ -1,8 +1,6 @@
 /** Pinnable Tools → bottom DeviceNavBar preferences. */
 
 export const TASKBAR_PINS_KEY = "adboard-taskbar-pins";
-/** Key used before the ADBoard rename; read once so saved pins carry over. */
-export const LEGACY_TASKBAR_PINS_KEY = "rasiel-taskbar-pins";
 
 /**
  * Max extra icons beside the fixed nav actions.

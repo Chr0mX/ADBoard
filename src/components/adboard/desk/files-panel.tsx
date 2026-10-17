@@ -2,6 +2,7 @@
 
 import { saveBlob } from "@/lib/api/download";
 import { useCallback, useEffect, useState } from "react";
+import { readUiState, writeUiState } from "@/lib/ui-state";
 import { devicesClient } from "@/lib/api/client";
 import type { Device, HostFileEntry } from "@/lib/devices/types";
 import { useDesk } from "@/components/adboard/desk/desk-context";
@@ -14,13 +15,18 @@ interface PhoneEntry {
 }
 
 const PC_LINKS = ["Downloads", "APKs", "Recordings", "Screenshots"];
+const FILES_PATH_KEY = "adboard-files-path";
 const PHONE_LINKS = ["/sdcard", "/sdcard/Download", "/sdcard/DCIM", "/sdcard/Pictures", "/sdcard/Movies", "/sdcard/Android"];
 
 export function FilesPanel() {
   const desk = useDesk();
   const [checked, setChecked] = useChecked(desk.devices, desk.targets);
-  const [pcPath, setPcPath] = useState("");
-  const [phonePath, setPhonePath] = useState("/sdcard");
+  // Last folders (per browser, saved in the ADBoard data folder by prefs.ts).
+  const [pcPath, setPcPath] = useState(() => readUiState(FILES_PATH_KEY, { pc: "", phone: "/sdcard" }).pc);
+  const [phonePath, setPhonePath] = useState(() => readUiState(FILES_PATH_KEY, { pc: "", phone: "/sdcard" }).phone);
+  useEffect(() => {
+    writeUiState(FILES_PATH_KEY, { pc: pcPath, phone: phonePath });
+  }, [pcPath, phonePath]);
   const [pcEntries, setPcEntries] = useState<HostFileEntry[]>([]);
   const [phoneEntries, setPhoneEntries] = useState<PhoneEntry[]>([]);
   const [pcError, setPcError] = useState<string | null>(null);

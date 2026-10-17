@@ -67,7 +67,7 @@ async function sendText(targets: Device[], text: string) {
  */
 export function useClipboardSync({ targets, mode }: { targets: Device[]; mode: ControlMode }) {
   const [enabled] = useStoredFlag(CLIPBOARD_SYNC_KEY, false);
-  const [keyboardOn] = useStoredFlag("phonecontrol-keyboard", true);
+  const [keyboardOn] = useStoredFlag("adboard-keyboard", true);
   const targetsRef = useRef(targets);
   const modeRef = useRef(mode);
   useEffect(() => {

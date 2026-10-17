@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { migrateLegacyKeys } from "@/lib/storage-keys";
 import { createAgentSync } from "@/lib/sync/agent-store";
 import { mergeById } from "@/lib/sync/decide";
 
@@ -143,7 +144,7 @@ export interface DeskLibrary {
   history: MacroRunRecord[];
 }
 
-const KEY = "phonecontrol-desk";
+const KEY = "adboard-desk";
 const listeners = new Set<() => void>();
 let cachedRaw: string | null | undefined;
 let cached: DeskLibrary | null = null;
@@ -229,6 +230,7 @@ const sync = createAgentSync({
 
 function read(): DeskLibrary {
   if (typeof window === "undefined") return SERVER_LIBRARY;
+  migrateLegacyKeys(); // the library was kept under "phonecontrol-desk" before
   sync.start();
   let raw: string | null = null;
   try {

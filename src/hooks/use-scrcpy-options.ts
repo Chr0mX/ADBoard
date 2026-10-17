@@ -29,7 +29,7 @@ function num(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-const STORAGE_KEY = "phonecontrol-scrcpy";
+const STORAGE_KEY = "adboard-scrcpy";
 const DEFAULTS: ScrcpyOptionsPayload = {
   quality: "balanced",
   audio: false,

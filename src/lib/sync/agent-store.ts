@@ -19,6 +19,25 @@ function setStatus(name: string, state: SyncState, message?: string) {
   statusListeners.forEach((listener) => listener());
 }
 const PENDING: { state: SyncState; message?: string } = { state: "pending" };
+
+/** Problems the agent reported reading the saved files (e.g. a corrupt file set aside). */
+const warnings = new Map<string, string[]>();
+const NO_WARNINGS: string[] = [];
+function setWarnings(name: string, list: string[]) {
+  if (JSON.stringify(warnings.get(name) ?? NO_WARNINGS) === JSON.stringify(list)) return;
+  warnings.set(name, list);
+  statusListeners.forEach((listener) => listener());
+}
+export function useSyncWarnings(name: string) {
+  return useSyncExternalStore(
+    (onChange) => {
+      statusListeners.add(onChange);
+      return () => statusListeners.delete(onChange);
+    },
+    () => warnings.get(name) ?? NO_WARNINGS,
+    () => NO_WARNINGS,
+  );
+}
 export function useSyncStatus(name: string) {
   return useSyncExternalStore(
     (onChange) => {
@@ -115,6 +134,12 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
   let pushTimer: ReturnType<typeof setTimeout> | null = null;
   let inflight = false;
   let dirty = false;
+  // Settled after the first sync attempt (success or not), for callers that
+  // want saved settings before they render.
+  let markReady: () => void = () => {};
+  const readyPromise = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
 
   const url = () => `${agentBaseUrl() ?? ""}/api/store/${name}`;
   const enabled = () => typeof window !== "undefined" && agentBaseUrl() !== null;
@@ -123,7 +148,9 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
     try {
       const res = await agentFetch(url(), { cache: "no-store" });
       if (!res.ok) return null;
-      return (await res.json()) as { value: unknown; rev: number };
+      const body = (await res.json()) as { value: unknown; rev: number; warnings?: string[] };
+      setWarnings(name, Array.isArray(body.warnings) ? body.warnings : []);
+      return body;
     } catch {
       return null;
     }
@@ -203,6 +230,7 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
     const shared = await fetchShared();
     if (!shared) {
       setStatus(name, "local", "Saved in this browser only (agent not reachable)");
+      markReady();
       // Try again later; until then edits stay local.
       setTimeout(() => void firstSync(), PULL_MS);
       return;
@@ -230,6 +258,7 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
     } else {
       setStatus(name, "shared");
     }
+    markReady();
   }
 
   function start() {
@@ -291,5 +320,12 @@ export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, i
     while (inflight) await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
-  return { start, push, pull, flush };
+  /** Resolves after the first sync (or `timeoutMs`, or at once without an agent). */
+  function ready(timeoutMs = 1500): Promise<void> {
+    if (!enabled()) return Promise.resolve();
+    start();
+    return Promise.race([readyPromise, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+  }
+
+  return { start, push, pull, flush, ready };
 }
