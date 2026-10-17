@@ -148,6 +148,9 @@ export function mergeUserConfig(a: UserConfig, b: UserConfig): UserConfig {
 function applyUserConfig(remote: unknown) {
   const value = remote as UserConfig | null;
   if (!value?.values) return;
+  // A change made in the last moment has no time yet: stamp it first, or the
+  // shared (older) value would replace it.
+  check();
   const stamps = readStamps();
   for (const key of USER_KEYS) {
     const entry = value.values[key];
@@ -215,6 +218,7 @@ function perBrowserSync(name: "browser-state" | "builder-state", keys: readonly 
     known = value;
     if (restored) return; // after the first load this browser owns its entry
     restored = true;
+    check(); // stamp any change made before this arrived
     const pick = entryToRestore(value, browserId());
     if (!pick) return;
     // Own entry: restore it (e.g. after browser data was cleared). Another

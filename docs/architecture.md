@@ -46,7 +46,7 @@ Application
 
 - **Video:** `WS /ws/devices/{serial}/video` sends text `VideoStatusFrame` then binary Annex-B access units. Handshake order for scrcpy is video socket, control socket, then the dummy byte. No `send_frame_meta` on the video path. Late subscribers request one keyframe (`RESET_VIDEO`) and drop P-frames until an IDR arrives.
 - **Touch:** UI posts normalized points to `POST /api/input/pointer`. The agent maps each target with that device's decoded frame size and writes scrcpy `INJECT_TOUCH_EVENT`.
-- **Auth:** Every `/api/*` and `/ws*` route except `/health`, `/api/health`, and `/api/bootstrap` requires `x-adboard-token` (or `?token=` on WebSockets). The UI reads the token from `GET /api/bootstrap`. CORS allows `http://127.0.0.1:3847` and `http://localhost:3847` by default (`PHONECONTROL_DEV_ORIGINS`). Set `PHONECONTROL_TOKEN` when the bind is not loopback.
+- **Auth:** Every `/api/*` and `/ws*` route except `/health`, `/api/health`, and `/api/bootstrap` requires `x-adboard-token` (or `?token=` on WebSockets). The UI reads the token from `GET /api/bootstrap`. CORS allows `http://127.0.0.1:3847` and `http://localhost:3847` by default (`ADBOARD_DEV_ORIGINS`). Set `ADBOARD_TOKEN` when the bind is not loopback.
 - **Wireless:** Address pairing and QR pairing (`WIFI:T:ADB;…`) live under `/api/devices/wireless`. Saved endpoints restore on startup.
 
 ## Operator vs developer
