@@ -53,12 +53,7 @@ pub fn safe_input_text(text: &str) -> bool {
 pub fn files_root() -> PathBuf {
     let base = crate::env::var("FILES")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join("data")
-                .join("phonecontrol-files")
-        });
+        .unwrap_or_else(|_| crate::data_dir::files_dir());
     for name in ["Screenshots", "APKs", "Recordings", "Downloads"] {
         let _ = std::fs::create_dir_all(base.join(name));
     }

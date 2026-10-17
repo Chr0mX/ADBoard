@@ -7,8 +7,8 @@
 //! password form). Without an account, bootstrap refuses requests that
 //! arrived through a proxy unless `ADBOARD_ALLOW_PROXY_WITHOUT_PASSWORD=1`.
 //!
-//! The account lives in `adboard-auth.json` (salted PBKDF2-SHA256), next to
-//! the executable unless `ADBOARD_AUTH_FILE` says otherwise, so a password
+//! The account lives in `config/auth.json` in the ADBoard data folder (salted
+//! PBKDF2-SHA256) unless `ADBOARD_AUTH_FILE` says otherwise, so a password
 //! changed in the UI survives restarts. `ADBOARD_PASSWORD` creates the
 //! first account; `ADBOARD_RESET_PASSWORD=1` makes it overwrite the file
 //! (for a forgotten password).
@@ -256,24 +256,15 @@ fn auth_file_path() -> PathBuf {
             return PathBuf::from(path);
         }
     }
-    let path = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("adboard-auth.json")))
-        .unwrap_or_else(|| PathBuf::from("adboard-auth.json"));
-    migrate_legacy_auth_file(&path);
-    path
+    // In the user data folder (salted PBKDF2 hash, never the password).
+    // Accounts kept next to the executable by older versions are moved here
+    // by the startup migration (`migrate.rs`).
+    crate::data_dir::config_dir().join("auth.json")
 }
 
-/// Keep the account created before the ADBoard rename (`rasiel-auth.json`).
-fn migrate_legacy_auth_file(path: &Path) {
-    let legacy = path.with_file_name("rasiel-auth.json");
-    if path.exists() || !legacy.exists() {
-        return;
-    }
-    match std::fs::rename(&legacy, path) {
-        Ok(()) => tracing::info!(from = %legacy.display(), to = %path.display(), "moved the sign-in account to its new file name"),
-        Err(e) => tracing::warn!(error = %e, "could not rename rasiel-auth.json; sign in may need ADBOARD_RESET_PASSWORD"),
-    }
+/// A readable account file (used to verify a migrated copy).
+pub(crate) fn credentials_file_ok(path: &Path) -> bool {
+    read_credentials(path).is_some()
 }
 
 fn read_credentials(path: &Path) -> Option<Credentials> {
@@ -452,20 +443,6 @@ mod tests {
         let reset = WebAuth::with_file(file.clone(), None, Some("third-pass".into()), true, false);
         assert!(reset.check_login("admin", "third-pass"));
         let _ = std::fs::remove_file(&file);
-    }
-
-    #[test]
-    fn legacy_auth_file_is_migrated() {
-        let dir = std::env::temp_dir().join(format!("adboard-migrate-{}", uuid::Uuid::new_v4().simple()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let legacy = dir.join("rasiel-auth.json");
-        let current = dir.join("adboard-auth.json");
-        write_credentials(&legacy, &Credentials::new("ops", "kept-pass-1")).unwrap();
-        migrate_legacy_auth_file(&current);
-        assert!(current.exists() && !legacy.exists());
-        let auth = WebAuth::with_file(current, None, None, false, false);
-        assert!(auth.check_login("ops", "kept-pass-1"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

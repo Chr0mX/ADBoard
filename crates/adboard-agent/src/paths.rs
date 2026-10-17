@@ -36,8 +36,8 @@ fn project_roots() -> &'static [PathBuf] {
 }
 
 /// Working folder for staged APKs, file pushes/pulls and upload chunks:
-/// `ADBOARD_TEMP`, else `<repo root>/temp`, else `temp/` next to the
-/// executable. Falls back to the OS temp dir if none can be created.
+/// `ADBOARD_TEMP`, else `temp/` in the ADBoard data folder. Falls back to the
+/// OS temp dir if it can't be created.
 pub fn app_temp_dir() -> PathBuf {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
@@ -45,7 +45,7 @@ pub fn app_temp_dir() -> PathBuf {
             .ok()
             .filter(|v| !v.trim().is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(|| temp_root().join("temp"));
+            .unwrap_or_else(crate::data_dir::temp_dir);
         match std::fs::create_dir_all(&preferred) {
             Ok(()) => preferred,
             Err(error) => {
@@ -57,30 +57,13 @@ pub fn app_temp_dir() -> PathBuf {
     .clone()
 }
 
-fn temp_root() -> PathBuf {
-    if let Ok(cwd) = std::env::current_dir() {
-        if let Some(root) = find_repo_root(&cwd) {
-            return root;
-        }
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            if let Some(root) = find_repo_root(dir) {
-                return root;
-            }
-            return dir.to_path_buf();
-        }
-    }
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-}
-
 fn push_unique(roots: &mut Vec<PathBuf>, path: PathBuf) {
     if !roots.iter().any(|r| r == &path) {
         roots.push(path);
     }
 }
 
-fn find_repo_root(start: &Path) -> Option<PathBuf> {
+pub(crate) fn find_repo_root(start: &Path) -> Option<PathBuf> {
     let mut cur = start.to_path_buf();
     loop {
         if cur.join("Cargo.toml").is_file()
@@ -171,16 +154,3 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod temp_dir_tests {
-    #[test]
-    fn temp_dir_is_repo_temp() {
-        if crate::env::var("TEMP").is_ok() {
-            return;
-        }
-        let dir = super::app_temp_dir();
-        assert!(dir.is_dir(), "{}", dir.display());
-        assert!(dir.ends_with("temp"), "{}", dir.display());
-        assert!(dir.parent().unwrap().join("Cargo.toml").is_file(), "{}", dir.display());
-    }
-}

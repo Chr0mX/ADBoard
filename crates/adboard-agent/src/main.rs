@@ -2,11 +2,13 @@ mod adb;
 mod api;
 mod audio;
 mod device_manager;
+mod data_dir;
 mod device_ops;
 mod env;
 mod gesture;
 mod host_files;
 mod mesh;
+mod migrate;
 mod mesh_client;
 mod mock;
 mod paths;
@@ -16,6 +18,7 @@ mod session;
 mod macro_automation;
 mod macro_runner;
 mod shared_store;
+mod system_api;
 mod uploads;
 mod video;
 mod web_auth;
@@ -35,12 +38,29 @@ const DEFAULT_PORT: u16 = 3848;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TLS for wss:// controller URLs (mesh agents behind https proxies).
     let _ = rustls::crypto::ring::default_provider().install_default();
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=info")),
-        )
-        .init();
+    let filter = || EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tower_http=info"));
+    // Log to the console and to logs/adboard.log in the ADBoard data folder.
+    match data_dir::open_log_file() {
+        Ok(file) => {
+            use tracing_subscriber::fmt::writer::MakeWriterExt;
+            tracing_subscriber::fmt()
+                .with_env_filter(filter())
+                .with_ansi(false)
+                .with_writer(std::io::stdout.and(std::sync::Arc::new(file)))
+                .init();
+        }
+        Err(error) => {
+            tracing_subscriber::fmt().with_env_filter(filter()).init();
+            tracing::warn!(%error, "no log file; logging to the console only");
+        }
+    }
+    let data = data_dir::root();
+    info!(path = %data.path.display(), source = ?data.source, "ADBoard data folder");
+    if let Err(error) = data_dir::ensure_layout() {
+        tracing::error!(%error, "cannot create the ADBoard data folder");
+    }
+    // Before anything reads the store or the account: bring older data over.
+    migrate::run_at_startup();
 
     let role = parse_role();
     let port: u16 = crate::env::var("PORT")

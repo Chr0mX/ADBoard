@@ -650,10 +650,7 @@ fn wireless_store_path() -> PathBuf {
     if let Ok(path) = crate::env::var("WIRELESS") {
         return PathBuf::from(path);
     }
-    std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("data")
-        .join("wireless-adb.json")
+    crate::data_dir::config_dir().join("wireless_devices.json")
 }
 
 fn store_lock() -> std::sync::MutexGuard<'static, ()> {
