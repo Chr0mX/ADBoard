@@ -53,16 +53,63 @@ function viewportSize() {
   };
 }
 
+/** The phone layout's bottom taskbar (with its safe-area padding), if shown. */
+export const BOTTOM_CHROME_SELECTOR = "[data-mobile-bottom-chrome], [data-device-nav-bar]";
+
+function bottomChromeTop(): number | null {
+  let top: number | null = null;
+  for (const el of document.querySelectorAll<HTMLElement>(BOTTOM_CHROME_SELECTOR)) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) top = top === null ? r.top : Math.min(top, r.top);
+  }
+  return top;
+}
+
+/**
+ * Safe-area insets in px, read from a hidden probe's computed padding: that
+ * is always resolved to px, while env() inside a custom property may not be
+ * on every engine. Falls back to the --pc-safe-* custom properties.
+ */
+let insetProbe: HTMLDivElement | null = null;
+function safeInsets() {
+  const fallback = readSafeInsets(getComputedStyle(document.documentElement));
+  if (!insetProbe || !insetProbe.isConnected) {
+    insetProbe = document.createElement("div");
+    insetProbe.setAttribute("aria-hidden", "true");
+    insetProbe.style.cssText =
+      "position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;" +
+      "padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)";
+    document.body.appendChild(insetProbe);
+  }
+  const cs = getComputedStyle(insetProbe);
+  const px = (value: string, other: number) => {
+    const n = Number.parseFloat(value);
+    return Number.isFinite(n) ? Math.max(n, other) : other;
+  };
+  return {
+    top: px(cs.paddingTop, fallback.top),
+    right: px(cs.paddingRight, fallback.right),
+    bottom: px(cs.paddingBottom, fallback.bottom),
+    left: px(cs.paddingLeft, fallback.left),
+  };
+}
+
 function currentBounds(): FloatingBounds {
   const vp = viewportSize();
-  const insets = readSafeInsets(getComputedStyle(document.documentElement));
+  const insets = safeInsets();
+  // Keep floats above the bottom taskbar. Measured from the taskbar itself:
+  // a constant reserve was too small in an iPhone Home Screen app, where
+  // the taskbar also sits above the home-indicator inset, so a panel let go
+  // near the bottom covered the taskbar buttons and took their taps.
+  const chromeTop = bottomChromeTop();
+  const reserve =
+    chromeTop !== null ? Math.max(0, vp.height - chromeTop) : insets.bottom + TASKBAR_FLOAT_RESERVE;
   return {
     viewportWidth: vp.width,
     viewportHeight: vp.height,
     insetTop: insets.top,
     insetRight: insets.right,
-    // Keep floats above the centered bottom taskbar capsule.
-    insetBottom: insets.bottom + TASKBAR_FLOAT_RESERVE,
+    insetBottom: reserve,
     insetLeft: insets.left,
     margin: 8,
   };
@@ -89,7 +136,7 @@ function avoidObstacles(
   const top = (bounds.insetTop ?? 0) + (bounds.margin ?? 8);
   const bottom = bounds.viewportHeight - (bounds.insetBottom ?? 0) - (bounds.margin ?? 8);
   const blocked = [
-    ...document.querySelectorAll<HTMLElement>("[data-grid-bar], [data-grid-options]"),
+    ...document.querySelectorAll<HTMLElement>(`[data-grid-bar], [data-grid-options], ${BOTTOM_CHROME_SELECTOR}`),
     ...[...document.querySelectorAll<HTMLElement>("[data-floating-panel]")].filter(
       (el) => el !== self && el.dataset.edge === "",
     ),
@@ -331,8 +378,18 @@ export function FloatingPanel({
     window.addEventListener(FLOAT_RECLAMP_EVENT, onResize);
     // The page chrome may mount after the floats (portal): check once more.
     const late = window.setTimeout(onResize, 400);
+    // The taskbar grows with pins and with the safe area: re-place on change.
+    const chromeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(onResize) : null;
+    const observeChrome = () => {
+      chromeObserver?.disconnect();
+      document.querySelectorAll(BOTTOM_CHROME_SELECTOR).forEach((el) => chromeObserver?.observe(el));
+    };
+    observeChrome();
+    const lateObserve = window.setTimeout(observeChrome, 500);
     return () => {
       window.clearTimeout(late);
+      window.clearTimeout(lateObserve);
+      chromeObserver?.disconnect();
       window.removeEventListener(FLOAT_RECLAMP_EVENT, onResize);
       window.removeEventListener("orientationchange", onOrient);
       window.visualViewport?.removeEventListener("resize", onResize);

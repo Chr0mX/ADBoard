@@ -11,6 +11,8 @@ import { PanelFrame } from "@/components/phone-control/desk/bits";
 import { ScrcpyOptions } from "@/components/phone-control/scrcpy-options";
 import { useAgentSessionInfo } from "@/components/phone-control/sign-in-gate";
 import { Segmented } from "@/components/phone-control/macros/fields";
+import { TOUCH_DIAGNOSTICS_KEY } from "@/components/phone-control/touch-diagnostics";
+import { InstallOnIphone } from "@/components/phone-control/desk/install-on-iphone";
 
 /**
  * One place for the app's existing settings. Nothing here has its own
@@ -26,6 +28,7 @@ export function SettingsPanel() {
   const [barRaw, setBarRaw] = useStoredString("adboard-grid-bar");
   const [cursorMode, setCursorMode] = useStoredFlag("adboard-cursor-mode", false);
   const [keyboardOn, setKeyboardOn] = useStoredFlag("phonecontrol-keyboard", true);
+  const [touchDiagnostics, setTouchDiagnostics] = useStoredFlag(TOUCH_DIAGNOSTICS_KEY, false);
   const { pins, togglePin, resetPins, atLimit } = useTaskbarPins();
   const layout = parseGridLayout(layoutRaw);
   const target = desk.activeDevice ?? desk.targets[0] ?? null;
@@ -33,6 +36,7 @@ export function SettingsPanel() {
   return (
     <PanelFrame title="Settings" panel="settings">
       <div className="grid gap-3 lg:grid-cols-2">
+        <InstallOnIphone />
         <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-stream>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Stream</h3>
           <p className="text-xs text-[var(--pc-muted)]">
@@ -49,6 +53,13 @@ export function SettingsPanel() {
             checked={keyboardOn}
             onChange={(event) => setKeyboardOn(event.target.checked)}
             data-settings-keyboard
+          />
+          <SwitchRow
+            label="Touch diagnostics"
+            description="Marks each tap and shows which control received it (for checking taps on an iPhone)"
+            checked={touchDiagnostics}
+            onChange={(event) => setTouchDiagnostics(event.target.checked)}
+            data-settings-touch-diagnostics
           />
           <SwitchRow
             label="Cursor mode"

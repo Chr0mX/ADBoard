@@ -60,8 +60,13 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 
 ## iPhone Home Screen app
 
-- **Full screen:** already supported. The manifest uses `display: standalone`, the app sets `apple-mobile-web-app-capable` with the black-translucent status bar and `viewport-fit=cover`, and the bottom chrome keeps clear of the home indicator. Opened from the Home Screen icon, the app uses the space of Safari's bars.
-- **Bottom buttons not responding in the Home Screen app (fixed):** iOS can report a visual viewport taller than the area it accepts taps in. The app shell and the floating panels now size to the smallest of the visual viewport, `innerHeight` and the layout viewport, and re-measure on launch, resume and rotation. The taskbar therefore always sits inside the tappable area. (**device**: remove and re-add the Home Screen icon after updating, then check.)
+- **Installing:** iOS never shows an install prompt. Open the site in Safari, then Share → **Add to Home Screen** → keep **Open as Web App** on (iOS 26) → Add. Chrome/Edge on iOS 16.4+ have the same item in their Share menu. The item does not exist inside an already-installed Home Screen app, which has no browser bars. Settings → **Install on iPhone** shows these steps on iPhones.
+- **Configuration:**
+  - Manifest: `display: standalone`, `id`, `start_url` / `scope` "/". Served as `application/manifest+json` without sign-in.
+  - Page: `apple-mobile-web-app-capable` with the black-translucent status bar, `viewport-fit=cover` and the theme colour.
+  - Icon: an opaque 180×180 `apple-touch-icon.png`, also at the site root.
+- **Bottom taskbar not responding in the Home Screen app (fixed).** Root cause: the floating Tools / Stats panels kept clear of the taskbar by a fixed 56 px reserve. In the Home Screen app the taskbar also sits above the home-indicator inset, so it is taller than that. A panel placed or dropped near the bottom then lay over the taskbar buttons and took their taps (reproduced in a simulated layout: Stats over Home, Recent, Minimize and the volume buttons). The panels now measure the taskbar itself, treat it as an obstacle, re-place when it changes size, and read safe-area insets from a probe element.
+- **Touch diagnostics** (Settings → Control, or `?touchdebug=1`): marks each tap and shows which control received it, the events fired, and the viewport numbers iOS reports.
 
 ## 5. Floating UI and taskbar
 

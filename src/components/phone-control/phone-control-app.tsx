@@ -36,6 +36,7 @@ import { parseMobileStatsMode, type MobileStatsMode } from "@/lib/ui/mobile-stat
 import { cn } from "@/lib/utils";
 import { useClipboardSync } from "@/hooks/use-clipboard-sync";
 import { useMacroAutomation } from "@/lib/macro/automation-store";
+import { TouchDiagnostics } from "@/components/phone-control/touch-diagnostics";
 
 function subscribeWide(onChange: () => void) {
   const media = window.matchMedia("(min-width: 1024px)");
@@ -214,7 +215,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v44"
+      data-ui-build="pc-shell-v45"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -253,6 +254,7 @@ export function PhoneControlApp() {
           </div>
         )}
 
+        <TouchDiagnostics />
         {!loading && section === "control" && (
           <>
             {error && !fillWindow && (
