@@ -20,6 +20,8 @@ import {
   useScrcpyOptions,
 } from "@/hooks/use-scrcpy-options";
 import { useStayAwake } from "@/hooks/use-stay-awake";
+import { useQuietMode } from "@/hooks/use-quiet-mode";
+import { Moon } from "lucide-react";
 import { useStoredFlag } from "@/hooks/use-stored-flag";
 import { CLIPBOARD_SYNC_KEY, useClipboardSyncStatus } from "@/hooks/use-clipboard-sync";
 import { SwitchRow } from "@/components/ui/switch";
@@ -64,6 +66,7 @@ export function ScrcpyOptions({
   const desk = useDesk();
   const targetDevices = desk.devices.filter((device) => targetIds.includes(device.id));
   const stayAwake = useStayAwake(targetDevices);
+  const quiet = useQuietMode();
   const [clipboardSync, setClipboardSync] = useStoredFlag(CLIPBOARD_SYNC_KEY, false);
   const clipboardStatus = useClipboardSyncStatus();
   const custom = options.quality === "custom";
@@ -273,6 +276,18 @@ export function ScrcpyOptions({
         >
           Stay awake
         </Toggle>
+        <Toggle
+          pressed={quiet.on}
+          onPressedChange={(on) => quiet.toggle(on)}
+          disabled={quiet.busy || !quiet.available}
+          aria-label="Quiet mode: all screens off and muted"
+          title="Every online phone (not just the targets): screen off and sound muted"
+          data-scrcpy-quiet
+          size="md"
+        >
+          <Moon className="size-4" />
+          Quiet mode
+        </Toggle>
         <div className={start ? "grid w-full grid-cols-2 gap-1.5 [&>input]:col-span-2 [&>input]:min-w-0" : "max-lg:hidden lg:contents"}>
           <input
             aria-label="Clipboard"
@@ -327,9 +342,9 @@ export function ScrcpyOptions({
           data-scrcpy-clipboard-sync
         />
       </div>
-      {(note || audioError || audioNote || stayAwake.note || (clipboardSync && clipboardStatus)) && (
+      {(note || audioError || audioNote || stayAwake.note || quiet.note || (clipboardSync && clipboardStatus)) && (
         <p data-scrcpy-note className="max-w-lg truncate text-center font-mono text-[10px] text-[var(--pc-muted)]">
-          {note || audioError || audioNote || stayAwake.note || clipboardStatus}
+          {note || audioError || audioNote || stayAwake.note || quiet.note || clipboardStatus}
         </p>
       )}
     </div>

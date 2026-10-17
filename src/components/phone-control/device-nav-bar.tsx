@@ -25,6 +25,7 @@ import {
   PictureInPicture2,
   RotateCwSquare,
   Shrink,
+  Moon,
 } from "lucide-react";
 import { StatsBarsIcon } from "@/components/phone-control/stats-bars-icon";
 import { Fragment } from "react";
@@ -78,6 +79,9 @@ export interface TaskbarToolHandlers {
   /** Picture-in-picture pop-out; omitted where unsupported. */
   pip?: boolean;
   onPip?: () => void;
+  /** Quiet mode: every online phone's screen off and muted. */
+  quiet?: boolean;
+  onQuietChange?: (on: boolean) => void;
 }
 
 interface DeviceNavBarProps {
@@ -387,6 +391,19 @@ function PinnedToolButton({
           className={hit}
         >
           <PictureInPicture2 className={iconClass} />
+        </Toggle>
+      ) : null;
+    case "quiet":
+      return handlers.onQuietChange ? (
+        <Toggle
+          pressed={Boolean(handlers.quiet)}
+          onPressedChange={(on) => handlers.onQuietChange?.(on)}
+          aria-label="Quiet mode: all screens off and muted"
+          data-taskbar-tool="quiet"
+          size="none"
+          className={hit}
+        >
+          <Moon className={iconClass} />
         </Toggle>
       ) : null;
     case "restart":

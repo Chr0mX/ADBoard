@@ -1222,6 +1222,17 @@ impl AppState {
                             .unwrap_or_default()
                     ),
                 ),
+                "mute" => match crate::device_ops::mute_arg(arg) {
+                    Ok(want) => {
+                        let mut map = mock_muted().lock().unwrap_or_else(|e| e.into_inner());
+                        if let Some(on) = want {
+                            map.insert(device.serial.clone(), on);
+                        }
+                        let on = map.get(&device.serial).copied().unwrap_or(false);
+                        op_ok(device, if on { "on".into() } else { "off".into() })
+                    }
+                    Err(error) => op_error(device, error),
+                },
                 "stayAwake" => match crate::device_ops::stay_awake_arg(arg) {
                     Ok(want) => {
                         let mut map = mock_stay_awake().lock().unwrap_or_else(|e| e.into_inner());
@@ -3057,6 +3068,13 @@ mod tests {
 
 /// Mock fleet only: Stay awake state per serial, so the UI round-trips.
 fn mock_stay_awake() -> &'static std::sync::Mutex<HashMap<String, bool>> {
+    static STATE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, bool>>> =
+        std::sync::OnceLock::new();
+    STATE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Mock fleet only: Quiet mode mute state per serial.
+fn mock_muted() -> &'static std::sync::Mutex<HashMap<String, bool>> {
     static STATE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, bool>>> =
         std::sync::OnceLock::new();
     STATE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))

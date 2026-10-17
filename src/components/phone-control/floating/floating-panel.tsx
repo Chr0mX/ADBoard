@@ -39,7 +39,15 @@ function viewportSize() {
   const vv = window.visualViewport;
   return {
     width: Math.round(vv?.width ?? window.innerWidth),
-    height: Math.round(vv?.height ?? window.innerHeight),
+    // Same rule as the app shell (useVisualViewportLock): an iOS Home Screen
+    // app can report a visual viewport taller than the area it accepts taps in.
+    height: Math.round(
+      Math.min(
+        ...[vv?.height, window.innerHeight, document.documentElement.clientHeight].filter(
+          (n): n is number => typeof n === "number" && n > 0,
+        ),
+      ),
+    ),
     offsetLeft: Math.round(vv?.offsetLeft ?? 0),
     offsetTop: Math.round(vv?.offsetTop ?? 0),
   };

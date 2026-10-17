@@ -32,8 +32,10 @@ import {
   PictureInPicture2,
   RotateCwSquare,
   Shrink,
+  Moon,
 } from "lucide-react";
 import { useStayAwake } from "@/hooks/use-stay-awake";
+import { useQuietMode } from "@/hooks/use-quiet-mode";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { StatsBarsIcon } from "@/components/phone-control/stats-bars-icon";
 import { Button } from "@/components/ui/button";
@@ -187,6 +189,7 @@ export function ControlPanelFloat({
   // panel keeps its height; always open while customizing the taskbar.
   const [screenOpen, setScreenOpen] = useState(false);
   const desk = useDeskOptional();
+  const quiet = useQuietMode();
   const stayAwake = useStayAwake((desk?.devices ?? []).filter((d) => targetIds.includes(d.id)));
   const [taskbarEdit, setTaskbarEdit] = useState(false);
   const { pins, togglePin, resetPins, atLimit, maxPins } = useTaskbarPins();
@@ -200,6 +203,7 @@ export function ControlPanelFloat({
     audioError ||
     audioNote ||
     stayAwake.note ||
+    quiet.note ||
     (options.quality === "custom"
       ? `Custom: ${options.maxSize ? `${options.maxSize} px` : "native"} · ${(options.videoBitRate ?? 0) / 1_000_000} Mbps · ${options.maxFps} fps (edit in Settings)`
       : null);
@@ -284,6 +288,27 @@ export function ControlPanelFloat({
             >
               <Coffee className="size-5" />
             </Toggle>
+            <PinableTool {...pinProps("quiet")}>
+              <Toggle
+                size="none"
+                pressed={taskbarEdit ? pins.includes("quiet") : quiet.on}
+                onPressedChange={(on) => {
+                  if (!taskbarEdit) quiet.toggle(on);
+                }}
+                disabled={!taskbarEdit && (quiet.busy || !quiet.available)}
+                aria-label={
+                  taskbarEdit
+                    ? `${pins.includes("quiet") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.quiet}`
+                    : "Quiet mode: all screens off and muted"
+                }
+                title="Quiet mode: every online phone's screen off and sound muted"
+                data-taskbar-pin="quiet"
+                data-quiet-mode={quiet.on ? "1" : "0"}
+                className={HIT}
+              >
+                <Moon className="size-5" />
+              </Toggle>
+            </PinableTool>
           </div>
           {streamHint && (
             <p

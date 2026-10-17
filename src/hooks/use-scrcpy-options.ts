@@ -88,6 +88,11 @@ function writeOpts(next: ScrcpyOptionsPayload) {
   listeners.forEach((listener) => listener());
 }
 
+/** Update the shared options without posting (the caller already applied them). */
+export function patchScrcpyOptions(patch: Partial<ScrcpyOptionsPayload>) {
+  writeOpts({ ...readOpts(), ...patch });
+}
+
 function firstError(results: { ok: boolean; error?: string | null }[] | undefined) {
   return results?.find((result) => !result.ok)?.error || "";
 }

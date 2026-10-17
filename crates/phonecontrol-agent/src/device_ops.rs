@@ -150,6 +150,80 @@ fn adb_args(serial: &str, rest: &[&str]) -> Vec<String> {
     args
 }
 
+/// `mute` argument: `on` mutes, `off` restores, `status` (or none) only reads.
+pub fn mute_arg(arg: Option<&str>) -> Result<Option<bool>, String> {
+    match arg.map(str::trim).unwrap_or("status") {
+        "on" => Ok(Some(true)),
+        "off" => Ok(Some(false)),
+        "status" | "" => Ok(None),
+        _ => Err("mute takes on, off or status".into()),
+    }
+}
+
+/// `cmd media_session volume --get` → (volume, max), from a line like
+/// `[V] volume is 7 in range [0..15]`.
+pub fn parse_media_volume(raw: &str) -> Option<(u32, u32)> {
+    let at = raw.find("volume is ")?;
+    let rest = &raw[at + "volume is ".len()..];
+    let volume: u32 = rest.split_whitespace().next()?.parse().ok()?;
+    let range = rest.split('[').nth(1)?.split(']').next()?;
+    let max: u32 = range.split("..").nth(1)?.trim().parse().ok()?;
+    Some((volume, max))
+}
+
+/// Media volume before Quiet mode muted each phone, to put back afterwards.
+fn saved_volumes() -> &'static std::sync::Mutex<std::collections::HashMap<String, u32>> {
+    static SAVED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, u32>>> =
+        std::sync::OnceLock::new();
+    SAVED.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Mute / restore the phone's media sound (music stream 3), which is what
+/// games and videos play on. Answers `on` when muted.
+async fn mute_media(adb: &Path, serial: &str, arg: Option<&str>) -> Result<String, String> {
+    let want = mute_arg(arg)?;
+    let read = || async {
+        let raw = adb_text(
+            adb,
+            &adb_args(serial, &["shell", "cmd", "media_session", "volume", "--stream", "3", "--get"]),
+        )
+        .await?;
+        parse_media_volume(&raw).ok_or_else(|| "phone did not report its media volume".to_string())
+    };
+    let set = |level: u32| async move {
+        let level = level.to_string();
+        adb_text(
+            adb,
+            &adb_args(serial, &["shell", "cmd", "media_session", "volume", "--stream", "3", "--set", &level]),
+        )
+        .await
+        .map(|_| ())
+    };
+    let (volume, max) = read().await?;
+    match want {
+        Some(true) => {
+            if volume > 0 {
+                saved_volumes()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(serial.to_string(), volume);
+            }
+            set(0).await?;
+        }
+        Some(false) => {
+            let saved = saved_volumes().lock().unwrap_or_else(|e| e.into_inner()).remove(serial);
+            // Unknown (e.g. the agent restarted while muted): half volume.
+            let level = saved.unwrap_or((max / 2).max(1)).min(max.max(1));
+            if volume == 0 {
+                set(level).await?;
+            }
+        }
+        None => {}
+    }
+    let (now, _) = read().await?;
+    Ok(if now == 0 { "on".into() } else { "off".into() })
+}
+
 /// `stayAwake` argument: `on` / `off` set it, `status` (or none) only reads.
 pub fn stay_awake_arg(arg: Option<&str>) -> Result<Option<bool>, String> {
     match arg.map(str::trim).unwrap_or("status") {
@@ -187,6 +261,7 @@ pub async fn run_adb_op(
             adb_text(adb, &adb_args(serial, &["shell", "reboot", "-p"])).await?;
             Ok("shutting down".into())
         }
+        "mute" => mute_media(adb, serial, arg).await,
         "stayAwake" => {
             // `svc power stayon` keeps the phone awake; it does not touch the
             // screen-off (display power) state used by "Screen off".
@@ -610,6 +685,18 @@ async fn launch_app(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn media_volume_and_mute_args() {
+        let raw = "[V] will get volume\n[V] Connecting to AudioService\n[V] volume is 7 in range [0..15]\n";
+        assert_eq!(super::parse_media_volume(raw), Some((7, 15)));
+        assert_eq!(super::parse_media_volume("volume is 0 in range [0..25]"), Some((0, 25)));
+        assert_eq!(super::parse_media_volume("Error: unknown command"), None);
+        assert_eq!(super::mute_arg(Some("on")), Ok(Some(true)));
+        assert_eq!(super::mute_arg(Some("off")), Ok(Some(false)));
+        assert_eq!(super::mute_arg(None), Ok(None));
+        assert!(super::mute_arg(Some("loud")).is_err());
+    }
+
     #[test]
     fn stay_awake_args_and_status() {
         assert_eq!(super::stay_awake_arg(Some("on")), Ok(Some(true)));

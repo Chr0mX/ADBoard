@@ -55,6 +55,7 @@ import {
 } from "@/lib/desk/capture";
 import { offlineOverlayCopy } from "@/lib/ui/connection-copy";
 import { useFullscreen } from "@/hooks/use-fullscreen";
+import { useQuietMode } from "@/hooks/use-quiet-mode";
 import { usePictureInPicture } from "@/hooks/use-picture-in-picture";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { useMacroTouches } from "@/lib/macro/runs";
@@ -231,6 +232,7 @@ export function PhoneScreen({
   }, [sideDockOn]);
   // Rotate / Fullscreen / Pop out, shared by More tools, floating Tools and pins.
   const fullscreen = useFullscreen();
+  const quiet = useQuietMode();
   const pip = usePictureInPicture(canvasRef);
   const toggleFullscreen = fullscreen.supported
     ? () => void fullscreen.toggle().then((error) => error && actions.setNote(error))
@@ -1442,6 +1444,8 @@ export function PhoneScreen({
                 onFullscreen: toggleFullscreen,
                 pip: pip.active,
                 onPip: togglePip,
+                quiet: quiet.on,
+                onQuietChange: quiet.toggle,
               }}
             />
             {statsMode === "bar" && (

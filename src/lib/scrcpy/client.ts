@@ -13,7 +13,7 @@ export interface ScrcpyOptionsPayload {
 
 export interface ScrcpyOptionsResult extends ScrcpyOptionsPayload {
   restarted?: string[];
-  results?: { ok: boolean; error?: string | null; output?: string | null }[];
+  results?: { ok: boolean; error?: string | null; output?: string | null; deviceId?: string; deviceName?: string }[];
 }
 
 export interface ClipboardResult {

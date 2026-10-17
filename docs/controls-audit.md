@@ -11,7 +11,7 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 | Back, Home, Recent Apps | Existing | Android keys via `adb shell input keyevent` (`device-nav-bar.tsx`) |
 | Minimize | Existing | Folds Tools and Stats into chips. Android has no minimize key. |
 | Volume Down, Volume Up, Power | Existing | Android keys |
-| Pinned tools | Existing + 3 added | Rotate, Fullscreen and Pop out can now be pinned. The limit is 18, so every tool fits. The bar stays centred and scrolls when full. |
+| Pinned tools | Existing + 4 added | Rotate, Fullscreen, Pop out and Quiet mode can now be pinned. The limit is 19, so every tool fits. The bar stays centred and scrolls when full. |
 
 ## 2. Phone-farm management
 
@@ -38,6 +38,7 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 | Fullscreen | **Added** | Browser fullscreen; Esc leaves. Separate from Fill window, which is unchanged. Hidden where the browser has no element fullscreen (iPhone Safari). |
 | Stay Awake | **Added** | `svc power stayon true/false`. The state is read back from `stay_on_while_plugged_in`. It does not change Screen off. (**device**) |
 | Screen Off | Existing | scrcpy `SET_DISPLAY_POWER`. Different from Power off (`reboot -p`). |
+| Quiet mode (all phones) | **Added** | One toggle for every online phone, whatever Selected / Multi / All says: screens off (scrcpy `SET_DISPLAY_POWER`; the mirror keeps working) and each phone's media sound muted (`cmd media_session volume --stream 3`). Turning it off restores each phone's previous volume. In floating Tools, More tools, Settings, and as a pin. Screen off needs that phone's live screen to be running. (**device**) |
 | Screenshot, Screen Recording | Existing | Use every control target |
 | Quality Settings | Existing presets + **Custom added** | Each preset now shows its size, bitrate and FPS. Custom sends max size (0–4096, 0 = native), bitrate (0.25–40 Mbps) and FPS (5–120) to scrcpy-server, and the stream restarts. (**device**) |
 | Clipboard Sync | Manual existing + **auto added** | "Sync clipboard" switch:<br>• Phone copies go to the PC clipboard.<br>• Ctrl/Cmd+V pastes the PC clipboard on the targets (scrcpy `SET_CLIPBOARD` with paste).<br>The browser must allow clipboard access (HTTPS or localhost); otherwise it says so and Ctrl+V goes through as a key. |
@@ -56,6 +57,11 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 | Loop | Existing | Forever / cycles / time limit |
 | Task Queue | **Added** | Macros → Queue. Plays tabs in order through the same runner. A failed tab is noted and the queue moves on. Stop ends the queue. Saved as tab ids only. |
 | Scheduler | **Added** | Macros → Schedule. Plays a tab or the queue once, or every N minutes. It runs only while an ADBoard page is open, because the agent has no macro runner. Slots missed while closed run once when the page is back. |
+
+## iPhone Home Screen app
+
+- **Full screen:** already supported. The manifest uses `display: standalone`, the app sets `apple-mobile-web-app-capable` with the black-translucent status bar and `viewport-fit=cover`, and the bottom chrome keeps clear of the home indicator. Opened from the Home Screen icon, the app uses the space of Safari's bars.
+- **Bottom buttons not responding in the Home Screen app (fixed):** iOS can report a visual viewport taller than the area it accepts taps in. The app shell and the floating panels now size to the smallest of the visual viewport, `innerHeight` and the layout viewport, and re-measure on launch, resume and rotation. The taskbar therefore always sits inside the tappable area. (**device**: remove and re-add the Home Screen icon after updating, then check.)
 
 ## 5. Floating UI and taskbar
 
