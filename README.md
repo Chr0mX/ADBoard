@@ -323,7 +323,12 @@ ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's d
 
 ## Touch macros
 
-**Macros** in the desk header holds virtual tabs of single- and multi-touch steps. You can preview and drag touch points, scale them to each phone's resolution, and import or export Auto Clicker `config.txt` files. The preview can show a phone's live screen under the touch points. **Macros** in the Control tool row opens a side panel to run a tab on the phones you're controlling. See [docs/macros.md](docs/macros.md).
+**Macros** in the desk header holds virtual tabs of single- and multi-touch steps. You can preview and drag touch points, scale them to each phone's resolution, and import or export Auto Clicker `config.txt` files. The preview can show a phone's live screen under the touch points. **Macros** in the Control tool row opens a side panel to run a tab on the phones you're controlling.
+
+- **Shared:** macros are kept on ADBoard and shared by every browser. Differing copies are merged, never replaced, and **Versions** restores earlier copies.
+- **Per phone:** **Phones** gives each phone its own macro, with its own Start / Pause / Stop and live status. Runs live in ADBoard, so they keep going when the browser closes, and stopping or disconnecting one phone leaves the others running. Runs stop when ADBoard itself is closed.
+
+See [docs/macros.md](docs/macros.md).
 
 ## Temporary files
 

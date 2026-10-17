@@ -13,13 +13,12 @@ Each tab is a separate macro with its own data:
 - steps
 - target phones
 - notes
-- run state
 
-Tabs are saved in this browser (`localStorage["adboard-macros"]`, up to 50).
+Tabs are kept on ADBoard (`adboard-data/macros.json` next to the executable) and shared by every browser that opens this ADBoard. Each browser keeps a copy in `localStorage["adboard-macros"]` (up to 50 tabs) and uses it when ADBoard can't be reached. See [Sharing and versions](#sharing-and-versions).
 
 - **New / Rename / Duplicate / Delete / ◀ ▶** manage tabs. Double-click a tab to rename it. A duplicate gets fresh ids, so editing it never touches the original.
 - Switching tabs keeps each tab's selected step and preview screen.
-- Several tabs can run at once. A phone belongs to one running tab at a time. Another tab that targets it marks it **busy** and skips it, so two macros never fight over one screen.
+- Several tabs can run at once, and different phones can run different tabs. A phone runs one macro at a time: a tab that targets a busy phone marks it **busy** and skips it, so two macros never fight over one screen.
 
 ## Steps
 
@@ -49,17 +48,50 @@ A step is 1–10 fingers played together, then a wait.
 - **Run / Stop** and the live status (cycle, step, touches, each phone)
 - a live preview of the active phone with the tab's markers and touch rings
 - the steps, each with ▶ Test
+- the **Phones** card (below)
 - **Edit in Macros**, which opens the full editor
+
+## Phones: a macro per phone
+
+**Macros → Phones** (also in the Control panel) lists every connected phone. For each phone you can:
+
+- pick its macro; the choice is saved on ADBoard (`adboard-data/macro-assignments.json`), so it survives refreshes, reconnects and restarts
+- **Start**, **Pause** / **Resume** and **Stop** it
+- watch its live status: macro, cycle, step, touches and the last message
+
+**Start all** starts every online phone that has a macro and isn't running; **Stop all** stops every run.
+
+Each phone's run is independent:
+
+- S24 can play "Farm" while S23 plays "Collect", each with its own cycles and stop condition.
+- Stopping, pausing or failing one phone doesn't affect the others.
+- A phone has one run at a time. A second Start on a busy phone is refused and says which macro it is running.
+- Before every step the run checks that its phone is still connected. If it isn't, only that phone's run ends, with "Phone disconnected", and the phone is freed.
+- Offline phones can't be started.
+
+The tab **Run** button still works: it starts one run per ticked phone, skips busy or offline phones and lists them in the status, and **Stop** stops every phone running that tab.
 
 ## Running
 
-The agent plays each step (`POST /api/input/gesture`) on all of a tab's phones at once. It times touch-down, moves and release on its own clock.
+Runs live in ADBoard (the agent), not in the browser. A run keeps going when the browser that started it closes, and every open browser sees it live and can pause or stop it. Runs end when ADBoard itself is closed. Phone choices are kept, but runs have to be started again.
+
+The agent plays each step through the same path as `POST /api/input/gesture`. It times touch-down, moves and release on its own clock.
 
 - Each finger uses its own scrcpy pointer id (0–9). Android sees real multi-touch (`ACTION_POINTER_DOWN`/`UP`).
 - Every finger that went down is lifted, even if a write fails part-way or the browser disconnects mid-gesture. The gesture runs on its own task.
 - One gesture runs at a time per phone. Gestures from different tabs or browsers queue instead of mixing finger slots.
 - With no live screen, a one-finger step falls back to `adb shell input swipe`. Multi-touch needs the scrcpy session, which the agent starts if needed.
-- A phone that fails drops out of the run and the rest continue. **Stop** waits for the gesture in flight, which always finishes with its fingers lifted.
+- A phone that fails ends its own run and the rest continue. **Stop** waits for the gesture in flight, which always finishes with its fingers lifted.
+
+Agent API (the UI uses these; all need the session token):
+
+| Route | Does |
+|---|---|
+| `GET /api/macro/runs` | Every phone's live run (or last result), paused phones, queue progress |
+| `POST /api/macro/runs` `{tab, deviceIds, onlyStepId?}` | Play a tab: one run per phone. Returns `started` and `skipped` |
+| `POST /api/macro/runs/{tabId}/stop\|pause\|resume\|forget` | Act on every phone running that tab |
+| `POST /api/macro/devices/{deviceId}/start` `{tab? \| tabId?}` | Start one phone. No body plays its saved choice. 409 if it is busy, 400 if offline |
+| `POST /api/macro/devices/{deviceId}/stop\|pause\|resume` | Act on one phone only |
 
 **Repeat** sits next to the Run button, in the Macros editor and in the Control panel:
 
@@ -106,9 +138,23 @@ The dialog shows what will be imported and any notes before anything is saved. *
 
 Exporting back to Auto Clicker writes the same structure. A multi-touch step becomes one target per finger, because Auto Clicker plays one target at a time. An imported Auto Clicker file exports back unchanged.
 
+## Sharing and versions
+
+Macros, the queue, schedules and phone choices are shared through ADBoard (`/api/store/{name}`). Writes carry a revision number, so a stale browser never overwrites a newer copy.
+
+- When a browser's copy and ADBoard's differ, both are kept. Tabs are joined by id, and for the same tab the newer edit wins.
+- A browser that only holds the empty starter tab never uploads it over real macros.
+- Before a shared copy replaces a browser's own, that browser keeps a backup (the last 5).
+- ADBoard keeps the last 20 saved copies in `adboard-data/history/`.
+- **Versions** (next to Import / Export) lists both. **Restore** puts one back; a restore is itself a new version, so it can be undone.
+
+Macros lost before this protection existed were browser data, not code. Bring them back with **Import** from a saved `.adboard-macros.json` or Auto Clicker file.
+
 ## Limits
 
-- Tabs live in the browser that made them. Use Export / Import to move them to another browser or machine.
+- Use Export / Import to move macros to a different ADBoard.
+- Macros don't run while ADBoard is closed.
+- A real cable unplug mid-run is detected by the connection check before each step. Tests simulate it; check it on real phones.
 - Multi-touch and exact timing need the live scrcpy session. The ADB fallback covers one finger only.
 - The orientation check in runs uses the phone's reported size. The live preview warns using the real video size.
 - Live video needs a browser with H.264 WebCodecs (Chrome, Edge, Safari). Headless test browsers show the markers without the picture.
