@@ -74,7 +74,7 @@ pub fn online_check(state: AppState) -> OnlineCheck {
 /// Start `tab` on `device_ids` (the tab's own phones when empty): one run per
 /// phone, skipping phones that are offline or already running. Returns the
 /// phones started.
-pub async fn start_tab(state: &AppState, tab: MacroTab, device_ids: Vec<String>, only_step_id: Option<String>) -> Result<Vec<String>, String> {
+pub async fn start_tab(state: &AppState, tab: MacroTab, device_ids: Vec<String>, only_step_id: Option<String>) -> Result<macro_runner::StartReport, String> {
     let ids = if device_ids.is_empty() { tab.target_ids.clone() } else { device_ids };
     let devices = run_devices(state, &ids).await;
     macro_runner::runs().start(tab, devices, only_step_id, gesture_sender(state.clone()), Some(online_check(state.clone())))
@@ -253,7 +253,7 @@ pub fn run_queue(state: AppState) -> Result<(), String> {
             let outcome = match start_tab(&state, tab, Vec::new(), None).await {
                 Err(error) => ItemState { state: "skipped".into(), detail: Some(error) },
                 // Next item once every phone of this tab has finished.
-                Ok(started) => combine(&macro_runner::runs().wait_devices(&started).await),
+                Ok(report) => combine(&macro_runner::runs().wait_devices(&report.started).await),
             };
             set(&|p| {
                 p.states.insert(item.id.clone(), outcome.clone());

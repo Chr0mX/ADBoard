@@ -563,6 +563,14 @@ pub struct RunsView {
     pub paused: Vec<String>,
 }
 
+/// Which phones a tab-level start started, and why the others were skipped.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartReport {
+    pub started: Vec<String>,
+    pub skipped: BTreeMap<String, DeviceRunStatus>,
+}
+
 pub fn runs() -> &'static MacroRuns {
     static RUNS: OnceLock<MacroRuns> = OnceLock::new();
     RUNS.get_or_init(MacroRuns::default)
@@ -666,8 +674,8 @@ impl MacroRuns {
     }
 
     /// Start `tab` on each of `devices`: one independent run per phone.
-    /// Offline phones and phones that already have a run are skipped.
-    /// Returns the phones started; Err when none could start.
+    /// Offline phones and phones that already have a run are skipped (and
+    /// reported). Err when none could start.
     pub fn start(
         &'static self,
         tab: MacroTab,
@@ -675,24 +683,32 @@ impl MacroRuns {
         only_step_id: Option<String>,
         send: Sender,
         is_online: Option<OnlineCheck>,
-    ) -> Result<Vec<String>, String> {
-        let mut started = Vec::new();
-        let mut skipped = Vec::new();
+    ) -> Result<StartReport, String> {
+        let mut report = StartReport::default();
         for device in devices {
+            let id = device.id.clone();
+            let name = device.name.clone();
             if !device.online {
-                skipped.push(format!("{} is offline", device.name));
+                report.skipped.insert(id, DeviceRunStatus { name, state: "skipped".into(), detail: Some("offline".into()) });
                 continue;
             }
-            let id = device.id.clone();
+            let other = self.live().get(&id).map(|r| r.tab_name.clone());
             match self.start_device(tab.clone(), device, only_step_id.clone(), send.clone(), is_online.clone()) {
-                Ok(()) => started.push(id),
-                Err(error) => skipped.push(error),
+                Ok(()) => report.started.push(id),
+                Err(error) => {
+                    let detail = other.map(|t| format!("running \"{t}\"")).unwrap_or(error);
+                    report.skipped.insert(id, DeviceRunStatus { name, state: "busy".into(), detail: Some(detail) });
+                }
             }
         }
-        if started.is_empty() {
-            return Err(if skipped.is_empty() { "No phone ticked".into() } else { skipped.join("; ") });
+        if report.started.is_empty() {
+            return Err(if report.skipped.is_empty() {
+                "No phone ticked".into()
+            } else {
+                report.skipped.values().map(|r| format!("{} is {}", r.name, r.detail.clone().unwrap_or_default())).collect::<Vec<_>>().join("; ")
+            });
         }
-        Ok(started)
+        Ok(report)
     }
 
     fn act(&self, pick: impl Fn(&str, &LiveRun) -> bool, act: impl Fn(&LiveRun)) -> bool {
@@ -1003,7 +1019,7 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::new()));
         let tab = tab_with(("infinite", 0.0, 1.0), 1, 15.0);
         // Same macro on both phones = two runs; s23's gestures fail.
-        let started = reg.start(tab.clone(), vec![phone("s24"), phone("s23")], None, recording_sender(log.clone(), Some("s23")), None).unwrap();
+        let started = reg.start(tab.clone(), vec![phone("s24"), phone("s23")], None, recording_sender(log.clone(), Some("s23")), None).unwrap().started;
         assert_eq!(started.len(), 2);
         let failed = reg.wait_devices(&["s23".to_string()]).await;
         assert_eq!(failed[0].status, "failed");
@@ -1012,11 +1028,17 @@ mod tests {
         assert!(touches(&log, "s24") > before);
         // A tab-level start skips the busy phone and reports when none is free.
         assert!(reg.start(tab.clone(), vec![phone("s24")], None, recording_sender(log.clone(), None), None).is_err());
+        let other = tab_with(("cycles", 0.0, 1.0), 1, 0.0);
+        let report = reg.start(other, vec![phone("s24"), phone("p3")], None, recording_sender(log.clone(), None), None).unwrap();
+        assert_eq!(report.started, vec!["p3".to_string()]);
+        assert_eq!(report.skipped["s24"].state, "busy");
+        assert_eq!(report.skipped["s24"].detail.as_deref(), Some("running \"Tab\""));
+        reg.wait_devices(&report.started).await;
         assert!(reg.stop(&tab.id));
         let done = reg.wait_devices(&started).await;
         assert_eq!(done.iter().find(|r| r.device_id == "s24").unwrap().status, "stopped");
         reg.forget(&tab.id);
-        assert!(reg.view().runs.is_empty());
+        assert!(reg.view().runs.iter().all(|r| r.tab_id != tab.id), "forgotten tab leaves no results");
     }
 
     #[tokio::test]

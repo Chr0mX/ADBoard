@@ -848,7 +848,7 @@ async fn macro_run_start(State(state): State<AppState>, Json(body): Json<MacroRu
         Err(error) => return auth_error(StatusCode::BAD_REQUEST, &format!("macro tab is not valid: {error}")),
     };
     match crate::macro_automation::start_tab(&state, tab, body.device_ids, body.only_step_id).await {
-        Ok(started) => Json(serde_json::json!({ "ok": true, "started": started })).into_response(),
+        Ok(report) => Json(serde_json::json!({ "ok": true, "started": report.started, "skipped": report.skipped })).into_response(),
         Err(error) => auth_error(StatusCode::CONFLICT, &error),
     }
 }

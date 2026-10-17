@@ -317,6 +317,15 @@ function combine(list: AgentRun[]): RunSnapshot | null {
   };
 }
 
+/** Phones a tab's last Run press skipped (busy in another tab, offline), shown with its run. */
+const skippedRows = new Map<string, RunSnapshot["devices"]>();
+
+function withSkipped(tabId: string, snapshot: RunSnapshot | null): RunSnapshot | null {
+  const skipped = skippedRows.get(tabId);
+  if (!snapshot || !skipped) return snapshot;
+  return { ...snapshot, devices: { ...skipped, ...snapshot.devices } };
+}
+
 function agentLive(tabId: string) {
   return view.runs.some((r) => r.tabId === tabId && isLive(r));
 }
@@ -406,7 +415,7 @@ export function useRunVersion() {
 }
 
 export function runFor(tabId: string): RunSnapshot | null {
-  return agentMode() ? combine(tabRuns(tabId)) : localRunFor(tabId);
+  return agentMode() ? withSkipped(tabId, combine(tabRuns(tabId))) : localRunFor(tabId);
 }
 
 export function isRunning(tabId: string) {
@@ -436,8 +445,15 @@ export function startRun(tab: MacroTab, devices: Device[], onlyStepId?: string):
   if (!agentMode()) return localStartRun(tab, devices, onlyStepId);
   startPolling();
   if (lastStartError?.tabId === tab.id) lastStartError = null;
-  return agentPost<{ started?: string[] }>("", { tab, deviceIds: devices.map((d) => d.id), onlyStepId })
-    .then((data) => waitAgentFinished(data.started ?? devices.map((d) => d.id)))
+  skippedRows.delete(tab.id);
+  return agentPost<{ started?: string[]; skipped?: RunSnapshot["devices"] }>("", { tab, deviceIds: devices.map((d) => d.id), onlyStepId })
+    .then((data) => {
+      if (data.skipped && Object.keys(data.skipped).length > 0) {
+        skippedRows.set(tab.id, data.skipped);
+        notify();
+      }
+      return waitAgentFinished(data.started ?? devices.map((d) => d.id));
+    })
     .catch((error: unknown) => {
       lastStartError = { tabId: tab.id, message: error instanceof Error ? error.message : "could not start" };
       notify();
