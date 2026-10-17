@@ -102,7 +102,7 @@ export function MacrosPanel() {
   const [notice, setNotice] = useState<string | null>(null);
 
   return (
-    <PanelFrame title="Touch Macros" panel="macros">
+    <PanelFrame title="Macros" panel="macros">
       <MacroSyncNote />
       <TabStrip
         tabs={workspace.tabs}

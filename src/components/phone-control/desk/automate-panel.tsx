@@ -106,7 +106,7 @@ export function AutomatePanel() {
   return (
     <PanelFrame title="Shell Automation" panel="automate">
       <p className="text-sm text-[var(--pc-muted)]">
-        Shell Automation runs app, file and shell-command jobs on many phones. Finger-touch macros live in Touch Macros.
+        Shell Automation runs app, file and shell-command jobs on many phones. Finger-touch macros live in Macros.
       </p>
       <div className="flex flex-wrap gap-2" data-automate-tabs>
         {TABS.map((item) => (

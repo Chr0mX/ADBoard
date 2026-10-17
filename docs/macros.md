@@ -1,8 +1,8 @@
 # Touch macros
 
-**Touch Macros** (desk header → Touch Macros) replays taps, holds, swipes and multi-touch gestures on one or many phones. It reads Auto Clicker exports.
+**Macros** (desk header → Macros) replays taps, holds, swipes and multi-touch gestures on one or many phones. It reads Auto Clicker exports.
 
-Don't confuse it with **Shell Automation** (desk header → Shell Automation), the older panel for app, file and shell-command jobs (launch or stop apps, install APKs, move files, run `adb shell` commands). Touch Macros are finger touches played by ADBoard with exact timing on the agent; Shell Automation jobs run from the browser.
+Don't confuse it with **Shell Automation** (desk header → Shell Automation), the older panel for app, file and shell-command jobs (launch or stop apps, install APKs, move files, run `adb shell` commands). Macros are finger touches played by ADBoard with exact timing on the agent; Shell Automation jobs run from the browser.
 
 ## Virtual tabs
 
@@ -38,13 +38,13 @@ A step is 1–10 fingers played together, then a wait.
 
 ## Live view
 
-- **Touch Macros → Preview** has a row of phone chips (name, online dot; "in Control" marks the phone you are controlling) and a **Reference** chip. Tap a phone to draw the touch markers over its **live screen**; Reference shows the blank reference frame. The frame follows the real video size, so it follows rotation too. A badge shows *Live*, *Waiting for picture…*, *Connecting…* or *Video unavailable*. Untick **Live** to edit without streaming.
+- **Macros → Preview** has a row of phone chips (name, online dot; "in Control" marks the phone you are controlling) and a **Reference** chip. Tap a phone to draw the touch markers over its **live screen**; Reference shows the blank reference frame. The frame follows the real video size, so it follows rotation too. A badge shows *Live*, *Waiting for picture…*, *Connecting…* or *Video unavailable*. Untick **Live** to edit without streaming.
 - The preview opens on the phone you are controlling, else the first online ticked phone, else any online phone. Each tab remembers the last chip you picked.
 - While a tab runs, each touch flashes as a fading ring on the live preview and on the main Control screen.
 
 ## Macros in Control
 
-**Macro** in the Control tool row (and in the grid bar) opens a Touch Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet.
+**Macro** in the Control tool row (and in the grid bar) opens a Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet.
 
 Opened while a phone is selected, the panel belongs to **that phone**. Selecting another phone switches the panel to it. It has:
 
@@ -54,13 +54,13 @@ Opened while a phone is selected, the panel belongs to **that phone**. Selecting
 - the phone's live screen with the macro's markers and touch rings
 - the steps, each with ▶ Test (this phone only in *This phone* mode)
 - the **Phones** card
-- **Edit in Touch Macros**, which opens the full editor on this phone's macro and live screen
+- **Edit in Macros**, which opens the full editor on this phone's macro and live screen
 
 With no phone selected, the panel works on the shared tab and the Control targets.
 
 ## Phones: a macro per phone
 
-**Touch Macros → Phones** (also in the Control panel) lists every connected phone. For each phone you can:
+**Macros → Phones** (also in the Control panel) lists every connected phone. For each phone you can:
 
 - pick its macro; the choice is saved on ADBoard (`adboard-data/macro-assignments.json`), so it survives refreshes, reconnects and restarts
 - **Start**, **Pause** / **Resume** and **Stop** it

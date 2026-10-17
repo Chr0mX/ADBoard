@@ -215,7 +215,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v52"
+      data-ui-build="pc-shell-v53"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
@@ -365,7 +365,7 @@ export function PhoneControlApp() {
                 data-side-panel="macros"
                 className="flex min-h-0 w-[320px] shrink-0 flex-col gap-3 overflow-y-auto pb-2 xl:w-[360px]"
               >
-                <PanelHeader title="Touch Macros" side="right" onCollapse={() => setMacroDockOpen(false)} />
+                <PanelHeader title="Macros" side="right" onCollapse={() => setMacroDockOpen(false)} />
                 <MacroDock key={activeDevice?.id ?? "none"} devices={devices} controlTargets={broadcastTargets} activeDevice={activeDevice} />
               </aside>
             )}
@@ -375,12 +375,12 @@ export function PhoneControlApp() {
               <aside
                 role="dialog"
                 aria-modal="true"
-                aria-label="Touch Macros"
+                aria-label="Macros"
                 data-macro-sheet
                 className="fixed inset-0 z-40 flex flex-col gap-3 overflow-y-auto bg-[var(--pc-paper)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">Touch Macros</h2>
+                  <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">Macros</h2>
                   <Button type="button" variant="outline" className="h-11 min-w-11" onClick={() => setMacroDockOpen(false)}>
                     Close
                   </Button>
