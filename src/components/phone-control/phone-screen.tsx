@@ -950,7 +950,7 @@ export function PhoneScreen({
           size="none"
               pressed={macroDockOpen}
               onPressedChange={(on) => onMacroDockChange(on)}
-              aria-label={macroDockOpen ? "Hide macro" : "Macro"}
+              aria-label={macroDockOpen ? "Hide touch macro" : "Touch Macro"}
               data-macro-dock-toggle={macroDockOpen ? "1" : "0"}
               className={cn(
                 toolControlClass,
@@ -963,7 +963,7 @@ export function PhoneScreen({
                 data-macro-label
                 className={sideDock ? "inline" : "text-[9px] leading-none @5xl:text-xs @5xl:leading-4"}
               >
-                Macro
+                Touch Macro
               </span>
             </Toggle>
           )}

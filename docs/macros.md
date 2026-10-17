@@ -1,6 +1,8 @@
 # Touch macros
 
-**Macros** (desk header → Macros) replays taps, holds, swipes and multi-touch gestures on one or many phones. It reads Auto Clicker exports, and the older **Automate** panel stays as it was for app, file and shell steps.
+**Touch Macros** (desk header → Touch Macros) replays taps, holds, swipes and multi-touch gestures on one or many phones. It reads Auto Clicker exports.
+
+Don't confuse it with **Shell Automation** (desk header → Shell Automation), the older panel for app, file and shell-command jobs (launch or stop apps, install APKs, move files, run `adb shell` commands). Touch Macros are finger touches played by ADBoard with exact timing on the agent; Shell Automation jobs run from the browser.
 
 ## Virtual tabs
 
@@ -36,13 +38,13 @@ A step is 1–10 fingers played together, then a wait.
 
 ## Live view
 
-- **Macros → Preview** has a row of phone chips (name, online dot; "in Control" marks the phone you are controlling) and a **Reference** chip. Tap a phone to draw the touch markers over its **live screen**; Reference shows the blank reference frame. The frame follows the real video size, so it follows rotation too. A badge shows *Live*, *Waiting for picture…*, *Connecting…* or *Video unavailable*. Untick **Live** to edit without streaming.
+- **Touch Macros → Preview** has a row of phone chips (name, online dot; "in Control" marks the phone you are controlling) and a **Reference** chip. Tap a phone to draw the touch markers over its **live screen**; Reference shows the blank reference frame. The frame follows the real video size, so it follows rotation too. A badge shows *Live*, *Waiting for picture…*, *Connecting…* or *Video unavailable*. Untick **Live** to edit without streaming.
 - The preview opens on the phone you are controlling, else the first online ticked phone, else any online phone. Each tab remembers the last chip you picked.
 - While a tab runs, each touch flashes as a fading ring on the live preview and on the main Control screen.
 
 ## Macros in Control
 
-**Macros** in the Control tool row (and in the grid bar) opens a Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet.
+**Touch Macro** in the Control tool row (and in the grid bar) opens a Touch Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet.
 
 Opened while a phone is selected, the panel belongs to **that phone**. Selecting another phone switches the panel to it. It has:
 
@@ -52,13 +54,13 @@ Opened while a phone is selected, the panel belongs to **that phone**. Selecting
 - the phone's live screen with the macro's markers and touch rings
 - the steps, each with ▶ Test (this phone only in *This phone* mode)
 - the **Phones** card
-- **Edit in Macros**, which opens the full editor on this phone's macro and live screen
+- **Edit in Touch Macros**, which opens the full editor on this phone's macro and live screen
 
 With no phone selected, the panel works on the shared tab and the Control targets.
 
 ## Phones: a macro per phone
 
-**Macros → Phones** (also in the Control panel) lists every connected phone. For each phone you can:
+**Touch Macros → Phones** (also in the Control panel) lists every connected phone. For each phone you can:
 
 - pick its macro; the choice is saved on ADBoard (`adboard-data/macro-assignments.json`), so it survives refreshes, reconnects and restarts
 - **Start**, **Pause** / **Resume** and **Stop** it
@@ -126,7 +128,7 @@ Positions are stored in the tab's **reference screen**, the resolution the macro
 |---|---|
 | ADBoard macros (`"format": "adboard-macros"`) | Full fidelity. Bad values are repaired with a note; newer format versions are refused |
 | Auto Clicker config (`config.txt`, JSON array) | Each configuration becomes a tab. Auto Clicker does not store the screen size, so the dialog guesses one from the furthest point (for example 900×1600) and lets you pick a preset or a connected phone's size |
-| Older ADBoard Automate macro or desk export | Tap / double tap / long press / swipe / scroll / drag / pinch / recorded gesture / wait are converted from percent coordinates. App, file and shell steps stay in Automate |
+| Older ADBoard Shell Automation macro or desk export | Tap / double tap / long press / swipe / scroll / drag / pinch / recorded gesture / wait are converted from percent coordinates. App, file and shell steps stay in Automate |
 
 The dialog shows what will be imported and any notes before anything is saved. **Add as new tabs** or **Replace all tabs** decides where it goes. Corrupt JSON, empty files and unknown files are refused with a reason, and the saved tabs are left as they are.
 

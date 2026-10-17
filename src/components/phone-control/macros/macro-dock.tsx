@@ -94,7 +94,7 @@ export function MacroDock({
     <div className="flex min-w-0 flex-col gap-3" data-macro-dock data-macro-dock-phone={phone?.id ?? ""}>
       {phone && (
         <div className="flex items-center gap-2" data-macro-dock-header>
-          <span className="font-display text-sm font-semibold text-[var(--pc-ink)]">Macros · {phone.name}</span>
+          <span className="font-display text-sm font-semibold text-[var(--pc-ink)]">Touch Macros · {phone.name}</span>
           <span className={cn("font-mono text-[10px] uppercase", phone.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
             {phone.status}
           </span>
@@ -272,7 +272,7 @@ export function MacroDock({
           data-macro-dock-edit
         >
           <ExternalLink className="size-3.5" aria-hidden />
-          Edit in Macros
+          Edit in Touch Macros
         </button>
       )}
     </div>

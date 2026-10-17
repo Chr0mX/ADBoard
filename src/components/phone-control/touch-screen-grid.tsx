@@ -409,13 +409,13 @@ export function TouchScreenGrid({
               <button
                 type="button"
                 aria-pressed={macrosOpen}
-                aria-label={macrosOpen ? "Hide macro" : "Macro"}
+                aria-label={macrosOpen ? "Hide touch macro" : "Touch Macro"}
                 data-grid-macros
                 onClick={onToggleMacros}
                 className={cn(barBtn, !desktop && "min-w-0 flex-1 sm:flex-none")}
               >
                 <Zap className="size-3.5" />
-                <span data-macro-label>Macro</span>
+                <span data-macro-label>Touch Macro</span>
               </button>
             )}
             <button
