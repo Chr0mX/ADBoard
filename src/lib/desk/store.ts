@@ -85,10 +85,7 @@ export interface CoordOverride {
 }
 
 export interface DeviceProfile {
-  coordinateProfile: string;
   overrides: Record<string, CoordOverride>;
-  preferredResolution: string;
-  preferredFps: string;
   assignedMacros: string[];
 }
 
@@ -140,12 +137,18 @@ export const MACRO_FOLDERS = ["Testing", "Games", "Custom"] as const;
 
 export function emptyProfile(): DeviceProfile {
   return {
-    coordinateProfile: "relative",
     overrides: {},
-    preferredResolution: "",
-    preferredFps: "",
     assignedMacros: [],
   };
+}
+
+/** Only the fields profiles still use (older libraries also stored unused display settings). */
+function normalizeProfiles(profiles: Record<string, Partial<DeviceProfile>> | undefined): Record<string, DeviceProfile> {
+  const out: Record<string, DeviceProfile> = {};
+  for (const [id, profile] of Object.entries(profiles ?? {})) {
+    out[id] = { overrides: profile?.overrides ?? {}, assignedMacros: profile?.assignedMacros ?? [] };
+  }
+  return out;
 }
 
 const empty = (): DeskLibrary => ({
@@ -165,7 +168,7 @@ function normalize(parsed: Partial<DeskLibrary>): DeskLibrary {
   return {
     ...empty(),
     ...parsed,
-    profiles: parsed.profiles ?? {},
+    profiles: normalizeProfiles(parsed.profiles),
     history: parsed.history ?? [],
     tags: parsed.tags ?? {},
     groups: parsed.groups ?? [],

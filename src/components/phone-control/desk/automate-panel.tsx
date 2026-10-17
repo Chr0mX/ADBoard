@@ -54,6 +54,60 @@ const KINDS: Array<{ id: MacroStepKind; label: string; group: string }> = [
   { id: "shell", label: "Run Shell Command", group: "ADB" },
 ];
 
+const MAIN_TABS = [
+  ["library", "Library"],
+  ["builder", "Builder"],
+  ["groups", "Groups"],
+] as const;
+
+/** Less used tabs, folded into one menu. */
+const MORE_TABS = [
+  ["variables", "Variables", "Values like ${USERNAME} for Automation steps"],
+  ["profiles", "Profiles", "Per-phone settings for Automation macros"],
+  ["history", "History", "The last 30 Automation runs"],
+] as const;
+
+function MoreTabs({ tab, onPick }: { tab: string; onPick: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const current = MORE_TABS.find(([id]) => id === tab);
+  return (
+    <details
+      className="relative"
+      open={open}
+      onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
+      data-automate-more
+    >
+      <summary
+        aria-pressed={Boolean(current)}
+        className={`inline-flex h-11 cursor-pointer list-none items-center gap-1.5 rounded-lg px-3 text-sm ${current ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
+      >
+        {current ? `More: ${current[1]}` : "More"}
+        <span aria-hidden>▾</span>
+      </summary>
+      {open && (
+        <div className="absolute left-0 z-30 mt-1 flex w-64 flex-col rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg">
+          {MORE_TABS.map(([id, label, hint]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={tab === id}
+              className="flex flex-col items-start rounded-lg px-2 py-2 text-left hover:bg-[var(--pc-accent-soft)]"
+              onClick={() => {
+                onPick(id);
+                setOpen(false);
+              }}
+              data-automate-tab={id}
+            >
+              <span className="text-sm text-[var(--pc-ink)]">{label}</span>
+              <span className="text-[11px] text-[var(--pc-muted)]">{hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </details>
+  );
+}
+
 export function AutomatePanel() {
   const library = useLibrary();
   const desk = useDesk();
@@ -63,27 +117,20 @@ export function AutomatePanel() {
 
   return (
     <PanelFrame title="Automation" panel="automate">
-      <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["library", "Library"],
-            ["builder", "Builder"],
-            ["variables", "Variables"],
-            ["groups", "Groups"],
-            ["profiles", "Profiles"],
-            ["history", "History"],
-          ] as const
-        ).map(([id, label]) => (
+      <div className="flex flex-wrap gap-2" data-automate-tabs>
+        {MAIN_TABS.map(([id, label]) => (
           <button
             key={id}
             type="button"
             aria-pressed={tab === id}
             className={`h-11 rounded-lg px-3 text-sm ${tab === id ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
             onClick={() => setTab(id)}
+            data-automate-tab={id}
           >
             {label}
           </button>
         ))}
+        <MoreTabs tab={tab} onPick={setTab} />
       </div>
       {tab === "library" && (
         <MacroLibrary
@@ -667,6 +714,7 @@ function ProfilesEditor() {
   if (!device) return <p className="text-sm">No devices.</p>;
   return (
     <div className="flex flex-col gap-2" data-device-profile>
+      <p className="text-sm text-[var(--pc-muted)]">Per-phone settings for Automation macros.</p>
       <label className="text-sm">
         Device
         <select value={deviceId} onChange={(event) => setDeviceId(event.target.value)} className="mt-1 h-11 w-full rounded-lg border px-2">
@@ -683,22 +731,6 @@ function ProfilesEditor() {
         <dt>Serial</dt><dd className="font-mono text-xs">{device.serial}</dd>
         <dt>Host</dt><dd>{device.host}</dd>
       </dl>
-      <TextField
-        label="Coordinate profile"
-        value={profile.coordinateProfile}
-        onChange={(coordinateProfile) => save({ ...profile, coordinateProfile })}
-      />
-      <TextField
-        label="Preferred resolution"
-        value={profile.preferredResolution}
-        onChange={(preferredResolution) => save({ ...profile, preferredResolution })}
-        placeholder="1280x720"
-      />
-      <TextField
-        label="Preferred FPS"
-        value={profile.preferredFps}
-        onChange={(preferredFps) => save({ ...profile, preferredFps })}
-      />
       <label className="text-sm">
         Assigned macros
         <select
