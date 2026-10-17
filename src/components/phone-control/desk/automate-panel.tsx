@@ -54,59 +54,47 @@ const KINDS: Array<{ id: MacroStepKind; label: string; group: string }> = [
   { id: "shell", label: "Run Shell Command", group: "ADB" },
 ];
 
-const MAIN_TABS = [
-  ["library", "Library"],
-  ["builder", "Builder"],
-  ["groups", "Groups"],
+/** Tabs in the order you use them, each with a one-line hint and a plain explanation. */
+const TABS = [
+  {
+    id: "library",
+    label: "Library",
+    sub: "Saved jobs",
+    explain: "Your saved Automation jobs. Pick one to run it on the phones you tick, or open it in Builder.",
+  },
+  {
+    id: "builder",
+    label: "Builder",
+    sub: "Make a job",
+    explain:
+      "Make a job step by step: launch or stop apps, tap, type, wait, install APKs, move files, run shell commands. Example: Force Stop game → Launch game → Wait 10 s → Tap Start.",
+  },
+  {
+    id: "variables",
+    label: "Variables",
+    sub: "Per-phone values",
+    explain:
+      "Write ${NAME} in a step and it becomes this value when it runs: one value for every phone, or a different one per phone. Example: ${USERNAME} = farm01 on S24, farm02 on S23.",
+  },
+  {
+    id: "groups",
+    label: "Groups",
+    sub: "Phone sets",
+    explain: "Saved sets of phones. They also appear in the Devices sidebar to select many phones in one tap.",
+  },
+  {
+    id: "profiles",
+    label: "Profiles",
+    sub: "Per-phone settings",
+    explain: "Per-phone settings for Automation jobs: which jobs belong to this phone, and tags to sort phones.",
+  },
+  {
+    id: "history",
+    label: "History",
+    sub: "Past runs",
+    explain: "The last 30 Automation runs and how each phone did.",
+  },
 ] as const;
-
-/** Less used tabs, folded into one menu. */
-const MORE_TABS = [
-  ["variables", "Variables", "Values like ${USERNAME} for Automation steps"],
-  ["profiles", "Profiles", "Per-phone settings for Automation macros"],
-  ["history", "History", "The last 30 Automation runs"],
-] as const;
-
-function MoreTabs({ tab, onPick }: { tab: string; onPick: (id: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const current = MORE_TABS.find(([id]) => id === tab);
-  return (
-    <details
-      className="relative"
-      open={open}
-      onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
-      data-automate-more
-    >
-      <summary
-        aria-pressed={Boolean(current)}
-        className={`inline-flex h-11 cursor-pointer list-none items-center gap-1.5 rounded-lg px-3 text-sm ${current ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
-      >
-        {current ? `More: ${current[1]}` : "More"}
-        <span aria-hidden>▾</span>
-      </summary>
-      {open && (
-        <div className="absolute left-0 z-30 mt-1 flex w-64 flex-col rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg">
-          {MORE_TABS.map(([id, label, hint]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={tab === id}
-              className="flex flex-col items-start rounded-lg px-2 py-2 text-left hover:bg-[var(--pc-accent-soft)]"
-              onClick={() => {
-                onPick(id);
-                setOpen(false);
-              }}
-              data-automate-tab={id}
-            >
-              <span className="text-sm text-[var(--pc-ink)]">{label}</span>
-              <span className="text-[11px] text-[var(--pc-muted)]">{hint}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </details>
-  );
-}
 
 export function AutomatePanel() {
   const library = useLibrary();
@@ -117,21 +105,29 @@ export function AutomatePanel() {
 
   return (
     <PanelFrame title="Automation" panel="automate">
+      <p className="text-sm text-[var(--pc-muted)]">
+        Automation runs app, file and command jobs on many phones. Touch macros live in Macros.
+      </p>
       <div className="flex flex-wrap gap-2" data-automate-tabs>
-        {MAIN_TABS.map(([id, label]) => (
+        {TABS.map((item) => (
           <button
-            key={id}
+            key={item.id}
             type="button"
-            aria-pressed={tab === id}
-            className={`h-11 rounded-lg px-3 text-sm ${tab === id ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
-            onClick={() => setTab(id)}
-            data-automate-tab={id}
+            aria-pressed={tab === item.id}
+            className={`flex min-h-11 flex-col items-start justify-center rounded-lg px-3 py-1 text-left ${tab === item.id ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
+            onClick={() => setTab(item.id)}
+            data-automate-tab={item.id}
           >
-            {label}
+            <span className="text-sm leading-tight">{item.label}</span>
+            <span className={`text-[10px] leading-tight ${tab === item.id ? "text-white/80" : "text-[var(--pc-muted)]"}`}>{item.sub}</span>
           </button>
         ))}
-        <MoreTabs tab={tab} onPick={setTab} />
       </div>
+      {TABS.find((item) => item.id === tab) && (
+        <p className="text-xs text-[var(--pc-muted)]" data-automate-explain>
+          {TABS.find((item) => item.id === tab)!.explain}
+        </p>
+      )}
       {tab === "library" && (
         <MacroLibrary
           selectedId={macroId}
@@ -592,9 +588,6 @@ function VariablesEditor() {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-[var(--pc-muted)]">
-        Macros substitute ${"{USERNAME}"} from global values, then from the device.
-      </p>
       <ul className="font-mono text-xs">
         {Object.entries(library.variables).map(([key, item]) => (
           <li key={key}>
@@ -714,7 +707,6 @@ function ProfilesEditor() {
   if (!device) return <p className="text-sm">No devices.</p>;
   return (
     <div className="flex flex-col gap-2" data-device-profile>
-      <p className="text-sm text-[var(--pc-muted)]">Per-phone settings for Automation macros.</p>
       <label className="text-sm">
         Device
         <select value={deviceId} onChange={(event) => setDeviceId(event.target.value)} className="mt-1 h-11 w-full rounded-lg border px-2">
