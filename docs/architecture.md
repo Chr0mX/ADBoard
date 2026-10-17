@@ -7,8 +7,8 @@ ADBoard is a multi-device Android desk. The browser never talks to ADB or USB. A
 | Process | Path | Default port |
 |---|---|---|
 | Web UI | `src/` | 3847 (`next dev`) |
-| Agent / controller | `crates/phonecontrol-agent` | 3848 controller, 3849 agent |
-| Shared types | `crates/phonecontrol-protocol` | — |
+| Agent / controller | `crates/adboard-agent` | 3848 controller, 3849 agent |
+| Shared types | `crates/adboard-protocol` | — |
 
 The same binary is a **controller** (default) or an **agent** (`PHONECONTROL_ROLE=agent`). Controllers serve the API and UI, own local devices, and can aggregate remote agents over `/ws/agent`. Agents register with a controller and advertise an HTTP base for video proxy.
 
@@ -17,7 +17,7 @@ The same binary is a **controller** (default) or an **agent** (`PHONECONTROL_ROL
 ```text
 Application
 ├── Entry
-│   ├── crates/phonecontrol-agent/src/main.rs
+│   ├── crates/adboard-agent/src/main.rs
 │   └── src/app/page.tsx
 ├── Core
 │   ├── device_manager.rs   fleet, commands, QR, mesh merge

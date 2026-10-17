@@ -54,8 +54,8 @@
 | Piece | Path | Port |
 |---|---|---|
 | Next.js Web UI | `src/` | **3847** |
-| Rust binary (`adboard-agent`) | `crates/phonecontrol-agent` | **3848** controller / **3849** agent |
-| Shared protocol types | `crates/phonecontrol-protocol` | — |
+| Rust binary (`adboard-agent`) | `crates/adboard-agent` | **3848** controller / **3849** agent |
+| Shared protocol types | `crates/adboard-protocol` | — |
 
 Same binary, two roles via `--role` / `PHONECONTROL_ROLE`:
 
@@ -80,11 +80,11 @@ Default when scrcpy is missing (`PHONECONTROL_VIDEO_SOURCE=auto`):
 ```bash
 PHONECONTROL_FORCE_MOCK=1 \
 PHONECONTROL_VIDEO_SOURCE=testpattern \
-cargo run -p phonecontrol-agent
+cargo run -p adboard-agent
 ```
 
 - Prefers live **ffmpeg** `testsrc` → raw H264 on stdout when `ffmpeg` is on `PATH` (or `FFMPEG_PATH`)
-- Falls back to embedded fixture `crates/phonecontrol-agent/fixtures/testpattern.h264` (360×640 loop)
+- Falls back to embedded fixture `crates/adboard-agent/fixtures/testpattern.h264` (360×640 loop)
 - Session `backend` = `testpattern`, `stream` = `streaming` (honest — not a stub wallpaper)
 
 Opening the phone screen (or any client on the video WS) auto-starts the pump; closing the WS does **not** stop the session.
@@ -116,7 +116,7 @@ export ADB_PATH=$(which adb)
 export SCRCPY_PATH=/path/to/scrcpy
 export SCRCPY_SERVER_PATH=/path/to/scrcpy-server   # or scrcpy-server-v4.1
 export PHONECONTROL_VIDEO_SOURCE=auto
-cargo run -p phonecontrol-agent
+cargo run -p adboard-agent
 # UI → open online device → status shows backend: scrcpy / streaming + canvas frames
 ```
 
@@ -140,7 +140,7 @@ When the bind is not loopback, set `PHONECONTROL_TOKEN` so only clients that kno
 # Terminal 1 — controller (mock + synthetic video)
 PHONECONTROL_FORCE_MOCK=1 \
 PHONECONTROL_VIDEO_SOURCE=testpattern \
-cargo run -p phonecontrol-agent
+cargo run -p adboard-agent
 # → http://127.0.0.1:3848
 
 # Terminal 2 — Web UI
@@ -163,7 +163,7 @@ PHONECONTROL_HOST_ID=windows-host \
 PHONECONTROL_FORCE_MOCK=1 \
 PHONECONTROL_MOCK_PROFILE=windows \
 PHONECONTROL_VIDEO_SOURCE=testpattern \
-cargo run -p phonecontrol-agent
+cargo run -p adboard-agent
 
 # Terminal 2 — agent (lxc mock slice → registers + advertises http_base for video proxy)
 PHONECONTROL_ROLE=agent \
@@ -175,7 +175,7 @@ PHONECONTROL_MOCK_PROFILE=lxc \
 PHONECONTROL_VIDEO_SOURCE=testpattern \
 PHONECONTROL_CONTROLLER_URL=ws://127.0.0.1:3848/ws/agent \
 PHONECONTROL_HTTP_BASE=http://127.0.0.1:3849 \
-cargo run -p phonecontrol-agent
+cargo run -p adboard-agent
 
 # Terminal 3 — UI → controller
 NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848 npm run dev -- -p 3847
@@ -418,8 +418,8 @@ scripts/
   build-windows.sh
   package-windows.sh
 crates/
-  phonecontrol-protocol/   # shared wire types + mesh frames + coord/adb helpers
-  phonecontrol-agent/      # controller + agent binary + video hub
+  adboard-protocol/   # shared wire types + mesh frames + coord/adb helpers
+  adboard-agent/      # controller + agent binary + video hub
     fixtures/testpattern.h264
 dist/windows/              # Windows host pack (exe from make package-windows)
 src/                       # Next.js UI

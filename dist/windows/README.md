@@ -88,7 +88,7 @@ PHONECONTROL_HOST=lxc-agent-01 \
 PHONECONTROL_HOST_ID=lxc-agent-01 \
 PHONECONTROL_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
 PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
-cargo run -p phonecontrol-agent --release
+cargo run -p adboard-agent --release
 # or: ./adboard-agent
 ```
 

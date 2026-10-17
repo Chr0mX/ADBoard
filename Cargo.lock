@@ -3,6 +3,37 @@
 version = 4
 
 [[package]]
+name = "adboard-agent"
+version = "0.1.0"
+dependencies = [
+ "adboard-protocol",
+ "axum",
+ "futures-util",
+ "http-body-util",
+ "qrcode",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.26.2",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "adboard-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,37 +578,6 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "phonecontrol-agent"
-version = "0.1.0"
-dependencies = [
- "axum",
- "futures-util",
- "http-body-util",
- "phonecontrol-protocol",
- "qrcode",
- "ring",
- "rustls",
- "serde",
- "serde_json",
- "tokio",
- "tokio-tungstenite 0.26.2",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "phonecontrol-protocol"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "uuid",
-]
 
 [[package]]
 name = "pin-project-lite"

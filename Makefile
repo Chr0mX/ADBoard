@@ -28,7 +28,7 @@ package-windows:
 
 test-linux:
 	cargo test --workspace
-	cargo build -p phonecontrol-agent --release
+	cargo build -p adboard-agent --release
 
 clean-windows-dist:
 	rm -f $(DIST)/ADBoard.exe $(DIST)/PhoneControl.exe

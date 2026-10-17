@@ -5,7 +5,7 @@ import { devicesClient } from "@/lib/api/client";
 import { postScrcpyOptions } from "@/lib/scrcpy/client";
 import { patchScrcpyOptions, useScrcpyOptions } from "@/hooks/use-scrcpy-options";
 import { useStoredFlag } from "@/hooks/use-stored-flag";
-import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
+import { useDeskOptional } from "@/components/adboard/desk/desk-context";
 
 export const QUIET_MODE_KEY = "adboard-quiet-mode";
 

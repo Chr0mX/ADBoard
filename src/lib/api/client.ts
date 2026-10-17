@@ -764,12 +764,12 @@ function createDevicesClient(): DevicesClient {
   const agent = agentBaseUrl();
   if (agent !== null) {
     console.info(
-      "[phone-control] using agent at",
+      "[adboard] using agent at",
       agent || "same origin",
     );
     return createAgentDevicesClient(agent);
   }
-  console.info("[phone-control] NEXT_PUBLIC_AGENT_URL unset — using mock client");
+  console.info("[adboard] NEXT_PUBLIC_AGENT_URL unset — using mock client");
   return createMockDevicesClient();
 }
 

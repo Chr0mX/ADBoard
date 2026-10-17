@@ -32,8 +32,8 @@ if [[ "$TARGET" == *windows-gnu ]]; then
   fi
 fi
 
-echo "==> cargo build -p phonecontrol-agent --${PROFILE} --target ${TARGET}"
-cargo build -p phonecontrol-agent --"${PROFILE}" --target "${TARGET}"
+echo "==> cargo build -p adboard-agent --${PROFILE} --target ${TARGET}"
+cargo build -p adboard-agent --"${PROFILE}" --target "${TARGET}"
 
 EXE="target/${TARGET}/${PROFILE}/adboard-agent.exe"
 if [[ ! -f "$EXE" ]]; then

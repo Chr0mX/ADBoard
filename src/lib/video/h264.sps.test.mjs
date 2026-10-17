@@ -29,7 +29,7 @@ function annexBSps(bytes) {
 }
 
 const fixture = readFileSync(
-  new URL("../../../crates/phonecontrol-agent/fixtures/testpattern.h264", import.meta.url),
+  new URL("../../../crates/adboard-agent/fixtures/testpattern.h264", import.meta.url),
 );
 assert.deepEqual(spsDimensions(annexBSps(fixture)), { width: 360, height: 640 });
 
