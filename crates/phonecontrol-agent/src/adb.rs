@@ -277,11 +277,40 @@ fn parse_wm_size(text: &str) -> Option<DeviceResolution> {
 
 /// `wm size` arguments. `reset` / `native` clears the override. A size is
 /// `WIDTHxHEIGHT` in the display's natural orientation, 240–4096 on each side.
+/// Split `900x1600@320` into the size part and an optional density (dpi).
+fn split_density(spec: &str) -> Result<(&str, Option<u32>), String> {
+    match spec.split_once('@') {
+        None => Ok((spec, None)),
+        Some((size, dpi)) => {
+            if dpi.is_empty() || !dpi.chars().all(|c| c.is_ascii_digit()) {
+                return Err("density must look like 900x1600@320".into());
+            }
+            let dpi: u32 = dpi.parse().map_err(|_| "density must look like 900x1600@320")?;
+            if !(120..=640).contains(&dpi) {
+                return Err("density must be between 120 and 640 dpi".into());
+            }
+            Ok((size, Some(dpi)))
+        }
+    }
+}
+
+/// `wm density` for a display spec: `@320` sets it, `reset` resets it, a
+/// plain size leaves the phone's density alone.
+pub fn display_density_command(spec: &str) -> Result<Option<Vec<String>>, String> {
+    let spec = spec.trim();
+    if spec == "reset" || spec == "native" {
+        return Ok(Some(vec!["wm".into(), "density".into(), "reset".into()]));
+    }
+    let (_, dpi) = split_density(spec)?;
+    Ok(dpi.map(|d| vec!["wm".into(), "density".into(), d.to_string()]))
+}
+
 pub fn display_size_command(spec: &str) -> Result<Vec<String>, String> {
     let spec = spec.trim();
     if spec == "reset" || spec == "native" {
         return Ok(vec!["wm".into(), "size".into(), "reset".into()]);
     }
+    let (spec, _) = split_density(spec)?;
     let Some((width, height)) = spec.split_once('x') else {
         return Err("size must look like 1080x1920, or reset".into());
     };
@@ -964,6 +993,26 @@ OFFLINE1               offline usb:1-3 transport_id:4
         assert!(display_size_command("1080x1920; reboot").is_err());
         assert!(display_size_command("10x10").is_err());
         assert!(display_size_command("").is_err());
+    }
+
+    #[test]
+    fn display_spec_can_carry_a_density() {
+        assert_eq!(
+            display_size_command("900x1600@320").unwrap(),
+            vec!["wm".to_string(), "size".into(), "900x1600".into()]
+        );
+        assert_eq!(
+            display_density_command("900x1600@320").unwrap(),
+            Some(vec!["wm".to_string(), "density".into(), "320".into()])
+        );
+        assert_eq!(display_density_command("900x1600").unwrap(), None);
+        assert_eq!(
+            display_density_command("reset").unwrap(),
+            Some(vec!["wm".to_string(), "density".into(), "reset".into()])
+        );
+        assert!(display_size_command("900x1600@9999").is_err());
+        assert!(display_size_command("900x1600@").is_err());
+        assert!(display_size_command("900x1600@32a").is_err());
     }
 
     #[test]

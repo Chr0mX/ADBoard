@@ -9,6 +9,7 @@ import {
   sanitizeTab,
   type MacroTab,
 } from "@/lib/macro/core";
+import { createAgentSync } from "@/lib/sync/agent-store";
 
 /** Saved in this browser. Each tab keeps its own settings, steps and phones. */
 export interface MacroWorkspace {
@@ -52,8 +53,26 @@ export function normalizeWorkspace(value: unknown): MacroWorkspace {
   return { version: 1, tabs, activeId };
 }
 
+/** Shared with every browser on this ADBoard (agent /api/store/macros). */
+const sync = createAgentSync({
+  name: "macros",
+  getLocal: () => read(),
+  applyRemote: (value) => {
+    const next = normalizeWorkspace(value);
+    // Keep this browser's selected tab when it still exists.
+    const keep = cached?.activeId && next.tabs.some((t) => t.id === cached?.activeId) ? cached.activeId : next.activeId;
+    store({ ...next, activeId: keep });
+  },
+  isMeaningful: (value) => {
+    const ws = value as MacroWorkspace;
+    if (!ws || !Array.isArray(ws.tabs)) return false;
+    return ws.tabs.length > 1 || ws.tabs.some((t) => t.steps.length > 0 || t.name !== "Tab 1");
+  },
+});
+
 function read(): MacroWorkspace {
   if (typeof window === "undefined") return SERVER;
+  sync.start();
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(KEY);
@@ -71,6 +90,12 @@ function read(): MacroWorkspace {
 }
 
 function save(next: MacroWorkspace) {
+  store(next);
+  sync.push();
+}
+
+/** Write to this browser and notify, without sharing (used for remote copies). */
+function store(next: MacroWorkspace) {
   const raw = JSON.stringify(next);
   cached = next;
   cachedRaw = raw;
@@ -80,6 +105,11 @@ function save(next: MacroWorkspace) {
     // Storage full or blocked: keep working in memory for this visit.
   }
   listeners.forEach((listener) => listener());
+}
+
+/** Make sure the agent has this browser's latest macros. */
+export function flushMacrosToAgent() {
+  return sync.flush();
 }
 
 export function getWorkspace() {

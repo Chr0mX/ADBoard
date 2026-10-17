@@ -12,6 +12,9 @@ mod paths;
 mod scrcpy_control;
 mod scrcpy_video;
 mod session;
+mod macro_automation;
+mod macro_runner;
+mod shared_store;
 mod uploads;
 mod video;
 mod web_auth;
@@ -64,6 +67,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Macro schedules run on the agent, with or without a browser open.
+    macro_automation::spawn_scheduler(state.clone());
     let app = api::router(state);
     let addr = SocketAddr::from((bind_ip, port));
     let listener = tokio::net::TcpListener::bind(addr).await?;

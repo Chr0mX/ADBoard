@@ -112,6 +112,15 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/input/clipboard/pull", post(clipboard_pull))
         .route("/api/input/text", post(input_text))
         .route("/api/input/key", post(input_key))
+        .route("/api/macro/runs", get(macro_runs_list).post(macro_run_start))
+        .route("/api/macro/runs/{tab_id}/{action}", post(macro_run_action))
+        .route("/api/macro/queue/{action}", post(macro_queue_action))
+        .route(
+            "/api/store/{name}",
+            get(store_get)
+                .put(store_put)
+                .layer(DefaultBodyLimit::max(crate::shared_store::MAX_STORE_BYTES + 64 * 1024)),
+        )
         .route("/ws", get(ws_upgrade))
         .route("/ws/events", get(ws_upgrade))
         .route("/ws/agent", get(ws_agent_upgrade))
@@ -797,6 +806,100 @@ async fn input_gesture(
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StorePutBody {
+    value: serde_json::Value,
+    #[serde(default)]
+    base_rev: u64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MacroRunBody {
+    tab: serde_json::Value,
+    #[serde(default)]
+    device_ids: Vec<String>,
+    #[serde(default)]
+    only_step_id: Option<String>,
+}
+
+/// GET /api/macro/runs — live runs, last results and the queue, for every browser.
+async fn macro_runs_list() -> Response {
+    let view = crate::macro_runner::runs().view();
+    Json(serde_json::json!({
+        "version": view.version,
+        "runs": view.runs,
+        "paused": view.paused,
+        "queue": crate::macro_automation::queue_progress(),
+    }))
+    .into_response()
+}
+
+/// POST /api/macro/runs — play a tab on the agent (it keeps going when the browser closes).
+async fn macro_run_start(State(state): State<AppState>, Json(body): Json<MacroRunBody>) -> Response {
+    let tab: crate::macro_runner::MacroTab = match serde_json::from_value(body.tab) {
+        Ok(tab) => tab,
+        Err(error) => return auth_error(StatusCode::BAD_REQUEST, &format!("macro tab is not valid: {error}")),
+    };
+    match crate::macro_automation::start_tab(&state, tab, body.device_ids, body.only_step_id).await {
+        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(error) => auth_error(StatusCode::CONFLICT, &error),
+    }
+}
+
+/// POST /api/macro/runs/{tabId}/stop|pause|resume|forget
+async fn macro_run_action(Path((tab_id, action)): Path<(String, String)>) -> Response {
+    let runs = crate::macro_runner::runs();
+    let ok = match action.as_str() {
+        "stop" => runs.stop(&tab_id),
+        "pause" => runs.pause(&tab_id),
+        "resume" => runs.resume(&tab_id),
+        "forget" => {
+            runs.forget(&tab_id);
+            true
+        }
+        "stop-all" => {
+            runs.stop_all();
+            true
+        }
+        _ => return auth_error(StatusCode::NOT_FOUND, "unknown action"),
+    };
+    Json(serde_json::json!({ "ok": ok })).into_response()
+}
+
+/// POST /api/macro/queue/run|stop
+async fn macro_queue_action(State(state): State<AppState>, Path(action): Path<String>) -> Response {
+    match action.as_str() {
+        "run" => match crate::macro_automation::run_queue(state) {
+            Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+            Err(error) => auth_error(StatusCode::CONFLICT, &error),
+        },
+        "stop" => Json(serde_json::json!({ "ok": crate::macro_automation::stop_queue() })).into_response(),
+        _ => auth_error(StatusCode::NOT_FOUND, "unknown action"),
+    }
+}
+
+/// GET /api/store/{name} — the shared copy every browser reads.
+async fn store_get(Path(name): Path<String>) -> Response {
+    match crate::shared_store::store().get(&name) {
+        Some(stored) => Json(stored).into_response(),
+        None => auth_error(StatusCode::NOT_FOUND, "unknown store"),
+    }
+}
+
+/// PUT /api/store/{name} — save if `baseRev` is current, else 409 with the current copy.
+async fn store_put(Path(name): Path<String>, Json(body): Json<StorePutBody>) -> Response {
+    use crate::shared_store::PutError;
+    match crate::shared_store::store().put(&name, body.value, body.base_rev) {
+        Ok(rev) => Json(serde_json::json!({ "rev": rev })).into_response(),
+        Err(PutError::UnknownName) => auth_error(StatusCode::NOT_FOUND, "unknown store"),
+        Err(PutError::TooLarge) => auth_error(StatusCode::PAYLOAD_TOO_LARGE, "too large"),
+        Err(PutError::Conflict(current)) => (StatusCode::CONFLICT, Json(current)).into_response(),
+        Err(PutError::Io(error)) => auth_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+    }
 }
 
 async fn input_refresh(

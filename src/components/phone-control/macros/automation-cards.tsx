@@ -143,8 +143,8 @@ export function ScheduleCard({ tabs, activeTab }: { tabs: MacroTab[]; activeTab:
   return (
     <Card title={`Schedule (${schedules.length})`} data-macro-schedule>
       <p className="text-xs text-[var(--pc-muted)]">
-        Runs only while an ADBoard page is open on this computer (the agent has no macro runner of its own). A slot missed
-        while closed runs once when the page is back.
+        Schedules run on the ADBoard agent, even with no browser open. A slot missed while the agent was off runs once
+        when it is back.
       </p>
       <form
         className="flex flex-wrap items-end gap-2"

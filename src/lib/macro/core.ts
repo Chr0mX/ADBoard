@@ -78,6 +78,12 @@ export interface MacroTab {
   steps: MacroStep[];
   /** Phones this tab runs on. */
   targetIds: string[];
+  /**
+   * Screen density the macro was made at (e.g. 320). Touches are scaled by
+   * resolution only, but games lay out in dp, so phones should match this
+   * density too for taps to land on the same buttons. Optional.
+   */
+  referenceDpi?: number;
   notes: string;
   source?: MacroSource;
   createdAt: number;
@@ -460,6 +466,9 @@ export function sanitizeTab(raw: unknown, index: number, warnings: string[]): Ma
     jitterPx: clamp(round(num(raw.jitterPx, 0)), 0, 200),
     steps,
     targetIds: Array.isArray(raw.targetIds) ? raw.targetIds.filter((v): v is string => typeof v === "string").slice(0, 200) : [],
+    ...(Number.isFinite(Number(raw.referenceDpi)) && Number(raw.referenceDpi) >= 120 && Number(raw.referenceDpi) <= 640
+      ? { referenceDpi: Math.round(Number(raw.referenceDpi)) }
+      : {}),
     notes: str(raw.notes, "", 2000),
     ...(source ? { source } : {}),
     createdAt: num(raw.createdAt, now),

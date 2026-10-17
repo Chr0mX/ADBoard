@@ -18,6 +18,7 @@ import {
   Upload,
 } from "lucide-react";
 import { saveBlob } from "@/lib/api/download";
+import { devicesClient } from "@/lib/api/client";
 import {
   MAX_REFERENCE,
   MAX_STEPS,
@@ -51,6 +52,7 @@ import {
   forgetRun,
   isPaused,
   isRunning,
+  lastStartError,
   pauseRun,
   resumeRun,
   runFor,
@@ -67,6 +69,7 @@ import { LivePreview, MacroPreview, type FingerEnd } from "@/components/phone-co
 import { AddStepBar, StepList, makeStep } from "@/components/phone-control/macros/step-list";
 import { ImportDialog } from "@/components/phone-control/macros/import-dialog";
 import { QueueCard, ScheduleCard } from "@/components/phone-control/macros/automation-cards";
+import { useSyncStatus } from "@/lib/sync/agent-store";
 
 /** Per-tab view state (selected step, preview screen) survives switching tabs. */
 const viewState = new Map<string, { stepId: string | null; previewId: string }>();
@@ -81,6 +84,7 @@ export function MacrosPanel() {
 
   return (
     <PanelFrame title="Macros" panel="macros">
+      <MacroSyncNote />
       <TabStrip
         tabs={workspace.tabs}
         activeId={active?.id ?? null}
@@ -532,6 +536,7 @@ function SettingsCard({
             </select>
           </label>
         </div>
+        <ReferenceDensity tab={tab} devices={devices} onChange={onChange} />
         <SwitchRow
           label="Move touches with the resolution"
           description="Keeps every touch on the same spot when the reference size changes"
@@ -705,6 +710,11 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
           </button>
         )}
       </div>
+      {!running && lastStartError?.tabId === tab.id && (
+        <p className="text-xs text-[var(--pc-warn)]" data-macro-start-error>
+          {lastStartError.message}
+        </p>
+      )}
       {!running && (onlineTargets.length === 0 || enabled === 0) && (
         <p className="text-xs text-[var(--pc-muted)]">
           {enabled === 0 ? "Add or enable a step to run." : "Tick at least one online phone."}
@@ -713,6 +723,100 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
 
       <RunStatus tab={tab} />
     </Card>
+  );
+}
+
+/**
+ * Density the macro was made at. Touch positions only scale with resolution,
+ * but games lay out their buttons in dp: a phone at the same resolution and
+ * another density shows them elsewhere. "Match phones" sets both.
+ */
+function ReferenceDensity({
+  tab,
+  devices,
+  onChange,
+}: {
+  tab: MacroTab;
+  devices: Device[];
+  onChange: (change: (tab: MacroTab) => MacroTab) => void;
+}) {
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const dpi = tab.referenceDpi;
+  const phones = devices.filter((d) => tab.targetIds.includes(d.id) && d.status === "online");
+  const match = async () => {
+    if (!dpi || phones.length === 0) return;
+    setBusy(true);
+    try {
+      const result = await devicesClient.runCommand(phones, "displaySize", `${tab.reference.width}x${tab.reference.height}@${dpi}`);
+      const failed = result.results.filter((r) => !r.ok);
+      setNote(
+        failed.length === 0
+          ? `${phones.length} phone${phones.length === 1 ? "" : "s"} set to ${tab.reference.width}×${tab.reference.height} @ ${dpi} dpi`
+          : failed.map((r) => `${r.deviceName}: ${r.error || "failed"}`).join(" · "),
+      );
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : "Could not set the screen");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1.5" data-macro-dpi>
+      <div className="flex flex-wrap items-end gap-2">
+        <NumField
+          label="Made at density"
+          suffix="dpi"
+          value={dpi ?? 0}
+          min={0}
+          max={640}
+          onChange={(value) =>
+            onChange((t) => {
+              const next = { ...t };
+              if (value >= 120 && value <= 640) next.referenceDpi = Math.round(value);
+              else delete next.referenceDpi;
+              return next;
+            })
+          }
+          data-reference-dpi
+        />
+        <button
+          type="button"
+          className="pc-toggle pc-toggle-md"
+          disabled={!dpi || phones.length === 0 || busy}
+          onClick={() => void match()}
+          title="Set this tab's phones to the reference resolution and density (wm size + wm density)"
+          data-macro-match-screen
+        >
+          Match phones to {tab.reference.width}×{tab.reference.height}
+          {dpi ? ` @ ${dpi}` : ""}
+        </button>
+      </div>
+      <p className="text-[11px] leading-relaxed text-[var(--pc-muted)]">
+        {dpi
+          ? `Made for ${tab.reference.width}×${tab.reference.height} @ ${dpi} dpi. Touches scale with resolution; matching the density keeps game buttons where the macro expects them.`
+          : "Optional: the dpi of the screen the macro was made on (e.g. 320 for a 900×1600 emulator). 0 = not set."}
+      </p>
+      {note && <p className="font-mono text-[10px] text-[var(--pc-muted)]" data-macro-dpi-note>{note}</p>}
+    </div>
+  );
+}
+
+/** Where macros are kept: shared through the agent, or only in this browser. */
+export function MacroSyncNote() {
+  const status = useSyncStatus("macros");
+  if (status.state === "pending") return null;
+  const text =
+    status.state === "shared"
+      ? "Shared with every browser on this ADBoard · runs keep going on the phones when a browser closes"
+      : status.message ?? "Saved in this browser only";
+  return (
+    <p
+      data-macro-sync={status.state}
+      className={cn("font-mono text-[10px]", status.state === "conflict" ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]")}
+    >
+      {text}
+    </p>
   );
 }
 

@@ -32,6 +32,8 @@ const DISPLAY_SIZES = [
   { id: "900x1600", label: "900×1600", arg: "900x1600" },
   { id: "1080x1920", label: "16:9", arg: "1080x1920" },
   { id: "1080x2400", label: "20:9", arg: "1080x2400" },
+  // Size and density, for macros made on a 900×1600, 320 dpi emulator.
+  { id: "900x1600@320", label: "900×1600 · 320 dpi", arg: "900x1600@320" },
 ] as const;
 
 export function ScrcpyOptions({

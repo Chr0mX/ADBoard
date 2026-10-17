@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { createAgentSync } from "@/lib/sync/agent-store";
 
 export interface AppShortcut {
   id: string;
@@ -172,8 +173,27 @@ function normalize(parsed: Partial<DeskLibrary>): DeskLibrary {
   };
 }
 
+/** Shared with every browser on this ADBoard (agent /api/store/desk). */
+const sync = createAgentSync({
+  name: "desk",
+  getLocal: () => read(),
+  applyRemote: (value) => storeLibrary(normalize((value ?? {}) as Partial<DeskLibrary>)),
+  isMeaningful: (value) => {
+    const lib = value as DeskLibrary;
+    if (!lib) return false;
+    return (
+      (lib.macros?.length ?? 0) > 0 ||
+      (lib.groups?.length ?? 0) > 0 ||
+      (lib.apps?.length ?? 0) > 0 ||
+      Object.keys(lib.variables ?? {}).length > 0 ||
+      Object.keys(lib.profiles ?? {}).length > 0
+    );
+  },
+});
+
 function read(): DeskLibrary {
   if (typeof window === "undefined") return SERVER_LIBRARY;
+  sync.start();
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(KEY);
@@ -199,10 +219,20 @@ export function getLibrary(): DeskLibrary {
 }
 
 export function saveLibrary(next: DeskLibrary) {
+  storeLibrary(next);
+  sync.push();
+}
+
+/** Write to this browser and notify, without sharing (used for remote copies). */
+function storeLibrary(next: DeskLibrary) {
   const raw = JSON.stringify(next);
   cached = next;
   cachedRaw = raw;
-  localStorage.setItem(KEY, raw);
+  try {
+    localStorage.setItem(KEY, raw);
+  } catch {
+    // Storage full or blocked: keep it in memory for this visit.
+  }
   listeners.forEach((listener) => listener());
 }
 

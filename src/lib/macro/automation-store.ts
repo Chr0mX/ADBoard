@@ -2,8 +2,10 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import type { Device } from "@/lib/devices/types";
-import { getWorkspace } from "@/lib/macro/store";
-import { isRunning, startRun, stopRun } from "@/lib/macro/runs";
+import { flushMacrosToAgent, getWorkspace } from "@/lib/macro/store";
+import { isRunning, onAgentView, refreshRuns, startRun, stopRun } from "@/lib/macro/runs";
+import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
+import { createAgentSync } from "@/lib/sync/agent-store";
 import {
   dueSchedules,
   normalizeQueue,
@@ -15,11 +17,14 @@ import {
 } from "@/lib/macro/automation";
 
 /*
- * Browser state for the macro task queue and scheduler. Only tab ids and
- * times are stored; macros themselves stay in the macro workspace. Every run
- * goes through `startRun`, so device locks, Pause and Stop work the same as
- * the Run button. Each tab plays on its own ticked phones.
+ * Macro task queue and scheduler. Only tab ids and times are stored, shared
+ * with every browser through the agent (/api/store/macro-queue and
+ * /macro-schedules). With an agent, the queue and the schedules run ON the
+ * agent (they keep going with no browser open and never double-fire); only
+ * the in-browser mock (no agent) still runs them here. Each tab plays on its
+ * own ticked phones.
  */
+const viaAgent = () => typeof window !== "undefined" && agentBaseUrl() !== null;
 
 const QUEUE_KEY = "adboard-macro-queue";
 const SCHEDULE_KEY = "adboard-macro-schedules";
@@ -47,7 +52,34 @@ function subscribe(listener: () => void) {
 }
 
 let cache: { queue: QueueItem[]; schedules: MacroSchedule[] } | null = null;
+
+function applyShared(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value ?? []));
+  } catch {
+    // kept in memory below
+  }
+  cache = null;
+  notify();
+}
+const queueSync = createAgentSync({
+  name: "macro-queue",
+  getLocal: () => read().queue,
+  applyRemote: (value) => applyShared(QUEUE_KEY, normalizeQueue(value)),
+  isMeaningful: (value) => Array.isArray(value) && value.length > 0,
+});
+const scheduleSync = createAgentSync({
+  name: "macro-schedules",
+  getLocal: () => read().schedules,
+  applyRemote: (value) => applyShared(SCHEDULE_KEY, normalizeSchedules(value)),
+  isMeaningful: (value) => Array.isArray(value) && value.length > 0,
+});
+
 function read() {
+  if (typeof window !== "undefined") {
+    queueSync.start();
+    scheduleSync.start();
+  }
   if (cache) return cache;
   const parse = (key: string) => {
     try {
@@ -68,6 +100,8 @@ function write(next: { queue?: QueueItem[]; schedules?: MacroSchedule[] }) {
   } catch {
     // private mode: kept for this page only
   }
+  if (next.queue) queueSync.push();
+  if (next.schedules) scheduleSync.push();
   notify();
 }
 
@@ -103,9 +137,28 @@ let devicesNow: Device[] = [];
 let queueRun: { controller: AbortController; currentTabId: string | null } | null = null;
 let queueProgress: QueueProgress | null = null;
 
+/* Agent queue progress, from the runs poll (GET /api/macro/runs). */
+let agentQueue: QueueProgress | null = null;
+if (typeof window !== "undefined") {
+  onAgentView((view) => {
+    const next = (view.queue ?? null) as QueueProgress | null;
+    if (JSON.stringify(next) !== JSON.stringify(agentQueue)) {
+      agentQueue = next;
+      notify();
+    }
+  });
+}
+
 export function useQueueProgress() {
   useSyncExternalStore(subscribe, () => version, () => 0);
+  if (viaAgent()) return { progress: agentQueue, running: Boolean(agentQueue?.running) };
   return { progress: queueProgress, running: queueRun !== null };
+}
+
+async function queueAction(action: "run" | "stop") {
+  const res = await agentFetch(`${agentBaseUrl() ?? ""}/api/macro/queue/${action}`, { method: "POST" });
+  await refreshRuns();
+  return res.ok;
 }
 
 function tabDevices(tabId: string) {
@@ -116,6 +169,11 @@ function tabDevices(tabId: string) {
 
 /** Play the queue once, in order. Resolves when it ends; false if already running. */
 export async function runQueue(): Promise<boolean> {
+  if (viaAgent()) {
+    // The agent plays what it has: hand it this browser's latest edits first.
+    await Promise.all([queueSync.flush(), flushMacrosToAgent()]);
+    return queueAction("run");
+  }
   if (queueRun) return false;
   const items = read().queue;
   if (items.length === 0) return false;
@@ -147,6 +205,10 @@ export async function runQueue(): Promise<boolean> {
 
 /** Stop the tab playing now and skip the rest of the queue. */
 export function stopQueue() {
+  if (viaAgent()) {
+    void queueAction("stop");
+    return;
+  }
   if (!queueRun) return;
   queueRun.controller.abort();
   if (queueRun.currentTabId) stopRun(queueRun.currentTabId);
@@ -198,6 +260,8 @@ export function useMacroAutomation(devices: Device[]) {
     devicesNow = devices;
   }, [devices]);
   useEffect(() => {
+    // With an agent, schedules fire on the agent (no browser needed).
+    if (viaAgent()) return;
     const tick = () => {
       const now = Date.now();
       for (const schedule of dueSchedules(read().schedules, now)) fireSchedule(schedule, now);

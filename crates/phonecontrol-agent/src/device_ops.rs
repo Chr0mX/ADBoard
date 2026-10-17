@@ -381,10 +381,18 @@ pub async fn set_display_size(adb: &Path, serial: &str, spec: &str) -> Result<St
     rest.extend(wm);
     let refs: Vec<&str> = rest.iter().map(String::as_str).collect();
     adb_text(adb, &adb_args(serial, &refs)).await?;
+    // Games lay out in dp: matching the density too keeps their buttons where
+    // a macro recorded at that size and dpi expects them.
+    if let Some(density) = crate::adb::display_density_command(spec)? {
+        let mut rest = vec!["shell".to_string()];
+        rest.extend(density);
+        let refs: Vec<&str> = rest.iter().map(String::as_str).collect();
+        adb_text(adb, &adb_args(serial, &refs)).await?;
+    }
     if spec.trim() == "reset" || spec.trim() == "native" {
-        Ok("display size reset to the panel".into())
+        Ok("display size and density reset to the panel".into())
     } else {
-        Ok(format!("display size {}", spec.trim()))
+        Ok(format!("display {}", spec.trim().replace('@', " @ ") + if spec.contains('@') { " dpi" } else { "" }))
     }
 }
 

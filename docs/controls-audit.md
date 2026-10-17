@@ -44,7 +44,7 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 | Clipboard Sync | Manual existing + **auto added** | "Sync clipboard" switch:<br>• Phone copies go to the PC clipboard.<br>• Ctrl/Cmd+V pastes the PC clipboard on the targets (scrcpy `SET_CLIPBOARD` with paste).<br>The browser must allow clipboard access (HTTPS or localhost); otherwise it says so and Ctrl+V goes through as a key. |
 | Always on Top | **Added (view only)** | "Pop out": the live screen in the browser's picture-in-picture window, which stays on top. A page can't pin its own window, and the pop-out can't send input. |
 
-## 4. Automation and macros (one engine: `src/lib/macro`)
+## 4. Automation and macros (one engine, running on the agent)
 
 | Control | Status | Where / how |
 | --- | --- | --- |
@@ -56,7 +56,10 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 | Import / Export Config | Existing | `.adboard-macros.json` and Auto Clicker |
 | Loop | Existing | Forever / cycles / time limit |
 | Task Queue | **Added** | Macros → Queue. Plays tabs in order through the same runner. A failed tab is noted and the queue moves on. Stop ends the queue. Saved as tab ids only. |
-| Scheduler | **Added** | Macros → Schedule. Plays a tab or the queue once, or every N minutes. It runs only while an ADBoard page is open, because the agent has no macro runner. Slots missed while closed run once when the page is back. |
+| Scheduler | **Added** | Macros → Schedule. Plays a tab or the queue once, or every N minutes. Runs on the agent, even with no browser open. A slot missed while the agent was off runs once when it is back. |
+| Shared macros | **Added** | Macros, the Automate library (groups, variables), the queue and schedules are kept on the agent (`adboard-data/` next to the executable, `/api/store/{name}`). Every browser on the same ADBoard sees and edits the same copy; each browser's storage is only a cache. On first load a browser adopts the agent's copy; an empty browser never overwrites it. |
+| Runs per phone | **Added** | A run lives on the agent, tied to its phones (`/api/macro/runs`), not to the browser that pressed Run. Every browser sees it live and can pause or stop it, and it keeps going when that browser closes. |
+| Density matching | **Added** | Touch positions scale with resolution, so dpi does not move them; but games lay out their buttons in dp. Size → "900×1600 · 320 dpi" sets `wm size` and `wm density` on every online phone. A macro tab can store the dpi it was made at, with "Match phones to this". "Each phone" resets both. (**device**) |
 
 ## iPhone Home Screen app
 
