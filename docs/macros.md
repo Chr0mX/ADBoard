@@ -165,4 +165,4 @@ Macros lost before this protection existed were browser data, not code. Bring th
 - Multi-touch and exact timing need the live scrcpy session. The ADB fallback covers one finger only.
 - The orientation check in runs uses the phone's reported size. The live preview warns using the real video size.
 - Live video needs a browser with H.264 WebCodecs (Chrome, Edge, Safari). Headless test browsers show the markers without the picture.
-- Mock fleet (`PHONECONTROL_FORCE_MOCK=1`): gestures keep their timing and report *Mock (not sent)*.
+- Mock fleet (`ADBOARD_FORCE_MOCK=1`): gestures keep their timing and report *Mock (not sent)*.

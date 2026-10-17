@@ -57,7 +57,7 @@
 | Rust binary (`adboard-agent`) | `crates/adboard-agent` | **3848** controller / **3849** agent |
 | Shared protocol types | `crates/adboard-protocol` | — |
 
-Same binary, two roles via `--role` / `PHONECONTROL_ROLE`:
+Same binary, two roles via `--role` / `ADBOARD_ROLE`:
 
 - **controller** (default) — serves the UI API, owns local devices, aggregates remote agents, **proxies video WS**
 - **agent** — local ADB/scrcpy/testpattern only; registers with a controller over WebSocket
@@ -75,11 +75,11 @@ UI decodes with **WebCodecs** `VideoDecoder` onto a canvas. Switching the active
 
 ### Synthetic test pattern (no phones / no scrcpy)
 
-Default when scrcpy is missing (`PHONECONTROL_VIDEO_SOURCE=auto`):
+Default when scrcpy is missing (`ADBOARD_VIDEO_SOURCE=auto`):
 
 ```bash
-PHONECONTROL_FORCE_MOCK=1 \
-PHONECONTROL_VIDEO_SOURCE=testpattern \
+ADBOARD_FORCE_MOCK=1 \
+ADBOARD_VIDEO_SOURCE=testpattern \
 cargo run -p adboard-agent
 ```
 
@@ -91,14 +91,14 @@ Opening the phone screen (or any client on the video WS) auto-starts the pump; c
 
 ### Real scrcpy (raw H264 → WebSocket)
 
-When **ADB** and **scrcpy-server** are available and `PHONECONTROL_VIDEO_SOURCE=auto|scrcpy`, session start:
+When **ADB** and **scrcpy-server** are available and `ADBOARD_VIDEO_SOURCE=auto|scrcpy`, session start:
 
 1. `adb push` the server jar to the device  
 2. `adb forward tcp:PORT localabstract:scrcpy`  
 3. Runs the **standalone server** (not the GUI client) with:
 
 ```bash
-CLASSPATH=/data/local/tmp/phonecontrol-scrcpy-server.jar \
+CLASSPATH=/data/local/tmp/adboard-scrcpy-server.jar \
   app_process / com.genymobile.scrcpy.Server <version> \
   tunnel_forward=true audio=false control=true cleanup=false \
   raw_stream=true send_dummy_byte=true video_codec=h264 max_size=1280
@@ -115,12 +115,12 @@ CLASSPATH=/data/local/tmp/phonecontrol-scrcpy-server.jar \
 export ADB_PATH=$(which adb)
 export SCRCPY_PATH=/path/to/scrcpy
 export SCRCPY_SERVER_PATH=/path/to/scrcpy-server   # or scrcpy-server-v4.1
-export PHONECONTROL_VIDEO_SOURCE=auto
+export ADBOARD_VIDEO_SOURCE=auto
 cargo run -p adboard-agent
 # UI → open online device → status shows backend: scrcpy / streaming + canvas frames
 ```
 
-Without phones in this VM, CI uses the Annex-B reader + fixture path (`PHONECONTROL_SCRCPY_FIXTURE=1` forces `backend: scrcpy` with the embedded H264 loop).
+Without phones in this VM, CI uses the Annex-B reader + fixture path (`ADBOARD_SCRCPY_FIXTURE=1` forces `backend: scrcpy` with the embedded H264 loop).
 
 ## Run on Windows (operator)
 
@@ -132,14 +132,14 @@ http://127.0.0.1:3848/
 
 Details: [`dist/windows/README.md`](dist/windows/README.md). Architecture: [`docs/architecture.md`](docs/architecture.md).
 
-When the bind is not loopback, set `PHONECONTROL_TOKEN` so only clients that know the secret can call the API.
+When the bind is not loopback, set `ADBOARD_TOKEN` so only clients that know the secret can call the API.
 
 ## Run locally (developer, two processes)
 
 ```bash
 # Terminal 1 — controller (mock + synthetic video)
-PHONECONTROL_FORCE_MOCK=1 \
-PHONECONTROL_VIDEO_SOURCE=testpattern \
+ADBOARD_FORCE_MOCK=1 \
+ADBOARD_VIDEO_SOURCE=testpattern \
 cargo run -p adboard-agent
 # → http://127.0.0.1:3848
 
@@ -156,25 +156,25 @@ Without `NEXT_PUBLIC_AGENT_URL`, the UI keeps the in-browser mock client (no vid
 
 ```bash
 # Terminal 1 — controller (windows mock slice + testpattern)
-PHONECONTROL_ROLE=controller \
-PHONECONTROL_PORT=3848 \
-PHONECONTROL_HOST=windows-host \
-PHONECONTROL_HOST_ID=windows-host \
-PHONECONTROL_FORCE_MOCK=1 \
-PHONECONTROL_MOCK_PROFILE=windows \
-PHONECONTROL_VIDEO_SOURCE=testpattern \
+ADBOARD_ROLE=controller \
+ADBOARD_PORT=3848 \
+ADBOARD_HOST=windows-host \
+ADBOARD_HOST_ID=windows-host \
+ADBOARD_FORCE_MOCK=1 \
+ADBOARD_MOCK_PROFILE=windows \
+ADBOARD_VIDEO_SOURCE=testpattern \
 cargo run -p adboard-agent
 
 # Terminal 2 — agent (lxc mock slice → registers + advertises http_base for video proxy)
-PHONECONTROL_ROLE=agent \
-PHONECONTROL_PORT=3849 \
-PHONECONTROL_HOST=lxc-agent-01 \
-PHONECONTROL_HOST_ID=lxc-agent-01 \
-PHONECONTROL_FORCE_MOCK=1 \
-PHONECONTROL_MOCK_PROFILE=lxc \
-PHONECONTROL_VIDEO_SOURCE=testpattern \
-PHONECONTROL_CONTROLLER_URL=ws://127.0.0.1:3848/ws/agent \
-PHONECONTROL_HTTP_BASE=http://127.0.0.1:3849 \
+ADBOARD_ROLE=agent \
+ADBOARD_PORT=3849 \
+ADBOARD_HOST=lxc-agent-01 \
+ADBOARD_HOST_ID=lxc-agent-01 \
+ADBOARD_FORCE_MOCK=1 \
+ADBOARD_MOCK_PROFILE=lxc \
+ADBOARD_VIDEO_SOURCE=testpattern \
+ADBOARD_CONTROLLER_URL=ws://127.0.0.1:3848/ws/agent \
+ADBOARD_HTTP_BASE=http://127.0.0.1:3849 \
 cargo run -p adboard-agent
 
 # Terminal 3 — UI → controller
@@ -195,7 +195,7 @@ curl -s http://127.0.0.1:3848/api/hosts | jq
 | Host | Role | Notes |
 |---|---|---|
 | Windows PC | `controller` (or agent) | Packaged as `ADBoard.exe` — see **Windows host pack** below |
-| Proxmox LXC | `agent` | `--role agent` + `PHONECONTROL_CONTROLLER_URL`. Set `PHONECONTROL_HTTP_BASE` to a controller-reachable URL for video proxy. |
+| Proxmox LXC | `agent` | `--role agent` + `ADBOARD_CONTROLLER_URL`. Set `ADBOARD_HTTP_BASE` to a controller-reachable URL for video proxy. |
 | Browser | UI | Always talks to the **controller** (`NEXT_PUBLIC_AGENT_URL`). |
 
 ### Fetch ADB + scrcpy (`make fetch-deps`)
@@ -255,7 +255,7 @@ http://127.0.0.1:3848
 
 4. Point the UI: `NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848`.
 
-**Bind address** (`PHONECONTROL_BIND`):
+**Bind address** (`ADBOARD_BIND`):
 
 | Value | Use when |
 |---|---|
@@ -270,12 +270,12 @@ http://127.0.0.1:3848
 
 ```bash
 # on LXC — use the Windows LAN IP, not 127.0.0.1
-PHONECONTROL_ROLE=agent \
-PHONECONTROL_PORT=3849 \
-PHONECONTROL_HOST=lxc-agent-01 \
-PHONECONTROL_HOST_ID=lxc-agent-01 \
-PHONECONTROL_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
-PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
+ADBOARD_ROLE=agent \
+ADBOARD_PORT=3849 \
+ADBOARD_HOST=lxc-agent-01 \
+ADBOARD_HOST_ID=lxc-agent-01 \
+ADBOARD_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
+ADBOARD_HTTP_BASE=http://<lxc-lan-ip>:3849 \
 ./adboard-agent
 ```
 
@@ -287,11 +287,11 @@ ADBoard can be published on a hostname such as `adboard.example.com` behind Ngin
 
 **Create an account first.** Without one, ADBoard refuses to hand out its API token to any request that arrived through a proxy (it shows "Password required for remote access"). Anyone who reaches the site could otherwise control the phones, run ADB shell commands and browse host files.
 
-- Open ADBoard on the host's own network (e.g. `http://127.0.0.1:3848`) and click **Set password** in the header, or start it once with `PHONECONTROL_PASSWORD` (username `admin`, or `PHONECONTROL_USERNAME`).
+- Open ADBoard on the host's own network (e.g. `http://127.0.0.1:3848`) and click **Set password** in the header, or start it once with `ADBOARD_PASSWORD` (username `admin`, or `ADBOARD_USERNAME`).
 - Visitors through the proxy get a sign-in form (username and password). Sessions last 30 days in an HttpOnly, Secure, SameSite=Strict cookie.
 - Signed-in users change the password from the **account name** in the header. That needs the current password and signs out every other browser.
-- The account is stored as a salted PBKDF2-SHA256 hash in `adboard-auth.json` next to the executable (`PHONECONTROL_AUTH_FILE` to move it). `PHONECONTROL_PASSWORD` only sets the first password; to recover a forgotten one, start with `PHONECONTROL_PASSWORD=… PHONECONTROL_RESET_PASSWORD=1`.
-- `PHONECONTROL_ALLOW_PROXY_WITHOUT_PASSWORD=1` skips all of this when Cloudflare Access already guards the hostname.
+- The account is stored as a salted PBKDF2-SHA256 hash in `config\auth.json` in the [data folder](docs/storage.md) (`ADBOARD_AUTH_FILE` to move it). `ADBOARD_PASSWORD` only sets the first password; to recover a forgotten one, start with `ADBOARD_PASSWORD=… ADBOARD_RESET_PASSWORD=1`.
+- `ADBOARD_ALLOW_PROXY_WITHOUT_PASSWORD=1` skips all of this when Cloudflare Access already guards the hostname.
 
 On Windows: `.\Start-ADBoard.ps1 -Bind 0.0.0.0 -Password '…'` sets the first password. LAN access without a proxy keeps working without an account.
 
@@ -314,7 +314,7 @@ On Windows: `.\Start-ADBoard.ps1 -Bind 0.0.0.0 -Password '…'` sets the first p
 - Cloudflare Free and Pro accept at most 100 MB per request. ADBoard sends files over 64 MB in 32 MB chunks, so APK installs and file pushes up to 256 MB still work.
 - Optional: firewall port 3848 so only the Nginx Proxy Manager host can reach it.
 
-ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. The API token never appears in URLs (browsers send it as a WebSocket subprotocol, servers as the `x-phonecontrol-token` header), so it stays out of proxy and Cloudflare logs. Remote agents can join a controller published this way with `PHONECONTROL_CONTROLLER_URL=wss://adboard.example.com/ws/agent` and the same `PHONECONTROL_TOKEN` on both sides.
+ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. The API token never appears in URLs (browsers send it as a WebSocket subprotocol, servers as the `x-adboard-token` header), so it stays out of proxy and Cloudflare logs. Remote agents can join a controller published this way with `ADBOARD_CONTROLLER_URL=wss://adboard.example.com/ws/agent` and the same `ADBOARD_TOKEN` on both sides.
 
 ## Layout tips
 
@@ -330,9 +330,21 @@ ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's d
 
 See [docs/macros.md](docs/macros.md).
 
+## Your data
+
+Macros, Shell Automation scripts, settings, logs and backups live in one folder outside the app, so Git pulls, updates and reinstalls never touch them:
+
+| System | Data folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\ADBoard` |
+| macOS | `~/Library/Application Support/ADBoard` |
+| Linux / LXC | `$XDG_DATA_HOME/ADBoard` or `~/.local/share/ADBoard` |
+
+Each touch macro is saved as `macros\<Name>.adboard-macro.json` and each Shell Automation script as `shell_scripts\<Name>.adboard-shell.json`. **Settings → Data & storage** shows the paths and opens the folders, backs up, and exports or imports the whole library (`adboard-library.json`). Set `ADBOARD_DATA_DIR` for a portable install. Data from older versions (`adboard-data`, `data\phonecontrol-files`) is moved in on first start, and the originals are kept in `backups\legacy-<date>`. Details: [docs/storage.md](docs/storage.md).
+
 ## Temporary files
 
-Staged APKs, file pushes/pulls and upload chunks go to `<repo root>/temp/` (git-ignored), or `temp/` next to the executable when the pack runs without the repo. Set `PHONECONTROL_TEMP` to use another folder.
+Staged APKs, file pushes/pulls and upload chunks go to `temp/` in the data folder. Set `ADBOARD_TEMP` to use another folder.
 
 APK installs use adb's normal (streamed) install first. If a phone rejects that (`splice failed: EINVAL … Performing Streamed Install`), ADBoard retries with `--no-streaming`, then with push + `pm install`.
 
@@ -350,17 +362,20 @@ Control view on a desktop-width window. They use Alt+Shift (⌥⇧ on a Mac) so 
 
 ## Environment flags
 
+Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set; the log warns once.
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `PHONECONTROL_ROLE` / `--role` | `controller` | `controller` or `agent` |
-| `PHONECONTROL_BIND` | `0.0.0.0` | Listen IP — `127.0.0.1` for loopback-only; `0.0.0.0` for LAN / LXC agents |
-| `PHONECONTROL_PORT` | `3848` / `3849` | Listen port (agent defaults to 3849) |
-| `PHONECONTROL_HOST` | OS hostname | Host display label on devices |
-| `PHONECONTROL_HOST_ID` | same as host | Stable mesh id |
-| `PHONECONTROL_CONTROLLER_URL` | `ws://127.0.0.1:3848/ws/agent` | Agent → controller |
-| `PHONECONTROL_HTTP_BASE` | `http://127.0.0.1:$PORT` | Advertised for controller video proxy |
-| `PHONECONTROL_MOCK_PROFILE` | `all` (agent → `lxc`) | `all` / `windows` / `lxc` |
-| `PHONECONTROL_VIDEO_SOURCE` | `auto` | `auto` / `testpattern` / `scrcpy` / `off` — auto prefers scrcpy when ADB + scrcpy-server are ready |
+| `ADBOARD_DATA_DIR` | see [Your data](#your-data) | Data folder (macros, scripts, settings, logs, backups); set it for portable mode |
+| `ADBOARD_ROLE` / `--role` | `controller` | `controller` or `agent` |
+| `ADBOARD_BIND` | `0.0.0.0` | Listen IP — `127.0.0.1` for loopback-only; `0.0.0.0` for LAN / LXC agents |
+| `ADBOARD_PORT` | `3848` / `3849` | Listen port (agent defaults to 3849) |
+| `ADBOARD_HOST` | OS hostname | Host display label on devices |
+| `ADBOARD_HOST_ID` | same as host | Stable mesh id |
+| `ADBOARD_CONTROLLER_URL` | `ws://127.0.0.1:3848/ws/agent` | Agent → controller |
+| `ADBOARD_HTTP_BASE` | `http://127.0.0.1:$PORT` | Advertised for controller video proxy |
+| `ADBOARD_MOCK_PROFILE` | `all` (agent → `lxc`) | `all` / `windows` / `lxc` |
+| `ADBOARD_VIDEO_SOURCE` | `auto` | `auto` / `testpattern` / `scrcpy` / `off` — auto prefers scrcpy when ADB + scrcpy-server are ready |
 | `FFMPEG_PATH` | `which ffmpeg` | Live testsrc encoder for testpattern |
 | `ADB_PATH` | vendored `tools/…` / `vendor/…`, else `which adb` | Override ADB binary |
 | `SCRCPY_PATH` | vendored scrcpy, else `which scrcpy` | Optional scrcpy CLI (version probe / sibling server jar) |
@@ -369,9 +384,9 @@ Control view on a desktop-width window. They use Alt+Shift (⌥⇧ on a Mac) so 
 | `SCRCPY_MAX_SIZE` | `1280` | Server `max_size=` |
 | `SCRCPY_SERVER_OPTS` | — | Extra `key=value` server options |
 | `SCRCPY_EXTRA_ARGS` | — | Also maps `--max-size` / `-b` / `--max-fps` into server opts |
-| `PHONECONTROL_SCRCPY_FIXTURE` | unset | `1` → mock scrcpy backend with embedded H264 (no USB) |
-| `PHONECONTROL_FORCE_MOCK` | unset | `1`/`true` → ignore ADB, use mock fleet |
-| `PHONECONTROL_AUTO_SESSION` | unset | Auto-start session when a device comes online |
+| `ADBOARD_SCRCPY_FIXTURE` | unset | `1` → mock scrcpy backend with embedded H264 (no USB) |
+| `ADBOARD_FORCE_MOCK` | unset | `1`/`true` → ignore ADB, use mock fleet |
+| `ADBOARD_AUTO_SESSION` | unset | Auto-start session when a device comes online |
 | `NEXT_PUBLIC_AGENT_URL` | unset | UI → **controller** base URL |
 
 ## API surface

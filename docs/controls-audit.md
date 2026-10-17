@@ -2,7 +2,7 @@
 
 Every requested control, mapped to the code that implements it. **Existing** controls were left as they were; **Added** ones are new.
 
-Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop and phone widths. Items marked **device** still need a check on real phones.
+Testing used the mock fleet (`ADBOARD_FORCE_MOCK=1`) in Chromium at desktop and phone widths. Items marked **device** still need a check on real phones.
 
 ## 1. Bottom taskbar (phone layout)
 

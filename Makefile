@@ -21,10 +21,10 @@ fetch-deps:
 	FETCH_TARGET="$(FETCH_TARGET)" FETCH_FORCE="$(FETCH_FORCE)" bash scripts/fetch-deps.sh
 
 build-windows:
-	PHONECONTROL_WINDOWS_TARGET=$(TARGET) bash scripts/build-windows.sh
+	ADBOARD_WINDOWS_TARGET=$(TARGET) bash scripts/build-windows.sh
 
 package-windows:
-	PHONECONTROL_WINDOWS_TARGET=$(TARGET) PHONECONTROL_WINDOWS_DIST=$(DIST) bash scripts/package-windows.sh
+	ADBOARD_WINDOWS_TARGET=$(TARGET) ADBOARD_WINDOWS_DIST=$(DIST) bash scripts/package-windows.sh
 
 test-linux:
 	cargo test --workspace

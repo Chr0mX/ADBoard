@@ -163,12 +163,12 @@ async function stageUpload(
   for (let offset = 0; offset < file.size; offset += UPLOAD_CHUNK) {
     const res = await agentFetch(`${base}/api/uploads/${id}`, {
       method: "PUT",
-      headers: { "X-Phonecontrol-Offset": String(offset) },
+      headers: { "X-Adboard-Offset": String(offset) },
       body: file.slice(offset, offset + UPLOAD_CHUNK),
     });
     if (!res.ok) throw await responseError(res, "upload failed");
   }
-  return { body: null, headers: { "X-Phonecontrol-Upload": id } };
+  return { body: null, headers: { "X-Adboard-Upload": id } };
 }
 
 export function createMockDevicesClient(): DevicesClient {
@@ -521,9 +521,9 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         method: "POST",
         headers: {
           "Content-Type": "application/vnd.android.package-archive",
-          "X-Phonecontrol-Mode": mode,
-          "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
-          "X-Phonecontrol-Filename": file.name,
+          "X-Adboard-Mode": mode,
+          "X-Adboard-Targets": targets.map((t) => t.id).join(","),
+          "X-Adboard-Filename": file.name,
           ...upload.headers,
         },
         body: upload.body,
@@ -564,8 +564,8 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       const res = await agentFetch(`${base}/api/host/files`, {
         method: "POST",
         headers: {
-          "X-Phonecontrol-Filename": file.name,
-          "X-Phonecontrol-Dir": dir,
+          "X-Adboard-Filename": file.name,
+          "X-Adboard-Dir": dir,
           ...upload.headers,
         },
         body: upload.body,
@@ -592,9 +592,9 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       const res = await agentFetch(`${base}/api/device/push`, {
         method: "POST",
         headers: {
-          "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
-          "X-Phonecontrol-Filename": file.name,
-          "X-Phonecontrol-Dest": dest,
+          "X-Adboard-Targets": targets.map((t) => t.id).join(","),
+          "X-Adboard-Filename": file.name,
+          "X-Adboard-Dest": dest,
           ...upload.headers,
         },
         body: upload.body,

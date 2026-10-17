@@ -13,8 +13,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-TARGET="${PHONECONTROL_WINDOWS_TARGET:-x86_64-pc-windows-gnu}"
-PROFILE="${PHONECONTROL_CARGO_PROFILE:-release}"
+TARGET="${ADBOARD_WINDOWS_TARGET:-x86_64-pc-windows-gnu}"
+PROFILE="${ADBOARD_CARGO_PROFILE:-release}"
 
 if ! command -v rustup >/dev/null 2>&1; then
   echo "error: rustup not found" >&2

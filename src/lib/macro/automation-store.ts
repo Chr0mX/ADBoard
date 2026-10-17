@@ -268,7 +268,7 @@ export function fireSchedule(schedule: MacroSchedule, now = Date.now()) {
 }
 
 /**
- * Mount once (Phone control app). Keeps the device list for queue and
+ * Mount once (ADBoard app). Keeps the device list for queue and
  * schedules and checks for due schedules every 15 s. Schedules only run
  * while an ADBoard page is open: the agent has no macro runner of its own.
  */

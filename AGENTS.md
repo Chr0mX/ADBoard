@@ -17,7 +17,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ADBoard is two processes. This VM has no USB phones, so use the mock fleet.
 
-- Agent (port 3848): `PHONECONTROL_FORCE_MOCK=1 PHONECONTROL_VIDEO_SOURCE=testpattern PHONECONTROL_BIND=0.0.0.0 cargo run -p adboard-agent`. `ffmpeg` is on `PATH` and supplies the live H264 test pattern.
+- Agent (port 3848): `ADBOARD_FORCE_MOCK=1 ADBOARD_VIDEO_SOURCE=testpattern ADBOARD_BIND=0.0.0.0 cargo run -p adboard-agent`. `ffmpeg` is on `PATH` and supplies the live H264 test pattern. Add `ADBOARD_DATA_DIR=<temp dir>` for test runs so they don't use or change `~/.local/share/ADBoard` (the real data folder; see `docs/storage.md`).
 - Web UI (port 3847): `NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:3848 npm run dev -- --webpack`. Without `NEXT_PUBLIC_AGENT_URL` the UI stays on the in-browser mock and never opens the video WebSocket. Pass `--webpack` because Next.js 16.3 Turbopack fails to compile `next/font/google` (`Can't resolve '@vercel/turbopack-next/internal/font/google/font'`).
 
 Checks:
