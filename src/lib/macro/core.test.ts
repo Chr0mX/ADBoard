@@ -17,6 +17,7 @@ import {
   placement,
   rescaleTab,
   runMacroTab,
+  createPauseGate,
   stepKind,
   toDevicePixels,
   toNormalized,
@@ -442,6 +443,82 @@ describe("runner", () => {
     assert.equal(timed.status, "done");
     assert.match(timed.message ?? "", /Time is up/);
     assert.ok(timed.touches >= 5 && timed.touches <= 12);
+  });
+
+  it("pauses before the next step, resumes, and stops while paused", async () => {
+    const gate = createPauseGate();
+    const statuses: string[] = [];
+    let sent = 0;
+    const done = runMacroTab({
+      tab: tabWith({ stop: { mode: "cycles", seconds: 1, cycles: 3 } }),
+      devices: phones.slice(0, 1),
+      signal: new AbortController().signal,
+      sleep: instantSleep,
+      pauseGate: gate,
+      onUpdate: (snap) => statuses.push(snap.status),
+      send: async (targets) => {
+        sent += 1;
+        if (sent === 2) gate.pause();
+        return targets.map((t) => ({ deviceId: t.id, inject: "ok" as const }));
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(sent, 2, "no step is sent while paused");
+    assert.ok(statuses.includes("paused"));
+    gate.resume();
+    const result = await done;
+    assert.equal(result.status, "done");
+    assert.ok(sent > 2);
+
+    const gate2 = createPauseGate();
+    const controller = new AbortController();
+    let sent2 = 0;
+    const stopping = runMacroTab({
+      tab: tabWith({ stop: { mode: "infinite", seconds: 1, cycles: 1 } }),
+      devices: phones.slice(0, 1),
+      signal: controller.signal,
+      sleep: instantSleep,
+      pauseGate: gate2,
+      onUpdate: () => {},
+      send: async (targets) => {
+        sent2 += 1;
+        gate2.pause();
+        return targets.map((t) => ({ deviceId: t.id, inject: "ok" as const }));
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    controller.abort();
+    const stopped = await stopping;
+    assert.equal(stopped.status, "stopped");
+    assert.equal(sent2, 1);
+  });
+
+  it("does not count paused time toward a time limit", async () => {
+    let clock = 0;
+    let sent = 0;
+    const result = await runMacroTab({
+      tab: tabWith({ stop: { mode: "time", seconds: 1, cycles: 1 } }),
+      devices: phones.slice(0, 1),
+      signal: new AbortController().signal,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      pauseGate: {
+        paused: () => sent === 1 && clock < 50_000,
+        waitResume: async () => {
+          clock += 60_000; // a minute paused
+        },
+      },
+      onUpdate: () => {},
+      send: async (targets) => {
+        sent += 1;
+        clock += 100;
+        return targets.map((t) => ({ deviceId: t.id, inject: "ok" as const }));
+      },
+    });
+    assert.equal(result.status, "done");
+    assert.ok(sent > 2, `kept playing after the pause (sent ${sent})`);
   });
 
   it("tests one step once, even if disabled", async () => {

@@ -727,10 +727,19 @@ pub struct HostFileEntry {
 pub struct ScrcpyOptionsRequest {
     pub mode: ControlMode,
     pub target_ids: Vec<String>,
-    /// `low` | `balanced` | `high` | `original`
+    /// `low` | `balanced` | `high` | `original` | `custom`
     pub quality: String,
     pub audio: bool,
     pub screen_off: bool,
+    /// `custom` only: longest side in px (0 = native).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u32>,
+    /// `custom` only: bits per second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_bit_rate: Option<u32>,
+    /// `custom` only: frames per second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_fps: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -739,6 +748,12 @@ pub struct ScrcpyOptionsResponse {
     pub quality: String,
     pub audio: bool,
     pub screen_off: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_bit_rate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_fps: Option<u32>,
     #[serde(default)]
     pub restarted: Vec<String>,
     #[serde(default)]

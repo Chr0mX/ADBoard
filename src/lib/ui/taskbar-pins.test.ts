@@ -24,7 +24,7 @@ describe("normalizeTaskbarPins", () => {
     // Every tool once, a duplicate, then every tool again.
     const many = [...TASKBAR_TOOL_IDS, "keyboard", ...TASKBAR_TOOL_IDS];
     const next = normalizeTaskbarPins(many);
-    assert.equal(MAX_TASKBAR_PINS, 15);
+    assert.equal(MAX_TASKBAR_PINS, 18);
     assert.equal(next.length, MAX_TASKBAR_PINS);
     // Room for every tool, each pinned once, in order.
     assert.deepEqual(next, [...TASKBAR_TOOL_IDS]);

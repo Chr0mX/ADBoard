@@ -42,6 +42,11 @@ export interface FloatingLayerProps {
   onOpenInfo?: () => void;
   onOpenArrangement?: () => void;
   onQuickActions?: (anchor: HTMLElement) => void;
+  onRotate?: () => void;
+  fullscreen?: boolean;
+  onFullscreen?: () => void;
+  pip?: boolean;
+  onPip?: () => void;
   onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
 }
@@ -96,6 +101,11 @@ export function FloatingLayer(props: FloatingLayerProps) {
         onOpenInfo={props.onOpenInfo}
         onOpenArrangement={props.onOpenArrangement}
         onQuickActions={props.onQuickActions}
+        onRotate={props.onRotate}
+        fullscreen={props.fullscreen}
+        onFullscreen={props.onFullscreen}
+        pip={props.pip}
+        onPip={props.onPip}
         onToggleGrid={props.onToggleGrid}
         onOpenDesk={props.onOpenDesk}
       />

@@ -21,6 +21,10 @@ import {
   RotateCcw,
   Info,
   Columns3,
+  RotateCwSquare,
+  Expand,
+  Shrink,
+  PictureInPicture2,
 } from "lucide-react";
 import {
   QUICK_ACTIONS,
@@ -50,6 +54,8 @@ import {
   stopScreenRecords,
 } from "@/lib/desk/capture";
 import { offlineOverlayCopy } from "@/lib/ui/connection-copy";
+import { useFullscreen } from "@/hooks/use-fullscreen";
+import { usePictureInPicture } from "@/hooks/use-picture-in-picture";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { useMacroTouches } from "@/lib/macro/runs";
 import { TouchRipples } from "@/components/phone-control/macros/preview";
@@ -205,6 +211,21 @@ export function PhoneScreen({
     onShowGrid: onToggleGrid,
   });
   const [quickAnchor, setQuickAnchor] = useState<HTMLElement | null>(null);
+  // Rotate / Fullscreen / Pop out, shared by More tools, floating Tools and pins.
+  const fullscreen = useFullscreen();
+  const pip = usePictureInPicture(canvasRef);
+  const toggleFullscreen = fullscreen.supported
+    ? () => void fullscreen.toggle().then((error) => error && actions.setNote(error))
+    : undefined;
+  const togglePip = pip.supported
+    ? () => {
+        if (!pip.active && !showingVideo) {
+          actions.setNote("No live picture to pop out yet");
+          return;
+        }
+        void pip.toggle().then((error) => error && actions.setNote(error));
+      }
+    : undefined;
   const showingVideo =
     !offline &&
     configured &&
@@ -1017,6 +1038,44 @@ export function PhoneScreen({
               Arrangement
             </button>
           )}
+          <button
+            type="button"
+            className="pc-toggle pc-toggle-md"
+            disabled={offline || actions.busy}
+            onClick={actions.rotate}
+            title="Rotate the phone a quarter turn (needs the live screen)"
+            data-device-rotate
+          >
+            <RotateCwSquare className="size-4" />
+            Rotate
+          </button>
+          {toggleFullscreen && (
+            <Toggle
+              size="md"
+              pressed={fullscreen.active}
+              onPressedChange={toggleFullscreen}
+              aria-label={fullscreen.active ? "Exit fullscreen" : "Fullscreen"}
+              title="Browser fullscreen (Esc leaves). Fill window only resizes inside the page."
+              data-fullscreen-toggle
+            >
+              {fullscreen.active ? <Shrink className="size-4" /> : <Expand className="size-4" />}
+              Fullscreen
+            </Toggle>
+          )}
+          {togglePip && (
+            <Toggle
+              size="md"
+              pressed={pip.active}
+              onPressedChange={togglePip}
+              disabled={offline}
+              aria-label="Pop out (always on top, view only)"
+              title="Picture-in-picture window that stays on top. View only: control from this page."
+              data-pip-toggle
+            >
+              <PictureInPicture2 className="size-4" />
+              Pop out
+            </Toggle>
+          )}
           <span className="mx-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Quick</span>
           {QUICK_ACTIONS.map((item) => (
             <button
@@ -1348,6 +1407,11 @@ export function PhoneScreen({
                 onOpenInfo: actions.openInfo,
                 onOpenArrangement: onToggleGrid ? actions.openArrangement : undefined,
                 onQuickActions: (anchor) => setQuickAnchor(anchor),
+                onRotate: actions.rotate,
+                fullscreen: fullscreen.active,
+                onFullscreen: toggleFullscreen,
+                pip: pip.active,
+                onPip: togglePip,
               }}
             />
             {statsMode === "bar" && (
@@ -1411,6 +1475,11 @@ export function PhoneScreen({
           onOpenInfo={actions.openInfo}
           onOpenArrangement={onToggleGrid ? actions.openArrangement : undefined}
           onQuickActions={(anchor) => setQuickAnchor(anchor)}
+          onRotate={actions.rotate}
+          fullscreen={fullscreen.active}
+          onFullscreen={toggleFullscreen}
+          pip={pip.active}
+          onPip={togglePip}
           onToggleGrid={() => onToggleGrid?.()}
           onOpenDesk={(section) => desk?.open(section)}
         />

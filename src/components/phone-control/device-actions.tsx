@@ -120,6 +120,24 @@ export function useDeviceActions({
     [online.length, run],
   );
 
+  const rotate = useCallback(() => {
+    if (online.length === 0) {
+      setNote("No online phone to rotate");
+      return;
+    }
+    void (async () => {
+      setBusy(true);
+      try {
+        const response = await devicesClient.runCommand(online, "rotate");
+        setNote(summarize(response.results));
+      } catch (error) {
+        setNote(error instanceof Error ? error.message : "Rotate failed");
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, [online]);
+
   const openInfo = useCallback(() => {
     const device = activeDevice ?? online[0] ?? null;
     if (!device || !desk) {
@@ -147,7 +165,7 @@ export function useDeviceActions({
     />
   ) : null;
 
-  return { restart, quick, openInfo, openArrangement, busy, note, clearNote: () => setNote(null), dialog, onlineCount: online.length };
+  return { restart, quick, rotate, openInfo, openArrangement, busy, note, clearNote: () => setNote(null), dialog, onlineCount: online.length, setNote };
 }
 
 /** Quick Actions menu anchored to a button (floating Tools / taskbar). */

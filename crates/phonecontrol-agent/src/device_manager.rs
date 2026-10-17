@@ -1195,6 +1195,14 @@ impl AppState {
         if op == "displaySize" {
             return self.apply_display_size(device, arg).await;
         }
+        if op == "rotate" {
+            return match self.inner.sessions.rotate_device(&device.serial).await {
+                Ok(()) => op_ok(device, "rotated".into()),
+                // Mock fleet (no adb): the test-pattern stream has no control socket.
+                Err(_) if self.inner.adb_path.is_none() => op_ok(device, "rotated (mock phone)".into()),
+                Err(error) => op_error(device, error),
+            };
+        }
         if matches!(op, "tap" | "swipe" | "longPress") {
             return self.gesture(device, op, arg, arg2).await;
         }
@@ -1214,6 +1222,17 @@ impl AppState {
                             .unwrap_or_default()
                     ),
                 ),
+                "stayAwake" => match crate::device_ops::stay_awake_arg(arg) {
+                    Ok(want) => {
+                        let mut map = mock_stay_awake().lock().unwrap_or_else(|e| e.into_inner());
+                        if let Some(on) = want {
+                            map.insert(device.serial.clone(), on);
+                        }
+                        let on = map.get(&device.serial).copied().unwrap_or(false);
+                        op_ok(device, if on { "on".into() } else { "off".into() })
+                    }
+                    Err(error) => op_error(device, error),
+                },
                 "packages" => op_ok(
                     device,
                     "package:com.android.settings\npackage:com.android.chrome\npackage:com.google.android.youtube\npackage:com.android.camera"
@@ -1569,6 +1588,9 @@ impl AppState {
             quality: quality.clone(),
             audio: body.audio,
             screen_off: body.screen_off,
+            max_size: body.max_size,
+            video_bit_rate: body.video_bit_rate,
+            max_fps: body.max_fps,
         };
         let local_serials = self.local_serial_set().await;
         let mut local = Vec::new();
@@ -1625,6 +1647,9 @@ impl AppState {
                 quality: quality.clone(),
                 audio: body.audio,
                 screen_off: body.screen_off,
+                max_size: body.max_size,
+                video_bit_rate: body.video_bit_rate,
+                max_fps: body.max_fps,
             };
             match self
                 .proxy_json::<ScrcpyOptionsRequest, ScrcpyOptionsResponse>(
@@ -1646,10 +1671,14 @@ impl AppState {
             }
         }
 
+        let stored = self.inner.sessions.prefs().await;
         Ok(ScrcpyOptionsResponse {
             quality,
             audio: body.audio,
             screen_off: body.screen_off,
+            max_size: stored.max_size,
+            video_bit_rate: stored.video_bit_rate,
+            max_fps: stored.max_fps,
             restarted,
             results,
         })
@@ -3024,4 +3053,11 @@ mod tests {
         // Default: first sight of a phone does not restart anything.
         assert!(recovery_actions(&previous, &next, false).is_empty());
     }
+}
+
+/// Mock fleet only: Stay awake state per serial, so the UI round-trips.
+fn mock_stay_awake() -> &'static std::sync::Mutex<HashMap<String, bool>> {
+    static STATE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, bool>>> =
+        std::sync::OnceLock::new();
+    STATE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }

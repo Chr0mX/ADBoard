@@ -10,6 +10,7 @@ import {
   Crosshair,
   Download,
   Pencil,
+  Pause,
   Play,
   Plus,
   Square,
@@ -45,7 +46,18 @@ import {
   setActiveTab,
   useMacroWorkspace,
 } from "@/lib/macro/store";
-import { busyPhones, forgetRun, isRunning, runFor, startRun, stopRun, useRunVersion } from "@/lib/macro/runs";
+import {
+  busyPhones,
+  forgetRun,
+  isPaused,
+  isRunning,
+  pauseRun,
+  resumeRun,
+  runFor,
+  startRun,
+  stopRun,
+  useRunVersion,
+} from "@/lib/macro/runs";
 import type { Device } from "@/lib/devices/types";
 import { cn } from "@/lib/utils";
 import { useDesk } from "@/components/phone-control/desk/desk-context";
@@ -54,6 +66,7 @@ import { Card, GhostButton, IconButton, NumField, Segmented, formatMs } from "@/
 import { LivePreview, MacroPreview, type FingerEnd } from "@/components/phone-control/macros/preview";
 import { AddStepBar, StepList, makeStep } from "@/components/phone-control/macros/step-list";
 import { ImportDialog } from "@/components/phone-control/macros/import-dialog";
+import { QueueCard, ScheduleCard } from "@/components/phone-control/macros/automation-cards";
 
 /** Per-tab view state (selected step, preview screen) survives switching tabs. */
 const viewState = new Map<string, { stepId: string | null; previewId: string }>();
@@ -83,6 +96,10 @@ export function MacrosPanel() {
         </p>
       )}
       {active && <TabWorkspace key={active.id} tab={active} devices={desk.devices} />}
+      <div className="grid gap-3 lg:grid-cols-2" data-macro-automation>
+        <QueueCard tabs={workspace.tabs} activeTab={active} />
+        <ScheduleCard tabs={workspace.tabs} activeTab={active} />
+      </div>
       {pendingImport && (
         <ImportDialog
           fileName={pendingImport.name}
@@ -433,7 +450,7 @@ function TabWorkspace({ tab, devices }: { tab: MacroTab; devices: Device[] }) {
               canTest={!running && targets.some((d) => d.status === "online")}
               onSelect={setSelectedStepId}
               onChange={setSteps}
-              onTest={(stepId) => startRun(tab, targets, stepId)}
+              onTest={(stepId) => void startRun(tab, targets, stepId)}
             />
           </Card>
           <SettingsCard tab={tab} devices={devices} onChange={update} />
@@ -663,6 +680,7 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
       <LoopControl tab={tab} disabled={running} />
 
       <div className="flex items-center gap-2">
+        {running && <PauseButton tabId={tab.id} />}
         {running ? (
           <button
             type="button"
@@ -678,7 +696,7 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
           <button
             type="button"
             disabled={onlineTargets.length === 0 || enabled === 0}
-            onClick={() => startRun(tab, targets)}
+            onClick={() => void startRun(tab, targets)}
             className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold text-white disabled:opacity-50"
             data-macro-start
           >
@@ -695,6 +713,27 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
 
       <RunStatus tab={tab} />
     </Card>
+  );
+}
+
+/** Pause before the next step / Resume. Shared by the Macros panel and dock. */
+export function PauseButton({ tabId, attr = "data-macro-pause" }: { tabId: string; attr?: string }) {
+  useRunVersion();
+  const paused = isPaused(tabId);
+  const stopping = runFor(tabId)?.status === "stopping";
+  return (
+    <button
+      type="button"
+      className="pc-toggle pc-toggle-md flex-1 gap-2"
+      aria-pressed={paused}
+      disabled={stopping}
+      title={paused ? "Resume from the next step" : "Pause before the next step (phones stay reserved)"}
+      onClick={() => (paused ? resumeRun(tabId) : pauseRun(tabId))}
+      {...{ [attr]: paused ? "paused" : "running" }}
+    >
+      {paused ? <Play className="size-4" aria-hidden /> : <Pause className="size-4" aria-hidden />}
+      {paused ? "Resume" : "Pause"}
+    </button>
   );
 }
 

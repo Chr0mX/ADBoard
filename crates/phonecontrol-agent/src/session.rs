@@ -61,6 +61,25 @@ pub struct ScrcpyPrefs {
     pub quality: String,
     pub audio: bool,
     pub screen_off: bool,
+    /// `custom` quality values (ignored for presets).
+    pub max_size: Option<u32>,
+    pub video_bit_rate: Option<u32>,
+    pub max_fps: Option<u32>,
+}
+
+impl ScrcpyPrefs {
+    pub fn launch(&self) -> crate::scrcpy_video::VideoLaunch {
+        if self.quality == "custom" {
+            crate::scrcpy_video::video_launch_custom(
+                self.max_size,
+                self.video_bit_rate,
+                self.max_fps,
+                self.screen_off,
+            )
+        } else {
+            video_launch_for(&self.quality, self.screen_off)
+        }
+    }
 }
 
 impl Default for ScrcpyPrefs {
@@ -69,6 +88,9 @@ impl Default for ScrcpyPrefs {
             quality: "balanced".into(),
             audio: false,
             screen_off: false,
+            max_size: None,
+            video_bit_rate: None,
+            max_fps: None,
         }
     }
 }
@@ -367,7 +389,7 @@ impl SessionManager {
         .await;
 
         let prefs = self.prefs.read().await.clone();
-        let launch = video_launch_for(&prefs.quality, prefs.screen_off);
+        let launch = prefs.launch();
         match start_scrcpy_raw_capture(
             self.video_hub.clone(),
             adb.clone(),
@@ -587,7 +609,8 @@ impl SessionManager {
             "balanced" => Ok("balanced"),
             "high" => Ok("high"),
             "original" => Ok("original"),
-            _ => Err("quality must be low, balanced, high, or original".into()),
+            "custom" => Ok("custom"),
+            _ => Err("quality must be low, balanced, high, original, or custom".into()),
         }
     }
 
@@ -599,13 +622,30 @@ impl SessionManager {
         serials: &[String],
     ) -> Result<OptionsApplied, String> {
         let quality = Self::parse_quality(&incoming.quality)?.to_string();
+        let custom = quality == "custom";
+        let (max_size, video_bit_rate, max_fps) = if custom {
+            let (size, rate, fps) = crate::scrcpy_video::clamp_custom(
+                incoming.max_size,
+                incoming.video_bit_rate,
+                incoming.max_fps,
+            );
+            (Some(size), rate, fps)
+        } else {
+            (None, None, None)
+        };
         let next = ScrcpyPrefs {
             quality,
             audio: incoming.audio,
             screen_off: incoming.screen_off,
+            max_size,
+            video_bit_rate,
+            max_fps,
         };
         let prev = self.prefs.read().await.clone();
-        let quality_changed = prev.quality != next.quality;
+        let quality_changed = prev.quality != next.quality
+            || prev.max_size != next.max_size
+            || prev.video_bit_rate != next.video_bit_rate
+            || prev.max_fps != next.max_fps;
         let audio_changed = prev.audio != next.audio;
         let screen_changed = prev.screen_off != next.screen_off;
         *self.prefs.write().await = next.clone();
@@ -742,6 +782,17 @@ impl SessionManager {
             return Err("scrcpy control is not connected".into());
         };
         sender.set_display_power(on).await
+    }
+
+    pub async fn rotate_device(&self, serial: &str) -> Result<(), String> {
+        let sender = {
+            let guard = self.sessions.read().await;
+            guard.get(serial).and_then(|live| live.control.clone())
+        };
+        let Some(sender) = sender else {
+            return Err("live screen is not running for this phone".into());
+        };
+        sender.rotate_device().await
     }
 
     pub async fn set_clipboard(&self, serial: &str, text: &str, paste: bool) -> Result<(), String> {

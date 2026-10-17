@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { devicesClient } from "@/lib/api/client";
-import { runMacroTab, type MacroTab, type RunDevice, type RunSnapshot } from "@/lib/macro/core";
+import { createPauseGate, runMacroTab, type MacroTab, type RunDevice, type RunSnapshot } from "@/lib/macro/core";
 import type { Device } from "@/lib/devices/types";
 
 /**
@@ -14,6 +14,7 @@ interface LiveRun {
   controller: AbortController;
   snapshot: RunSnapshot;
   claimed: string[];
+  gate: ReturnType<typeof createPauseGate>;
 }
 
 const runs = new Map<string, LiveRun>();
@@ -110,17 +111,23 @@ function toRunDevice(device: Device): RunDevice {
   return { id: device.id, name: device.name, status: device.status, resolution: device.resolution };
 }
 
-export function startRun(tab: MacroTab, devices: Device[], onlyStepId?: string) {
-  if (runs.has(tab.id)) return;
+/**
+ * Start a tab. Resolves with the final snapshot when the run ends (null when
+ * the tab is already running), so a queue can wait for it.
+ */
+export function startRun(tab: MacroTab, devices: Device[], onlyStepId?: string): Promise<RunSnapshot | null> {
+  if (runs.has(tab.id)) return Promise.resolve(null);
   const busy = busyPhones(tab.id);
   const controller = new AbortController();
   const claimed = devices.filter((d) => d.status === "online" && !busy[d.id]).map((d) => d.id);
   for (const id of claimed) owners.set(id, tab.id);
   const byId = new Map(devices.map((d) => [d.id, d]));
+  const gate = createPauseGate();
   const live: LiveRun = {
     tabName: tab.name,
     controller,
     claimed,
+    gate,
     snapshot: {
       status: "running",
       cycle: 1,
@@ -137,8 +144,9 @@ export function startRun(tab: MacroTab, devices: Device[], onlyStepId?: string) 
 
   // Snapshot the tab: editing it while it runs changes the next run, not this one.
   const frozen: MacroTab = JSON.parse(JSON.stringify(tab)) as MacroTab;
-  void runMacroTab({
+  return runMacroTab({
     tab: frozen,
+    pauseGate: gate,
     devices: devices.map(toRunDevice),
     busy,
     onlyStepId,
@@ -171,20 +179,43 @@ export function startRun(tab: MacroTab, devices: Device[], onlyStepId?: string) 
   })
     .then((snapshot) => {
       finished.set(tab.id, snapshot);
+      return snapshot;
     })
     .catch((error: unknown) => {
-      finished.set(tab.id, {
+      const snapshot: RunSnapshot = {
         ...live.snapshot,
         status: "failed",
         finishedAt: Date.now(),
         message: error instanceof Error ? error.message : "run failed",
-      });
+      };
+      finished.set(tab.id, snapshot);
+      return snapshot;
     })
     .finally(() => {
       runs.delete(tab.id);
       for (const id of claimed) if (owners.get(id) === tab.id) owners.delete(id);
       notify();
     });
+}
+
+/** Pause before the next step; the run keeps its phones while paused. */
+export function pauseRun(tabId: string) {
+  const run = runs.get(tabId);
+  if (!run || run.controller.signal.aborted || run.gate.paused()) return;
+  run.gate.pause();
+  notify();
+}
+
+export function resumeRun(tabId: string) {
+  const run = runs.get(tabId);
+  if (!run || !run.gate.paused()) return;
+  run.gate.resume();
+  notify();
+}
+
+/** True from Pause until Resume (the snapshot shows "paused" once the step in flight ends). */
+export function isPaused(tabId: string) {
+  return runs.get(tabId)?.gate.paused() ?? false;
 }
 
 /** Ask a run to stop after the gesture in flight (which always lifts its fingers). */

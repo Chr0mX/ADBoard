@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { IconButton, Segmented, formatMs, stepColor } from "@/components/phone-control/macros/fields";
 import { LivePreview } from "@/components/phone-control/macros/preview";
-import { LoopControl, RunStatus, runLabel } from "@/components/phone-control/macros/macros-panel";
+import { LoopControl, PauseButton, RunStatus, runLabel } from "@/components/phone-control/macros/macros-panel";
 
 type TargetSource = "control" | "tab";
 
@@ -80,21 +80,24 @@ export function MacroDock({
       <LoopControl tab={tab} disabled={running} />
 
       {running ? (
-        <button
-          type="button"
-          onClick={() => stopRun(tab.id)}
-          disabled={snapshot?.status === "stopping"}
-          className="inline-flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08] disabled:opacity-70"
-          data-macro-dock-stop
-        >
-          <Square className="size-4" aria-hidden />
-          {snapshot?.status === "stopping" ? "Stopping…" : `Stop “${tab.name}”`}
-        </button>
+        <div className="flex items-center gap-2">
+          <PauseButton tabId={tab.id} attr="data-macro-dock-pause" />
+          <button
+            type="button"
+            onClick={() => stopRun(tab.id)}
+            disabled={snapshot?.status === "stopping"}
+            className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08] disabled:opacity-70"
+            data-macro-dock-stop
+          >
+            <Square className="size-4" aria-hidden />
+            {snapshot?.status === "stopping" ? "Stopping…" : `Stop “${tab.name}”`}
+          </button>
+        </div>
       ) : (
         <button
           type="button"
           disabled={online.length === 0 || enabled === 0}
-          onClick={() => startRun(tab, targets)}
+          onClick={() => void startRun(tab, targets)}
           className="inline-flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold text-white disabled:opacity-50"
           data-macro-dock-start
         >
@@ -129,7 +132,7 @@ export function MacroDock({
         selectedStepId={selectedStepId}
         canTest={!running && online.length > 0}
         onSelect={setSelectedStepId}
-        onTest={(stepId) => startRun(tab, targets, stepId)}
+        onTest={(stepId) => void startRun(tab, targets, stepId)}
       />
 
       {desk && (

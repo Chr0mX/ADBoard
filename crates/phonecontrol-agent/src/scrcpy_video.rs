@@ -91,6 +91,46 @@ pub fn video_launch_for(quality: &str, screen_off: bool) -> VideoLaunch {
     launch
 }
 
+/// Limits for the `custom` quality (scrcpy accepts more; these keep phones usable).
+pub const CUSTOM_MAX_SIZE: u32 = 4096;
+pub const CUSTOM_MIN_BIT_RATE: u32 = 250_000;
+pub const CUSTOM_MAX_BIT_RATE: u32 = 40_000_000;
+pub const CUSTOM_MIN_FPS: u32 = 5;
+pub const CUSTOM_MAX_FPS: u32 = 120;
+
+/// Clamp `custom` values: max size 0 (native) or 120..=4096, bitrate
+/// 0.25–40 Mbps, FPS 5–120. Missing values fall back to the balanced defaults.
+pub fn clamp_custom(
+    max_size: Option<u32>,
+    video_bit_rate: Option<u32>,
+    max_fps: Option<u32>,
+) -> (u32, Option<u32>, Option<u32>) {
+    let size = match max_size {
+        None => max_size_from_env(),
+        Some(0) => 0,
+        Some(n) => n.clamp(120, CUSTOM_MAX_SIZE),
+    };
+    let rate = video_bit_rate.map(|n| n.clamp(CUSTOM_MIN_BIT_RATE, CUSTOM_MAX_BIT_RATE));
+    let fps = max_fps.map(|n| n.clamp(CUSTOM_MIN_FPS, CUSTOM_MAX_FPS));
+    (size, rate, fps)
+}
+
+/// `custom` quality → server args.
+pub fn video_launch_custom(
+    max_size: Option<u32>,
+    video_bit_rate: Option<u32>,
+    max_fps: Option<u32>,
+    screen_off: bool,
+) -> VideoLaunch {
+    let (max_size, video_bit_rate, max_fps) = clamp_custom(max_size, video_bit_rate, max_fps);
+    VideoLaunch {
+        max_size,
+        video_bit_rate,
+        max_fps,
+        stay_awake: screen_off,
+    }
+}
+
 /// Last lines printed by scrcpy-server (stdout and stderr).
 #[derive(Clone, Default)]
 pub struct ServerLog {
@@ -865,5 +905,18 @@ mod tests {
         assert_eq!(a, b);
         assert_ne!(a, c);
         assert!((27183..29183).contains(&a));
+    }
+
+    #[test]
+    fn custom_quality_is_clamped() {
+        let launch = video_launch_custom(Some(99_999), Some(1), Some(500), false);
+        assert_eq!(launch.max_size, CUSTOM_MAX_SIZE);
+        assert_eq!(launch.video_bit_rate, Some(CUSTOM_MIN_BIT_RATE));
+        assert_eq!(launch.max_fps, Some(CUSTOM_MAX_FPS));
+        let native = video_launch_custom(Some(0), Some(6_000_000), Some(30), true);
+        assert_eq!(native.max_size, 0);
+        assert_eq!(native.video_bit_rate, Some(6_000_000));
+        assert_eq!(native.max_fps, Some(30));
+        assert!(native.stay_awake);
     }
 }

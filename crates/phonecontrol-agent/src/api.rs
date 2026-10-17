@@ -827,6 +827,9 @@ async fn scrcpy_options_get(State(state): State<AppState>) -> Json<ScrcpyOptions
         quality: prefs.quality,
         audio: prefs.audio,
         screen_off: prefs.screen_off,
+        max_size: prefs.max_size,
+        video_bit_rate: prefs.video_bit_rate,
+        max_fps: prefs.max_fps,
         restarted: Vec::new(),
         results: Vec::new(),
     })

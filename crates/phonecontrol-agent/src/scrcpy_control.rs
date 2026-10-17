@@ -29,6 +29,8 @@ const GET_CLIPBOARD: u8 = 8;
 const SET_CLIPBOARD: u8 = 9;
 /// `SC_CONTROL_MSG_TYPE_SET_DISPLAY_POWER`
 const SET_DISPLAY_POWER: u8 = 10;
+/// `SC_CONTROL_MSG_TYPE_ROTATE_DEVICE` — rotate the phone like the rotate key.
+const ROTATE_DEVICE: u8 = 11;
 /// `SC_CONTROL_MSG_TYPE_RESET_VIDEO` — ask the encoder for a fresh keyframe.
 const RESET_VIDEO: u8 = 17;
 /// `AMOTION_EVENT_ACTION_HOVER_MOVE`
@@ -130,6 +132,12 @@ impl ControlSender {
         self.send_raw(encode_display_power(on).to_vec()).await
     }
 
+    /// Scrcpy `ROTATE_DEVICE`: turn the phone a quarter turn (changes the
+    /// device orientation, not just the view).
+    pub async fn rotate_device(&self) -> Result<(), String> {
+        self.send_raw(encode_rotate_device().to_vec()).await
+    }
+
     /// Printable text. Scrcpy types it into the focused field.
     pub async fn inject_text(&self, text: &str) -> Result<(), String> {
         self.send_raw(encode_inject_text(text)?).await
@@ -206,6 +214,10 @@ pub fn encode_inject_keycode(
 
 pub fn encode_display_power(on: bool) -> [u8; 2] {
     [SET_DISPLAY_POWER, if on { POWER_NORMAL } else { POWER_OFF }]
+}
+
+pub fn encode_rotate_device() -> [u8; 1] {
+    [ROTATE_DEVICE]
 }
 
 pub fn encode_get_clipboard() -> [u8; 2] {
@@ -472,6 +484,11 @@ pub async fn open_video_and_control(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rotate_device_is_a_single_type_byte() {
+        assert_eq!(super::encode_rotate_device(), [11]);
+    }
+
     use super::*;
     use tokio::net::TcpListener;
 

@@ -150,6 +150,21 @@ fn adb_args(serial: &str, rest: &[&str]) -> Vec<String> {
     args
 }
 
+/// `stayAwake` argument: `on` / `off` set it, `status` (or none) only reads.
+pub fn stay_awake_arg(arg: Option<&str>) -> Result<Option<bool>, String> {
+    match arg.map(str::trim).unwrap_or("status") {
+        "on" => Ok(Some(true)),
+        "off" => Ok(Some(false)),
+        "status" | "" => Ok(None),
+        _ => Err("stayAwake takes on, off or status".into()),
+    }
+}
+
+/// `stay_on_while_plugged_in` is a bit mask (AC/USB/wireless); any bit means on.
+pub fn stay_awake_is_on(raw: &str) -> bool {
+    raw.trim().parse::<u32>().map(|n| n != 0).unwrap_or(false)
+}
+
 /// Run one non-gesture operation. `reconnect` is handled by the session manager.
 pub async fn run_adb_op(
     adb: &Path,
@@ -171,6 +186,20 @@ pub async fn run_adb_op(
         "shutdown" => {
             adb_text(adb, &adb_args(serial, &["shell", "reboot", "-p"])).await?;
             Ok("shutting down".into())
+        }
+        "stayAwake" => {
+            // `svc power stayon` keeps the phone awake; it does not touch the
+            // screen-off (display power) state used by "Screen off".
+            if let Some(on) = stay_awake_arg(arg)? {
+                let value = if on { "true" } else { "false" };
+                adb_text(adb, &adb_args(serial, &["shell", "svc", "power", "stayon", value])).await?;
+            }
+            let raw = adb_text(
+                adb,
+                &adb_args(serial, &["shell", "settings", "get", "global", "stay_on_while_plugged_in"]),
+            )
+            .await?;
+            Ok(if stay_awake_is_on(&raw) { "on".into() } else { "off".into() })
         }
         "screenshot" => capture_screenshot(adb, serial, arg, files_root).await,
         "recordStart" => start_record(adb, serial, arg, arg2).await,
@@ -581,6 +610,17 @@ async fn launch_app(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn stay_awake_args_and_status() {
+        assert_eq!(super::stay_awake_arg(Some("on")), Ok(Some(true)));
+        assert_eq!(super::stay_awake_arg(Some("off")), Ok(Some(false)));
+        assert_eq!(super::stay_awake_arg(None), Ok(None));
+        assert!(super::stay_awake_arg(Some("maybe")).is_err());
+        assert!(super::stay_awake_is_on("7\n"));
+        assert!(!super::stay_awake_is_on("0"));
+        assert!(!super::stay_awake_is_on("null"));
+    }
+
     use super::*;
 
     #[test]

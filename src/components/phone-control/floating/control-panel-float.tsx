@@ -26,7 +26,15 @@ import {
   Volume2,
   VolumeX,
   Zap,
+  Coffee,
+  Expand,
+  MonitorSmartphone,
+  PictureInPicture2,
+  RotateCwSquare,
+  Shrink,
 } from "lucide-react";
+import { useStayAwake } from "@/hooks/use-stay-awake";
+import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { StatsBarsIcon } from "@/components/phone-control/stats-bars-icon";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
@@ -76,6 +84,11 @@ interface ControlPanelFloatProps {
   onOpenInfo?: () => void;
   onOpenArrangement?: () => void;
   onQuickActions?: (anchor: HTMLElement) => void;
+  onRotate?: () => void;
+  fullscreen?: boolean;
+  onFullscreen?: () => void;
+  pip?: boolean;
+  onPip?: () => void;
   onToggleGrid: () => void;
   onOpenDesk: (section: DeskSection) => void;
 }
@@ -161,10 +174,20 @@ export function ControlPanelFloat({
   onOpenInfo,
   onOpenArrangement,
   onQuickActions,
+  onRotate,
+  fullscreen = false,
+  onFullscreen,
+  pip = false,
+  onPip,
   onToggleGrid,
   onOpenDesk,
 }: ControlPanelFloatProps) {
   const [deskOpen, setDeskOpen] = useState(false);
+  // Screen sub-menu (Rotate / Fullscreen / Pop out): folded by default so the
+  // panel keeps its height; always open while customizing the taskbar.
+  const [screenOpen, setScreenOpen] = useState(false);
+  const desk = useDeskOptional();
+  const stayAwake = useStayAwake((desk?.devices ?? []).filter((d) => targetIds.includes(d.id)));
   const [taskbarEdit, setTaskbarEdit] = useState(false);
   const { pins, togglePin, resetPins, atLimit, maxPins } = useTaskbarPins();
   const { options, apply, note, audioNote, audioError } = useScrcpyOptions({
@@ -172,7 +195,14 @@ export function ControlPanelFloat({
     serial,
     disabled: offline,
   });
-  const streamHint = note || audioError || audioNote;
+  const streamHint =
+    note ||
+    audioError ||
+    audioNote ||
+    stayAwake.note ||
+    (options.quality === "custom"
+      ? `Custom: ${options.maxSize ? `${options.maxSize} px` : "native"} · ${(options.videoBitRate ?? 0) / 1_000_000} Mbps · ${options.maxFps} fps (edit in Settings)`
+      : null);
 
   const pinProps = (id: TaskbarToolId) => ({
     id,
@@ -212,6 +242,7 @@ export function ControlPanelFloat({
               <option value="balanced">Balanced</option>
               <option value="high">High</option>
               <option value="original">Original</option>
+              <option value="custom">Custom</option>
             </select>
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -240,6 +271,18 @@ export function ControlPanelFloat({
               className={HIT}
             >
               <MonitorOff className="size-5" />
+            </Toggle>
+            <Toggle
+              size="none"
+              pressed={stayAwake.on}
+              onPressedChange={(on) => stayAwake.setOn(on)}
+              disabled={offline || stayAwake.busy || !stayAwake.available}
+              aria-label="Stay awake"
+              title="Keep the phone awake while connected (does not turn the screen off)"
+              data-scrcpy-stay-awake
+              className={HIT}
+            >
+              <Coffee className="size-5" />
             </Toggle>
           </div>
           {streamHint && (
@@ -563,6 +606,79 @@ export function ControlPanelFloat({
                 <Sparkles className="size-5" />
               </Button>
             </PinableTool>
+          )}
+          {(onRotate || onFullscreen || onPip) && (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Screen tools"
+                aria-expanded={screenOpen || taskbarEdit}
+                title="Rotate, fullscreen, pop out"
+                data-screen-menu-toggle
+                disabled={taskbarEdit}
+                className={HIT}
+                onClick={() => setScreenOpen((open) => !open)}
+              >
+                <MonitorSmartphone className="size-5" />
+              </Button>
+              {(screenOpen || taskbarEdit) && (
+                <div data-screen-menu className="flex w-full flex-wrap gap-1.5 rounded-xl border border-[var(--pc-line)] p-1">
+                  {onRotate && (
+                    <PinableTool {...pinProps("rotate")}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        aria-label={taskbarEdit ? `${pins.includes("rotate") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.rotate}` : "Rotate phone"}
+                        aria-pressed={taskbarEdit ? pins.includes("rotate") : undefined}
+                        data-taskbar-pin="rotate"
+                        data-device-rotate
+                        disabled={!taskbarEdit && offline}
+                        className={HIT}
+                        onClick={onRotate}
+                      >
+                        <RotateCwSquare className="size-5" />
+                      </Button>
+                    </PinableTool>
+                  )}
+                  {onFullscreen && (
+                    <PinableTool {...pinProps("fullscreen")}>
+                      <Toggle
+                        size="none"
+                        pressed={taskbarEdit ? pins.includes("fullscreen") : fullscreen}
+                        onPressedChange={() => {
+                          if (!taskbarEdit) onFullscreen();
+                        }}
+                        aria-label={taskbarEdit ? `${pins.includes("fullscreen") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.fullscreen}` : fullscreen ? "Exit fullscreen" : "Fullscreen"}
+                        data-taskbar-pin="fullscreen"
+                        data-fullscreen-toggle
+                        className={HIT}
+                      >
+                        {fullscreen ? <Shrink className="size-5" /> : <Expand className="size-5" />}
+                      </Toggle>
+                    </PinableTool>
+                  )}
+                  {onPip && (
+                    <PinableTool {...pinProps("pip")}>
+                      <Toggle
+                        size="none"
+                        pressed={taskbarEdit ? pins.includes("pip") : pip}
+                        onPressedChange={() => {
+                          if (!taskbarEdit) onPip();
+                        }}
+                        disabled={!taskbarEdit && offline}
+                        aria-label={taskbarEdit ? `${pins.includes("pip") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.pip}` : "Pop out (always on top, view only)"}
+                        data-taskbar-pin="pip"
+                        data-pip-toggle
+                        className={HIT}
+                      >
+                        <PictureInPicture2 className="size-5" />
+                      </Toggle>
+                    </PinableTool>
+                  )}
+                </div>
+              )}
+            </>
           )}
           {onOpenMacros && !taskbarEdit && (
             <Button

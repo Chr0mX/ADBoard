@@ -7,13 +7,36 @@ import {
   type ScrcpyOptionsPayload,
 } from "@/lib/scrcpy/client";
 
-export const SCRCPY_QUALITIES = ["low", "balanced", "high", "original"] as const;
+export const SCRCPY_QUALITIES = ["low", "balanced", "high", "original", "custom"] as const;
+
+/** What each preset sends to scrcpy-server (agent `video_launch_for`). */
+export const QUALITY_HINTS: Record<string, string> = {
+  low: "720 px · 1 Mbps · 15 fps",
+  balanced: "1280 px · scrcpy default bitrate and fps",
+  high: "1920 px · 8 Mbps · 60 fps",
+  original: "Native size · 16 Mbps · 60 fps",
+};
+
+/** Custom quality defaults and limits (the agent clamps to the same range). */
+export const CUSTOM_DEFAULTS = { maxSize: 1280, videoBitRate: 4_000_000, maxFps: 30 };
+export const CUSTOM_LIMITS = {
+  maxSize: { min: 0, max: 4096 },
+  bitRateMbps: { min: 0.25, max: 40 },
+  maxFps: { min: 5, max: 120 },
+};
+
+function num(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
 
 const STORAGE_KEY = "phonecontrol-scrcpy";
 const DEFAULTS: ScrcpyOptionsPayload = {
   quality: "balanced",
   audio: false,
   screenOff: false,
+  maxSize: 1280,
+  videoBitRate: 4_000_000,
+  maxFps: 30,
 };
 
 const listeners = new Set<() => void>();
@@ -31,6 +54,9 @@ function parseOpts(raw: string | null): ScrcpyOptionsPayload {
       quality,
       audio: value.audio === true,
       screenOff: value.screenOff === true,
+      maxSize: num(value.maxSize, CUSTOM_DEFAULTS.maxSize),
+      videoBitRate: num(value.videoBitRate, CUSTOM_DEFAULTS.videoBitRate),
+      maxFps: num(value.maxFps, CUSTOM_DEFAULTS.maxFps),
     };
   } catch {
     return DEFAULTS;

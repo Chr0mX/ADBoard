@@ -837,7 +837,7 @@ export interface DeviceRunStatus {
   detail?: string;
 }
 
-export type RunStatus = "running" | "stopping" | "done" | "stopped" | "failed";
+export type RunStatus = "running" | "paused" | "stopping" | "done" | "stopped" | "failed";
 
 export interface RunSnapshot {
   status: RunStatus;
@@ -871,9 +871,52 @@ export interface RunOptions {
   onUpdate: (snapshot: RunSnapshot) => void;
   /** Play only this step, once (the step "Test" button). */
   onlyStepId?: string;
+  /**
+   * Pause: checked before each step. While `paused()` the run waits in
+   * `waitResume` (which must also return when `signal` aborts). Paused time
+   * does not count toward a time limit.
+   */
+  pauseGate?: PauseGate;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   now?: () => number;
   random?: () => number;
+}
+
+export interface PauseGate {
+  paused: () => boolean;
+  waitResume: (signal: AbortSignal) => Promise<void>;
+}
+
+/** A pause switch for `RunOptions.pauseGate`. */
+export function createPauseGate() {
+  let paused = false;
+  let wake: Array<() => void> = [];
+  const release = () => {
+    const waiting = wake;
+    wake = [];
+    waiting.forEach((resolve) => resolve());
+  };
+  const gate: PauseGate & { pause: () => void; resume: () => void } = {
+    paused: () => paused,
+    pause: () => {
+      paused = true;
+    },
+    resume: () => {
+      paused = false;
+      release();
+    },
+    waitResume: (signal) =>
+      new Promise<void>((resolve) => {
+        if (!paused || signal.aborted) return resolve();
+        const done = () => {
+          signal.removeEventListener("abort", done);
+          resolve();
+        };
+        wake.push(done);
+        signal.addEventListener("abort", done, { once: true });
+      }),
+  };
+  return gate;
 }
 
 export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -952,6 +995,16 @@ export async function runMacroTab(options: RunOptions): Promise<RunSnapshot> {
     snap.cycle = cycle;
     for (let index = 0; index < steps.length; index += 1) {
       if (signal.aborted) return finish("stopped", "Stopped");
+      if (options.pauseGate?.paused()) {
+        const pausedAt = now();
+        snap.status = "paused";
+        emit();
+        await options.pauseGate.waitResume(signal);
+        if (snap.deadline !== undefined) snap.deadline += now() - pausedAt;
+        snap.status = "running";
+        if (signal.aborted) return finish("stopped", "Stopped");
+        emit();
+      }
       if (timeUp()) return finish("done", "Time is up");
       const step = steps[index];
       snap.stepIndex = index;

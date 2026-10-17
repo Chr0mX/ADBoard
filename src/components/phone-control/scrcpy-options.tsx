@@ -11,7 +11,17 @@ import {
   postClipboard,
   pullClipboard,
 } from "@/lib/scrcpy/client";
-import { firstError, useScrcpyOptions } from "@/hooks/use-scrcpy-options";
+import {
+  CUSTOM_DEFAULTS,
+  CUSTOM_LIMITS,
+  QUALITY_HINTS,
+  firstError,
+  useScrcpyOptions,
+} from "@/hooks/use-scrcpy-options";
+import { useStayAwake } from "@/hooks/use-stay-awake";
+import { useStoredFlag } from "@/hooks/use-stored-flag";
+import { CLIPBOARD_SYNC_KEY, useClipboardSyncStatus } from "@/hooks/use-clipboard-sync";
+import { SwitchRow } from "@/components/ui/switch";
 
 const SIZE_KEY = "phonecontrol-display-size";
 const DISPLAY_SIZES = [
@@ -47,6 +57,11 @@ export function ScrcpyOptions({
   });
   const [sizing, setSizing] = useState(false);
   const desk = useDesk();
+  const targetDevices = desk.devices.filter((device) => targetIds.includes(device.id));
+  const stayAwake = useStayAwake(targetDevices);
+  const [clipboardSync, setClipboardSync] = useStoredFlag(CLIPBOARD_SYNC_KEY, false);
+  const clipboardStatus = useClipboardSyncStatus();
+  const custom = options.quality === "custom";
 
   useEffect(() => {
     if (!serial) return;
@@ -187,6 +202,7 @@ export function ScrcpyOptions({
             <option value="balanced">Balanced</option>
             <option value="high">High</option>
             <option value="original">Original</option>
+            <option value="custom">Custom</option>
           </select>
         </label>
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
@@ -234,6 +250,17 @@ export function ScrcpyOptions({
         >
           Screen off
         </Toggle>
+        <Toggle
+          pressed={stayAwake.on}
+          onPressedChange={(on) => stayAwake.setOn(on)}
+          disabled={disabled || stayAwake.busy || !stayAwake.available}
+          aria-label="Stay awake"
+          title="Keep the phone awake while connected (does not turn the screen off)"
+          data-scrcpy-stay-awake
+          size="md"
+        >
+          Stay awake
+        </Toggle>
         <div className="max-lg:hidden lg:contents">
           <input
             aria-label="Clipboard"
@@ -266,11 +293,135 @@ export function ScrcpyOptions({
           </Button>
         </div>
       </div>
-      {(note || audioError || audioNote) && (
+      {custom ? (
+        <CustomQualityFields
+          disabled={disabled}
+          maxSize={options.maxSize ?? CUSTOM_DEFAULTS.maxSize}
+          videoBitRate={options.videoBitRate ?? CUSTOM_DEFAULTS.videoBitRate}
+          maxFps={options.maxFps ?? CUSTOM_DEFAULTS.maxFps}
+          onApply={(values) => void apply({ ...options, ...values })}
+        />
+      ) : (
+        <p data-scrcpy-quality-hint className="font-mono text-[10px] text-[var(--pc-muted)]">
+          {QUALITY_HINTS[options.quality] ?? ""}
+        </p>
+      )}
+      <div className="w-full max-w-md" data-scrcpy-clipboard-sync-row>
+        <SwitchRow
+          label="Sync clipboard"
+          description="Phone copies land on this PC; Ctrl/Cmd+V pastes this PC's clipboard on the target phones"
+          checked={clipboardSync}
+          onChange={(event) => setClipboardSync(event.target.checked)}
+          data-scrcpy-clipboard-sync
+        />
+      </div>
+      {(note || audioError || audioNote || stayAwake.note || (clipboardSync && clipboardStatus)) && (
         <p data-scrcpy-note className="max-w-lg truncate text-center font-mono text-[10px] text-[var(--pc-muted)]">
-          {note || audioError || audioNote}
+          {note || audioError || audioNote || stayAwake.note || clipboardStatus}
         </p>
       )}
     </div>
+  );
+}
+
+/** Custom quality: max size / bitrate / FPS, applied together. */
+function CustomQualityFields({
+  disabled,
+  maxSize,
+  videoBitRate,
+  maxFps,
+  onApply,
+}: {
+  disabled?: boolean;
+  maxSize: number;
+  videoBitRate: number;
+  maxFps: number;
+  onApply: (values: { maxSize: number; videoBitRate: number; maxFps: number }) => void;
+}) {
+  const [size, setSize] = useState(String(maxSize));
+  const [mbps, setMbps] = useState(String(videoBitRate / 1_000_000));
+  const [fps, setFps] = useState(String(maxFps));
+  const clamp = (value: string, min: number, max: number, fallback: number) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+  };
+  const submit = () => {
+    const next = {
+      maxSize: Math.round(clamp(size, CUSTOM_LIMITS.maxSize.min, CUSTOM_LIMITS.maxSize.max, maxSize)),
+      videoBitRate: Math.round(
+        clamp(mbps, CUSTOM_LIMITS.bitRateMbps.min, CUSTOM_LIMITS.bitRateMbps.max, videoBitRate / 1_000_000) * 1_000_000,
+      ),
+      maxFps: Math.round(clamp(fps, CUSTOM_LIMITS.maxFps.min, CUSTOM_LIMITS.maxFps.max, maxFps)),
+    };
+    setSize(String(next.maxSize));
+    setMbps(String(next.videoBitRate / 1_000_000));
+    setFps(String(next.maxFps));
+    onApply(next);
+  };
+  const field = "h-9 w-20 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 font-mono text-xs text-[var(--pc-ink)] outline-none";
+  return (
+    <form
+      // Out-of-range values are clamped on Apply rather than blocked.
+      noValidate
+      data-scrcpy-custom
+      className="flex flex-wrap items-end justify-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <label className="flex flex-col gap-0.5 font-mono text-[10px] uppercase text-[var(--pc-muted)]">
+        Max size px
+        <input
+          type="number"
+          inputMode="numeric"
+          min={CUSTOM_LIMITS.maxSize.min}
+          max={CUSTOM_LIMITS.maxSize.max}
+          step={1}
+          value={size}
+          disabled={disabled}
+          onChange={(event) => setSize(event.target.value)}
+          aria-label="Max size in pixels (0 = native)"
+          title="Longest side in pixels; 0 keeps the phone's native size"
+          data-scrcpy-custom-size
+          className={field}
+        />
+      </label>
+      <label className="flex flex-col gap-0.5 font-mono text-[10px] uppercase text-[var(--pc-muted)]">
+        Bitrate Mbps
+        <input
+          type="number"
+          inputMode="decimal"
+          min={CUSTOM_LIMITS.bitRateMbps.min}
+          max={CUSTOM_LIMITS.bitRateMbps.max}
+          step={0.25}
+          value={mbps}
+          disabled={disabled}
+          onChange={(event) => setMbps(event.target.value)}
+          aria-label="Bitrate in megabits per second"
+          data-scrcpy-custom-bitrate
+          className={field}
+        />
+      </label>
+      <label className="flex flex-col gap-0.5 font-mono text-[10px] uppercase text-[var(--pc-muted)]">
+        FPS
+        <input
+          type="number"
+          inputMode="numeric"
+          min={CUSTOM_LIMITS.maxFps.min}
+          max={CUSTOM_LIMITS.maxFps.max}
+          step={1}
+          value={fps}
+          disabled={disabled}
+          onChange={(event) => setFps(event.target.value)}
+          aria-label="Frames per second"
+          data-scrcpy-custom-fps
+          className={field}
+        />
+      </label>
+      <button type="submit" disabled={disabled} className="pc-toggle pc-toggle-sm" data-scrcpy-custom-apply>
+        Apply
+      </button>
+    </form>
   );
 }

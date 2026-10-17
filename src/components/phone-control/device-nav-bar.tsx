@@ -21,6 +21,10 @@ import {
   Smartphone,
   Sparkles,
   Square,
+  Expand,
+  PictureInPicture2,
+  RotateCwSquare,
+  Shrink,
 } from "lucide-react";
 import { StatsBarsIcon } from "@/components/phone-control/stats-bars-icon";
 import { Fragment } from "react";
@@ -66,6 +70,14 @@ export interface TaskbarToolHandlers {
   onOpenArrangement?: () => void;
   /** Opens the Quick actions menu anchored to the clicked button. */
   onQuickActions?: (anchor: HTMLElement) => void;
+  /** Rotate the target phones (scrcpy ROTATE_DEVICE). */
+  onRotate?: () => void;
+  /** Browser fullscreen; omitted where the browser has none. */
+  fullscreen?: boolean;
+  onFullscreen?: () => void;
+  /** Picture-in-picture pop-out; omitted where unsupported. */
+  pip?: boolean;
+  onPip?: () => void;
 }
 
 interface DeviceNavBarProps {
@@ -335,6 +347,48 @@ function PinnedToolButton({
           <Mouse className={iconClass} />
         </Toggle>
       );
+    case "rotate":
+      return handlers.onRotate ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={offline}
+          aria-label="Rotate phone"
+          data-taskbar-tool="rotate"
+          className={hit}
+          onClick={handlers.onRotate}
+        >
+          <RotateCwSquare className={iconClass} />
+        </Button>
+      ) : null;
+    case "fullscreen":
+      return handlers.onFullscreen ? (
+        <Toggle
+          pressed={Boolean(handlers.fullscreen)}
+          onPressedChange={() => handlers.onFullscreen?.()}
+          aria-label={handlers.fullscreen ? "Exit fullscreen" : "Fullscreen"}
+          data-taskbar-tool="fullscreen"
+          size="none"
+          className={hit}
+        >
+          {handlers.fullscreen ? <Shrink className={iconClass} /> : <Expand className={iconClass} />}
+        </Toggle>
+      ) : null;
+    case "pip":
+      return handlers.onPip ? (
+        <Toggle
+          pressed={Boolean(handlers.pip)}
+          onPressedChange={() => handlers.onPip?.()}
+          disabled={offline}
+          aria-label="Pop out (always on top, view only)"
+          data-taskbar-tool="pip"
+          size="none"
+          className={hit}
+        >
+          <PictureInPicture2 className={iconClass} />
+        </Toggle>
+      ) : null;
     case "restart":
       return (
         <Button

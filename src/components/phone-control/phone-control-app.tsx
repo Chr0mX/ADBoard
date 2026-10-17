@@ -34,6 +34,8 @@ import { useVisualViewportLock } from "@/hooks/use-visual-viewport-lock";
 import { documentTitle } from "@/lib/ui/document-title";
 import { parseMobileStatsMode, type MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { cn } from "@/lib/utils";
+import { useClipboardSync } from "@/hooks/use-clipboard-sync";
+import { useMacroAutomation } from "@/lib/macro/automation-store";
 
 function subscribeWide(onChange: () => void) {
   const media = window.matchMedia("(min-width: 1024px)");
@@ -71,6 +73,9 @@ export function PhoneControlApp() {
     lastTap,
     sessions,
   } = usePhoneControl();
+  useClipboardSync({ targets: broadcastTargets, mode: controlMode });
+  // Macro scheduler tick + device list for the task queue.
+  useMacroAutomation(devices);
 
   const [storedFillWindow, setFillWindow] = useStoredFlag("phonecontrol-fill-window", false);
   const wide = useSyncExternalStore(
@@ -209,7 +214,7 @@ export function PhoneControlApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v40"
+      data-ui-build="pc-shell-v41"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
