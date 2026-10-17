@@ -514,18 +514,18 @@ export function ControlPanelFloat({
               aria-label={
                 taskbarEdit
                   ? `${pins.includes("stats") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.stats}`
-                  : statsMode === "bar"
-                    ? "Stats: bottom bar (tap for floating widget)"
-                    : "Stats: floating widget (tap for bottom bar)"
+                  : statsMode === "show"
+                    ? "Stats: shown (tap to hide)"
+                    : "Stats: hidden (tap to show)"
               }
-              aria-pressed={taskbarEdit ? pins.includes("stats") : statsMode === "bar"}
+              aria-pressed={taskbarEdit ? pins.includes("stats") : statsMode === "show"}
               data-stats-mode={statsMode}
               data-taskbar-pin="stats"
               className={cn(
                 HIT,
               )}
               onClick={() =>
-                onStatsModeChange?.(statsMode === "bar" ? "float" : "bar")
+                onStatsModeChange?.(statsMode === "show" ? "hide" : "show")
               }
             >
               <StatsBarsIcon className="size-5" />

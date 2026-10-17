@@ -3,7 +3,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 import { ControlPanelFloat } from "@/components/adboard/floating/control-panel-float";
-import { StatsWidget } from "@/components/adboard/floating/stats-widget";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { repairEdgeDockedFloatPrefs } from "@/lib/ui/floating-prefs-repair";
 import type { DeskSection } from "@/components/adboard/desk/desk-context";
@@ -67,14 +66,11 @@ export function FloatingLayer(props: FloatingLayerProps) {
       className="pointer-events-none fixed inset-0 z-20"
       aria-live="polite"
     >
-      {props.statsMode !== "bar" && (
-        <StatsWidget device={props.device} session={props.session} stats={props.stats} />
-      )}
       <ControlPanelFloat
         offline={props.offline}
         serial={props.device?.serial ?? null}
         targetIds={props.targetIds}
-        statsMode={props.statsMode ?? "float"}
+        statsMode={props.statsMode ?? "show"}
         onStatsModeChange={props.onStatsModeChange}
         gridView={props.gridView}
         keyboardOn={props.keyboardOn}

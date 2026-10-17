@@ -10,7 +10,6 @@ import { useDesk } from "@/components/adboard/desk/desk-context";
 import { PanelFrame } from "@/components/adboard/desk/bits";
 import { ScrcpyOptions } from "@/components/adboard/scrcpy-options";
 import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
-import { Segmented } from "@/components/adboard/macros/fields";
 import { TOUCH_DIAGNOSTICS_KEY } from "@/components/adboard/touch-diagnostics";
 import { InstallOnIphone } from "@/components/adboard/desk/install-on-iphone";
 import { DataStorageCard } from "@/components/adboard/desk/data-storage";
@@ -69,15 +68,12 @@ export function SettingsPanel() {
             onChange={(event) => setCursorMode(event.target.checked)}
             data-settings-cursor
           />
-          <Segmented
+          <SwitchRow
             label="Stats on phones"
-            name="settings-stats-mode"
-            value={parseMobileStatsMode(statsRaw)}
-            onChange={(mode) => setStatsRaw(mode)}
-            options={[
-              { id: "float", label: "Floating widget" },
-              { id: "bar", label: "Bottom bar" },
-            ]}
+            description="The stats line under the phone (size, battery, CPU, fps…) scrolls across on a phone screen"
+            checked={parseMobileStatsMode(statsRaw) === "show"}
+            onChange={(event) => setStatsRaw(event.target.checked ? "show" : "hide")}
+            data-settings-stats
           />
         </section>
 

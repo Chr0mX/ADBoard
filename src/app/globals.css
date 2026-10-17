@@ -200,6 +200,56 @@ body {
   mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black, transparent);
 }
 
+/* Stats line under the phone (StatsLine marquee): static as usual from 640px up;
+   on a phone-width screen it scrolls across. The second copy only exists for
+   the seamless loop. */
+.pc-stats-track,
+.pc-stats-set {
+  display: contents;
+}
+.pc-stats-dup {
+  display: none;
+}
+@keyframes pc-stats-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (max-width: 639px) {
+  .pc-stats-host {
+    overflow: hidden;
+  }
+  .pc-stats-track {
+    display: flex;
+    width: max-content;
+    animation: pc-stats-marquee 18s linear infinite;
+  }
+  .pc-stats-set,
+  .pc-stats-dup {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-right: 1.5rem;
+  }
+  .pc-stats-host:active .pc-stats-track {
+    animation-play-state: paused;
+  }
+}
+@media (max-width: 639px) and (prefers-reduced-motion: reduce) {
+  .pc-stats-host {
+    overflow-x: auto;
+  }
+  .pc-stats-track {
+    animation: none;
+  }
+  .pc-stats-dup {
+    display: none;
+  }
+}
+
 @keyframes pc-ripple {
   0% {
     transform: translate(-50%, -50%) scale(0.35);

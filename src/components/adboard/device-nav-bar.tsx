@@ -310,15 +310,15 @@ function PinnedToolButton({
           variant="ghost"
           size="icon"
           aria-label={
-            handlers.statsMode === "bar"
-              ? "Stats: bottom bar (tap for floating widget)"
-              : "Stats: floating widget (tap for bottom bar)"
+            handlers.statsMode === "show"
+              ? "Stats: shown (tap to hide)"
+              : "Stats: hidden (tap to show)"
           }
-          aria-pressed={handlers.statsMode === "bar"}
+          aria-pressed={handlers.statsMode === "show"}
           data-taskbar-tool="stats"
           className={hit}
           onClick={() =>
-            handlers.onStatsModeChange(handlers.statsMode === "bar" ? "float" : "bar")
+            handlers.onStatsModeChange(handlers.statsMode === "show" ? "hide" : "show")
           }
         >
           <StatsBarsIcon className={iconClass} />

@@ -137,7 +137,7 @@ export function PhoneScreen({
   fillWindow,
   floatingChrome = false,
   gridView = false,
-  statsMode = "float",
+  statsMode = "show",
   onStatsModeChange,
   onFillWindowChange,
   onToggleGrid,
@@ -1448,13 +1448,14 @@ export function PhoneScreen({
                 onQuietChange: quiet.toggle,
               }}
             />
-            {statsMode === "bar" && (
+            {statsMode === "show" && (
               <StatusBar
                 device={device}
                 session={session}
                 stats={stats}
                 safeBottom={false}
                 compact
+                marquee
               />
             )}
           </div>
