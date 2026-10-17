@@ -219,7 +219,7 @@ export function QuickActionsMenu({
     <div
       ref={ref}
       role="menu"
-      aria-label="Quick actions"
+      aria-label="Device actions"
       data-quick-actions-menu
       style={{ visibility: "hidden" }}
       className="pc-float-shell fixed z-50 flex w-56 max-w-[calc(100vw-16px)] flex-col gap-1 p-1.5"

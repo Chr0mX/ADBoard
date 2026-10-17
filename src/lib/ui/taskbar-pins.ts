@@ -49,7 +49,7 @@ export const TASKBAR_TOOL_LABELS: Record<TaskbarToolId, string> = {
   restart: "Restart device",
   info: "Device info",
   arrangement: "Arrangement",
-  quick: "Quick actions",
+  quick: "Device actions",
   rotate: "Rotate",
   fullscreen: "Fullscreen",
   pip: "Pop out",

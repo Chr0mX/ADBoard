@@ -20,7 +20,7 @@ import {
   Mouse,
   RotateCcw,
   Info,
-  Columns3,
+  Grid2x2,
   RotateCwSquare,
   Expand,
   Shrink,
@@ -1034,7 +1034,7 @@ export function PhoneScreen({
           </button>
           {onToggleGrid && (
             <button type="button" className="pc-toggle pc-toggle-md" onClick={actions.openArrangement} data-open-arrangement>
-              <Columns3 className="size-4" />
+              <Grid2x2 className="size-4" />
               Arrangement
             </button>
           )}
@@ -1076,7 +1076,7 @@ export function PhoneScreen({
               Pop out
             </Toggle>
           )}
-          <span className="mx-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Quick</span>
+          <span className="mx-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Device actions</span>
           {QUICK_ACTIONS.map((item) => (
             <button
               key={item.op}

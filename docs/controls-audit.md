@@ -22,7 +22,7 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 | Broadcast Input | Existing | Selected / Multi / All |
 | Device Manager | Existing | Desk → Manage |
 | Connect / Disconnect | Existing | Manage → Wireless: `adb pair`, `adb connect` and `adb disconnect`, plus QR pairing |
-| Reconnect | Existing | Sidebar, Quick actions and the device menu. Offline phones get `adb reconnect`. |
+| Reconnect | Existing | Sidebar, Device actions (⋮) and the device menu. Offline phones get `adb reconnect`. |
 | Restart Device | Existing | Reboot, with confirmation |
 | Install APK | Existing | APK tool, Apps drop zone, device menu |
 | Uninstall APK | Existing | Apps → Uninstall (`pm uninstall`) |
@@ -59,7 +59,7 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 
 ## 5. Floating UI and taskbar
 
-Tools, taskbar customization, Stats, the Macro panel, Settings, Pin / Unpin, Collapse / Expand, Device Grid, Device Information, Quick Actions, and the Fill / Minimize layout controls already existed and are unchanged.
+Tools, taskbar customization, Stats, the Macro panel, Settings, Pin / Unpin, Collapse / Expand, Device Grid, Device Information, Device actions (⋮: Reconnect video, Restart ADB link, Power off; formerly "Quick actions"), and the Fill / Minimize layout controls already existed and are unchanged.
 
 The new Rotate, Fullscreen and Pop out tools sit in a folding "Screen" menu in floating Tools, so the panel stays the same height until it is opened. Stay awake sits next to Screen off.
 

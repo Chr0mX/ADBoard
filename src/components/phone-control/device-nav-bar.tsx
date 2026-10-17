@@ -3,7 +3,7 @@
 import {
   ChevronLeft,
   Circle,
-  Columns3,
+  Grid2x2,
   House,
   Info,
   Minimize2,
@@ -19,7 +19,7 @@ import {
   RefreshCw,
   RotateCcw,
   Smartphone,
-  Sparkles,
+  EllipsisVertical,
   Square,
   Expand,
   PictureInPicture2,
@@ -68,7 +68,7 @@ export interface TaskbarToolHandlers {
   onRestart?: () => void;
   onOpenInfo?: () => void;
   onOpenArrangement?: () => void;
-  /** Opens the Quick actions menu anchored to the clicked button. */
+  /** Opens the Device actions menu (reconnect, restart ADB, power off) at the clicked button. */
   onQuickActions?: (anchor: HTMLElement) => void;
   /** Rotate the target phones (scrcpy ROTATE_DEVICE). */
   onRotate?: () => void;
@@ -429,7 +429,7 @@ function PinnedToolButton({
           className={hit}
           onClick={handlers.onOpenArrangement}
         >
-          <Columns3 className={iconClass} />
+          <Grid2x2 className={iconClass} />
         </Button>
       );
     case "quick":
@@ -439,13 +439,13 @@ function PinnedToolButton({
           variant="ghost"
           size="icon"
           disabled={offline}
-          aria-label="Quick actions"
+          aria-label="Device actions"
           aria-haspopup="menu"
           data-taskbar-tool="quick"
           className={hit}
           onClick={(event) => handlers.onQuickActions?.(event.currentTarget)}
         >
-          <Sparkles className={iconClass} />
+          <EllipsisVertical className={iconClass} />
         </Button>
       );
     case "desk":

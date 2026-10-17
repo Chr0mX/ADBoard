@@ -8,11 +8,11 @@ import {
 import {
   Camera,
   Circle,
-  Columns3,
+  Grid2x2,
   Info,
   Mouse,
   RotateCcw,
-  Sparkles,
+  EllipsisVertical,
   Keyboard,
   LayoutGrid,
   MonitorOff,
@@ -585,7 +585,7 @@ export function ControlPanelFloat({
                 className={HIT}
                 onClick={onOpenArrangement}
               >
-                <Columns3 className="size-5" />
+                <Grid2x2 className="size-5" />
               </Button>
             </PinableTool>
           )}
@@ -594,7 +594,7 @@ export function ControlPanelFloat({
               <Button
                 type="button"
                 variant="ghost"
-                aria-label={taskbarEdit ? `${pins.includes("quick") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.quick}` : "Quick actions"}
+                aria-label={taskbarEdit ? `${pins.includes("quick") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.quick}` : "Device actions"}
                 aria-pressed={taskbarEdit ? pins.includes("quick") : undefined}
                 data-taskbar-pin="quick"
                 aria-haspopup="menu"
@@ -603,7 +603,7 @@ export function ControlPanelFloat({
                 className={HIT}
                 onClick={(event) => onQuickActions?.(event.currentTarget)}
               >
-                <Sparkles className="size-5" />
+                <EllipsisVertical className="size-5" />
               </Button>
             </PinableTool>
           )}
