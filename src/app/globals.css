@@ -342,6 +342,23 @@ body {
   display: none;
 }
 
+/* Side control dock (Screens or Devices folded): thin scrollbar. The dock
+   pads its left edge by the scrollbar's width (see phone-screen) so the
+   space to the rail and to the phone match on either side. */
+.pc-side-dock {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--pc-ink) 22%, transparent) transparent;
+}
+
+.pc-side-dock::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pc-side-dock::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pc-ink) 22%, transparent);
+}
+
 .pc-taskbar-item {
   display: inline-flex;
   align-items: center;

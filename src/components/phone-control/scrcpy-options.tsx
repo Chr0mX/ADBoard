@@ -3,6 +3,7 @@
 import { agentWsProtocols } from "@/lib/api/auth";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Toggle } from "@/components/ui/toggle";
 import { useDesk } from "@/components/phone-control/desk/desk-context";
 import { devicesClient } from "@/lib/api/client";
@@ -35,11 +36,15 @@ export function ScrcpyOptions({
   targetIds,
   serial,
   disabled,
+  align = "center",
 }: {
   targetIds: string[];
   serial: string | null;
   disabled?: boolean;
+  /** `start`: rows fill the column edge to edge (side control dock). */
+  align?: "center" | "start";
 }) {
+  const start = align === "start";
   const { options, apply, note, setNote, audioNote, audioError } = useScrcpyOptions({
     targetIds,
     serial,
@@ -182,8 +187,15 @@ export function ScrcpyOptions({
   };
 
   return (
-    <div className="flex w-full shrink-0 flex-col items-center gap-1" data-scrcpy-options>
-      <div className="flex w-full flex-nowrap items-center justify-start gap-1.5 overflow-x-auto lg:flex-wrap lg:justify-center">
+    <div className={cn("flex w-full shrink-0 flex-col gap-1", start ? "items-stretch" : "items-center")} data-scrcpy-options data-align={align}>
+      <div
+        className={cn(
+          "flex w-full items-center gap-1.5",
+          start
+            ? "flex-wrap justify-start [&>*]:flex-1 [&>*]:basis-auto"
+            : "flex-nowrap justify-start overflow-x-auto lg:flex-wrap lg:justify-center",
+        )}
+      >
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
           <span className="hidden font-mono text-[10px] uppercase tracking-wide text-[var(--pc-muted)] lg:inline">
             Quality
@@ -261,7 +273,7 @@ export function ScrcpyOptions({
         >
           Stay awake
         </Toggle>
-        <div className="max-lg:hidden lg:contents">
+        <div className={start ? "grid w-full grid-cols-2 gap-1.5 [&>input]:col-span-2 [&>input]:min-w-0" : "max-lg:hidden lg:contents"}>
           <input
             aria-label="Clipboard"
             data-scrcpy-clipboard
@@ -302,11 +314,11 @@ export function ScrcpyOptions({
           onApply={(values) => void apply({ ...options, ...values })}
         />
       ) : (
-        <p data-scrcpy-quality-hint className="font-mono text-[10px] text-[var(--pc-muted)]">
+        <p data-scrcpy-quality-hint className={cn("font-mono text-[10px] text-[var(--pc-muted)]", start && "px-0.5")}>
           {QUALITY_HINTS[options.quality] ?? ""}
         </p>
       )}
-      <div className="w-full max-w-md" data-scrcpy-clipboard-sync-row>
+      <div className={cn("w-full", !start && "max-w-md")} data-scrcpy-clipboard-sync-row>
         <SwitchRow
           label="Sync clipboard"
           description="Phone copies land on this PC; Ctrl/Cmd+V pastes this PC's clipboard on the target phones"

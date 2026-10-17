@@ -211,6 +211,24 @@ export function PhoneScreen({
     onShowGrid: onToggleGrid,
   });
   const [quickAnchor, setQuickAnchor] = useState<HTMLElement | null>(null);
+  // Side dock: pad the left edge by the scrollbar's width (0 with overlay
+  // scrollbars or no overflow) so the buttons sit centred in the column and
+  // the gap to the rail matches the gap to the phone on either side.
+  const dockRef = useRef<HTMLElement>(null);
+  const sideDockOn = !floatingChrome && !fillWindow && !gridView && controlsDock !== "bottom";
+  useLayoutEffect(() => {
+    const dock = dockRef.current;
+    if (!dock || !sideDockOn) return;
+    const fit = () => {
+      const bar = dock.offsetWidth - dock.clientWidth;
+      dock.style.paddingLeft = bar > 0 ? `${bar}px` : "";
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(dock);
+    for (const child of Array.from(dock.children)) observer.observe(child);
+    return () => observer.disconnect();
+  }, [sideDockOn]);
   // Rotate / Fullscreen / Pop out, shared by More tools, floating Tools and pins.
   const fullscreen = useFullscreen();
   const pip = usePictureInPicture(canvasRef);
@@ -644,7 +662,14 @@ export function PhoneScreen({
   };
 
   const navRowEl = showDockedChrome ? (
-          <div data-nav-row className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1.5">
+          <div
+            data-nav-row
+            className={cn(
+              "shrink-0 gap-2 py-1.5",
+              // Side dock: same left/right edges as the tool buttons.
+              sideDock ? "grid grid-cols-3" : "flex flex-wrap items-center justify-center",
+            )}
+          >
             {(sideControls
               ? ([
                   ["back", "Back"],
@@ -676,7 +701,7 @@ export function PhoneScreen({
                         ? "Power"
                         : name
                 }
-                className={railClass}
+                className={cn(railClass, sideDock && "w-full min-w-0 px-1")}
               >
                 {name}
               </Button>
@@ -1006,10 +1031,15 @@ export function PhoneScreen({
           targetIds={targetIds}
           serial={device?.serial ?? null}
           disabled={offline}
+          align={sideDock ? "start" : "center"}
         />
         <div
           data-device-actions
-          className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-[var(--pc-line)] pt-2"
+          className={cn(
+            "mt-2 flex gap-1.5 border-t border-[var(--pc-line)] pt-2",
+            // Side dock: one full-width column, like the tool buttons.
+            sideDock ? "flex-col items-stretch [&>button]:w-full [&>button]:justify-start" : "flex-wrap items-center",
+          )}
         >
           {onCursorModeChange && (
             <Toggle
@@ -1076,7 +1106,7 @@ export function PhoneScreen({
               Pop out
             </Toggle>
           )}
-          <span className="mx-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">Device actions</span>
+          <span className={cn("font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]", sideDock ? "mt-1 px-0.5" : "mx-1")}>Device actions</span>
           {QUICK_ACTIONS.map((item) => (
             <button
               key={item.op}
@@ -1429,8 +1459,9 @@ export function PhoneScreen({
 
       {sideDock && (
         <aside
+          ref={dockRef}
           data-controls-dock={sideDock}
-          className="flex min-h-0 w-[200px] shrink-0 flex-col gap-3 overflow-y-auto pb-2 xl:w-[240px]"
+          className="pc-side-dock flex min-h-0 w-[200px] shrink-0 flex-col gap-3 overflow-y-auto pb-2 xl:w-[240px]"
         >
           {navRowEl}
           {controlsEl}
