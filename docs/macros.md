@@ -44,7 +44,7 @@ A step is 1–10 fingers played together, then a wait.
 
 ## Macros in Control
 
-**Touch Macro** in the Control tool row (and in the grid bar) opens a Touch Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet.
+**Macro** in the Control tool row (and in the grid bar) opens a Touch Macros panel on the right. It replaces Devices until closed. On phones it opens from the floating controls as a full-screen sheet.
 
 Opened while a phone is selected, the panel belongs to **that phone**. Selecting another phone switches the panel to it. It has:
 

@@ -709,13 +709,13 @@ export function ControlPanelFloat({
             <Button
               type="button"
               variant="ghost"
-              aria-label="Touch Macro"
+              aria-label="Macro"
               data-open-macros
               className="pc-toggle pc-toggle-lg gap-1.5 px-3"
               onClick={onOpenMacros}
             >
               <Zap className="size-5" />
-              <span data-macro-label>Touch Macro</span>
+              <span data-macro-label>Macro</span>
             </Button>
           )}
           <PinableTool {...pinProps("desk")}>
