@@ -28,7 +28,7 @@
     <td width="50%" valign="top">
       <img src="site/assets/icon-automation.svg" width="32" height="32" alt=""><br>
       <b>Macros &amp; Shell Automation</b><br>
-      Macros: record or build finger-touch macros and run them per phone. Shell Automation: app, file and shell-command jobs across many phones.
+      Macros: record or build finger-touch macros and run them per phone. Shell Automation: app, file, key, shell-command and touch jobs across many phones, built next to a live preview of the phone (see [docs/shell-automation.md](docs/shell-automation.md)).
     </td>
   </tr>
   <tr>

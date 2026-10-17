@@ -19,6 +19,8 @@ export interface AppShortcut {
 export type MacroStepKind =
   | "launch"
   | "forceStop"
+  | "clearData"
+  | "uninstall"
   | "reboot"
   | "shutdown"
   | "wait"
@@ -48,6 +50,16 @@ export type MacroStepKind =
 export interface MacroStep {
   id: string;
   kind: MacroStepKind;
+  /** Skipped when false (missing = on, for older jobs). */
+  enabled?: boolean;
+  /** Pause after this step, in milliseconds. */
+  delayAfterMs?: number;
+  /** Press or swipe time for touch steps. */
+  durationMs?: number;
+  /** Scroll: the way the finger moves. Pinch: fingers move in (zoom out) or out (zoom in). */
+  direction?: "up" | "down" | "in" | "out";
+  /** Scroll / pinch distance, percent of the screen. */
+  distance?: number;
   packageName?: string;
   activity?: string;
   ms?: number;
@@ -94,6 +106,10 @@ export interface SavedMacro {
   name: string;
   folder: string;
   steps: MacroStep[];
+  /** Play the whole job this many times (missing = 1). */
+  repeat?: number;
+  /** What a failed step does: stop that phone's run (default) or go on. */
+  onError?: "stop" | "continue";
 }
 
 export interface DeviceGroup {
@@ -256,9 +272,11 @@ function storeLibrary(next: DeskLibrary) {
   listeners.forEach((listener) => listener());
 }
 
-const MACRO_KINDS = new Set<string>([
+export const MACRO_KINDS = new Set<string>([
   "launch",
   "forceStop",
+  "clearData",
+  "uninstall",
   "reboot",
   "shutdown",
   "wait",

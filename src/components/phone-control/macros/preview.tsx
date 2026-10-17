@@ -253,22 +253,15 @@ export function TouchRipples({ touches }: { touches: MacroTouch[] }) {
 }
 
 /**
- * The preview on a phone's live screen: its video under the markers, sized
- * by the real (rotation-aware) video frame, with ripples while a macro runs.
+ * A phone's live screen for previews: its video as a backdrop, the frame size
+ * (the real, rotation-aware video size when streaming, else the reported
+ * resolution) and a status badge. Shared by the Macros and Shell Automation
+ * previews so both show the screen the same way.
  */
-export function LivePreview({
-  device,
-  live,
-  ...rest
-}: {
-  device: Device;
-  live: boolean;
-} & Omit<Parameters<typeof MacroPreview>[0], "frame" | "frameLabel" | "backdrop" | "badge" | "ripples">) {
+export function useLiveScreen(device: Device, live: boolean) {
   const { canvasRef, configured, decodeState, frameSize } = useDeviceVideo(live ? device.serial : null);
-  const touches = useMacroTouches(device.id);
-  const frame = (live && frameSize) || device.resolution;
+  const frame: Size = (live && frameSize) || device.resolution;
   const playing = live && configured && decodeState === "decoding";
-  const mismatch = rest.tab.orientation === "match" && orientationMismatch(rest.tab.reference, frame);
   const state = !configured
     ? { key: "off", text: "No video (mock UI)" }
     : decodeState === "decoding"
@@ -290,6 +283,35 @@ export function LivePreview({
       {state.text}
     </span>
   ) : null;
+  const backdrop =
+    live && configured ? (
+      <canvas
+        ref={canvasRef}
+        data-macro-live-canvas
+        className={cn(
+          "pointer-events-none absolute inset-0 h-full w-full object-contain transition-opacity",
+          playing ? "opacity-100" : "opacity-0",
+        )}
+      />
+    ) : null;
+  return { frame, streaming: Boolean(live && frameSize), badge, backdrop };
+}
+
+/**
+ * The preview on a phone's live screen: its video under the markers, sized
+ * by the real (rotation-aware) video frame, with ripples while a macro runs.
+ */
+export function LivePreview({
+  device,
+  live,
+  ...rest
+}: {
+  device: Device;
+  live: boolean;
+} & Omit<Parameters<typeof MacroPreview>[0], "frame" | "frameLabel" | "backdrop" | "badge" | "ripples">) {
+  const { frame, streaming, badge, backdrop } = useLiveScreen(device, live);
+  const touches = useMacroTouches(device.id);
+  const mismatch = rest.tab.orientation === "match" && orientationMismatch(rest.tab.reference, frame);
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {mismatch && (
@@ -300,21 +322,10 @@ export function LivePreview({
       <MacroPreview
         {...rest}
         frame={frame}
-        frameLabel={`${device.name}${live && frameSize ? " · live" : ""}`}
+        frameLabel={`${device.name}${streaming ? " · live" : ""}`}
         badge={badge}
         ripples={touches}
-        backdrop={
-          live && configured ? (
-            <canvas
-              ref={canvasRef}
-              data-macro-live-canvas
-              className={cn(
-                "pointer-events-none absolute inset-0 h-full w-full object-contain transition-opacity",
-                playing ? "opacity-100" : "opacity-0",
-              )}
-            />
-          ) : null
-        }
+        backdrop={backdrop}
       />
     </div>
   );

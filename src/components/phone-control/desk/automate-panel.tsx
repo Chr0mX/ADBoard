@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { runMacro, type MacroProgress } from "@/lib/desk/run-macro";
+import { ACTIONS, CATEGORIES, newStep } from "@/lib/desk/actions";
 import {
-  MACRO_FOLDERS,
+  MACRO_KINDS,
   emptyProfile,
   exportDeskJson,
   importDeskJson,
@@ -11,48 +11,19 @@ import {
   updateLibrary,
   useLibrary,
   type DeviceProfile,
-  type MacroStep,
   type MacroStepKind,
   type SavedMacro,
 } from "@/lib/desk/store";
 import { useDesk } from "@/components/phone-control/desk/desk-context";
 import {
+  ConfirmDialog,
   PanelFrame,
   PrimaryButton,
   TargetChecks,
   TextField,
-  picked,
   useChecked,
 } from "@/components/phone-control/desk/bits";
-
-const KINDS: Array<{ id: MacroStepKind; label: string; group: string }> = [
-  { id: "launch", label: "Launch App", group: "Device" },
-  { id: "forceStop", label: "Force Stop App", group: "Device" },
-  { id: "reboot", label: "Reboot", group: "Device" },
-  { id: "shutdown", label: "Shutdown", group: "Device" },
-  { id: "nav", label: "Home / Back / Recent / Power / Volume", group: "Device" },
-  { id: "tap", label: "Tap", group: "Input" },
-  { id: "doubleTap", label: "Double Tap", group: "Input" },
-  { id: "longPress", label: "Long Press", group: "Input" },
-  { id: "swipe", label: "Swipe", group: "Input" },
-  { id: "scroll", label: "Scroll", group: "Input" },
-  { id: "drag", label: "Drag", group: "Input" },
-  { id: "pinch", label: "Pinch", group: "Input" },
-  { id: "text", label: "Text Input", group: "Input" },
-  { id: "wait", label: "Wait", group: "Timing" },
-  { id: "waitDevice", label: "Wait for Device", group: "Timing" },
-  { id: "waitApp", label: "Wait for App", group: "Timing" },
-  { id: "waitScreen", label: "Wait for Screen", group: "Timing" },
-  { id: "timeout", label: "Timeout", group: "Timing" },
-  { id: "upload", label: "Upload File", group: "File" },
-  { id: "download", label: "Download File", group: "File" },
-  { id: "deleteFile", label: "Delete File", group: "File" },
-  { id: "install", label: "Install APK", group: "File" },
-  { id: "screenshot", label: "Screenshot", group: "Capture" },
-  { id: "recordStart", label: "Start Recording", group: "Capture" },
-  { id: "recordStop", label: "Stop Recording", group: "Capture" },
-  { id: "shell", label: "Run Shell Command", group: "ADB" },
-];
+import { MechanismBadge, ShellBuilder } from "@/components/phone-control/desk/shell-builder";
 
 /** Tabs in the order you use them, each with a one-line hint and a plain explanation. */
 const TABS = [
@@ -60,14 +31,14 @@ const TABS = [
     id: "library",
     label: "Library",
     sub: "Saved jobs",
-    explain: "Your saved Automation jobs. Pick one to run it on the phones you tick, or open it in Builder.",
+    explain: "Your saved jobs, and every action a job can use, grouped by what it does. Add an action to send it to the Builder.",
   },
   {
     id: "builder",
     label: "Builder",
     sub: "Make a job",
     explain:
-      "Make a job step by step: launch or stop apps, tap, type, wait, install APKs, move files, run shell commands. Example: Force Stop game → Launch game → Wait 10 s → Tap Start.",
+      "Build a job step by step next to the phone's live screen: touch steps show where they land. Test one step, or run the whole job on the phones you tick. Example: Force stop game → Launch game → Wait 10 s → Tap Start.",
   },
   {
     id: "variables",
@@ -101,7 +72,25 @@ export function AutomatePanel() {
   const desk = useDesk();
   const [tab, setTab] = useState(desk.focusTool || "library");
   const [macroId, setMacroId] = useState<string | null>(library.macros[0]?.id ?? null);
+  const [focusStepId, setFocusStepId] = useState<string | null>(null);
   const macro = library.macros.find((item) => item.id === macroId) ?? null;
+
+  /** Library → Builder: put the action in the open job (a new job if none). */
+  const addAction = (kind: MacroStepKind) => {
+    const step = newStep(kind);
+    if (macro) {
+      updateLibrary((current) => ({
+        ...current,
+        macros: current.macros.map((m) => (m.id === macro.id ? { ...m, steps: [...m.steps, step] } : m)),
+      }));
+    } else {
+      const created: SavedMacro = { id: newId("macro"), name: "New job", folder: "Custom", steps: [step] };
+      updateLibrary((current) => ({ ...current, macros: [...current.macros, created] }));
+      setMacroId(created.id);
+    }
+    setFocusStepId(step.id);
+    setTab("builder");
+  };
 
   return (
     <PanelFrame title="Shell Automation" panel="automate">
@@ -129,22 +118,24 @@ export function AutomatePanel() {
         </p>
       )}
       {tab === "library" && (
-        <MacroLibrary
-          selectedId={macroId}
-          onSelect={(id) => {
+        <JobLibrary
+          openId={macro?.id ?? null}
+          onOpen={(id) => {
             setMacroId(id);
+            setFocusStepId(null);
             setTab("builder");
           }}
-          onRun={(id) => {
-            setMacroId(id);
-            setTab("builder");
-          }}
+          onAddAction={addAction}
         />
       )}
       {tab === "builder" && (
-        <MacroBuilder
+        <ShellBuilder
           macro={macro}
-          onCreate={(created) => setMacroId(created.id)}
+          focusStepId={focusStepId}
+          onCreate={(created) => {
+            setMacroId(created.id);
+            setFocusStepId(null);
+          }}
         />
       )}
       {tab === "variables" && <VariablesEditor />}
@@ -155,427 +146,223 @@ export function AutomatePanel() {
   );
 }
 
-function MacroLibrary({
-  selectedId,
-  onSelect,
-  onRun,
+/** Check a single exported job before adding it. */
+function parseJobFile(text: string): SavedMacro {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("The file is not valid JSON");
+  }
+  const job = parsed as Partial<SavedMacro>;
+  if (!job || typeof job !== "object" || typeof job.name !== "string" || !Array.isArray(job.steps)) {
+    throw new Error("Not a Shell Automation job (needs a name and steps). A whole desk export goes in Import desk.");
+  }
+  const unknown = job.steps.filter((step) => !step || !MACRO_KINDS.has(String(step.kind)));
+  if (unknown.length > 0) throw new Error(`Unknown step type: ${String(unknown[0]?.kind)}`);
+  return {
+    ...(job as SavedMacro),
+    id: newId("macro"),
+    folder: job.folder || "Custom",
+    steps: job.steps.map((step) => ({ ...step, id: newId("step") })),
+  };
+}
+
+function download(name: string, text: string) {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function JobLibrary({
+  openId,
+  onOpen,
+  onAddAction,
 }: {
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onRun: (id: string) => void;
+  openId: string | null;
+  onOpen: (id: string | null) => void;
+  onAddAction: (kind: MacroStepKind) => void;
 }) {
   const library = useLibrary();
+  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [deleting, setDeleting] = useState<SavedMacro | null>(null);
+  const open = library.macros.find((m) => m.id === openId) ?? null;
+  // Only folders that hold jobs: empty placeholder folders are not shown.
   const folders = useMemo(() => {
-    const names = new Set<string>(MACRO_FOLDERS);
-    for (const macro of library.macros) names.add(macro.folder || "Custom");
-    return [...names];
+    const names: string[] = [];
+    for (const macro of library.macros) {
+      const name = macro.folder || "Custom";
+      if (!names.includes(name)) names.push(name);
+    }
+    return names;
   }, [library.macros]);
 
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
-        <Mini
-          label="Export desk"
-          onClick={() => {
-            const blob = new Blob([exportDeskJson(library)], {
-              type: "application/json",
-            });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = "phonecontrol-desk.json";
-            link.click();
-            URL.revokeObjectURL(url);
-          }}
-        />
-        <label className="inline-flex h-9 cursor-pointer items-center rounded-lg border border-[var(--pc-line)] px-2 text-xs text-[var(--pc-ink)]">
-          Import desk
-          <input
-            type="file"
-            accept="application/json,.json"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (!file) return;
-              void file.text().then((text) => {
-                try {
-                  importDeskJson(text);
-                } catch (error) {
-                  window.alert(
-                    error instanceof Error ? error.message : "Could not import the desk file",
-                  );
-                }
-              });
-            }}
-          />
-        </label>
-      </div>
-      {folders.map((folder) => (
-        <section key={folder}>
-          <h3 className="font-display text-sm font-semibold">📁 {folder}</h3>
-          <ul className="mt-1">
-            {library.macros
-              .filter((macro) => (macro.folder || "Custom") === folder)
-              .map((macro) => (
-                <li key={macro.id} data-macro={macro.name} className="flex flex-wrap items-center gap-1">
-                  <span className={macro.id === selectedId ? "font-semibold" : ""}>{macro.name}</span>
-                  <Mini label="Run" onClick={() => onRun(macro.id)} />
-                  <Mini label="Edit" onClick={() => onSelect(macro.id)} />
-                  <Mini
-                    label="Duplicate"
-                    onClick={() =>
-                      updateLibrary((current) => ({
-                        ...current,
-                        macros: [
-                          ...current.macros,
-                          { ...macro, id: newId("macro"), name: `${macro.name} copy`, steps: macro.steps.map((step) => ({ ...step, id: newId("step") })) },
-                        ],
-                      }))
-                    }
-                  />
-                  <Mini
-                    label="Rename"
-                    onClick={() => {
-                      const name = window.prompt("Rename macro", macro.name);
-                      if (!name) return;
-                      updateLibrary((current) => ({
-                        ...current,
-                        macros: current.macros.map((item) => (item.id === macro.id ? { ...item, name } : item)),
-                      }));
-                    }}
-                  />
-                  <Mini
-                    label="Delete"
-                    onClick={() =>
-                      updateLibrary((current) => ({
-                        ...current,
-                        macros: current.macros.filter((item) => item.id !== macro.id),
-                      }))
-                    }
-                  />
-                  <Mini
-                    label="Export"
-                    onClick={() => {
-                      const blob = new Blob([JSON.stringify(macro, null, 2)], { type: "application/json" });
-                      const url = URL.createObjectURL(blob);
-                      const anchor = document.createElement("a");
-                      anchor.href = url;
-                      anchor.download = `${macro.name}.json`;
-                      anchor.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                  />
-                </li>
-              ))}
-          </ul>
-        </section>
-      ))}
-      <label className="text-sm">
-        Import
-        <input
-          type="file"
-          accept="application/json"
-          className="mt-1 block text-xs"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            void file.text().then((text) => {
-              const parsed = JSON.parse(text) as SavedMacro;
-              if (!parsed?.name || !Array.isArray(parsed.steps)) return;
-              updateLibrary((current) => ({
-                ...current,
-                macros: [...current.macros, { ...parsed, id: newId("macro") }],
-              }));
-            });
-          }}
-        />
-      </label>
-    </div>
+  const importInput = (label: string, attr: string, onText: (text: string) => void) => (
+    <label className="pc-toggle pc-toggle-sm cursor-pointer" {...{ [attr]: true }}>
+      {label}
+      <input
+        type="file"
+        accept="application/json,.json"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file) return;
+          void file.text().then((text) => {
+            try {
+              onText(text);
+            } catch (error) {
+              setNotice({ tone: "error", text: error instanceof Error ? error.message : "Could not import the file" });
+            }
+          });
+        }}
+      />
+    </label>
   );
-}
-
-function MacroBuilder({
-  macro,
-  onCreate,
-}: {
-  macro: SavedMacro | null;
-  onCreate: (macro: SavedMacro) => void;
-}) {
-  const desk = useDesk();
-  const library = useLibrary();
-  const [checked, setChecked] = useChecked(desk.devices, desk.targets);
-  const [parallel, setParallel] = useState(true);
-  const [progress, setProgress] = useState<Record<string, MacroProgress>>({});
-  const [running, setRunning] = useState(false);
-  const [name, setName] = useState("");
-  const [folder, setFolder] = useState("Testing");
-
-  function patch(steps: MacroStep[]) {
-    if (!macro) return;
-    updateLibrary((current) => ({
-      ...current,
-      macros: current.macros.map((item) => (item.id === macro.id ? { ...item, steps } : item)),
-    }));
-  }
-
-  const tagNames = [...new Set(Object.values(library.tags).flat())];
 
   return (
-    <div className="flex flex-col gap-3" data-macro-builder>
-      {!macro && (
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const created: SavedMacro = {
-              id: newId("macro"),
-              name: name || "New macro",
-              folder,
-              steps: [],
-            };
-            updateLibrary((current) => ({ ...current, macros: [...current.macros, created] }));
-            onCreate(created);
-          }}
-        >
-          <TextField label="Name" value={name} onChange={setName} placeholder="Login Test" />
-          <label className="text-sm">
-            Folder
-            <select value={folder} onChange={(event) => setFolder(event.target.value)} className="mt-1 h-11 rounded-lg border px-2">
-              {MACRO_FOLDERS.map((item) => (
-                <option key={item}>{item}</option>
-              ))}
-            </select>
-          </label>
-          <PrimaryButton type="submit">Create</PrimaryButton>
-        </form>
-      )}
-      {macro && (
-        <>
-          <p className="font-display text-sm font-semibold">
-            Macro: {macro.name}
+    <div className="@container flex min-w-0 flex-col gap-4" data-shell-library>
+      <section className="flex flex-col gap-2" data-shell-jobs>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Saved jobs ({library.macros.length})</h3>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="pc-toggle pc-toggle-sm" onClick={() => onOpen(null)} data-shell-new-job>
+              New job
+            </button>
+            {importInput("Import job", "data-shell-import-job", (text) => {
+              const job = parseJobFile(text);
+              updateLibrary((current) => ({ ...current, macros: [...current.macros, job] }));
+              setNotice({ tone: "ok", text: `Imported “${job.name}” (${job.steps.length} steps).` });
+            })}
+            {importInput("Import desk", "data-shell-import-desk", (text) => {
+              const next = importDeskJson(text);
+              setNotice({ tone: "ok", text: `Imported the desk: ${next.macros.length} jobs.` });
+            })}
+            <button type="button" className="pc-toggle pc-toggle-sm" onClick={() => download("phonecontrol-desk.json", exportDeskJson(library))}>
+              Export desk
+            </button>
+          </div>
+        </div>
+        {notice && (
+          <p role="status" className={notice.tone === "error" ? "text-xs text-[var(--pc-warn)]" : "text-xs text-[var(--pc-signal)]"} data-shell-library-notice>
+            {notice.text}
           </p>
-          <ol className="flex flex-col gap-2">
-            {macro.steps.map((step, index) => (
-              <li key={step.id} className="rounded-lg border border-[var(--pc-line)] p-2 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span>
-                    {index + 1}. {KINDS.find((kind) => kind.id === step.kind)?.label ?? step.kind}
-                  </span>
-                  <button
-                    type="button"
-                    className="h-9 px-2 text-xs"
-                    onClick={() => patch(macro.steps.filter((item) => item.id !== step.id))}
+        )}
+        {library.macros.length === 0 && <p className="text-xs text-[var(--pc-muted)]">No saved jobs yet. Add an action below, or press New job.</p>}
+        {folders.map((folder) => (
+          <div key={folder} className="flex flex-col gap-1" data-shell-folder={folder}>
+            <h4 className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">{folder}</h4>
+            <ul className="flex flex-col gap-1">
+              {library.macros
+                .filter((macro) => (macro.folder || "Custom") === folder)
+                .map((macro) => (
+                  <li
+                    key={macro.id}
+                    data-macro={macro.name}
+                    className={`flex flex-wrap items-center gap-2 rounded-xl border px-2 py-1 ${macro.id === openId ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]"}`}
                   >
-                    Remove
-                  </button>
-                </div>
-                <p className="font-mono text-[10px] text-[var(--pc-muted)]">{summarize(step)}</p>
-              </li>
-            ))}
-          </ol>
-          <StepForm
-            onAdd={(step) => patch([...macro.steps, step])}
-          />
-          <div className="rounded-xl border border-[var(--pc-line)] p-3" data-macro-run>
-            <p className="text-sm font-medium">Macro: {macro.name}</p>
-            <TargetChecks devices={desk.devices} checked={checked} onChange={setChecked} />
-            {tagNames.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                <span className="text-xs text-[var(--pc-muted)]">Run on</span>
-                {tagNames.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className="h-9 rounded-full border px-2 text-xs"
-                    onClick={() => {
-                      const next = new Set(checked);
-                      for (const [deviceId, tags] of Object.entries(library.tags)) {
-                        if (tags.includes(tag)) next.add(deviceId);
+                    <button type="button" className="flex min-h-10 min-w-0 flex-1 flex-col items-start text-left" onClick={() => onOpen(macro.id)}>
+                      <span className="text-sm font-medium text-[var(--pc-ink)]">{macro.name}</span>
+                      <span className="font-mono text-[10px] text-[var(--pc-muted)]">
+                        {macro.steps.length} step{macro.steps.length === 1 ? "" : "s"}
+                        {(macro.repeat ?? 1) > 1 ? ` · ×${macro.repeat}` : ""}
+                        {macro.id === openId ? " · open in Builder" : ""}
+                      </span>
+                    </button>
+                    <Mini label="Open" onClick={() => onOpen(macro.id)} />
+                    <Mini
+                      label="Duplicate"
+                      onClick={() =>
+                        updateLibrary((current) => ({
+                          ...current,
+                          macros: [
+                            ...current.macros,
+                            { ...macro, id: newId("macro"), name: `${macro.name} copy`, steps: macro.steps.map((step) => ({ ...step, id: newId("step") })) },
+                          ],
+                        }))
                       }
-                      setChecked(next);
-                    }}
-                  >
-                    #{tag}
-                  </button>
-                ))}
-              </div>
-            )}
-            <fieldset className="mt-2 flex flex-col gap-1">
-              <legend className="mb-1 text-xs text-[var(--pc-muted)]">Execution</legend>
-              <div className="pc-segmented max-w-sm" role="radiogroup" aria-label="Execution">
-                <label className="pc-segment">
-                  <input type="radio" name="macro-mode" className="sr-only" checked={parallel} onChange={() => setParallel(true)} />
-                  Parallel
-                </label>
-                <label className="pc-segment">
-                  <input type="radio" name="macro-mode" className="sr-only" checked={!parallel} onChange={() => setParallel(false)} />
-                  Sequential
-                </label>
-              </div>
-            </fieldset>
-            <PrimaryButton
-              disabled={running}
-              onClick={() => {
-                const devices = picked(desk.devices, checked);
-                setRunning(true);
-                setProgress({});
-                const final = new Map<string, MacroProgress>();
-                void runMacro({
-                  macro,
-                  devices,
-                  parallel,
-                  variables: library.variables,
-                  deviceVariables: library.deviceVariables,
-                  profiles: library.profiles,
-                  onProgress: (item) => {
-                    final.set(item.deviceId, item);
-                    setProgress((prev) => ({ ...prev, [item.deviceId]: item }));
-                  },
-                }).finally(() => {
-                  setRunning(false);
-                  updateLibrary((current) => ({
-                    ...current,
-                    history: [
-                      {
-                        id: newId("run"),
-                        macroId: macro.id,
-                        macroName: macro.name,
-                        at: Date.now(),
-                        parallel,
-                        results: [...final.values()].map((item) => ({
-                          deviceId: item.deviceId,
-                          deviceName: item.deviceName,
-                          status: item.status,
-                          detail: item.detail,
-                        })),
-                      },
-                      ...current.history,
-                    ].slice(0, 30),
-                  }));
-                });
-              }}
-            >
-              RUN
-            </PrimaryButton>
-            <ul data-macro-progress className="mt-3 flex flex-col gap-2">
-              {desk.devices.map((device) => {
-                const item = progress[device.id];
-                const selected = checked.has(device.id);
-                const ratio = item && item.total > 0 ? Math.min(1, item.step / item.total) : 0;
-                const label = !selected
-                  ? "Not selected"
-                  : item?.status === "done"
-                    ? "Completed ✓"
-                    : item?.status === "failed"
-                      ? `Step ${item.step} failed`
-                      : item?.status === "skipped"
-                        ? "Not selected"
-                        : item
-                          ? `Step ${item.step}/${item.total}`
-                          : "—";
-                return (
-                  <li key={device.id}>
-                    <div className="flex justify-between font-mono text-xs">
-                      <span>{device.name}</span>
-                      <span>{label}</span>
-                    </div>
-                    <div className="mt-1 h-2 overflow-hidden rounded bg-[var(--pc-line)]">
-                      <div
-                        className="h-full bg-[var(--pc-accent)]"
-                        style={{ width: selected ? `${ratio * 100}%` : "0%" }}
-                      />
-                    </div>
+                    />
+                    <Mini
+                      label="Rename"
+                      onClick={() => {
+                        const name = window.prompt("Rename job", macro.name);
+                        if (!name?.trim()) return;
+                        updateLibrary((current) => ({
+                          ...current,
+                          macros: current.macros.map((item) => (item.id === macro.id ? { ...item, name: name.trim() } : item)),
+                        }));
+                      }}
+                    />
+                    <Mini label="Export" onClick={() => download(`${macro.name}.json`, JSON.stringify(macro, null, 2))} />
+                    <Mini label="Delete" onClick={() => setDeleting(macro)} />
                   </li>
-                );
-              })}
+                ))}
             </ul>
           </div>
-        </>
+        ))}
+      </section>
+
+      <section className="flex flex-col gap-3" data-shell-actions>
+        <div className="flex flex-col gap-1">
+          <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Actions</h3>
+          <p className="text-xs text-[var(--pc-muted)]">
+            {open ? (
+              <>
+                Add sends the action to <span className="font-semibold text-[var(--pc-ink)]">“{open.name}”</span> in the Builder.
+              </>
+            ) : (
+              "No job is open: Add creates a new job with that action."
+            )}{" "}
+            <span className="font-mono">Shell</span> and <span className="font-mono">File</span> actions need ADB on the phone; <span className="font-mono">Touch</span> actions simulate a finger on the screen.
+          </p>
+        </div>
+        {CATEGORIES.map((category) => (
+          <div key={category} className="flex flex-col gap-1.5" data-shell-category={category}>
+            <h4 className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">{category}</h4>
+            <ul className="grid gap-2 @xl:grid-cols-2 @5xl:grid-cols-3">
+              {ACTIONS.filter((a) => a.category === category).map((action) => (
+                <li key={action.kind} className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-2.5" data-shell-action={action.kind}>
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--pc-ink)]">{action.label}</span>
+                    <MechanismBadge mechanism={action.mechanism} />
+                  </div>
+                  <p className="text-[11px] text-[var(--pc-muted)]">{action.description}</p>
+                  {action.recordedOnly ? (
+                    <p className="text-[11px] italic text-[var(--pc-muted)]">Made with Record touches in Control; appears here as a job in “Recorded”.</p>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pc-toggle pc-toggle-sm self-start"
+                      onClick={() => onAddAction(action.kind)}
+                      data-shell-library-add={action.kind}
+                    >
+                      Add{open ? ` to “${open.name}”` : " to a new job"}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete “${deleting.name}”?`}
+          body={`Its ${deleting.steps.length} steps are removed. Export it first to keep a copy.`}
+          confirmLabel="Delete"
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => {
+            const id = deleting.id;
+            setDeleting(null);
+            updateLibrary((current) => ({ ...current, macros: current.macros.filter((item) => item.id !== id) }));
+          }}
+        />
       )}
     </div>
-  );
-}
-
-function StepForm({ onAdd }: { onAdd: (step: MacroStep) => void }) {
-  const [kind, setKind] = useState<MacroStepKind>("tap");
-  const [x, setX] = useState("50");
-  const [y, setY] = useState("40");
-  const [text, setText] = useState("");
-  const [ms, setMs] = useState("2000");
-  const [nav, setNav] = useState<MacroStep["nav"]>("home");
-
-  return (
-    <form
-      className="grid gap-2 rounded-xl border border-[var(--pc-line)] p-3 sm:grid-cols-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onAdd({
-          id: newId("step"),
-          kind,
-          x: Number(x),
-          y: Number(y),
-          x2: Number(x),
-          y2: Math.max(0, Number(y) - 30),
-          text,
-          command: text,
-          packageName: text,
-          hostPath: text,
-          ms: Number(ms) || 1000,
-          nav,
-          bitrate: "8000000",
-          size: "1280x720",
-          dest: "/sdcard/Movies",
-        });
-      }}
-    >
-      <label className="text-sm sm:col-span-2">
-        Action
-        <select
-          value={kind}
-          onChange={(event) => setKind(event.target.value as MacroStepKind)}
-          className="mt-1 h-11 w-full rounded-lg border px-2"
-        >
-          {["Device", "Input", "Timing", "File", "Capture", "ADB"].map((group) => (
-            <optgroup key={group} label={group}>
-              {KINDS.filter((item) => item.group === group).map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
-      {["tap", "doubleTap", "longPress", "swipe", "scroll", "drag", "pinch"].includes(kind) && (
-        <>
-          <TextField label="X %" value={x} onChange={setX} />
-          <TextField label="Y %" value={y} onChange={setY} />
-        </>
-      )}
-      {["text", "shell", "launch", "forceStop", "waitApp", "upload", "download", "deleteFile", "install"].includes(kind) && (
-        <TextField label="Value" value={text} onChange={setText} placeholder={kind === "text" ? "${USERNAME}" : "com.example.game"} />
-      )}
-      {["wait", "timeout", "waitDevice", "waitApp", "waitScreen"].includes(kind) && (
-        <TextField label="Milliseconds" value={ms} onChange={setMs} />
-      )}
-      {kind === "nav" && (
-        <label className="text-sm">
-          Key
-          <select value={nav} onChange={(event) => setNav(event.target.value as MacroStep["nav"])} className="mt-1 h-11 w-full rounded-lg border px-2">
-            <option value="home">Home</option>
-            <option value="back">Back</option>
-            <option value="recent">Recent Apps</option>
-            <option value="power">Power</option>
-            <option value="volume_up">Volume Up</option>
-            <option value="volume_down">Volume Down</option>
-          </select>
-        </label>
-      )}
-      <div className="sm:col-span-2">
-        <PrimaryButton type="submit">Add step</PrimaryButton>
-      </div>
-    </form>
   );
 }
 
@@ -816,16 +603,4 @@ function Mini({ label, onClick }: { label: string; onClick: () => void }) {
       {label}
     </button>
   );
-}
-
-function summarize(step: MacroStep) {
-  if (step.kind === "tap" || step.kind === "doubleTap" || step.kind === "longPress") {
-    return `X: ${step.x ?? 50}%  Y: ${step.y ?? 50}%`;
-  }
-  if (step.kind === "text" || step.kind === "shell") return step.text || step.command || "";
-  if (step.kind === "wait") return `${step.ms ?? 0} ms`;
-  if (step.kind === "nav") return step.nav ?? "home";
-  if (step.kind === "gesture") return `${step.samples?.length ?? 0} pointer events`;
-  if (step.packageName) return step.packageName;
-  return step.kind;
 }
