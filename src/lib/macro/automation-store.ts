@@ -6,6 +6,7 @@ import { flushMacrosToAgent, getWorkspace } from "@/lib/macro/store";
 import { isRunning, onAgentView, refreshRuns, startRun, stopRun } from "@/lib/macro/runs";
 import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 import { createAgentSync } from "@/lib/sync/agent-store";
+import { mergeById } from "@/lib/sync/decide";
 import {
   dueSchedules,
   normalizeQueue,
@@ -66,12 +67,14 @@ const queueSync = createAgentSync({
   name: "macro-queue",
   getLocal: () => read().queue,
   applyRemote: (value) => applyShared(QUEUE_KEY, normalizeQueue(value)),
+  merge: (local, remote) => mergeById(normalizeQueue(local), normalizeQueue(remote)),
   isMeaningful: (value) => Array.isArray(value) && value.length > 0,
 });
 const scheduleSync = createAgentSync({
   name: "macro-schedules",
   getLocal: () => read().schedules,
   applyRemote: (value) => applyShared(SCHEDULE_KEY, normalizeSchedules(value)),
+  merge: (local, remote) => mergeById(normalizeSchedules(local), normalizeSchedules(remote)),
   isMeaningful: (value) => Array.isArray(value) && value.length > 0,
 });
 

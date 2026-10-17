@@ -243,6 +243,9 @@ function localForgetRun(tabId: string) {
 /* ------------------------------------------------------------------ */
 
 type AgentRun = RunSnapshot & {
+  /** The phone this run drives (one run per phone). */
+  deviceId: string;
+  deviceName: string;
   tabId: string;
   tabName: string;
   touchSeq: number;
@@ -253,6 +256,7 @@ type AgentRun = RunSnapshot & {
 interface AgentView {
   version: number;
   runs: AgentRun[];
+  /** Phones whose run is paused. */
   paused: string[];
   queue?: unknown;
 }
@@ -266,13 +270,55 @@ const viewListeners = new Set<(view: AgentView) => void>();
 
 const agentMode = () => typeof window !== "undefined" && agentBaseUrl() !== null;
 const runsUrl = (path = "") => `${agentBaseUrl() ?? ""}/api/macro/runs${path}`;
+const deviceUrl = (deviceId: string, action: string) =>
+  `${agentBaseUrl() ?? ""}/api/macro/devices/${encodeURIComponent(deviceId)}/${action}`;
 
-function agentRun(tabId: string) {
-  return view.runs.find((r) => r.tabId === tabId) ?? null;
+const isLive = (run: AgentRun) => LIVE.has(run.status) && run.finishedAt === undefined;
+
+function tabRuns(tabId: string) {
+  const all = view.runs.filter((r) => r.tabId === tabId);
+  const live = all.filter(isLive);
+  if (live.length === 0) return all;
+  // While it runs, leave out phones' results from earlier runs of this tab.
+  const since = Math.min(...live.map((r) => r.startedAt)) - 5000;
+  return all.filter((r) => isLive(r) || r.startedAt >= since);
 }
+
+/** One snapshot for a tab played on several phones (each phone has its own run). */
+function combine(list: AgentRun[]): RunSnapshot | null {
+  if (list.length === 0) return null;
+  if (list.length === 1) return list[0];
+  const live = list.filter(isLive);
+  const lead = live[0] ?? list[0];
+  let status: RunSnapshot["status"];
+  if (live.length > 0) {
+    if (live.every((r) => r.status === "stopping")) status = "stopping";
+    else if (live.every((r) => r.status === "paused")) status = "paused";
+    else status = "running";
+  } else if (list.some((r) => r.status === "done")) status = "done";
+  else if (list.some((r) => r.status === "stopped")) status = "stopped";
+  else status = "failed";
+  const notes = list
+    .filter((r) => r.message && (live.length === 0 ? r.status !== "done" : !isLive(r)))
+    .map((r) => `${r.deviceName}: ${r.message}`);
+  const devices: RunSnapshot["devices"] = {};
+  for (const r of list) Object.assign(devices, r.devices);
+  return {
+    status,
+    cycle: Math.max(...list.map((r) => r.cycle)),
+    stepIndex: lead.stepIndex,
+    stepCount: Math.max(...list.map((r) => r.stepCount)),
+    touches: list.reduce((sum, r) => sum + r.touches, 0),
+    startedAt: Math.min(...list.map((r) => r.startedAt)),
+    finishedAt: live.length > 0 ? undefined : Math.max(...list.map((r) => r.finishedAt ?? 0)),
+    deadline: lead.deadline,
+    message: notes.length > 0 ? notes.join(" · ") : lead.message,
+    devices,
+  };
+}
+
 function agentLive(tabId: string) {
-  const run = agentRun(tabId);
-  return Boolean(run && LIVE.has(run.status) && run.finishedAt === undefined);
+  return view.runs.some((r) => r.tabId === tabId && isLive(r));
 }
 
 /** The agent's latest view (the queue card reads its progress from here). */
@@ -288,11 +334,12 @@ export async function refreshRuns() {
     if (!res.ok) return;
     const next = (await res.json()) as AgentView;
     for (const run of next.runs) {
-      const last = seenTouch.get(run.tabId);
+      const key = `${run.deviceId}:${run.startedAt}`;
+      const last = seenTouch.get(key);
       if (last !== undefined && run.touchSeq > last && run.lastPoints.length > 0) {
         pushTouch({ tabId: run.tabId, deviceIds: run.lastDeviceIds, points: run.lastPoints });
       }
-      seenTouch.set(run.tabId, run.touchSeq);
+      seenTouch.set(key, run.touchSeq);
     }
     const changed = JSON.stringify(next) !== JSON.stringify(view);
     view = next;
@@ -308,7 +355,7 @@ function startPolling() {
   polling = true;
   const loop = async () => {
     await refreshRuns();
-    const busy = view.runs.some((r) => LIVE.has(r.status) && r.finishedAt === undefined);
+    const busy = view.runs.some(isLive);
     const visible = typeof document === "undefined" || document.visibilityState === "visible";
     pollTimer = setTimeout(loop, busy && visible ? 400 : 3000);
   };
@@ -319,8 +366,8 @@ function startPolling() {
   });
 }
 
-async function agentPost(path: string, body?: unknown) {
-  const res = await agentFetch(runsUrl(path), {
+async function agentPostUrl<T = unknown>(url: string, body?: unknown): Promise<T> {
+  const res = await agentFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -334,14 +381,20 @@ async function agentPost(path: string, body?: unknown) {
     }
     throw new Error(message);
   }
+  const data = (await res.json().catch(() => ({}))) as T;
   await refreshRuns();
+  return data;
 }
 
-async function waitAgentFinished(tabId: string): Promise<RunSnapshot | null> {
+const agentPost = <T = unknown>(path: string, body?: unknown) => agentPostUrl<T>(runsUrl(path), body);
+
+/** Wait until none of `deviceIds` is running; the combined result of their runs. */
+async function waitAgentFinished(deviceIds: string[]): Promise<RunSnapshot | null> {
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, 400));
     await refreshRuns();
-    if (!agentLive(tabId)) return agentRun(tabId);
+    const mine = view.runs.filter((r) => deviceIds.includes(r.deviceId));
+    if (!mine.some(isLive)) return combine(mine);
   }
 }
 
@@ -353,7 +406,7 @@ export function useRunVersion() {
 }
 
 export function runFor(tabId: string): RunSnapshot | null {
-  return agentMode() ? agentRun(tabId) : localRunFor(tabId);
+  return agentMode() ? combine(tabRuns(tabId)) : localRunFor(tabId);
 }
 
 export function isRunning(tabId: string) {
@@ -361,7 +414,7 @@ export function isRunning(tabId: string) {
 }
 
 export function runningTabIds() {
-  return agentMode() ? view.runs.filter((r) => agentLive(r.tabId)).map((r) => r.tabId) : localRunningTabIds();
+  return agentMode() ? [...new Set(view.runs.filter(isLive).map((r) => r.tabId))] : localRunningTabIds();
 }
 
 /** Tab name currently driving each phone, except `tabId` itself. */
@@ -369,23 +422,22 @@ export function busyPhones(tabId: string): Record<string, string> {
   if (!agentMode()) return localBusyPhones(tabId);
   const busy: Record<string, string> = {};
   for (const run of view.runs) {
-    if (run.tabId === tabId || !agentLive(run.tabId)) continue;
-    for (const [deviceId, row] of Object.entries(run.devices)) {
-      if (row.state !== "skipped" && row.state !== "busy") busy[deviceId] = run.tabName;
-    }
+    if (run.tabId !== tabId && isLive(run)) busy[run.deviceId] = run.tabName;
   }
   return busy;
 }
 
 /**
- * Start a tab. Resolves with the final snapshot when the run ends (null when
- * it could not start), so a queue can wait for it.
+ * Start a tab on its phones: one independent run per phone (phones already
+ * running are skipped). Resolves with the combined final snapshot when every
+ * phone has finished (null when none could start), so a queue can wait for it.
  */
 export function startRun(tab: MacroTab, devices: Device[], onlyStepId?: string): Promise<RunSnapshot | null> {
   if (!agentMode()) return localStartRun(tab, devices, onlyStepId);
   startPolling();
-  return agentPost("", { tab, deviceIds: devices.map((d) => d.id), onlyStepId })
-    .then(() => waitAgentFinished(tab.id))
+  if (lastStartError?.tabId === tab.id) lastStartError = null;
+  return agentPost<{ started?: string[] }>("", { tab, deviceIds: devices.map((d) => d.id), onlyStepId })
+    .then((data) => waitAgentFinished(data.started ?? devices.map((d) => d.id)))
     .catch((error: unknown) => {
       lastStartError = { tabId: tab.id, message: error instanceof Error ? error.message : "could not start" };
       notify();
@@ -411,21 +463,101 @@ export function forgetRun(tabId: string) {
   void agentPost(`/${encodeURIComponent(tabId)}/forget`).catch(() => {});
 }
 
+function liveDevicesOf(tabId: string) {
+  return view.runs.filter((r) => r.tabId === tabId && isLive(r)).map((r) => r.deviceId);
+}
+
 export function pauseRun(tabId: string) {
   if (!agentMode()) return localPauseRun(tabId);
-  view = { ...view, paused: [...new Set([...view.paused, tabId])] };
+  view = { ...view, paused: [...new Set([...view.paused, ...liveDevicesOf(tabId)])] };
   notify();
   void agentPost(`/${encodeURIComponent(tabId)}/pause`).catch(() => {});
 }
 
 export function resumeRun(tabId: string) {
   if (!agentMode()) return localResumeRun(tabId);
-  view = { ...view, paused: view.paused.filter((id) => id !== tabId) };
+  const ids = liveDevicesOf(tabId);
+  view = { ...view, paused: view.paused.filter((id) => !ids.includes(id)) };
   notify();
   void agentPost(`/${encodeURIComponent(tabId)}/resume`).catch(() => {});
 }
 
 /** True from Pause until Resume (the snapshot shows "paused" once the step in flight ends). */
 export function isPaused(tabId: string) {
-  return agentMode() ? view.paused.includes(tabId) : localIsPaused(tabId);
+  if (!agentMode()) return localIsPaused(tabId);
+  const ids = liveDevicesOf(tabId);
+  return ids.length > 0 && ids.every((id) => view.paused.includes(id));
 }
+
+/* ------------------------- per-phone runs ------------------------- */
+
+export interface PhoneRun extends RunSnapshot {
+  deviceId: string;
+  tabId: string;
+  tabName: string;
+  live: boolean;
+  paused: boolean;
+}
+
+/** Errors from the last Start press per phone (e.g. already running, offline). */
+const phoneErrors = new Map<string, string>();
+
+export function phoneStartError(deviceId: string) {
+  return phoneErrors.get(deviceId) ?? null;
+}
+
+/** A phone's live run, else its last finished run. */
+export function phoneRun(deviceId: string): PhoneRun | null {
+  if (agentMode()) {
+    const run = view.runs.find((r) => r.deviceId === deviceId);
+    if (!run) return null;
+    return { ...run, live: isLive(run), paused: view.paused.includes(deviceId) };
+  }
+  // In-browser fallback: runs are per tab, so report the tab driving this phone.
+  const tabId = owners.get(deviceId);
+  const live = tabId ? runs.get(tabId) : undefined;
+  if (!tabId || !live) return null;
+  return { ...live.snapshot, deviceId, tabId, tabName: live.tabName, live: true, paused: live.gate.paused() };
+}
+
+/** Start `tab` on one phone; the agent refuses (409) when that phone is already running. */
+export async function startPhone(device: Device, tab: MacroTab): Promise<boolean> {
+  phoneErrors.delete(device.id);
+  if (!agentMode()) {
+    if (owners.has(device.id) || runs.has(tab.id)) {
+      phoneErrors.set(device.id, "Already running (in-browser runs are per tab)");
+      notify();
+      return false;
+    }
+    void localStartRun(tab, [device]);
+    return true;
+  }
+  startPolling();
+  try {
+    await agentPostUrl(deviceUrl(device.id, "start"), { tab });
+    return true;
+  } catch (error) {
+    phoneErrors.set(device.id, error instanceof Error ? error.message : "could not start");
+    notify();
+    return false;
+  }
+}
+
+function phoneAction(deviceId: string, action: "stop" | "pause" | "resume") {
+  if (!agentMode()) {
+    const tabId = owners.get(deviceId);
+    if (!tabId) return;
+    if (action === "stop") localStopRun(tabId);
+    else if (action === "pause") localPauseRun(tabId);
+    else localResumeRun(tabId);
+    return;
+  }
+  if (action === "pause") view = { ...view, paused: [...new Set([...view.paused, deviceId])] };
+  if (action === "resume") view = { ...view, paused: view.paused.filter((id) => id !== deviceId) };
+  notify();
+  void agentPostUrl(deviceUrl(deviceId, action)).catch(() => {});
+}
+
+export const stopPhone = (deviceId: string) => phoneAction(deviceId, "stop");
+export const pausePhone = (deviceId: string) => phoneAction(deviceId, "pause");
+export const resumePhone = (deviceId: string) => phoneAction(deviceId, "resume");

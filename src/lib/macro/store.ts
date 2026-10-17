@@ -10,6 +10,7 @@ import {
   type MacroTab,
 } from "@/lib/macro/core";
 import { createAgentSync } from "@/lib/sync/agent-store";
+import { mergeWorkspaces } from "@/lib/sync/decide";
 
 /** Saved in this browser. Each tab keeps its own settings, steps and phones. */
 export interface MacroWorkspace {
@@ -63,6 +64,7 @@ const sync = createAgentSync({
     const keep = cached?.activeId && next.tabs.some((t) => t.id === cached?.activeId) ? cached.activeId : next.activeId;
     store({ ...next, activeId: keep });
   },
+  merge: (local, remote) => mergeWorkspaces(normalizeWorkspace(local), normalizeWorkspace(remote)),
   isMeaningful: (value) => {
     const ws = value as MacroWorkspace;
     if (!ws || !Array.isArray(ws.tabs)) return false;
@@ -105,6 +107,16 @@ function store(next: MacroWorkspace) {
     // Storage full or blocked: keep working in memory for this visit.
   }
   listeners.forEach((listener) => listener());
+}
+
+/** Put a saved copy back (a local backup), shared like any edit. */
+export function restoreWorkspace(value: unknown) {
+  save(normalizeWorkspace(value));
+}
+
+/** Read the agent's copy now (e.g. right after restoring a version there). */
+export function pullMacrosFromAgent() {
+  return sync.pull();
 }
 
 /** Make sure the agent has this browser's latest macros. */

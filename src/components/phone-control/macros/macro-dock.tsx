@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useDeskOptional } from "@/components/phone-control/desk/desk-context";
 import { IconButton, Segmented, formatMs, stepColor } from "@/components/phone-control/macros/fields";
 import { LivePreview } from "@/components/phone-control/macros/preview";
+import { PhoneRunsCard } from "@/components/phone-control/macros/phone-runs-card";
 import { LoopControl, MacroSyncNote, PauseButton, RunStatus, runLabel } from "@/components/phone-control/macros/macros-panel";
 
 type TargetSource = "control" | "tab";
@@ -136,6 +137,8 @@ export function MacroDock({
         onSelect={setSelectedStepId}
         onTest={(stepId) => void startRun(tab, targets, stepId)}
       />
+
+      <PhoneRunsCard tabs={workspace.tabs} devices={devices} compact />
 
       {desk && (
         <button

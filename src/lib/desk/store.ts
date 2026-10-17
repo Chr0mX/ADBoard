@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { createAgentSync } from "@/lib/sync/agent-store";
+import { mergeById } from "@/lib/sync/decide";
 
 export interface AppShortcut {
   id: string;
@@ -178,6 +179,21 @@ const sync = createAgentSync({
   name: "desk",
   getLocal: () => read(),
   applyRemote: (value) => storeLibrary(normalize((value ?? {}) as Partial<DeskLibrary>)),
+  merge: (localRaw, remoteRaw) => {
+    const local = normalize((localRaw ?? {}) as Partial<DeskLibrary>);
+    const remote = normalize((remoteRaw ?? {}) as Partial<DeskLibrary>);
+    return {
+      ...remote,
+      apps: mergeById(local.apps, remote.apps),
+      macros: mergeById(local.macros, remote.macros),
+      groups: mergeById(local.groups, remote.groups),
+      history: mergeById(local.history, remote.history).slice(0, 30),
+      variables: { ...local.variables, ...remote.variables },
+      deviceVariables: { ...local.deviceVariables, ...remote.deviceVariables },
+      tags: { ...local.tags, ...remote.tags },
+      profiles: { ...local.profiles, ...remote.profiles },
+    };
+  },
   isMeaningful: (value) => {
     const lib = value as DeskLibrary;
     if (!lib) return false;

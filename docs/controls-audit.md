@@ -57,8 +57,9 @@ Testing used the mock fleet (`PHONECONTROL_FORCE_MOCK=1`) in Chromium at desktop
 | Loop | Existing | Forever / cycles / time limit |
 | Task Queue | **Added** | Macros → Queue. Plays tabs in order through the same runner. A failed tab is noted and the queue moves on. Stop ends the queue. Saved as tab ids only. |
 | Scheduler | **Added** | Macros → Schedule. Plays a tab or the queue once, or every N minutes. Runs on the agent, even with no browser open. A slot missed while the agent was off runs once when it is back. |
-| Shared macros | **Added** | Macros, the Automate library (groups, variables), the queue and schedules are kept on the agent (`adboard-data/` next to the executable, `/api/store/{name}`). Every browser on the same ADBoard sees and edits the same copy; each browser's storage is only a cache. On first load a browser adopts the agent's copy; an empty browser never overwrites it. |
-| Runs per phone | **Added** | A run lives on the agent, tied to its phones (`/api/macro/runs`), not to the browser that pressed Run. Every browser sees it live and can pause or stop it, and it keeps going when that browser closes. |
+| Shared macros | **Added** | Macros, the Automate library (groups, variables), the queue, schedules and per-phone macro choices are kept on the agent (`adboard-data/` next to the executable, `/api/store/{name}`). Every browser on the same ADBoard sees and edits the same copy; each browser's storage is only a cache. When a browser's copy and the agent's differ, both are kept: tabs are joined by id, and the newer edit of the same tab wins. A browser holding only an empty starter never uploads it over real macros. |
+| Versions | **Added** | Macros → Versions. The agent keeps the last 20 saved copies (`adboard-data/history/`), and each browser keeps its last 5 copies from before a shared copy replaced them. Either can be restored; a restore is itself a new version, so it can be undone. Import / Export are unchanged. |
+| Runs per phone | **Added** | Macros → Phones (also in the Macro dock). Each phone has its own macro (saved on the agent), its own Start / Pause / Stop and its own live status. Runs live on the agent (`/api/macro/runs`, `/api/macro/devices/{id}/start\|stop\|pause\|resume`), one per phone: a second start on a busy phone is refused. Different phones can play different macros at once. A run keeps going when every browser closes. Stopping, pausing, failing or disconnecting one phone leaves the others running. Before each step a run checks that its phone is still connected; if not, only that run ends ("Phone disconnected"). The tab Run card still works, and now starts one run per ticked phone, skipping busy ones. Runs end when ADBoard itself closes; the choices are kept, and runs are started again by hand. (**device**: real cable unplug) |
 | Density matching | **Added** | Touch positions scale with resolution, so dpi does not move them; but games lay out their buttons in dp. Size → "900×1600 · 320 dpi" sets `wm size` and `wm density` on every online phone. A macro tab can store the dpi it was made at, with "Match phones to this". "Each phone" resets both. (**device**) |
 
 ## iPhone Home Screen app
@@ -82,5 +83,16 @@ The new Rotate, Fullscreen and Pop out tools sit in a folding "Screen" menu in f
 - Real-phone behaviour of rotate, stay awake, custom bitrate / FPS and clipboard. The mock fleet returns mock results.
 - Pop out of live video. Headless Chromium doesn't decode the H264 stream. The picture-in-picture method (canvas → video → PiP) was checked in Chromium on a drawn canvas.
 - Fullscreen on iOS (hidden there).
-- Schedules while no page is open (not supported).
-- With several ADBoard pages open, each runs the scheduler. A due schedule could start twice if two pages reach it in the same moment.
+- A real cable unplug during a run. Tests simulate it with a phone going offline and with failing gestures.
+- Macro runs after ADBoard (the agent) has closed: they stop with it, and nothing runs until it is started again.
+
+## Lost macros after the shared-macros update (fixed)
+
+**Root cause** (commit e5bcd89, `src/lib/sync/agent-store.ts`):
+- On first load, a browser replaced its own macros with the agent's copy whenever the agent had any copy.
+- After that, every save was shared, including saves of an untouched "Tab 1" starter. Switching the Macro dock's tab picker counts as a save.
+- So a phone with an empty starter could make the starter the shared copy, and the PC then adopted it in place of its real macros.
+
+**Fix:** sync merges instead of replacing; a starter is never uploaded over real macros; a browser backs up its copy before a shared copy replaces it; and the agent keeps earlier versions (Macros → Versions).
+
+Macros already lost before the fix were browser data, not code, so they are re-imported from a saved `.adboard-macros.json` file (Macros → Import).

@@ -38,12 +38,50 @@ interface Options {
   applyRemote: (value: unknown) => void;
   /** False for an untouched starter, which must never overwrite shared data. */
   isMeaningful: (value: unknown) => boolean;
+  /**
+   * Combine this browser's real data with the agent's copy (nothing dropped).
+   * Used when both have data that differ; without it the agent's copy wins.
+   */
+  merge?: (local: unknown, remote: unknown) => unknown;
+}
+
+const BACKUP_LIMIT = 5;
+
+/** This browser's copies saved just before another copy replaced them. */
+export function readBackups(name: string): Array<{ at: number; value: unknown }> {
+  try {
+    const raw = localStorage.getItem(`adboard-backups-${name}`);
+    const list = raw ? (JSON.parse(raw) as Array<{ at: number; value: unknown }>) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBackup(name: string, value: unknown) {
+  try {
+    const list = readBackups(name);
+    const raw = JSON.stringify(value);
+    if (list[0] && JSON.stringify(list[0].value) === raw) return;
+    const next = [{ at: Date.now(), value }, ...list].slice(0, BACKUP_LIMIT);
+    localStorage.setItem(`adboard-backups-${name}`, JSON.stringify(next));
+  } catch {
+    // Storage full: the agent's history still has earlier versions.
+  }
 }
 
 const PULL_MS = 10_000;
 const PUSH_DELAY_MS = 600;
 
-export function createAgentSync({ name, getLocal, applyRemote, isMeaningful }: Options) {
+export function createAgentSync({ name, getLocal, applyRemote: applyRemoteRaw, isMeaningful, merge }: Options) {
+  // Whatever replaces this browser's copy, keep the old one first if it held real data.
+  const applyRemote = (value: unknown) => {
+    const local = getLocal();
+    if (isMeaningful(local) && JSON.stringify(local) !== JSON.stringify(value)) saveBackup(name, local);
+    applyRemoteRaw(value);
+  };
+  /** Whether the agent's last known copy holds real data. */
+  let serverMeaningful = false;
   let started = false;
   let synced = false;
   let rev = 0;
@@ -69,6 +107,17 @@ export function createAgentSync({ name, getLocal, applyRemote, isMeaningful }: O
       dirty = true;
       return;
     }
+    // A starter (e.g. a phone that only switched the selected tab) must never
+    // replace real shared data: take the agent's copy instead.
+    if (serverMeaningful && !isMeaningful(getLocal())) {
+      dirty = false;
+      const shared = await fetchShared();
+      if (shared && shared.value !== null && shared.value !== undefined) {
+        rev = shared.rev;
+        applyRemote(shared.value);
+      }
+      return;
+    }
     inflight = true;
     dirty = false;
     try {
@@ -79,13 +128,22 @@ export function createAgentSync({ name, getLocal, applyRemote, isMeaningful }: O
       });
       if (res.ok) {
         rev = ((await res.json()) as { rev: number }).rev;
+        serverMeaningful = serverMeaningful || isMeaningful(getLocal());
         setStatus(name, "shared");
       } else if (res.status === 409) {
         // Someone else saved first: show their copy rather than overwrite it.
         const current = (await res.json()) as { value: unknown; rev: number };
         rev = current.rev;
         dirty = false;
-        applyRemote(current.value);
+        serverMeaningful = isMeaningful(current.value);
+        // Keep this browser's edit too: merge onto the newer copy and try again.
+        const local = getLocal();
+        if (merge && isMeaningful(local) && serverMeaningful) {
+          applyRemote(merge(local, current.value));
+          dirty = true;
+        } else {
+          applyRemote(current.value);
+        }
         setStatus(name, "conflict", "Changed in another browser; showing the latest");
       } else {
         setStatus(name, "local", `Saved in this browser only (agent said ${res.status})`);
@@ -107,6 +165,7 @@ export function createAgentSync({ name, getLocal, applyRemote, isMeaningful }: O
     }
     if (shared.rev > rev && !inflight && !pushTimer) {
       rev = shared.rev;
+      serverMeaningful = isMeaningful(shared.value);
       if (shared.value !== null && shared.value !== undefined) applyRemote(shared.value);
     }
     if (statuses.get(name)?.state !== "conflict") setStatus(name, "shared");
@@ -120,11 +179,23 @@ export function createAgentSync({ name, getLocal, applyRemote, isMeaningful }: O
       setTimeout(() => void firstSync(), PULL_MS);
       return;
     }
-    const action = firstSyncAction(shared, isMeaningful(getLocal()));
+    const local = getLocal();
+    const localMeaningful = isMeaningful(local);
+    const action = firstSyncAction(shared, localMeaningful);
     rev = shared.rev;
+    serverMeaningful = shared.rev > 0 && isMeaningful(shared.value);
     synced = true;
     if (action === "adopt") {
-      applyRemote(shared.value);
+      if (merge && localMeaningful && serverMeaningful && JSON.stringify(local) !== JSON.stringify(shared.value)) {
+        // Both sides have real data: keep all of it, then share the result.
+        applyRemote(merge(local, shared.value));
+        await upload();
+      } else if (localMeaningful && !serverMeaningful) {
+        // The agent only holds a starter: this browser's real data wins.
+        await upload();
+      } else {
+        applyRemote(shared.value);
+      }
       setStatus(name, "shared");
     } else if (action === "upload" || dirty) {
       await upload();

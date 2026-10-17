@@ -16,6 +16,7 @@ import {
   Square,
   Trash2,
   Upload,
+  History,
 } from "lucide-react";
 import { saveBlob } from "@/lib/api/download";
 import { devicesClient } from "@/lib/api/client";
@@ -44,6 +45,8 @@ import {
   importTabs,
   moveTab,
   patchTab,
+  pullMacrosFromAgent,
+  restoreWorkspace,
   setActiveTab,
   useMacroWorkspace,
 } from "@/lib/macro/store";
@@ -69,7 +72,9 @@ import { LivePreview, MacroPreview, type FingerEnd } from "@/components/phone-co
 import { AddStepBar, StepList, makeStep } from "@/components/phone-control/macros/step-list";
 import { ImportDialog } from "@/components/phone-control/macros/import-dialog";
 import { QueueCard, ScheduleCard } from "@/components/phone-control/macros/automation-cards";
-import { useSyncStatus } from "@/lib/sync/agent-store";
+import { PhoneRunsCard } from "@/components/phone-control/macros/phone-runs-card";
+import { readBackups, useSyncStatus } from "@/lib/sync/agent-store";
+import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 
 /** Per-tab view state (selected step, preview screen) survives switching tabs. */
 const viewState = new Map<string, { stepId: string | null; previewId: string }>();
@@ -100,6 +105,7 @@ export function MacrosPanel() {
         </p>
       )}
       {active && <TabWorkspace key={active.id} tab={active} devices={desk.devices} />}
+      <PhoneRunsCard tabs={workspace.tabs} devices={desk.devices} />
       <div className="grid gap-3 lg:grid-cols-2" data-macro-automation>
         <QueueCard tabs={workspace.tabs} activeTab={active} />
         <ScheduleCard tabs={workspace.tabs} activeTab={active} />
@@ -252,6 +258,7 @@ function TabStrip({
               );
             }}
           />
+          <VersionsMenu onNotice={onNotice} />
           <details className="relative" data-macro-export>
             <summary className="inline-flex h-9 min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-[var(--pc-line)] px-2.5 text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]">
               <Download className="size-3.5" aria-hidden /> Export
@@ -799,6 +806,102 @@ function ReferenceDensity({
       </p>
       {note && <p className="font-mono text-[10px] text-[var(--pc-muted)]" data-macro-dpi-note>{note}</p>}
     </div>
+  );
+}
+
+/**
+ * Earlier versions of the macros: the agent keeps the last 20 saves, and this
+ * browser keeps its own copy whenever another copy replaced it. Restoring is
+ * itself a new version, so it can be undone too.
+ */
+function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [agent, setAgent] = useState<Array<{ rev: number; savedAt: number; items: number }> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const backups = open ? readBackups("macros") : [];
+  const base = agentBaseUrl();
+
+  const load = async () => {
+    setError(null);
+    if (base === null) return;
+    try {
+      const res = await agentFetch(`${base}/api/store/macros/history`, { cache: "no-store" });
+      setAgent(res.ok ? ((await res.json()) as Array<{ rev: number; savedAt: number; items: number }>) : []);
+    } catch {
+      setError("ADBoard is not reachable");
+    }
+  };
+  const when = (ms: number) => (ms ? new Date(ms).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "earlier");
+  const tabsIn = (value: unknown) => {
+    const tabs = (value as { tabs?: unknown[] } | null)?.tabs;
+    return Array.isArray(tabs) ? tabs.length : 0;
+  };
+
+  return (
+    <details
+      className="relative"
+      data-macro-versions
+      open={open}
+      onToggle={(event) => {
+        const next = (event.currentTarget as HTMLDetailsElement).open;
+        setOpen(next);
+        if (next) void load();
+      }}
+    >
+      <summary className="inline-flex h-9 min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-[var(--pc-line)] px-2.5 text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]">
+        <History className="size-3.5" aria-hidden /> Versions
+      </summary>
+      {open && (
+        <div className="absolute right-0 z-30 mt-1 flex max-h-80 w-72 flex-col overflow-y-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg">
+          <p className="px-2 py-1 font-mono text-[10px] uppercase text-[var(--pc-muted)]">Saved on ADBoard</p>
+          {error && <p className="px-2 py-1 text-xs text-[var(--pc-warn)]">{error}</p>}
+          {agent?.length === 0 && <p className="px-2 py-1 text-xs text-[var(--pc-muted)]">No earlier versions yet.</p>}
+          {agent?.map((entry) => (
+            <button
+              key={`a-${entry.rev}`}
+              type="button"
+              data-macro-version={entry.rev}
+              className="flex h-10 items-center justify-between gap-2 rounded-lg px-2 text-left text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+              onClick={() => {
+                void (async () => {
+                  const res = await agentFetch(`${base}/api/store/macros/restore`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ rev: entry.rev }),
+                  });
+                  if (res.ok) {
+                    await pullMacrosFromAgent();
+                    onNotice(`Restored the version from ${when(entry.savedAt)} (${entry.items} tab${entry.items === 1 ? "" : "s"}).`);
+                  } else onNotice("Could not restore that version.");
+                  setOpen(false);
+                })();
+              }}
+            >
+              <span>{when(entry.savedAt)}</span>
+              <span className="font-mono text-[10px] text-[var(--pc-muted)]">{entry.items} tabs · restore</span>
+            </button>
+          ))}
+          <p className="mt-1 px-2 py-1 font-mono text-[10px] uppercase text-[var(--pc-muted)]">Kept in this browser</p>
+          {backups.length === 0 && <p className="px-2 py-1 text-xs text-[var(--pc-muted)]">None.</p>}
+          {backups.map((backup) => (
+            <button
+              key={`b-${backup.at}`}
+              type="button"
+              data-macro-backup={backup.at}
+              className="flex h-10 items-center justify-between gap-2 rounded-lg px-2 text-left text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+              onClick={() => {
+                restoreWorkspace(backup.value);
+                onNotice(`Restored this browser's copy from ${when(backup.at)}.`);
+                setOpen(false);
+              }}
+            >
+              <span>{when(backup.at)}</span>
+              <span className="font-mono text-[10px] text-[var(--pc-muted)]">{tabsIn(backup.value)} tabs · restore</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </details>
   );
 }
 

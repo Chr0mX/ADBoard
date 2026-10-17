@@ -114,7 +114,10 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/input/key", post(input_key))
         .route("/api/macro/runs", get(macro_runs_list).post(macro_run_start))
         .route("/api/macro/runs/{tab_id}/{action}", post(macro_run_action))
+        .route("/api/macro/devices/{device_id}/{action}", post(macro_device_action))
         .route("/api/macro/queue/{action}", post(macro_queue_action))
+        .route("/api/store/{name}/history", get(store_history))
+        .route("/api/store/{name}/restore", post(store_restore))
         .route(
             "/api/store/{name}",
             get(store_get)
@@ -845,9 +848,68 @@ async fn macro_run_start(State(state): State<AppState>, Json(body): Json<MacroRu
         Err(error) => return auth_error(StatusCode::BAD_REQUEST, &format!("macro tab is not valid: {error}")),
     };
     match crate::macro_automation::start_tab(&state, tab, body.device_ids, body.only_step_id).await {
-        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Ok(started) => Json(serde_json::json!({ "ok": true, "started": started })).into_response(),
         Err(error) => auth_error(StatusCode::CONFLICT, &error),
     }
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MacroDeviceBody {
+    /// A full tab to play; else `tabId` from the shared macros; else the phone's assignment.
+    #[serde(default)]
+    tab: Option<serde_json::Value>,
+    #[serde(default)]
+    tab_id: Option<String>,
+    #[serde(default)]
+    only_step_id: Option<String>,
+}
+
+/// POST /api/macro/devices/{deviceId}/start|stop|pause|resume — one phone's run,
+/// independent of every other phone.
+async fn macro_device_action(
+    State(state): State<AppState>,
+    Path((device_id, action)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    use crate::macro_automation::DeviceStartError;
+    let runs = crate::macro_runner::runs();
+    let ok = match action.as_str() {
+        "start" => {
+            // The body is optional: no body plays the phone's assigned macro.
+            let body: MacroDeviceBody = if body.iter().all(u8::is_ascii_whitespace) {
+                MacroDeviceBody::default()
+            } else {
+                match serde_json::from_slice(&body) {
+                    Ok(b) => b,
+                    Err(error) => return auth_error(StatusCode::BAD_REQUEST, &format!("body is not valid: {error}")),
+                }
+            };
+            let tab = match (body.tab, body.tab_id) {
+                (Some(value), _) => match serde_json::from_value::<crate::macro_runner::MacroTab>(value) {
+                    Ok(tab) => Some(tab),
+                    Err(error) => return auth_error(StatusCode::BAD_REQUEST, &format!("macro tab is not valid: {error}")),
+                },
+                (None, Some(id)) => match crate::macro_automation::shared_tab(&id) {
+                    Some(tab) => Some(tab),
+                    None => return auth_error(StatusCode::NOT_FOUND, "That macro is not in the shared macros"),
+                },
+                (None, None) => None,
+            };
+            return match crate::macro_automation::start_device(&state, &device_id, tab, body.only_step_id).await {
+                Ok(run) => Json(serde_json::json!({ "ok": true, "run": run })).into_response(),
+                Err(DeviceStartError::UnknownDevice) => auth_error(StatusCode::NOT_FOUND, "unknown phone"),
+                Err(DeviceStartError::Offline(m)) => auth_error(StatusCode::BAD_REQUEST, &m),
+                Err(DeviceStartError::NoMacro(m)) => auth_error(StatusCode::NOT_FOUND, &m),
+                Err(DeviceStartError::Busy(m)) => auth_error(StatusCode::CONFLICT, &m),
+            };
+        }
+        "stop" => runs.stop_device(&device_id),
+        "pause" => runs.pause_device(&device_id),
+        "resume" => runs.resume_device(&device_id),
+        _ => return auth_error(StatusCode::NOT_FOUND, "unknown action"),
+    };
+    Json(serde_json::json!({ "ok": ok })).into_response()
 }
 
 /// POST /api/macro/runs/{tabId}/stop|pause|resume|forget
@@ -879,6 +941,30 @@ async fn macro_queue_action(State(state): State<AppState>, Path(action): Path<St
         },
         "stop" => Json(serde_json::json!({ "ok": crate::macro_automation::stop_queue() })).into_response(),
         _ => auth_error(StatusCode::NOT_FOUND, "unknown action"),
+    }
+}
+
+/// GET /api/store/{name}/history — earlier revisions, newest first.
+async fn store_history(Path(name): Path<String>) -> Response {
+    match crate::shared_store::store().history(&name) {
+        Some(list) => Json(list).into_response(),
+        None => auth_error(StatusCode::NOT_FOUND, "unknown store"),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct StoreRestoreBody {
+    rev: u64,
+}
+
+/// POST /api/store/{name}/restore — put an earlier revision back (as a new revision).
+async fn store_restore(Path(name): Path<String>, Json(body): Json<StoreRestoreBody>) -> Response {
+    use crate::shared_store::PutError;
+    match crate::shared_store::store().restore(&name, body.rev) {
+        Ok(rev) => Json(serde_json::json!({ "rev": rev })).into_response(),
+        Err(PutError::UnknownName) => auth_error(StatusCode::NOT_FOUND, "unknown store"),
+        Err(PutError::Io(error)) => auth_error(StatusCode::NOT_FOUND, &error),
+        Err(_) => auth_error(StatusCode::CONFLICT, "could not restore"),
     }
 }
 

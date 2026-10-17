@@ -4,7 +4,9 @@
 //!
 //! Port of the browser runner in `src/lib/macro/core.ts` (`placement`,
 //! `toNormalized`, `buildStrokes`, `runMacroTab`) and the run registry in
-//! `src/lib/macro/runs.ts` (one run per tab, one tab per phone). Each step is
+//! `src/lib/macro/runs.ts`. Runs are kept per phone: each phone has at most one
+//! run, and every phone's run has its own cycles, pause, stop and failure, so
+//! stopping or unplugging one phone never touches the others. Each step is
 //! played through the same `handle_gesture` path as `/api/input/gesture`.
 
 use phonecontrol_protocol::{GestureStroke, NormalizedPoint};
@@ -220,6 +222,9 @@ pub struct DeviceRunStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunSnapshot {
+    /// The phone this run drives.
+    pub device_id: String,
+    pub device_name: String,
     pub tab_id: String,
     pub tab_name: String,
     /// running | paused | stopping | done | stopped | failed
@@ -269,6 +274,10 @@ pub struct SendResult {
 
 pub type SendFuture = Pin<Box<dyn Future<Output = Vec<SendResult>> + Send>>;
 pub type Sender = Arc<dyn Fn(Vec<RunDevice>, Vec<GestureStroke>) -> SendFuture + Send + Sync>;
+/// Is this phone still connected? Asked before every step.
+pub type OnlineCheck = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
+
+pub const DISCONNECTED: &str = "Phone disconnected";
 
 /// Stop and pause switches for one run.
 #[derive(Default)]
@@ -336,6 +345,8 @@ pub struct RunOptions {
     pub busy: HashMap<String, String>,
     pub only_step_id: Option<String>,
     pub send: Sender,
+    /// None skips the connection check (tests).
+    pub is_online: Option<OnlineCheck>,
     pub control: Arc<RunControl>,
     pub snapshot: Arc<Mutex<RunSnapshot>>,
 }
@@ -347,7 +358,8 @@ fn update(snapshot: &Arc<Mutex<RunSnapshot>>, change: impl FnOnce(&mut RunSnapsh
 
 /// Play a tab on its phones until its stop condition (port of `runMacroTab`).
 pub async fn run_tab(options: RunOptions) -> RunSnapshot {
-    let RunOptions { tab, devices, busy, only_step_id, send, control, snapshot } = options;
+    let RunOptions { tab, devices, busy, only_step_id, send, is_online, control, snapshot } = options;
+    let solo = devices.len() == 1;
     let steps: Vec<MacroStep> = match &only_step_id {
         Some(id) => tab.steps.iter().filter(|s| &s.id == id).cloned().collect(),
         None => tab.steps.iter().filter(|s| s.enabled).cloned().collect(),
@@ -382,7 +394,11 @@ pub async fn run_tab(options: RunOptions) -> RunSnapshot {
         return finish("failed", "No enabled steps to play");
     }
     if active.is_empty() {
-        return finish("failed", "No phone to run on");
+        let message = match (solo, snapshot.lock().unwrap_or_else(|e| e.into_inner()).devices.values().next().cloned()) {
+            (true, Some(row)) => format!("{}: {}", row.name, row.detail.unwrap_or_else(|| row.state.clone())),
+            _ => "No phone to run on".into(),
+        };
+        return finish("failed", &message);
     }
 
     let max_cycles: u64 = if only_step_id.is_some() {
@@ -427,6 +443,30 @@ pub async fn run_tab(options: RunOptions) -> RunSnapshot {
             }
             update(&snapshot, |s| s.step_index = index);
 
+            // A phone that went away ends its part of the run (and only that).
+            if let Some(check) = &is_online {
+                let mut gone = Vec::new();
+                for device in &active {
+                    if !check(device.id.clone()).await {
+                        gone.push(device.id.clone());
+                    }
+                }
+                if !gone.is_empty() {
+                    active.retain(|d| !gone.contains(&d.id));
+                    update(&snapshot, |s| {
+                        for id in &gone {
+                            if let Some(row) = s.devices.get_mut(id) {
+                                row.state = "error".into();
+                                row.detail = Some(DISCONNECTED.into());
+                            }
+                        }
+                    });
+                    if active.is_empty() {
+                        return finish("failed", if solo { DISCONNECTED } else { "Every phone disconnected" });
+                    }
+                }
+            }
+
             // Fit mode scales per screen size; stretch sends one gesture to all.
             let mut groups: Vec<(Option<Size>, Vec<RunDevice>)> = Vec::new();
             for device in &active {
@@ -470,9 +510,11 @@ pub async fn run_tab(options: RunOptions) -> RunSnapshot {
                 }
             });
             if active.is_empty() {
-                let message = match failed_detail {
-                    Some(detail) => format!("Every phone failed: {detail}"),
-                    None => "Every phone failed".into(),
+                let message = match (solo, failed_detail) {
+                    (true, Some(detail)) => format!("Phone failed: {detail}"),
+                    (true, None) => "Phone failed".into(),
+                    (false, Some(detail)) => format!("Every phone failed: {detail}"),
+                    (false, None) => "Every phone failed".into(),
                 };
                 return finish("failed", &message);
             }
@@ -494,17 +536,18 @@ pub async fn run_tab(options: RunOptions) -> RunSnapshot {
 /* ---------------------------- registry ---------------------------- */
 
 struct LiveRun {
+    tab_id: String,
     tab_name: String,
     control: Arc<RunControl>,
     snapshot: Arc<Mutex<RunSnapshot>>,
 }
 
+/// Live runs keyed by phone (device id): one run per phone at most.
 #[derive(Default)]
 pub struct MacroRuns {
     runs: Mutex<HashMap<String, LiveRun>>,
+    /// Each phone's last finished run.
     finished: Mutex<HashMap<String, RunSnapshot>>,
-    /// device id → tab id
-    owners: Mutex<HashMap<String, String>>,
     version: AtomicU64,
     /// Woken when a run ends (queue waits on it).
     ended: Notify,
@@ -514,8 +557,9 @@ pub struct MacroRuns {
 #[serde(rename_all = "camelCase")]
 pub struct RunsView {
     pub version: u64,
+    /// One entry per phone: its live run, else its last finished run.
     pub runs: Vec<RunSnapshot>,
-    /// Paused tabs (pause takes effect before the next step).
+    /// Phones whose run is paused (pause takes effect before the next step).
     pub paused: Vec<String>,
 }
 
@@ -524,149 +568,201 @@ pub fn runs() -> &'static MacroRuns {
     RUNS.get_or_init(MacroRuns::default)
 }
 
+fn new_snapshot(tab: &MacroTab, device: &RunDevice) -> RunSnapshot {
+    RunSnapshot {
+        device_id: device.id.clone(),
+        device_name: device.name.clone(),
+        tab_id: tab.id.clone(),
+        tab_name: tab.name.clone(),
+        status: "running".into(),
+        cycle: 1,
+        step_index: 0,
+        step_count: 0,
+        touches: 0,
+        started_at: now_ms(),
+        finished_at: None,
+        deadline: None,
+        message: None,
+        devices: BTreeMap::new(),
+        touch_seq: 0,
+        last_points: Vec::new(),
+        last_device_ids: Vec::new(),
+        last_gestures: Vec::new(),
+    }
+}
+
 impl MacroRuns {
     fn bump(&self) {
         self.version.fetch_add(1, Ordering::SeqCst);
     }
 
+    fn live(&self) -> std::sync::MutexGuard<'_, HashMap<String, LiveRun>> {
+        self.runs.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Is `tab_id` running on any phone?
     pub fn is_running(&self, tab_id: &str) -> bool {
-        self.runs.lock().unwrap_or_else(|e| e.into_inner()).contains_key(tab_id)
+        self.live().values().any(|r| r.tab_id == tab_id)
     }
 
-    /// Phones driven by another tab, with that tab's name.
-    pub fn busy_phones(&self, tab_id: &str) -> HashMap<String, String> {
-        let owners = self.owners.lock().unwrap_or_else(|e| e.into_inner());
-        let runs = self.runs.lock().unwrap_or_else(|e| e.into_inner());
-        owners
-            .iter()
-            .filter(|(_, owner)| owner.as_str() != tab_id)
-            .filter_map(|(device, owner)| runs.get(owner).map(|r| (device.clone(), r.tab_name.clone())))
-            .collect()
+    pub fn device_busy(&self, device_id: &str) -> bool {
+        self.live().contains_key(device_id)
     }
 
-    /// Start a tab. Err when it is already running.
+    /// Start `tab` on one phone. Err when that phone already has a run.
+    pub fn start_device(
+        &'static self,
+        tab: MacroTab,
+        device: RunDevice,
+        only_step_id: Option<String>,
+        send: Sender,
+        is_online: Option<OnlineCheck>,
+    ) -> Result<(), String> {
+        let device_id = device.id.clone();
+        let control = Arc::new(RunControl::default());
+        let snapshot = Arc::new(Mutex::new(new_snapshot(&tab, &device)));
+        {
+            let mut live = self.live();
+            if let Some(other) = live.get(&device_id) {
+                return Err(format!("{} is already running \"{}\"", device.name, other.tab_name));
+            }
+            live.insert(
+                device_id.clone(),
+                LiveRun { tab_id: tab.id.clone(), tab_name: tab.name.clone(), control: control.clone(), snapshot: snapshot.clone() },
+            );
+        }
+        self.bump();
+        tokio::spawn(async move {
+            // Clean up even if the run panics, so the phone is never left locked.
+            struct Release(&'static MacroRuns, String, Arc<Mutex<RunSnapshot>>);
+            impl Drop for Release {
+                fn drop(&mut self) {
+                    let mut last = self.2.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    if last.finished_at.is_none() {
+                        last.status = "failed".into();
+                        last.finished_at = Some(now_ms());
+                        last.message = Some("The run ended unexpectedly".into());
+                    }
+                    self.0.finished.lock().unwrap_or_else(|e| e.into_inner()).insert(self.1.clone(), last);
+                    self.0.live().remove(&self.1);
+                    self.0.bump();
+                    self.0.ended.notify_waiters();
+                }
+            }
+            let _release = Release(self, device_id, snapshot.clone());
+            run_tab(RunOptions {
+                tab,
+                devices: vec![device],
+                busy: HashMap::new(),
+                only_step_id,
+                send,
+                is_online,
+                control,
+                snapshot,
+            })
+            .await;
+        });
+        Ok(())
+    }
+
+    /// Start `tab` on each of `devices`: one independent run per phone.
+    /// Offline phones and phones that already have a run are skipped.
+    /// Returns the phones started; Err when none could start.
     pub fn start(
         &'static self,
         tab: MacroTab,
         devices: Vec<RunDevice>,
         only_step_id: Option<String>,
         send: Sender,
-    ) -> Result<(), String> {
-        let tab_id = tab.id.clone();
-        let busy = self.busy_phones(&tab_id);
-        let control = Arc::new(RunControl::default());
-        let claimed: Vec<String> = devices.iter().filter(|d| d.online && !busy.contains_key(&d.id)).map(|d| d.id.clone()).collect();
-        let snapshot = Arc::new(Mutex::new(RunSnapshot {
-            tab_id: tab_id.clone(),
-            tab_name: tab.name.clone(),
-            status: "running".into(),
-            cycle: 1,
-            step_index: 0,
-            step_count: 0,
-            touches: 0,
-            started_at: now_ms(),
-            finished_at: None,
-            deadline: None,
-            message: None,
-            devices: BTreeMap::new(),
-            touch_seq: 0,
-            last_points: Vec::new(),
-            last_device_ids: Vec::new(),
-            last_gestures: Vec::new(),
-        }));
-        {
-            let mut runs = self.runs.lock().unwrap_or_else(|e| e.into_inner());
-            if runs.contains_key(&tab_id) {
-                return Err(format!("\"{}\" is already running", tab.name));
+        is_online: Option<OnlineCheck>,
+    ) -> Result<Vec<String>, String> {
+        let mut started = Vec::new();
+        let mut skipped = Vec::new();
+        for device in devices {
+            if !device.online {
+                skipped.push(format!("{} is offline", device.name));
+                continue;
             }
-            let mut owners = self.owners.lock().unwrap_or_else(|e| e.into_inner());
-            for id in &claimed {
-                owners.insert(id.clone(), tab_id.clone());
+            let id = device.id.clone();
+            match self.start_device(tab.clone(), device, only_step_id.clone(), send.clone(), is_online.clone()) {
+                Ok(()) => started.push(id),
+                Err(error) => skipped.push(error),
             }
-            runs.insert(
-                tab_id.clone(),
-                LiveRun { tab_name: tab.name.clone(), control: control.clone(), snapshot: snapshot.clone() },
-            );
         }
-        self.finished.lock().unwrap_or_else(|e| e.into_inner()).remove(&tab_id);
-        self.bump();
-        tokio::spawn(async move {
-            let result = run_tab(RunOptions {
-                tab,
-                devices,
-                busy,
-                only_step_id,
-                send,
-                control,
-                snapshot,
-            })
-            .await;
-            self.finished.lock().unwrap_or_else(|e| e.into_inner()).insert(tab_id.clone(), result);
-            self.runs.lock().unwrap_or_else(|e| e.into_inner()).remove(&tab_id);
-            let mut owners = self.owners.lock().unwrap_or_else(|e| e.into_inner());
-            for id in claimed {
-                if owners.get(&id) == Some(&tab_id) {
-                    owners.remove(&id);
-                }
-            }
-            drop(owners);
-            self.bump();
-            self.ended.notify_waiters();
-        });
-        Ok(())
+        if started.is_empty() {
+            return Err(if skipped.is_empty() { "No phone ticked".into() } else { skipped.join("; ") });
+        }
+        Ok(started)
     }
 
-    fn with_run(&self, tab_id: &str, act: impl FnOnce(&LiveRun)) -> bool {
-        let runs = self.runs.lock().unwrap_or_else(|e| e.into_inner());
-        match runs.get(tab_id) {
-            Some(run) => {
+    fn act(&self, pick: impl Fn(&str, &LiveRun) -> bool, act: impl Fn(&LiveRun)) -> bool {
+        let live = self.live();
+        let mut hit = false;
+        for (device, run) in live.iter() {
+            if pick(device, run) {
                 act(run);
-                drop(runs);
-                self.bump();
-                true
+                hit = true;
             }
-            None => false,
         }
+        drop(live);
+        if hit {
+            self.bump();
+        }
+        hit
     }
 
+    fn stop_run(run: &LiveRun) {
+        run.control.stop();
+        update(&run.snapshot, |s| s.status = "stopping".into());
+    }
+
+    /// Stop every phone running `tab_id`.
     pub fn stop(&self, tab_id: &str) -> bool {
-        self.with_run(tab_id, |run| {
-            run.control.stop();
-            update(&run.snapshot, |s| s.status = "stopping".into());
-        })
+        self.act(|_, r| r.tab_id == tab_id, Self::stop_run)
+    }
+
+    pub fn stop_device(&self, device_id: &str) -> bool {
+        self.act(|d, _| d == device_id, Self::stop_run)
     }
 
     pub fn stop_all(&self) {
-        let ids: Vec<String> = self.runs.lock().unwrap_or_else(|e| e.into_inner()).keys().cloned().collect();
-        for id in ids {
-            self.stop(&id);
-        }
+        self.act(|_, _| true, Self::stop_run);
     }
 
     pub fn pause(&self, tab_id: &str) -> bool {
-        self.with_run(tab_id, |run| run.control.pause())
+        self.act(|_, r| r.tab_id == tab_id, |r| r.control.pause())
     }
 
     pub fn resume(&self, tab_id: &str) -> bool {
-        self.with_run(tab_id, |run| run.control.resume())
+        self.act(|_, r| r.tab_id == tab_id, |r| r.control.resume())
     }
 
-    /// Every live run plus the last result of finished tabs.
+    pub fn pause_device(&self, device_id: &str) -> bool {
+        self.act(|d, _| d == device_id, |r| r.control.pause())
+    }
+
+    pub fn resume_device(&self, device_id: &str) -> bool {
+        self.act(|d, _| d == device_id, |r| r.control.resume())
+    }
+
+    /// Every phone's live run, plus the last result of phones not running.
     pub fn view(&self) -> RunsView {
-        let runs = self.runs.lock().unwrap_or_else(|e| e.into_inner());
-        let mut out: Vec<RunSnapshot> = runs.values().map(|r| r.snapshot.lock().unwrap_or_else(|e| e.into_inner()).clone()).collect();
-        let paused = runs.iter().filter(|(_, r)| r.control.is_paused()).map(|(id, _)| id.clone()).collect();
+        let live = self.live();
+        let mut out: Vec<RunSnapshot> = live.values().map(|r| r.snapshot.lock().unwrap_or_else(|e| e.into_inner()).clone()).collect();
+        let paused = live.iter().filter(|(_, r)| r.control.is_paused()).map(|(id, _)| id.clone()).collect();
         let finished = self.finished.lock().unwrap_or_else(|e| e.into_inner());
-        out.extend(finished.iter().filter(|(id, _)| !runs.contains_key(*id)).map(|(_, s)| s.clone()));
+        out.extend(finished.iter().filter(|(id, _)| !live.contains_key(*id)).map(|(_, s)| s.clone()));
+        out.sort_by(|a, b| a.device_id.cmp(&b.device_id));
         RunsView { version: self.version.load(Ordering::SeqCst), runs: out, paused }
     }
 
-    /// Wait until `tab_id` is no longer running; returns its final snapshot.
-    pub async fn wait_finished(&self, tab_id: &str) -> Option<RunSnapshot> {
+    /// Wait until none of `device_ids` has a live run; returns their last results.
+    pub async fn wait_devices(&self, device_ids: &[String]) -> Vec<RunSnapshot> {
         loop {
             let notified = self.ended.notified();
-            if !self.is_running(tab_id) {
-                return self.finished.lock().unwrap_or_else(|e| e.into_inner()).get(tab_id).cloned();
+            if !device_ids.iter().any(|id| self.device_busy(id)) {
+                let finished = self.finished.lock().unwrap_or_else(|e| e.into_inner());
+                return device_ids.iter().filter_map(|id| finished.get(id).cloned()).collect();
             }
             tokio::select! {
                 _ = notified => {}
@@ -675,10 +771,10 @@ impl MacroRuns {
         }
     }
 
-    /// Forget a deleted tab's last result.
+    /// Forget a deleted tab: stop it and drop its last results.
     pub fn forget(&self, tab_id: &str) {
         self.stop(tab_id);
-        self.finished.lock().unwrap_or_else(|e| e.into_inner()).remove(tab_id);
+        self.finished.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, s| s.tab_id != tab_id);
         self.bump();
     }
 }
@@ -730,25 +826,42 @@ mod tests {
     }
 
     fn opts(tab: MacroTab, devices: Vec<RunDevice>, send: Sender, control: Arc<RunControl>) -> RunOptions {
-        let snapshot = Arc::new(Mutex::new(RunSnapshot {
-            tab_id: tab.id.clone(),
-            tab_name: tab.name.clone(),
-            status: "running".into(),
-            cycle: 1,
-            step_index: 0,
-            step_count: 0,
-            touches: 0,
-            started_at: now_ms(),
-            finished_at: None,
-            deadline: None,
-            message: None,
-            devices: BTreeMap::new(),
-            touch_seq: 0,
-            last_points: vec![],
-            last_device_ids: vec![],
-            last_gestures: vec![],
-        }));
-        RunOptions { tab, devices, busy: HashMap::new(), only_step_id: None, send, control, snapshot }
+        let first = devices.first().cloned().unwrap_or_else(|| phone("none"));
+        let snapshot = Arc::new(Mutex::new(new_snapshot(&tab, &first)));
+        RunOptions { tab, devices, busy: HashMap::new(), only_step_id: None, send, is_online: None, control, snapshot }
+    }
+
+    fn named(mut tab: MacroTab, name: &str) -> MacroTab {
+        tab.name = name.into();
+        tab
+    }
+
+    /// Records which tab each gesture came from, per phone.
+    fn recording_sender(log: Arc<Mutex<Vec<String>>>, fail: Option<&'static str>) -> Sender {
+        Arc::new(move |devices: Vec<RunDevice>, _strokes| {
+            let log = log.clone();
+            Box::pin(async move {
+                devices
+                    .iter()
+                    .map(|d| {
+                        log.lock().unwrap().push(d.id.clone());
+                        SendResult {
+                            device_id: d.id.clone(),
+                            inject: if Some(d.id.as_str()) == fail { "error".into() } else { "ok".into() },
+                            detail: None,
+                        }
+                    })
+                    .collect()
+            })
+        })
+    }
+
+    fn touches(log: &Arc<Mutex<Vec<String>>>, id: &str) -> usize {
+        log.lock().unwrap().iter().filter(|d| d.as_str() == id).count()
+    }
+
+    fn leak() -> &'static MacroRuns {
+        Box::leak(Box::new(MacroRuns::default()))
     }
 
     #[test]
@@ -848,22 +961,95 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn registry_locks_phones_per_tab() {
-        let reg: &'static MacroRuns = Box::leak(Box::new(MacroRuns::default()));
-        let count = Arc::new(AtomicUsize::new(0));
-        let a = tab_with(("infinite", 0.0, 1.0), 1, 20.0);
-        let b = tab_with(("cycles", 0.0, 1.0), 1, 0.0);
-        reg.start(a.clone(), vec![phone("p1")], None, counting_sender(count.clone(), None)).unwrap();
-        assert!(reg.start(a.clone(), vec![phone("p1")], None, counting_sender(count.clone(), None)).is_err());
-        assert_eq!(reg.busy_phones(&b.id).get("p1").map(String::as_str), Some("Tab"));
-        reg.start(b.clone(), vec![phone("p1")], None, counting_sender(count.clone(), None)).unwrap();
-        let b_result = reg.wait_finished(&b.id).await.unwrap();
-        assert_eq!(b_result.status, "failed", "p1 belongs to the other tab");
-        assert!(reg.pause(&a.id));
-        assert!(reg.view().paused.contains(&a.id));
-        assert!(reg.stop(&a.id));
-        let a_result = reg.wait_finished(&a.id).await.unwrap();
-        assert_eq!(a_result.status, "stopped");
-        assert!(reg.busy_phones(&b.id).is_empty());
+    async fn two_phones_run_different_macros_at_once() {
+        let reg = leak();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let a = named(tab_with(("infinite", 0.0, 1.0), 1, 15.0), "Farm");
+        let b = named(tab_with(("infinite", 0.0, 1.0), 2, 15.0), "Collect");
+        reg.start_device(a.clone(), phone("s24"), None, recording_sender(log.clone(), None), None).unwrap();
+        reg.start_device(b.clone(), phone("s23"), None, recording_sender(log.clone(), None), None).unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        let view = reg.view();
+        let by = |id: &str| view.runs.iter().find(|r| r.device_id == id).cloned().unwrap();
+        assert_eq!((by("s24").tab_name.as_str(), by("s23").tab_name.as_str()), ("Farm", "Collect"));
+        assert!(touches(&log, "s24") >= 3 && touches(&log, "s23") >= 3);
+        assert!(reg.is_running(&a.id) && reg.is_running(&b.id));
+
+        // A second start on a busy phone is refused; the first run is untouched.
+        let dup = reg.start_device(b.clone(), phone("s24"), None, recording_sender(log.clone(), None), None);
+        assert!(dup.unwrap_err().contains("already running \"Farm\""));
+
+        // Stopping one phone leaves the other running.
+        assert!(reg.stop_device("s24"));
+        let s24 = reg.wait_devices(&["s24".to_string()]).await;
+        assert_eq!(s24[0].status, "stopped");
+        let before = touches(&log, "s23");
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        assert!(touches(&log, "s23") > before, "s23 keeps playing");
+        assert!(!reg.device_busy("s24") && reg.device_busy("s23"));
+
+        // Pause is per phone too.
+        assert!(reg.pause_device("s23"));
+        assert_eq!(reg.view().paused, vec!["s23".to_string()]);
+        assert!(reg.resume_device("s23"));
+        reg.stop_all();
+        reg.wait_devices(&["s23".to_string()]).await;
+        assert!(!reg.device_busy("s23") && !reg.device_busy("s24"), "every lock is released");
+    }
+
+    #[tokio::test]
+    async fn one_phone_failing_does_not_stop_the_other() {
+        let reg = leak();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let tab = tab_with(("infinite", 0.0, 1.0), 1, 15.0);
+        // Same macro on both phones = two runs; s23's gestures fail.
+        let started = reg.start(tab.clone(), vec![phone("s24"), phone("s23")], None, recording_sender(log.clone(), Some("s23")), None).unwrap();
+        assert_eq!(started.len(), 2);
+        let failed = reg.wait_devices(&["s23".to_string()]).await;
+        assert_eq!(failed[0].status, "failed");
+        let before = touches(&log, "s24");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(touches(&log, "s24") > before);
+        // A tab-level start skips the busy phone and reports when none is free.
+        assert!(reg.start(tab.clone(), vec![phone("s24")], None, recording_sender(log.clone(), None), None).is_err());
+        assert!(reg.stop(&tab.id));
+        let done = reg.wait_devices(&started).await;
+        assert_eq!(done.iter().find(|r| r.device_id == "s24").unwrap().status, "stopped");
+        reg.forget(&tab.id);
+        assert!(reg.view().runs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_disconnected_phone_ends_only_its_run() {
+        let reg = leak();
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let unplugged = Arc::new(AtomicBool::new(false));
+        let flag = unplugged.clone();
+        let online: OnlineCheck = Arc::new(move |id: String| {
+            let gone = flag.load(Ordering::SeqCst) && id == "s24";
+            Box::pin(async move { !gone })
+        });
+        let tab = tab_with(("infinite", 0.0, 1.0), 1, 15.0);
+        reg.start(tab.clone(), vec![phone("s24"), phone("s23")], None, recording_sender(log.clone(), None), Some(online)).unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        unplugged.store(true, Ordering::SeqCst);
+        let ended = reg.wait_devices(&["s24".to_string()]).await;
+        assert_eq!((ended[0].status.as_str(), ended[0].message.as_deref()), ("failed", Some(DISCONNECTED)));
+        assert!(!reg.device_busy("s24"), "lock released");
+        let before = touches(&log, "s23");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(touches(&log, "s23") > before, "s23 keeps playing");
+        reg.stop_all();
+        reg.wait_devices(&["s23".to_string()]).await;
+    }
+
+    #[tokio::test]
+    async fn offline_phones_are_skipped_at_start() {
+        let reg = leak();
+        let mut off = phone("a52");
+        off.online = false;
+        let err = reg.start(tab_with(("cycles", 0.0, 1.0), 1, 0.0), vec![off], None, counting_sender(Arc::default(), None), None).unwrap_err();
+        assert!(err.contains("offline"));
+        assert!(reg.view().runs.is_empty());
     }
 }

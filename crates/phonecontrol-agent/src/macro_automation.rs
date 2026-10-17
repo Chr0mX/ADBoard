@@ -5,7 +5,7 @@
 //! several browsers are open.
 
 use crate::device_manager::AppState;
-use crate::macro_runner::{self, now_ms, MacroTab, RunDevice, SendResult, Sender, Size};
+use crate::macro_runner::{self, now_ms, MacroTab, OnlineCheck, RunDevice, RunSnapshot, SendResult, Sender, Size};
 use crate::shared_store;
 use phonecontrol_protocol::{ControlMode, DeviceStatus, GestureRequest, InjectStatus};
 use serde::{Deserialize, Serialize};
@@ -63,11 +63,83 @@ pub async fn run_devices(state: &AppState, ids: &[String]) -> Vec<RunDevice> {
         .collect()
 }
 
-/// Start `tab` on `device_ids` (the tab's own phones when empty).
-pub async fn start_tab(state: &AppState, tab: MacroTab, device_ids: Vec<String>, only_step_id: Option<String>) -> Result<(), String> {
+/// Asks the agent's device list whether a phone is still connected.
+pub fn online_check(state: AppState) -> OnlineCheck {
+    Arc::new(move |id: String| {
+        let state = state.clone();
+        Box::pin(async move { state.list_devices().await.iter().any(|d| d.id == id && d.status == DeviceStatus::Online) })
+    })
+}
+
+/// Start `tab` on `device_ids` (the tab's own phones when empty): one run per
+/// phone, skipping phones that are offline or already running. Returns the
+/// phones started.
+pub async fn start_tab(state: &AppState, tab: MacroTab, device_ids: Vec<String>, only_step_id: Option<String>) -> Result<Vec<String>, String> {
     let ids = if device_ids.is_empty() { tab.target_ids.clone() } else { device_ids };
     let devices = run_devices(state, &ids).await;
-    macro_runner::runs().start(tab, devices, only_step_id, gesture_sender(state.clone()))
+    macro_runner::runs().start(tab, devices, only_step_id, gesture_sender(state.clone()), Some(online_check(state.clone())))
+}
+
+/// Phone → tab id chosen in the Phones card (shared store `macro-assignments`).
+pub fn assignments() -> BTreeMap<String, String> {
+    let stored = shared_store::store().get("macro-assignments").map(|s| s.value).unwrap_or(Value::Null);
+    serde_json::from_value::<BTreeMap<String, Value>>(stored)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(device, tab)| tab.as_str().filter(|t| !t.is_empty()).map(|t| (device, t.to_string())))
+        .collect()
+}
+
+#[derive(Debug, PartialEq)]
+pub enum DeviceStartError {
+    UnknownDevice,
+    Offline(String),
+    NoMacro(String),
+    Busy(String),
+}
+
+/// Start one phone: `tab` when given, else the tab assigned to it in the shared macros.
+pub async fn start_device(state: &AppState, device_id: &str, tab: Option<MacroTab>, only_step_id: Option<String>) -> Result<RunSnapshot, DeviceStartError> {
+    let device = run_devices(state, &[device_id.to_string()]).await.into_iter().next().ok_or(DeviceStartError::UnknownDevice)?;
+    if !device.online {
+        return Err(DeviceStartError::Offline(format!("{} is offline", device.name)));
+    }
+    let tab = match tab {
+        Some(tab) => tab,
+        None => {
+            let Some(tab_id) = assignments().get(device_id).cloned() else {
+                return Err(DeviceStartError::NoMacro(format!("Choose a macro for {} first", device.name)));
+            };
+            workspace_tabs()
+                .into_iter()
+                .find(|t| t.id == tab_id)
+                .ok_or_else(|| DeviceStartError::NoMacro(format!("The macro chosen for {} was deleted", device.name)))?
+        }
+    };
+    let runs = macro_runner::runs();
+    runs.start_device(tab, device, only_step_id, gesture_sender(state.clone()), Some(online_check(state.clone())))
+        .map_err(DeviceStartError::Busy)?;
+    Ok(runs.view().runs.into_iter().find(|r| r.device_id == device_id).expect("just started"))
+}
+
+/// One outcome for a tab played on several phones.
+fn combine(results: &[RunSnapshot]) -> ItemState {
+    if results.is_empty() {
+        return ItemState { state: "failed".into(), detail: None };
+    }
+    let state = if results.iter().any(|r| r.status == "done") {
+        "done"
+    } else if results.iter().any(|r| r.status == "stopped") {
+        "stopped"
+    } else {
+        "failed"
+    };
+    let notes: Vec<String> = results
+        .iter()
+        .filter(|r| r.status != "done" || results.len() == 1)
+        .filter_map(|r| r.message.as_ref().map(|m| if results.len() == 1 { m.clone() } else { format!("{}: {m}", r.device_name) }))
+        .collect();
+    ItemState { state: state.into(), detail: if notes.is_empty() { results[0].message.clone() } else { Some(notes.join("; ")) } }
 }
 
 /* ------------------------------ queue ------------------------------ */
@@ -123,6 +195,11 @@ fn workspace_tabs() -> Vec<MacroTab> {
         .unwrap_or_default()
 }
 
+/// A tab from the shared macros.
+pub fn shared_tab(tab_id: &str) -> Option<MacroTab> {
+    workspace_tabs().into_iter().find(|t| t.id == tab_id)
+}
+
 fn queue_items() -> Vec<QueueItem> {
     let stored = shared_store::store().get("macro-queue").map(|s| s.value).unwrap_or(Value::Null);
     serde_json::from_value(stored).unwrap_or_default()
@@ -173,21 +250,10 @@ pub fn run_queue(state: AppState) -> Result<(), String> {
                 p.states.insert(item.id.clone(), ItemState { state: "running".into(), detail: None });
             });
             *current_tab.lock().unwrap_or_else(|e| e.into_inner()) = Some(tab.id.clone());
-            let tab_id = tab.id.clone();
             let outcome = match start_tab(&state, tab, Vec::new(), None).await {
                 Err(error) => ItemState { state: "skipped".into(), detail: Some(error) },
-                Ok(()) => match macro_runner::runs().wait_finished(&tab_id).await {
-                    Some(snap) => ItemState {
-                        state: match snap.status.as_str() {
-                            "done" => "done",
-                            "stopped" => "stopped",
-                            _ => "failed",
-                        }
-                        .into(),
-                        detail: snap.message,
-                    },
-                    None => ItemState { state: "failed".into(), detail: None },
-                },
+                // Next item once every phone of this tab has finished.
+                Ok(started) => combine(&macro_runner::runs().wait_devices(&started).await),
             };
             set(&|p| {
                 p.states.insert(item.id.clone(), outcome.clone());
@@ -273,8 +339,8 @@ pub async fn tick(state: &AppState, now: u64) -> usize {
                         format!("Skipped: no online phone ticked in “{}”", tab.name)
                     } else {
                         let name = tab.name.clone();
-                        match macro_runner::runs().start(tab, devices, None, gesture_sender(state.clone())) {
-                            Ok(()) => format!("Started “{name}”"),
+                        match macro_runner::runs().start(tab, devices, None, gesture_sender(state.clone()), Some(online_check(state.clone()))) {
+                            Ok(_) => format!("Started “{name}”"),
                             Err(error) => format!("Skipped: {error}"),
                         }
                     }
