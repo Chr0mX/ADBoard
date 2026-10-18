@@ -165,7 +165,7 @@ The **^** button at the end of the tool row opens a panel with stream options an
 |---|---|
 | **Quality** | Low, Balanced, High, Original or Custom. A line under the controls shows what the choice means: Low is 720 px, 1 Mbps, 15 fps; Balanced is 1280 px with the default rate; High is 1920 px, 8 Mbps, 60 fps; Original is native size, 16 Mbps, 60 fps. A higher setting looks sharper but uses more bandwidth. |
 | **Custom** fields | When Quality is Custom: **Max size px** (longest side, 0 to 4096, 0 means the phone's own size), **Bitrate Mbps** (0.25 to 40), **FPS** (5 to 120), then **Apply**. Values outside the range are corrected for you. |
-| **Size** | Changes the screen size of every online phone: **Each phone** (back to normal), **900x1600**, **16:9**, **20:9**, or **900x1600 - 320 dpi**. This really changes the phone's display size, which is useful for matching macros made on one size. Streams restart afterwards. |
+| **Size** | Changes the screen size of every online phone: **Each phone** (back to normal), **900×1600**, **16:9**, **20:9**, or **900×1600 · 320 dpi**. This really changes the phone's display size, which is useful for matching macros made on one size. Streams restart afterwards. |
 | **Audio** | Plays the phone's sound on your computer. |
 | **Screen off** | Turns the phone's own screen off while you keep controlling it. |
 | **Stay awake** | Stops the phone from going to sleep while connected. It does not turn the screen off. |
@@ -225,7 +225,7 @@ Grid view shows every phone as a live tile, so you can watch and drive many phon
 | **Selected / Multi / All** | Who gets your touches (see below). |
 | **Back**, **Home**, **Recent** | Send that button to the target phones. Desktop windows only. |
 | **<** and **>** with a page number | Move between pages when you have more phones than cells (only when a fixed arrangement is set). |
-| **Arrangement** | Opens the Arrangement strip. When a fixed layout is set it shows the size, for example "2x3". |
+| **Arrangement** | Opens the Arrangement strip. When a fixed layout is set it shows the size, for example "2×3". |
 | **Macro** | Opens or closes the [Macro panel](#macro-panel). |
 | **Double chevron up** (Hide grid controls) | Hides the bar so the tiles get the full height. A round button with a slider icon appears in the top right corner; hover it to see **Controls** and click it to bring the bar back. |
 | **Exit** | Leaves Grid view. |
@@ -271,7 +271,7 @@ While the Devices column is folded you cannot reach the Selected / Multi / All s
 
 ## Fill window
 
-**Fill** (or Alt+Shift+F) makes the phone take over the whole window and hides the section tabs, the Screens column and the Devices column. The Back, Home, Recent, Vol-, Vol+ and Power buttons form one row under the picture, joined by icon buttons: Refresh, Keyboard, APK, screenshot, screen recording, Screens (opens a list of phones), Grid, Record and Replay, and **Exit fill** to come back. The stream options and device actions appear under that row. Fill is available on desktop windows only. On a phone-sized screen the view always fills.
+**Fill** (or Alt+Shift+F) makes the phone take over the whole window and hides the section tabs, the Screens column and the Devices column. Back, Home, Recent, Vol-, Vol+ and Power form one row under the picture, followed by icon buttons: Refresh, Keyboard, APK, screenshot, screen recording, Screens (opens a list of phones), Grid, Record and Replay, and **Exit fill** to come back. The stream options and device actions appear under that row. Fill is available on desktop windows only. On a phone-sized screen the view always fills.
 
 ## Macro panel
 
@@ -300,9 +300,9 @@ Back, Home and Recent do nothing when the phone is offline. The fold shortcuts w
 
 When the window is under 1024 pixels wide, as on a phone, the picture fills the screen and the tab bar is hidden. A floating **Tools** panel and a bottom taskbar replace the buttons around the picture. There is no row of app shortcut buttons in this layout.
 
-![The phone-sized layout: the Tools chip at the top, the bottom taskbar, and the scrolling stats line.](images/control-phone.jpg)
+![The phone-sized layout with the Tools panel open over the picture, the bottom taskbar and the stats line.](images/control-phone.jpg)
 
-*The phone-sized layout with Tools folded to a chip.*
+*The phone-sized layout with the Tools panel open.*
 
 ### Bottom taskbar
 
@@ -321,9 +321,9 @@ After a thin divider come any tools you have pinned (below). The bar scrolls sid
 
 The panel floats over the picture. Drag its grip bar to move it. The arrow button folds it to a small chip labelled **Tools** (tap the chip's arrow to open it again), and the pin button keeps it from being dragged. Drag the chip to a screen edge to tuck it away; tap or swipe the edge tab to bring it back. On a very short screen it starts folded.
 
-![The Tools panel open over the phone view.](images/control-phone-tools.jpg)
+![The Tools panel folded to a chip, with the Stats button pinned to the taskbar.](images/control-phone-tools.jpg)
 
-*The Tools panel (folded here) and the taskbar with the Stats button pinned.*
+*Tools folded to a chip. The taskbar shows one pinned tool, Stats.*
 
 At the top of the panel:
 
@@ -377,7 +377,7 @@ A single line of live numbers for the phone you are looking at. It sits at the b
 
 | Item | Meaning |
 |---|---|
-| Size, for example 1080x2400 | The picture size of the live stream. |
+| Size, for example 1080×2400 | The picture size of the live stream. |
 | Battery | The phone's battery level, or a dash if unknown. |
 | Temperature | The phone's temperature, in degrees C, or a dash. |
 | **CPU** and **RAM** | Percent used. Shown only when the computer running the phone connection can report them. |

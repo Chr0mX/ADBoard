@@ -4,7 +4,7 @@ Back to the [guide index](README.md)
 
 **Shell Automation** is where you build a **job**: a list of steps such as "open this app", "wait 10 seconds", "take a screenshot" or "send this file". You then run the job on one phone or on many phones at once.
 
-A job is not the same as a touch macro. A [touch macro](../macros.md) replays finger movements with exact timing, and it can keep running in the background. A job says what the phone should do (open an app, install something, press a key, copy a file). It runs from your browser, so keep the page open until it finishes. Use macros for "where does the finger go and when". Use jobs for "what should the phone do".
+A job is not the same as a touch macro. A [touch macro](macros.md) replays finger movements with exact timing, and it can keep running in the background. A job says what the phone should do (open an app, install something, press a key, copy a file). It runs from your browser, so keep the page open until it finishes. Use macros for "where does the finger go and when". Use jobs for "what should the phone do".
 
 > The screenshots in this guide use demo phones, so the phone screens show no picture.
 
