@@ -9,7 +9,7 @@ Testing used the mock fleet (`ADBOARD_FORCE_MOCK=1`) in Chromium at desktop and 
 | Control | Status | Where / how |
 | --- | --- | --- |
 | Back, Home, Recent Apps | Existing | Android keys via `adb shell input keyevent` (`device-nav-bar.tsx`) |
-| Minimize | Existing | Folds Tools and Stats into chips. Android has no minimize key. |
+| Minimize | Existing | Folds the floating Tools panel into a chip. Android has no minimize key. |
 | Volume Down, Volume Up, Power | Existing | Android keys |
 | Pinned tools | Existing + 4 added | Rotate, Fullscreen, Pop out and Quiet mode can now be pinned. The limit is 19, so every tool fits. The bar stays centred and scrolls when full. |
 
@@ -52,7 +52,8 @@ Testing used the mock fleet (`ADBOARD_FORCE_MOCK=1`) in Chromium at desktop and 
 | Pause | **Added** | Pauses before the next step. Phones stay reserved, and time limits don't count paused time. Stop works while paused. |
 | Record Macro | Existing | "Record touches" / "Replay touches" |
 | Auto | Existing | The Shell Automation section, Auto Clicker import/export, and Arrangement "Fit all" |
-| Arrangement | Existing | Grid Arrangement strip |
+| Arrangement | Existing | Grid Arrangement strip, opened from the grid bar (the Tools-panel Arrangement button duplicated Grid view and was removed) |
+| Stats | Changed | Shows or hides the stats line under the phone (Tools, taskbar pin, Settings). The floating Stats widget is gone. On a phone-width screen the line scrolls across; from 640px up it is static |
 | Import / Export Config | Existing | `.adboard-macros.json` and Auto Clicker |
 | Loop | Existing | Forever / cycles / time limit |
 | Task Queue | **Added** | Macros → Queue. Plays tabs in order through the same runner. A failed tab is noted and the queue moves on. Stop ends the queue. Saved as tab ids only. |
@@ -69,7 +70,7 @@ Testing used the mock fleet (`ADBOARD_FORCE_MOCK=1`) in Chromium at desktop and 
   - Manifest: `display: standalone`, `id`, `start_url` / `scope` "/". Served as `application/manifest+json` without sign-in.
   - Page: `apple-mobile-web-app-capable` with the black-translucent status bar, `viewport-fit=cover` and the theme colour.
   - Icon: an opaque 180×180 `apple-touch-icon.png`, also at the site root.
-- **Bottom taskbar not responding in the Home Screen app (fixed).** Root cause: the floating Tools / Stats panels kept clear of the taskbar by a fixed 56 px reserve. In the Home Screen app the taskbar also sits above the home-indicator inset, so it is taller than that. A panel placed or dropped near the bottom then lay over the taskbar buttons and took their taps (reproduced in a simulated layout: Stats over Home, Recent, Minimize and the volume buttons). The panels now measure the taskbar itself, treat it as an obstacle, re-place when it changes size, and read safe-area insets from a probe element.
+- **Bottom taskbar not responding in the Home Screen app (fixed).** Root cause: the floating Tools / Stats panels (Stats was a floating panel then; it is now a line under the phone) kept clear of the taskbar by a fixed 56 px reserve. In the Home Screen app the taskbar also sits above the home-indicator inset, so it is taller than that. A panel placed or dropped near the bottom then lay over the taskbar buttons and took their taps (reproduced in a simulated layout: Stats over Home, Recent, Minimize and the volume buttons). The panels now measure the taskbar itself, treat it as an obstacle, re-place when it changes size, and read safe-area insets from a probe element.
 - **Touch diagnostics** (Settings → Control, or `?touchdebug=1`): marks each tap and shows which control received it, the events fired, and the viewport numbers iOS reports.
 
 ## 5. Floating UI and taskbar

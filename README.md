@@ -316,6 +316,20 @@ On Windows: `.\Start-ADBoard.ps1 -Bind 0.0.0.0 -Password '…'` sets the first p
 
 ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's default 60 s idle limits, so a still phone screen does not drop the video. The API token never appears in URLs (browsers send it as a WebSocket subprotocol, servers as the `x-adboard-token` header), so it stays out of proxy and Cloudflare logs. Remote agents can join a controller published this way with `ADBOARD_CONTROLLER_URL=wss://adboard.example.com/ws/agent` and the same `ADBOARD_TOKEN` on both sides.
 
+## Using ADBoard
+
+The tabs across the top, left to right:
+
+- **Control:** the live phone. **Back / Home / Recent**, **Keyboard** (typing on this computer goes to the phone) and **Touch**, Record / Replay, Refresh, APK, screenshot and screen recording, Fill, Grid view and **Macro**. Under the phone sit the buttons for your saved apps, centred on the toolbar; each shows the app's own icon. On a phone-sized screen these tools live in the floating **Tools** panel and the bottom taskbar, where you can pin the ones you use. **Stats** shows or hides the stats line (size, battery, temperature, CPU, RAM, fps, rate, codec) under the phone; on a phone screen it scrolls across so it fits. **Grid view** shows every phone as a tile.
+- **Manage:** actions for the ticked phones: **Actions** (reconnect, restart ADB, reboot, shut down), **Screenshot** (save on the PC, copy, or save on the phone), **Record**, **Information** and **Wireless** (pair and connect over Wi-Fi). A result list shows how each phone did.
+- **Apps:** **Launcher** (your saved app buttons, grouped, with Launch and Launch group), **Install APK** (to the ticked phones) and **Packages** (scan a phone for package ids, then Launch, Force Stop, Uninstall or Clear Data). An app saved without an icon shows its own icon, which ADBoard reads once from the phone's APK and keeps in the data folder; a letter badge shows if it can't be read, and an icon you type always wins.
+- **Files:** two panes, the **PC** (Downloads, APKs, Recordings and Screenshots in the data folder's `files` folder) and the **PHONE**. Upload, and drag files between the panes.
+- **Macros:** finger-touch macros, one saved file each. See [Touch macros](#touch-macros).
+- **Shell Automation:** jobs made of app, file, key, shell-command and touch steps, run on many phones. **Library** (saved scripts, Import, Export, Export library), **Builder** (steps next to a live preview of the phone), Variables, Groups, Profiles and History. Each script is saved as its own `.adboard-shell.json` file. See [docs/shell-automation.md](docs/shell-automation.md).
+- **Developer:** **ADB Shell** (a command on the ticked phones, with recent commands), **Logs** and **Device Information**.
+- **Hosts:** the computers that run ADB and their phones. A second PC or an LXC joins as an agent (see [Real Windows + Linux LXC](#real-windows--linux-lxc)).
+- **Settings:** stream quality and screen size, keyboard, cursor and touch diagnostics, stats on phones, grid and taskbar options, the account, installing ADBoard on an iPhone, and **Data & storage** (where your data is, Back up now, export or import the whole library). See [Your data](#your-data).
+
 ## Layout tips
 
 - **Folding side panels:** fold Screens or Devices (chevron in the panel header, or Alt+Shift+[ / ]) and the Back/Home/Recent row, tools and stream options move into that freed column, so the phone gets the full height. With both folded they sit on the right.
