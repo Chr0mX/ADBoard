@@ -4,6 +4,7 @@ import {
   DEFAULT_TASKBAR_PINS,
   MAX_TASKBAR_PINS,
   normalizeTaskbarPins,
+  TASKBAR_TOOL_IDS,
 } from "./taskbar-pins.ts";
 
 describe("normalizeTaskbarPins", () => {
@@ -20,33 +21,12 @@ describe("normalizeTaskbarPins", () => {
   });
 
   it("caps at MAX_TASKBAR_PINS", () => {
-    const many = [
-      "keyboard",
-      "mouse",
-      "record",
-      "replay",
-      "refresh",
-      "apk",
-      "grid",
-      "stats",
-      "devices",
-      "desk",
-      "keyboard",
-    ];
+    // Every tool once, a duplicate, then every tool again.
+    const many = [...TASKBAR_TOOL_IDS, "keyboard", ...TASKBAR_TOOL_IDS];
     const next = normalizeTaskbarPins(many);
+    assert.equal(MAX_TASKBAR_PINS, TASKBAR_TOOL_IDS.length);
     assert.equal(next.length, MAX_TASKBAR_PINS);
-    assert.equal(MAX_TASKBAR_PINS, 10);
-    assert.deepEqual(next, [
-      "keyboard",
-      "mouse",
-      "record",
-      "replay",
-      "refresh",
-      "apk",
-      "grid",
-      "stats",
-      "devices",
-      "desk",
-    ]);
+    // Room for every tool, each pinned once, in order.
+    assert.deepEqual(next, [...TASKBAR_TOOL_IDS]);
   });
 });

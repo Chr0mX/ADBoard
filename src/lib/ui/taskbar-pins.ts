@@ -1,14 +1,6 @@
 /** Pinnable Tools → bottom DeviceNavBar preferences. */
 
 export const TASKBAR_PINS_KEY = "adboard-taskbar-pins";
-/** Key used before the ADBoard rename; read once so saved pins carry over. */
-export const LEGACY_TASKBAR_PINS_KEY = "rasiel-taskbar-pins";
-
-/**
- * Max extra icons beside the fixed nav actions.
- * The bottom bar scrolls horizontally when pins overflow.
- */
-export const MAX_TASKBAR_PINS = 10;
 
 /** Every tool in the floating Tools icon grid (pin-from-icon targets). */
 export const TASKBAR_TOOL_IDS = [
@@ -22,7 +14,21 @@ export const TASKBAR_TOOL_IDS = [
   "stats",
   "devices",
   "desk",
+  "cursor",
+  "restart",
+  "info",
+  "quick",
+  "rotate",
+  "fullscreen",
+  "pip",
+  "quiet",
 ] as const;
+
+/**
+ * Max extra icons beside the fixed nav actions: room for every tool.
+ * The bottom bar scrolls horizontally when pins overflow.
+ */
+export const MAX_TASKBAR_PINS = TASKBAR_TOOL_IDS.length;
 
 export type TaskbarToolId = (typeof TASKBAR_TOOL_IDS)[number];
 
@@ -37,6 +43,14 @@ export const TASKBAR_TOOL_LABELS: Record<TaskbarToolId, string> = {
   stats: "Stats mode",
   devices: "Devices",
   desk: "Desk",
+  cursor: "Cursor",
+  restart: "Restart device",
+  info: "Device info",
+  quick: "Device actions",
+  rotate: "Rotate",
+  fullscreen: "Fullscreen",
+  pip: "Pop out",
+  quiet: "Quiet mode",
 };
 
 const ID_SET = new Set<string>(TASKBAR_TOOL_IDS);

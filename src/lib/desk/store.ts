@@ -1,6 +1,9 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { migrateLegacyKeys } from "@/lib/storage-keys";
+import { createAgentSync } from "@/lib/sync/agent-store";
+import { mergeById } from "@/lib/sync/decide";
 
 export interface AppShortcut {
   id: string;
@@ -17,6 +20,8 @@ export interface AppShortcut {
 export type MacroStepKind =
   | "launch"
   | "forceStop"
+  | "clearData"
+  | "uninstall"
   | "reboot"
   | "shutdown"
   | "wait"
@@ -46,6 +51,16 @@ export type MacroStepKind =
 export interface MacroStep {
   id: string;
   kind: MacroStepKind;
+  /** Skipped when false (missing = on, for older jobs). */
+  enabled?: boolean;
+  /** Pause after this step, in milliseconds. */
+  delayAfterMs?: number;
+  /** Press or swipe time for touch steps. */
+  durationMs?: number;
+  /** Scroll: the way the finger moves. Pinch: fingers move in (zoom out) or out (zoom in). */
+  direction?: "up" | "down" | "in" | "out";
+  /** Scroll / pinch distance, percent of the screen. */
+  distance?: number;
   packageName?: string;
   activity?: string;
   ms?: number;
@@ -83,10 +98,7 @@ export interface CoordOverride {
 }
 
 export interface DeviceProfile {
-  coordinateProfile: string;
   overrides: Record<string, CoordOverride>;
-  preferredResolution: string;
-  preferredFps: string;
   assignedMacros: string[];
 }
 
@@ -95,6 +107,10 @@ export interface SavedMacro {
   name: string;
   folder: string;
   steps: MacroStep[];
+  /** Play the whole job this many times (missing = 1). */
+  repeat?: number;
+  /** What a failed step does: stop that phone's run (default) or go on. */
+  onError?: "stop" | "continue";
 }
 
 export interface DeviceGroup {
@@ -128,7 +144,7 @@ export interface DeskLibrary {
   history: MacroRunRecord[];
 }
 
-const KEY = "phonecontrol-desk";
+const KEY = "adboard-desk";
 const listeners = new Set<() => void>();
 let cachedRaw: string | null | undefined;
 let cached: DeskLibrary | null = null;
@@ -138,12 +154,18 @@ export const MACRO_FOLDERS = ["Testing", "Games", "Custom"] as const;
 
 export function emptyProfile(): DeviceProfile {
   return {
-    coordinateProfile: "relative",
     overrides: {},
-    preferredResolution: "",
-    preferredFps: "",
     assignedMacros: [],
   };
+}
+
+/** Only the fields profiles still use (older libraries also stored unused display settings). */
+function normalizeProfiles(profiles: Record<string, Partial<DeviceProfile>> | undefined): Record<string, DeviceProfile> {
+  const out: Record<string, DeviceProfile> = {};
+  for (const [id, profile] of Object.entries(profiles ?? {})) {
+    out[id] = { overrides: profile?.overrides ?? {}, assignedMacros: profile?.assignedMacros ?? [] };
+  }
+  return out;
 }
 
 const empty = (): DeskLibrary => ({
@@ -163,7 +185,7 @@ function normalize(parsed: Partial<DeskLibrary>): DeskLibrary {
   return {
     ...empty(),
     ...parsed,
-    profiles: parsed.profiles ?? {},
+    profiles: normalizeProfiles(parsed.profiles),
     history: parsed.history ?? [],
     tags: parsed.tags ?? {},
     groups: parsed.groups ?? [],
@@ -172,8 +194,44 @@ function normalize(parsed: Partial<DeskLibrary>): DeskLibrary {
   };
 }
 
+/** Shared with every browser on this ADBoard (agent /api/store/desk). */
+const sync = createAgentSync({
+  name: "desk",
+  getLocal: () => read(),
+  applyRemote: (value) => storeLibrary(normalize((value ?? {}) as Partial<DeskLibrary>)),
+  merge: (localRaw, remoteRaw, baseRaw) => {
+    const local = normalize((localRaw ?? {}) as Partial<DeskLibrary>);
+    const remote = normalize((remoteRaw ?? {}) as Partial<DeskLibrary>);
+    const base = baseRaw ? normalize(baseRaw as Partial<DeskLibrary>) : null;
+    return {
+      ...remote,
+      apps: mergeById(local.apps, remote.apps, base?.apps),
+      macros: mergeById(local.macros, remote.macros, base?.macros),
+      groups: mergeById(local.groups, remote.groups, base?.groups),
+      history: mergeById(local.history, remote.history, base?.history).slice(0, 30),
+      variables: { ...local.variables, ...remote.variables },
+      deviceVariables: { ...local.deviceVariables, ...remote.deviceVariables },
+      tags: { ...local.tags, ...remote.tags },
+      profiles: { ...local.profiles, ...remote.profiles },
+    };
+  },
+  isMeaningful: (value) => {
+    const lib = value as DeskLibrary;
+    if (!lib) return false;
+    return (
+      (lib.macros?.length ?? 0) > 0 ||
+      (lib.groups?.length ?? 0) > 0 ||
+      (lib.apps?.length ?? 0) > 0 ||
+      Object.keys(lib.variables ?? {}).length > 0 ||
+      Object.keys(lib.profiles ?? {}).length > 0
+    );
+  },
+});
+
 function read(): DeskLibrary {
   if (typeof window === "undefined") return SERVER_LIBRARY;
+  migrateLegacyKeys(); // the library was kept under "phonecontrol-desk" before
+  sync.start();
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(KEY);
@@ -194,21 +252,39 @@ function read(): DeskLibrary {
   return cached;
 }
 
+/** Wait (briefly) until the agent's copy has been loaded. */
+export function deskReady() {
+  if (typeof window !== "undefined") sync.start();
+  return sync.ready();
+}
+
 export function getLibrary(): DeskLibrary {
   return read();
 }
 
 export function saveLibrary(next: DeskLibrary) {
+  storeLibrary(next);
+  sync.push();
+}
+
+/** Write to this browser and notify, without sharing (used for remote copies). */
+function storeLibrary(next: DeskLibrary) {
   const raw = JSON.stringify(next);
   cached = next;
   cachedRaw = raw;
-  localStorage.setItem(KEY, raw);
+  try {
+    localStorage.setItem(KEY, raw);
+  } catch {
+    // Storage full or blocked: keep it in memory for this visit.
+  }
   listeners.forEach((listener) => listener());
 }
 
-const MACRO_KINDS = new Set<string>([
+export const MACRO_KINDS = new Set<string>([
   "launch",
   "forceStop",
+  "clearData",
+  "uninstall",
   "reboot",
   "shutdown",
   "wait",

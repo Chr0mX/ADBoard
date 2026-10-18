@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "ADBoard",
   "short_name": "ADBoard",
   "description": "Multi-device Android control center",
@@ -9,6 +10,12 @@
   "background_color": "#0e141b",
   "theme_color": "#0e141b",
   "icons": [
+    {
+      "src": "/icons/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",

@@ -5,11 +5,15 @@ export interface ScrcpyOptionsPayload {
   quality: string;
   audio: boolean;
   screenOff: boolean;
+  /** Custom quality (kept while a preset is chosen, sent only with `custom`). */
+  maxSize?: number;
+  videoBitRate?: number;
+  maxFps?: number;
 }
 
 export interface ScrcpyOptionsResult extends ScrcpyOptionsPayload {
   restarted?: string[];
-  results?: { ok: boolean; error?: string | null; output?: string | null }[];
+  results?: { ok: boolean; error?: string | null; output?: string | null; deviceId?: string; deviceName?: string }[];
 }
 
 export interface ClipboardResult {
@@ -38,6 +42,9 @@ export async function postScrcpyOptions(
       quality: options.quality,
       audio: options.audio,
       screenOff: options.screenOff,
+      ...(options.quality === "custom"
+        ? { maxSize: options.maxSize, videoBitRate: options.videoBitRate, maxFps: options.maxFps }
+        : {}),
     }),
   });
   if (!res.ok) throw new Error(await readError(res, "scrcpy options failed"));

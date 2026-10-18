@@ -4,6 +4,7 @@
 #   .\Start-ADBoard.ps1 -Bind 0.0.0.0 -Mock
 #   .\Start-ADBoard.ps1 -Port 3848 -HostName "desk-pc"
 #   .\Start-ADBoard.ps1 -Bind 0.0.0.0 -Password "long passphrase"   # behind a reverse proxy
+#   .\Start-ADBoard.ps1 -DataDir "$PSScriptRoot\ADBoard-data"       # portable mode
 
 [CmdletBinding()]
 param(
@@ -24,7 +25,10 @@ param(
     [string] $Password = "",
 
     [ValidateSet("auto", "testpattern", "scrcpy", "off")]
-    [string] $VideoSource = "auto"
+    [string] $VideoSource = "auto",
+
+    # Portable mode: keep macros, scripts and settings here instead of %LOCALAPPDATA%\ADBoard.
+    [string] $DataDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,14 +48,15 @@ $ScrcpyServer = Join-Path $Root "vendor\scrcpy\scrcpy-server"
 
 if (-not $HostId) { $HostId = $HostName }
 
-$env:PHONECONTROL_ROLE = $Role
-$env:PHONECONTROL_BIND = $Bind
-$env:PHONECONTROL_PORT = "$Port"
-$env:PHONECONTROL_HOST = $HostName
-$env:PHONECONTROL_HOST_ID = $HostId
-$env:PHONECONTROL_VIDEO_SOURCE = $VideoSource
+$env:ADBOARD_ROLE = $Role
+$env:ADBOARD_BIND = $Bind
+$env:ADBOARD_PORT = "$Port"
+$env:ADBOARD_HOST = $HostName
+$env:ADBOARD_HOST_ID = $HostId
+$env:ADBOARD_VIDEO_SOURCE = $VideoSource
+if ($DataDir) { $env:ADBOARD_DATA_DIR = $DataDir }
 if ($Password) {
-    $env:PHONECONTROL_PASSWORD = $Password
+    $env:ADBOARD_PASSWORD = $Password
     Write-Host "Browser sign-in enabled"
 }
 
@@ -59,7 +64,7 @@ if (Test-Path $Adb) {
     $env:ADB_PATH = $Adb
     Write-Host "ADB_PATH=$Adb"
 } else {
-    Write-Warning "vendor\adb\adb.exe missing — using PATH adb, or set -Mock / PHONECONTROL_FORCE_MOCK=1"
+    Write-Warning "vendor\adb\adb.exe missing — using PATH adb, or set -Mock / ADBOARD_FORCE_MOCK=1"
 }
 
 if (Test-Path $Scrcpy) {
@@ -71,15 +76,17 @@ if (Test-Path $ScrcpyServer) {
 }
 
 if ($Mock) {
-    $env:PHONECONTROL_FORCE_MOCK = "1"
-    $env:PHONECONTROL_MOCK_PROFILE = "windows"
+    $env:ADBOARD_FORCE_MOCK = "1"
+    $env:ADBOARD_MOCK_PROFILE = "windows"
     if ($VideoSource -eq "auto") {
-        $env:PHONECONTROL_VIDEO_SOURCE = "testpattern"
+        $env:ADBOARD_VIDEO_SOURCE = "testpattern"
     }
     Write-Host "Mock fleet enabled (windows profile)"
 }
 
 $Host.UI.RawUI.WindowTitle = "ADBoard"
 Write-Host "Starting ADBoard ($Role) on http://${Bind}:${Port}/"
+$Data = if ($env:ADBOARD_DATA_DIR) { $env:ADBOARD_DATA_DIR } else { Join-Path $env:LOCALAPPDATA "ADBoard" }
+Write-Host "Macros, scripts and settings: $Data"
 Write-Host "Point UI: NEXT_PUBLIC_AGENT_URL=http://127.0.0.1:${Port}  (or the LAN IP if Bind=0.0.0.0)"
 & $Exe

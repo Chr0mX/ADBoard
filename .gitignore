@@ -74,3 +74,10 @@ adboard-auth.json
 adboard-auth.json.tmp
 rasiel-auth.json
 test-results/
+
+# User data from before ADBoard kept it in %LOCALAPPDATA%\ADBoard (moved there
+# on first start), and portable-mode data folders. Never commit or clean these.
+adboard-data/
+ADBoard-data/
+/data/
+/dist/windows/data/

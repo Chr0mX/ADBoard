@@ -20,6 +20,10 @@ export interface Device {
   status: DeviceStatus;
   battery: number | null;
   temperatureC: number | null;
+  /** Whole-device CPU busy % (agent /proc/stat between polls); absent when unknown. */
+  cpuPercent?: number | null;
+  /** RAM in use % (agent /proc/meminfo); absent when unknown. */
+  memoryPercent?: number | null;
   resolution: DeviceResolution;
   fps: number | null;
   bitrateMbps: number | null;
@@ -93,6 +97,23 @@ export interface NavBroadcast {
   action: "back" | "home" | "recent" | "volume_up" | "volume_down" | "power";
   targetIds: string[];
   targets?: NavTargetResult[];
+}
+
+/** One finger of a timed gesture (POST /api/input/gesture). Points are 0–1. */
+export interface GestureStroke {
+  /** Finger slot 0–9. */
+  pointer: number;
+  startMs: number;
+  durationMs: number;
+  points: NormalizedPoint[];
+}
+
+export interface GestureResult {
+  id: string;
+  at: number;
+  mode: ControlMode;
+  targetIds: string[];
+  targets: NavTargetResult[];
 }
 
 export interface InstallBroadcast {

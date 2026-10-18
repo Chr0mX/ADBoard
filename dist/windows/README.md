@@ -19,6 +19,14 @@ vendor/
   scrcpy/                  # put scrcpy.exe + scrcpy-server here
 ```
 
+Your macros, scripts, settings and logs are **not** in this folder: they live in
+`%LOCALAPPDATA%\ADBoard` (Settings → Data & storage opens it), so updating or
+replacing this folder never touches them. Data from older versions that sat here
+(`adboard-data`, `data\phonecontrol-files`) is moved there on first start, with the
+originals kept in `%LOCALAPPDATA%\ADBoard\backups\legacy-<date>`. Portable mode:
+`.\Start-ADBoard.ps1 -DataDir "$PSScriptRoot\ADBoard-data"` or set `ADBOARD_DATA_DIR`.
+See [docs/storage.md](../../docs/storage.md).
+
 ## One-time setup
 
 1. **ADB + scrcpy (automated)** from the repo root:
@@ -50,10 +58,10 @@ PowerShell, when you need `-Mock` or a different bind address:
 Or manually:
 
 ```powershell
-$env:PHONECONTROL_ROLE = "controller"
-$env:PHONECONTROL_BIND = "127.0.0.1"   # UI on this machine only
-$env:PHONECONTROL_PORT = "3848"
-$env:PHONECONTROL_HOST = "windows-host"
+$env:ADBOARD_ROLE = "controller"
+$env:ADBOARD_BIND = "127.0.0.1"   # UI on this machine only
+$env:ADBOARD_PORT = "3848"
+$env:ADBOARD_HOST = "windows-host"
 $env:ADB_PATH = "$PWD\vendor\adb\adb.exe"
 $env:SCRCPY_PATH = "$PWD\vendor\scrcpy\scrcpy.exe"
 .\ADBoard.exe
@@ -68,41 +76,41 @@ The page at `/` talks to this process on the same origin. A dev checkout can sti
 | `127.0.0.1` | Browser UI runs on this Windows PC. Not reachable from the LAN. |
 | `0.0.0.0` (`run.bat`) | Another machine’s browser, or a remote agent, can open this controller. Allow TCP 3848 in Windows Firewall. |
 
-Set via `PHONECONTROL_BIND` (also accepts any IPv4 literal).
+Set via `ADBOARD_BIND` (also accepts any IPv4 literal).
 
 ## Pair a Linux LXC agent
 
 On the Windows controller, bind all interfaces so the LXC can connect:
 
 ```powershell
-$env:PHONECONTROL_BIND = "0.0.0.0"
+$env:ADBOARD_BIND = "0.0.0.0"
 .\ADBoard.exe
 ```
 
 On the Linux agent (same binary, agent role):
 
 ```bash
-PHONECONTROL_ROLE=agent \
-PHONECONTROL_PORT=3849 \
-PHONECONTROL_HOST=lxc-agent-01 \
-PHONECONTROL_HOST_ID=lxc-agent-01 \
-PHONECONTROL_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
-PHONECONTROL_HTTP_BASE=http://<lxc-lan-ip>:3849 \
-cargo run -p phonecontrol-agent --release
+ADBOARD_ROLE=agent \
+ADBOARD_PORT=3849 \
+ADBOARD_HOST=lxc-agent-01 \
+ADBOARD_HOST_ID=lxc-agent-01 \
+ADBOARD_CONTROLLER_URL=ws://<windows-lan-ip>:3848/ws/agent \
+ADBOARD_HTTP_BASE=http://<lxc-lan-ip>:3849 \
+cargo run -p adboard-agent --release
 # or: ./adboard-agent
 ```
 
-- `PHONECONTROL_CONTROLLER_URL` — Windows host LAN IP (not `127.0.0.1` from the LXC’s perspective).
-- `PHONECONTROL_HTTP_BASE` — URL the **controller** can use to proxy video WS back to this agent.
+- `ADBOARD_CONTROLLER_URL` — Windows host LAN IP (not `127.0.0.1` from the LXC’s perspective).
+- `ADBOARD_HTTP_BASE` — URL the **controller** can use to proxy video WS back to this agent.
 
 UI always talks to the **controller** only.
 
 ## Mock / no phones
 
 ```powershell
-$env:PHONECONTROL_FORCE_MOCK = "1"
-$env:PHONECONTROL_VIDEO_SOURCE = "testpattern"
-$env:PHONECONTROL_MOCK_PROFILE = "windows"
+$env:ADBOARD_FORCE_MOCK = "1"
+$env:ADBOARD_VIDEO_SOURCE = "testpattern"
+$env:ADBOARD_MOCK_PROFILE = "windows"
 .\Start-ADBoard.ps1
 ```
 

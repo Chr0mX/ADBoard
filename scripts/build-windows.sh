@@ -13,8 +13,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-TARGET="${PHONECONTROL_WINDOWS_TARGET:-x86_64-pc-windows-gnu}"
-PROFILE="${PHONECONTROL_CARGO_PROFILE:-release}"
+TARGET="${ADBOARD_WINDOWS_TARGET:-x86_64-pc-windows-gnu}"
+PROFILE="${ADBOARD_CARGO_PROFILE:-release}"
 
 if ! command -v rustup >/dev/null 2>&1; then
   echo "error: rustup not found" >&2
@@ -32,8 +32,8 @@ if [[ "$TARGET" == *windows-gnu ]]; then
   fi
 fi
 
-echo "==> cargo build -p phonecontrol-agent --${PROFILE} --target ${TARGET}"
-cargo build -p phonecontrol-agent --"${PROFILE}" --target "${TARGET}"
+echo "==> cargo build -p adboard-agent --${PROFILE} --target ${TARGET}"
+cargo build -p adboard-agent --"${PROFILE}" --target "${TARGET}"
 
 EXE="target/${TARGET}/${PROFILE}/adboard-agent.exe"
 if [[ ! -f "$EXE" ]]; then

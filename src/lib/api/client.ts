@@ -6,6 +6,8 @@ import type {
   MappedTap,
   NavAction,
   NavBroadcast,
+  GestureResult,
+  GestureStroke,
   NormalizedPoint,
   PointerPhase,
   PointerTool,
@@ -51,6 +53,12 @@ export interface DevicesClient {
     targets: Device[],
     action: NavAction,
   ): Promise<NavBroadcast | void>;
+  /** Timed single/multi-touch gesture, played by the agent. Resolves when it has finished. */
+  sendGesture(
+    mode: ControlMode,
+    targets: Device[],
+    strokes: GestureStroke[],
+  ): Promise<GestureResult>;
   sendText(
     mode: ControlMode,
     targets: Device[],
@@ -144,7 +152,7 @@ export const UPLOAD_CHUNK = 32 * 1024 * 1024;
 
 /**
  * Small files are sent as the request body. Large ones are staged with
- * PUT /api/uploads/{id} chunks and referenced by the x-phonecontrol-upload header.
+ * PUT /api/uploads/{id} chunks and referenced by the x-adboard-upload header.
  */
 async function stageUpload(
   base: string,
@@ -155,12 +163,12 @@ async function stageUpload(
   for (let offset = 0; offset < file.size; offset += UPLOAD_CHUNK) {
     const res = await agentFetch(`${base}/api/uploads/${id}`, {
       method: "PUT",
-      headers: { "X-Phonecontrol-Offset": String(offset) },
+      headers: { "X-Adboard-Offset": String(offset) },
       body: file.slice(offset, offset + UPLOAD_CHUNK),
     });
     if (!res.ok) throw await responseError(res, "upload failed");
   }
-  return { body: null, headers: { "X-Phonecontrol-Upload": id } };
+  return { body: null, headers: { "X-Adboard-Upload": id } };
 }
 
 export function createMockDevicesClient(): DevicesClient {
@@ -210,6 +218,25 @@ export function createMockDevicesClient(): DevicesClient {
       };
       console.info("[mock-control] pointer", broadcast);
       return broadcast;
+    },
+
+    async sendGesture(mode, targets, strokes) {
+      const total = Math.max(0, ...strokes.map((s) => s.startMs + Math.max(10, s.durationMs)));
+      await delay(total);
+      const result: GestureResult = {
+        id: `gesture-${Date.now()}`,
+        at: Date.now(),
+        mode,
+        targetIds: targets.map((t) => t.id),
+        targets: targets.map((t) => ({
+          deviceId: t.id,
+          deviceName: t.name,
+          inject: "stub",
+          detail: "mock client",
+        })),
+      };
+      console.info("[mock-control] gesture", strokes.length, result);
+      return result;
     },
 
     async sendNav(mode, targets, action) {
@@ -422,6 +449,18 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       return (await res.json()) as TapBroadcast;
     },
 
+    async sendGesture(mode, targets, strokes) {
+      const res = await agentFetch(`${base}/api/input/gesture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, targetIds: targets.map((t) => t.id), strokes }),
+      });
+      if (!res.ok) {
+        throw await responseError(res, "agent sendGesture failed");
+      }
+      return (await res.json()) as GestureResult;
+    },
+
     async sendNav(mode, targets, action) {
       const res = await agentFetch(`${base}/api/input/nav`, {
         method: "POST",
@@ -482,9 +521,9 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
         method: "POST",
         headers: {
           "Content-Type": "application/vnd.android.package-archive",
-          "X-Phonecontrol-Mode": mode,
-          "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
-          "X-Phonecontrol-Filename": file.name,
+          "X-Adboard-Mode": mode,
+          "X-Adboard-Targets": targets.map((t) => t.id).join(","),
+          "X-Adboard-Filename": file.name,
           ...upload.headers,
         },
         body: upload.body,
@@ -525,8 +564,8 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       const res = await agentFetch(`${base}/api/host/files`, {
         method: "POST",
         headers: {
-          "X-Phonecontrol-Filename": file.name,
-          "X-Phonecontrol-Dir": dir,
+          "X-Adboard-Filename": file.name,
+          "X-Adboard-Dir": dir,
           ...upload.headers,
         },
         body: upload.body,
@@ -553,9 +592,9 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       const res = await agentFetch(`${base}/api/device/push`, {
         method: "POST",
         headers: {
-          "X-Phonecontrol-Targets": targets.map((t) => t.id).join(","),
-          "X-Phonecontrol-Filename": file.name,
-          "X-Phonecontrol-Dest": dest,
+          "X-Adboard-Targets": targets.map((t) => t.id).join(","),
+          "X-Adboard-Filename": file.name,
+          "X-Adboard-Dest": dest,
           ...upload.headers,
         },
         body: upload.body,
@@ -725,12 +764,12 @@ function createDevicesClient(): DevicesClient {
   const agent = agentBaseUrl();
   if (agent !== null) {
     console.info(
-      "[phone-control] using agent at",
+      "[adboard] using agent at",
       agent || "same origin",
     );
     return createAgentDevicesClient(agent);
   }
-  console.info("[phone-control] NEXT_PUBLIC_AGENT_URL unset — using mock client");
+  console.info("[adboard] NEXT_PUBLIC_AGENT_URL unset — using mock client");
   return createMockDevicesClient();
 }
 

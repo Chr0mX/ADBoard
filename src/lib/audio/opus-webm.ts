@@ -102,8 +102,8 @@ export function webmInit(
     [0x15, 0x49, 0xa9, 0x66],
     concat([
       uintEl([0x2a, 0xd7, 0xb1], 1_000_000),
-      stringEl([0x4d, 0x80], "phonecontrol"),
-      stringEl([0x57, 0x41], "phonecontrol"),
+      stringEl([0x4d, 0x80], "ADBoard"),
+      stringEl([0x57, 0x41], "ADBoard"),
     ]),
   );
   const track = element(
