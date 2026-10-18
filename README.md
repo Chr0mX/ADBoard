@@ -323,14 +323,14 @@ ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's d
 
 The tabs across the top, left to right (each has a full page in the [user guide](docs/guide/README.md)):
 
-- **Control:** the live phone. **Back / Home / Recent**, **Keyboard** (typing on this computer goes to the phone) and **Touch**, Record / Replay, Refresh, APK, screenshot and screen recording, Fill, Grid view and **Macro**. Under the phone sit the buttons for your saved apps, centred on the toolbar; each shows the app's own icon. On a phone-sized screen these tools live in the floating **Tools** panel and the bottom taskbar, where you can pin the ones you use. **Stats** shows or hides the stats line (size, battery, temperature, CPU, RAM, fps, rate, codec) under the phone; on a phone screen it scrolls across so it fits. **Grid view** shows every phone as a tile.
-- **Manage:** actions for the ticked phones: **Actions** (reconnect, restart ADB, reboot, shut down), **Screenshot** (save on the PC, copy, or save on the phone), **Record**, **Information** and **Wireless** (pair and connect over Wi-Fi). A result list shows how each phone did.
+- <img src="site/assets/icon-live-control.svg" width="20" height="20" alt="" align="absmiddle"> **Control:** the live phone. **Back / Home / Recent**, **Keyboard** (typing on this computer goes to the phone) and **Touch**, Record / Replay, Refresh, APK, screenshot and screen recording, Fill, Grid view and **Macro**. Under the phone sit the buttons for your saved apps, centred on the toolbar; each shows the app's own icon. On a phone-sized screen these tools live in the floating **Tools** panel and the bottom taskbar, where you can pin the ones you use. **Stats** shows or hides the stats line (size, battery, temperature, CPU, RAM, fps, rate, codec) under the phone; on a phone screen it scrolls across so it fits. **Grid view** shows every phone as a tile.
+- <img src="site/assets/icon-device-fleet.svg" width="20" height="20" alt="" align="absmiddle"> **Manage:** actions for the ticked phones: **Actions** (reconnect, restart ADB, reboot, shut down), **Screenshot** (save on the PC, copy, or save on the phone), **Record**, **Information** and **Wireless** (pair and connect over Wi-Fi). A result list shows how each phone did.
 - **Apps:** **Launcher** (your saved app buttons, grouped, with Launch and Launch group), **Install APK** (to the ticked phones) and **Packages** (scan a phone for package ids, then Launch, Force Stop, Uninstall or Clear Data). An app saved without an icon shows its own icon, which ADBoard reads once from the phone's APK and keeps in the data folder; a letter badge shows if it can't be read, and an icon you type always wins.
 - **Files:** two panes, the **PC** (Downloads, APKs, Recordings and Screenshots in the data folder's `files` folder) and the **PHONE**. Upload, and drag files between the panes.
-- **Macros:** finger-touch macros, one saved file each. See [Touch macros](#touch-macros).
-- **Shell Automation:** jobs made of app, file, key, shell-command and touch steps, run on many phones. **Library** (saved scripts, Import, Export, Export library), **Builder** (steps next to a live preview of the phone), Variables, Groups, Profiles and History. Each script is saved as its own `.adboard-shell.json` file. See [docs/shell-automation.md](docs/shell-automation.md).
-- **Developer:** **ADB Shell** (a command on the ticked phones, with recent commands), **Logs** and **Device Information**.
-- **Hosts:** the computers that run ADB and their phones. A second PC or an LXC joins as an agent (see [Real Windows + Linux LXC](#real-windows--linux-lxc)).
+- <img src="site/assets/icon-automation.svg" width="20" height="20" alt="" align="absmiddle"> **Macros:** finger-touch macros, one saved file each. See [Touch macros](#touch-macros).
+- <img src="site/assets/icon-automation.svg" width="20" height="20" alt="" align="absmiddle"> **Shell Automation:** jobs made of app, file, key, shell-command and touch steps, run on many phones. **Library** (saved scripts, Import, Export, Export library), **Builder** (steps next to a live preview of the phone), Variables, Groups, Profiles and History. Each script is saved as its own `.adboard-shell.json` file. See [docs/shell-automation.md](docs/shell-automation.md).
+- <img src="site/assets/icon-adb-terminal.svg" width="20" height="20" alt="" align="absmiddle"> **Developer:** **ADB Shell** (a command on the ticked phones, with recent commands), **Logs** and **Device Information**.
+- <img src="site/assets/icon-device-fleet.svg" width="20" height="20" alt="" align="absmiddle"> **Hosts:** the computers that run ADB and their phones. A second PC or an LXC joins as an agent (see [Real Windows + Linux LXC](#real-windows--linux-lxc)).
 - **Settings:** stream quality and screen size, keyboard, cursor and touch diagnostics, stats on phones, grid and taskbar options, the account, installing ADBoard on an iPhone, and **Data & storage** (where your data is, Back up now, export or import the whole library). See [Your data](#your-data).
 
 ## Layout tips
@@ -419,6 +419,11 @@ Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set;
 | POST | `/api/input/tap` | Normalized 0–1 → pixels; local inject + remote proxy |
 | POST | `/api/input/nav` | `back`/`home`/`recent` → keyevent (proxied) |
 | POST | `/api/input/gesture` | Timed single/multi-touch strokes (finger slots 0–9), played on the agent; every finger released (proxied) |
+| GET / PUT | `/api/store/{name}` | Shared macros, scripts, queue, schedules and settings (revisions; a stale save gets 409 with the current copy) |
+| GET / POST | `/api/store/{name}/history` · `/restore` | Earlier saved versions, and restoring one |
+| GET | `/api/system/storage` | Data folder paths, saved files, migration result |
+| POST | `/api/system/open-folder` · `/backup` | Open a data folder on the ADBoard PC; back up the data folder |
+| GET | `/api/apps/icon` · `/api/apps/meta` | An app's icon and name, read from the phone's APK and cached (`?serial=&package=`) |
 | WS | `/ws` | UI: `devices`, `hosts`, `session_updated`, tap/nav |
 | WS | `/ws/agent` | Agent registration / heartbeats / command proxy |
 | WS | `/ws/devices/{serial}/video` | Status JSON + Annex-B H264; remote proxied via agent `http_base` |
@@ -453,6 +458,11 @@ crates/
   adboard-protocol/   # shared wire types + mesh frames + coord/adb helpers
   adboard-agent/      # controller + agent binary + video hub
     fixtures/testpattern.h264
+    src/data_dir.rs, shared_store.rs, migrate.rs   # data folder, item files, older-version migration
+    src/app_icon.rs        # app icons and names from the phone's APK
+docs/                      # architecture, storage, macros, Shell Automation
+  guide/                   # user guide: a page per tab, with screenshots
+site/assets/               # logo and feature icons (README and website)
 dist/windows/              # Windows host pack (exe from make package-windows)
 src/                       # Next.js UI
   hooks/use-device-video.ts
