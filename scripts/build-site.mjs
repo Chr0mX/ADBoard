@@ -128,7 +128,10 @@ function render(md, file, stems) {
         out.push("<hr>");
         i++;
       } else if (/^<p[\s>]/.test(line)) {
-        out.push(inline(line, file, stems));
+        // Raw HTML wrapper from the README (<p align="center">…</p>): keep its img, drop the tags.
+        const align = /align="center"/.test(line) ? ' class="center"' : "";
+        const body = line.replace(/^<p[^>]*>/, "").replace(/<\/p>\s*$/, "");
+        out.push(`<p${align}>${inline(body, file, stems)}</p>`);
         i++;
       } else if (line.startsWith(">")) {
         const body = [];

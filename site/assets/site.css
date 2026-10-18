@@ -156,3 +156,5 @@ nav.links a[aria-current] { color: var(--ink); }
 @media (min-width: 481px) and (max-width: 860px) {
   .shots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.doc p.center { text-align: center; margin: 24px 0 0; }
+.doc p.center img { display: inline-block; vertical-align: middle; }
