@@ -46,7 +46,7 @@
   </tr>
 </table>
 
-New to ADBoard? Start with the [user guide](docs/guide/README.md): what Macros and Shell Automation are, with worked examples.
+New to ADBoard? Start with the [user guide](docs/guide/README.md): a page for every tab with screenshots and worked examples, from connecting your first phone to Macros and Shell Automation.
 
 ## How it works
 
@@ -321,7 +321,7 @@ ADBoard pings every WebSocket every 25 s, under Cloudflare's 100 s and nginx's d
 
 ## Using ADBoard
 
-The tabs across the top, left to right:
+The tabs across the top, left to right (each has a full page in the [user guide](docs/guide/README.md)):
 
 - **Control:** the live phone. **Back / Home / Recent**, **Keyboard** (typing on this computer goes to the phone) and **Touch**, Record / Replay, Refresh, APK, screenshot and screen recording, Fill, Grid view and **Macro**. Under the phone sit the buttons for your saved apps, centred on the toolbar; each shows the app's own icon. On a phone-sized screen these tools live in the floating **Tools** panel and the bottom taskbar, where you can pin the ones you use. **Stats** shows or hides the stats line (size, battery, temperature, CPU, RAM, fps, rate, codec) under the phone; on a phone screen it scrolls across so it fits. **Grid view** shows every phone as a tile.
 - **Manage:** actions for the ticked phones: **Actions** (reconnect, restart ADB, reboot, shut down), **Screenshot** (save on the PC, copy, or save on the phone), **Record**, **Information** and **Wireless** (pair and connect over Wi-Fi). A result list shows how each phone did.

@@ -339,13 +339,13 @@ Profiles can also hold position overrides for a phone, so a touch step lands som
 
 History lists the last 30 runs of a whole job, newest first. Each run shows the job name, whether it ran **Parallel** (at the same time) or **Sequential** (one after another), the time it started, and one line per phone with its result (for example "Phone A done", or "Phone B failed" with the reason). When there are no runs yet it says "No runs yet." Older runs are dropped when there are more than 30. Testing a single step is never listed here.
 
-## Worked example 1: open a game, wait, take a screenshot on every phone
+## Worked example 1: open Grand Summoners, wait, take a screenshot on every phone
 
-Goal: on every phone, start a game, give it time to load, then save a screenshot.
+Goal: on every phone, start Grand Summoners, give it time to load, then save a screenshot.
 
 1. Open **Shell Automation** and go to the **Library** sub-tab.
-2. Press **New job**. In the Builder, type a **Job name** such as "Game check", leave **Folder** on Custom (or pick Games) and press **Create job**.
-3. In the **Add** list at the bottom of the **Steps** card, choose **Launch app** under App Control and press **Add step**. Open the new step and type the **Package** of your game, for example `com.example.game`. Leave **Activity** empty.
+2. Press **New job**. In the Builder, type a **Job name** such as "Launch Grand Summoners", leave **Folder** on Custom (or pick Games) and press **Create job**.
+3. In the **Add** list at the bottom of the **Steps** card, choose **Launch app** under App Control and press **Add step**. Open the new step and type the **Package** of the game, for example `com.example.grandsummoners` (a placeholder: use the real package id, which **Apps → Packages → Scan** shows for the phone). Leave **Activity** empty.
 4. Choose **Wait** under Delays, press **Add after 1**, and set **Wait** to `15000` (15 seconds) so the game has time to load.
 5. Choose **Screenshot** under Device Control and press **Add after 2**. It has no fields.
 6. Under **If a step fails**, choose **Note it and go on** if you want the other steps to run even when one fails.
@@ -358,10 +358,10 @@ Goal: on every phone, start a game, give it time to load, then save a screenshot
 
 Goal: put an APK on each phone and open the app.
 
-1. In the **Files** tab, upload your APK, for example into `Downloads` so its path is `Downloads/game.apk`.
-2. In **Shell Automation**, press **New job** in the Library, name it "Install game" and press **Create job**.
-3. Add **Install APK** (App Control). In **APK on ADBoard** type `Downloads/game.apk`.
-4. Add **Launch app** (App Control). In **Package** type the app's package name, for example `com.example.game`.
+1. In the **Files** tab, upload the APK, for example into `Downloads` so its path is `Downloads/grandsummoners.apk`.
+2. In **Shell Automation**, press **New job** in the Library, name it "Install Grand Summoners" and press **Create job**.
+3. Add **Install APK** (App Control). In **APK on ADBoard** type `Downloads/grandsummoners.apk`.
+4. Add **Launch app** (App Control). In **Package** type the app's package name, for example `com.example.grandsummoners`.
 5. Add **Wait for app** (Flow Control) and put the same package in **Package**. Leave **Time limit** at `15000`, or raise it for a slow app. This step fails if the app does not start in time, so you will know.
 6. Add **Screenshot** (Device Control) if you want proof that it opened.
 7. Check that no step is outlined in red. Install APK and Launch app need ADB, so use real phones.

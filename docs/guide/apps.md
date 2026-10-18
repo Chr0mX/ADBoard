@@ -49,7 +49,7 @@ Your shortcuts are shown in groups: **Games**, **Media**, **Tools** and **Custom
 | Name | The label on the card. If left empty, the package id is used. |
 | Icon (optional: empty uses the app's own icon) | See "Shortcut icons" above. |
 | Package | The package id. Required to launch. |
-| Activity | Optional. A specific screen inside the app to open, for example `com.example.game.MainActivity`. Empty means open the app normally. |
+| Activity | Optional. A specific screen inside the app to open, for example `com.example.grandsummoners.MainActivity`. Empty means open the app normally. |
 | Arguments | Optional extra settings passed with the activity, such as `--es user bob`. Only used if Activity is filled in. |
 | Group | Games, Media, Tools or Custom. |
 | Save / Cancel | Save the shortcut, or close without saving. |
