@@ -12,11 +12,11 @@ This guide explains every tab. The screenshots use ADBoard's demo phones, which 
 |---|---|
 | [Getting started](getting-started.md) | Install, start ADBoard, connect your first phone, and a tour of the screen |
 
-## The tabs
+## The Dashboard
 
-The tabs run across the top of ADBoard, in this order.
+The Dashboard run across the top of ADBoard, in this order.
 
-| Tab | What it is for | Page |
+| Dashboard | What it is for | Page |
 |---|---|---|
 | <img src="../../site/assets/icon-live-control.svg" width="20" height="20" alt="" align="absmiddle"> **Control** | The live phone: tap, swipe, type, grid of all phones, app buttons | [control.md](control.md) |
 | <img src="../../site/assets/icon-device-fleet.svg" width="20" height="20" alt="" align="absmiddle"> **Manage** | Reconnect, reboot, screenshots, recording, device info, Wi-Fi pairing | [manage.md](manage.md) |
