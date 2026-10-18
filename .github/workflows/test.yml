@@ -24,7 +24,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Unit tests
-        run: node --experimental-strip-types --test src/lib/video/fit-box.test.ts src/lib/desk/gesture.test.ts src/lib/ui/floating-clamp.test.ts src/lib/ui/mobile-stats-mode.test.ts src/lib/ui/document-title.test.ts src/lib/scrcpy/keyboard.test.mjs src/lib/api/http-error.test.ts src/lib/ui/taskbar-pins.test.ts src/lib/ui/connection-copy.test.ts src/lib/ui/grid-layout.test.ts
+        run: node --experimental-strip-types --test src/lib/video/fit-box.test.ts src/lib/desk/gesture.test.ts src/lib/ui/floating-clamp.test.ts src/lib/ui/mobile-stats-mode.test.ts src/lib/ui/document-title.test.ts src/lib/scrcpy/keyboard.test.mjs src/lib/api/http-error.test.ts src/lib/ui/taskbar-pins.test.ts src/lib/ui/connection-copy.test.ts src/lib/ui/grid-layout.test.ts src/lib/adboard-files.test.ts src/lib/desk/apps.test.ts
       - name: Typecheck
         # LayoutProps and next-env.d.ts come from Next's generated route types.
         run: npx next typegen && npx tsc --noEmit
