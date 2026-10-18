@@ -144,7 +144,9 @@ function render(md, file, stems) {
         const rows = [];
         while (i < ls.length && ls[i].startsWith("|")) rows.push(cells(ls[i++]));
         for (const r of rows) if (r.length !== head.length) fail(file, `table row has ${r.length} cells, header has ${head.length}: ${r[0]}`);
-        const tr = (r, tag) => `<tr>${r.map((c) => `<${tag}>${inline(c, file, stems)}</${tag}>`).join("")}</tr>`;
+        // Body cells carry their column name so the phone layout can label them.
+        const tr = (r, tag) =>
+          `<tr>${r.map((c, n) => `<${tag}${tag === "td" ? ` data-label="${esc(head[n])}"` : ""}>${inline(c, file, stems)}</${tag}>`).join("")}</tr>`;
         out.push(`<div class="table-wrap"><table><thead>${tr(head, "th")}</thead><tbody>${rows.map((r) => tr(r, "td")).join("")}</tbody></table></div>`);
       } else if (isBullet(line) || isNumbered(line)) {
         const [html, next] = parseList(ls, i);
