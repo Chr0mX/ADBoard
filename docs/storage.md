@@ -38,7 +38,7 @@ ADBoard\
 │                    corrupt\     copies of files that could not be read
 │                    backup-<date>\   made by Back up now and before a library import
 │                    legacy-<date>\   originals moved in from older versions
-├── cache\           app-icons\<package>.png: icons read from your phone the first time an app without an icon is shown (the phone must be connected; safe to delete)
+├── cache\           app-icons\<package>.png and .json: the icon and name read from your phone the first time an app is shown in a scan or without an icon (the phone must be connected; safe to delete)
 ├── files\           Files area: Screenshots, Recordings, APKs, Downloads
 └── temp\            staged uploads and installs (runtime only)
 ```

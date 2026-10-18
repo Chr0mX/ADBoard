@@ -38,6 +38,15 @@ pub fn shell_line(command: &str) -> Result<&str, String> {
     Ok(command)
 }
 
+/// The package listing: `user` is only the apps the user installed (`-3`);
+/// anything else (including no argument) is every package, system ones too.
+pub fn packages_command(arg: Option<&str>) -> &'static str {
+    match arg.map(str::trim) {
+        Some("user") => "pm list packages -3",
+        _ => "pm list packages",
+    }
+}
+
 pub fn safe_input_text(text: &str) -> bool {
     !text.is_empty()
         && !text.contains('\n')
@@ -323,7 +332,7 @@ pub async fn run_adb_op(
             )
             .await
         }
-        "packages" => adb_text(adb, &adb_args(serial, &["shell", "pm list packages"])).await,
+        "packages" => adb_text(adb, &adb_args(serial, &["shell", packages_command(arg)])).await,
         "files" => {
             let path = device_path(arg.unwrap_or("/sdcard"))?;
             let command = format!("ls -1p {}", sh_quote(path));
@@ -721,6 +730,9 @@ mod tests {
         assert!(device_path("/sdcard/Download").is_ok());
         assert!(device_path("/sdcard/../data").is_err());
         assert!(shell_line("pm list packages").is_ok());
+        assert_eq!(packages_command(Some("user")), "pm list packages -3");
+        assert_eq!(packages_command(Some("all")), "pm list packages");
+        assert_eq!(packages_command(None), "pm list packages");
         assert!(shell_line("one\ntwo").is_err());
         assert!(safe_input_text("hello%sworld"));
         assert!(!safe_input_text("hello;reboot"));

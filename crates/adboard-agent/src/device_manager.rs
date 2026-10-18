@@ -1251,8 +1251,12 @@ impl AppState {
                 },
                 "packages" => op_ok(
                     device,
-                    "package:com.android.settings\npackage:com.android.chrome\npackage:com.google.android.youtube\npackage:com.android.camera"
-                        .into(),
+                    {
+                        // Mock phones: a few apps the user installed, plus system ones for "all".
+                        let user = "package:jp.goodsmile.grandsummonersglobal_android\npackage:org.telegram.messenger\npackage:org.zwanoo.android.speedtest";
+                        let system = "package:com.android.settings\npackage:com.android.chrome\npackage:com.google.android.youtube\npackage:com.android.camera";
+                        if arg.map(str::trim) == Some("user") { user.to_string() } else { format!("{system}\n{user}") }
+                    },
                 ),
                 "files" => op_ok(
                     device,

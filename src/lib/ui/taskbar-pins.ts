@@ -2,12 +2,6 @@
 
 export const TASKBAR_PINS_KEY = "adboard-taskbar-pins";
 
-/**
- * Max extra icons beside the fixed nav actions.
- * The bottom bar scrolls horizontally when pins overflow.
- */
-export const MAX_TASKBAR_PINS = 19;
-
 /** Every tool in the floating Tools icon grid (pin-from-icon targets). */
 export const TASKBAR_TOOL_IDS = [
   "keyboard",
@@ -29,6 +23,12 @@ export const TASKBAR_TOOL_IDS = [
   "pip",
   "quiet",
 ] as const;
+
+/**
+ * Max extra icons beside the fixed nav actions: room for every tool.
+ * The bottom bar scrolls horizontally when pins overflow.
+ */
+export const MAX_TASKBAR_PINS = TASKBAR_TOOL_IDS.length;
 
 export type TaskbarToolId = (typeof TASKBAR_TOOL_IDS)[number];
 

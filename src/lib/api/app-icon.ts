@@ -24,6 +24,31 @@ export function loadAppIcon(serial: string, packageName: string): Promise<string
   return pending;
 }
 
+export interface AppMeta {
+  /** The app's display name, when the APK has a readable one. */
+  label: string | null;
+  hasIcon: boolean;
+}
+
+const metas = new Map<string, Promise<AppMeta | null>>();
+
+/** An app's name (and whether it has an icon), read from the phone once and cached by the agent. */
+export function loadAppMeta(serial: string, packageName: string): Promise<AppMeta | null> {
+  const base = agentBaseUrl();
+  if (base === null || !serial || !packageName) return Promise.resolve(null);
+  let pending = metas.get(packageName);
+  if (!pending) {
+    pending = agentFetch(`${base}/api/apps/meta?serial=${encodeURIComponent(serial)}&package=${encodeURIComponent(packageName)}`)
+      .then(async (res) => (res.ok ? ((await res.json()) as AppMeta) : null))
+      .catch(() => null);
+    metas.set(packageName, pending);
+    void pending.then((meta) => {
+      if (meta === null) window.setTimeout(() => metas.delete(packageName), 60_000);
+    });
+  }
+  return pending;
+}
+
 /** The icon the user typed counts; empty, or the old "📱" default, means "use the app's own". */
 export function typedIcon(icon: string | undefined): string | null {
   const value = (icon ?? "").trim();

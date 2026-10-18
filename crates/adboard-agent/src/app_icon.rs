@@ -177,6 +177,19 @@ fn manifest_icon(manifest: &[u8]) -> Option<Attr> {
     None
 }
 
+/// The label (display name) the manifest names: the application's, else the first activity's.
+fn manifest_label(manifest: &[u8]) -> Option<Attr> {
+    let elements = axml_elements(manifest)?;
+    for wanted in ["application", "activity"] {
+        for element in elements.iter().filter(|e| e.name == wanted) {
+            if let Some(attr) = element.attrs.iter().find(|a| a.name == "label" && (a.reference.is_some() || a.string.is_some())) {
+                return Some(attr.clone());
+            }
+        }
+    }
+    None
+}
+
 /// The foreground picture an adaptive-icon XML points at.
 fn adaptive_foreground(xml: &[u8]) -> Option<u32> {
     let elements = axml_elements(xml)?;
@@ -190,8 +203,26 @@ fn adaptive_foreground(xml: &[u8]) -> Option<u32> {
 
 /* ---------------------------- resource table ---------------------------- */
 
+/// One value a resource id has in one configuration.
+struct Found {
+    density: u16,
+    /// No language or country: the app's default text.
+    default_locale: bool,
+    value: String,
+}
+
 /// Files a resource id maps to, with the screen density each is for.
 fn resource_files(arsc: &[u8], id: u32) -> Option<Vec<(u16, String)>> {
+    resource_values(arsc, id).map(|all| all.into_iter().map(|f| (f.density, f.value)).collect())
+}
+
+/// The app's default-language text for a string resource.
+fn string_resource(arsc: &[u8], id: u32) -> Option<String> {
+    let all = resource_values(arsc, id)?;
+    all.iter().find(|f| f.default_locale).or(all.first()).map(|f| f.value.clone())
+}
+
+fn resource_values(arsc: &[u8], id: u32) -> Option<Vec<Found>> {
     if u16le(arsc, 0)? != 0x0002 {
         return None;
     }
@@ -199,7 +230,7 @@ fn resource_files(arsc: &[u8], id: u32) -> Option<Vec<(u16, String)>> {
     let table_header = u16le(arsc, 2)? as usize;
     let (values, pool_size) = Pool::parse(arsc, table_header)?;
     let mut pos = table_header + pool_size;
-    let mut files = Vec::new();
+    let mut files: Vec<Found> = Vec::new();
     while pos + 8 <= arsc.len() {
         let kind = u16le(arsc, pos)?;
         let size = u32le(arsc, pos + 4)? as usize;
@@ -228,8 +259,8 @@ fn resource_files(arsc: &[u8], id: u32) -> Option<Vec<(u16, String)>> {
     (!files.is_empty()).then_some(files)
 }
 
-/// The file entry `entry` points at in one Type chunk, with that chunk's density.
-fn type_entry(arsc: &[u8], at: usize, entry: usize, values: &Pool) -> Option<(u16, String)> {
+/// The value `entry` has in one Type chunk, with that chunk's density and language.
+fn type_entry(arsc: &[u8], at: usize, entry: usize, values: &Pool) -> Option<Found> {
     let header = u16le(arsc, at + 2)? as usize;
     let flags = *arsc.get(at + 9)?;
     let count = u32le(arsc, at + 12)? as usize;
@@ -250,7 +281,8 @@ fn type_entry(arsc: &[u8], at: usize, entry: usize, values: &Pool) -> Option<(u1
     }
     let path = values.get(u32le(arsc, e + 12)?)?.to_string();
     let density = u16le(arsc, at + 20 + 14)?; // ResTable_config.density
-    Some((density, path))
+    let default_locale = u32le(arsc, at + 20 + 8)? == 0; // language and country both empty
+    Some(Found { density, default_locale, value: path })
 }
 
 /* ------------------------------ the icon ------------------------------ */
@@ -292,24 +324,50 @@ fn picture(zip: &mut zip::ZipArchive<std::fs::File>, path: &str) -> Result<Icon,
 pub fn icon_from_apk(path: &Path) -> Result<Icon, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("can't open the APK: {e}"))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("not an APK: {e}"))?;
-    let manifest = read_entry(&mut zip, "AndroidManifest.xml")?;
+    icon_in(&mut zip)
+}
+
+/// The app's display name, if the APK has a readable one.
+pub fn label_from_apk(path: &Path) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut zip = zip::ZipArchive::new(file).ok()?;
+    label_in(&mut zip)
+}
+
+fn label_in(zip: &mut zip::ZipArchive<std::fs::File>) -> Option<String> {
+    let manifest = read_entry(zip, "AndroidManifest.xml").ok()?;
+    let label = manifest_label(&manifest)?;
+    let text = match (label.string, label.reference) {
+        (Some(text), _) => Some(text),
+        (None, Some(id)) => {
+            let arsc = read_entry(zip, "resources.arsc").ok()?;
+            string_resource(&arsc, id)
+        }
+        _ => None,
+    }?;
+    let text = text.trim().to_string();
+    (!text.is_empty() && text.len() <= 120).then_some(text)
+}
+
+fn icon_in(zip: &mut zip::ZipArchive<std::fs::File>) -> Result<Icon, String> {
+    let manifest = read_entry(zip, "AndroidManifest.xml")?;
     let icon = manifest_icon(&manifest).ok_or("the app names no icon")?;
     if let Some(path) = icon.string.as_deref().filter(|p| is_picture(p)) {
-        return picture(&mut zip, path); // older apps point straight at a file
+        return picture(zip, path); // older apps point straight at a file
     }
     let id = icon.reference.ok_or("the app's icon is not a resource")?;
-    let arsc = read_entry(&mut zip, "resources.arsc")?;
+    let arsc = read_entry(zip, "resources.arsc")?;
     let files = resource_files(&arsc, id).ok_or("icon resource not found")?;
     if let Some(path) = best_picture(&files) {
-        return picture(&mut zip, path);
+        return picture(zip, path);
     }
     // Adaptive icon: an XML file naming a foreground picture.
     for (_, xml_path) in files.iter().filter(|(_, p)| p.to_ascii_lowercase().ends_with(".xml")) {
-        let xml = read_entry(&mut zip, xml_path)?;
+        let xml = read_entry(zip, xml_path)?;
         if let Some(foreground) = adaptive_foreground(&xml) {
             if let Some(pictures) = resource_files(&arsc, foreground) {
                 if let Some(path) = best_picture(&pictures) {
-                    return picture(&mut zip, path);
+                    return picture(zip, path);
                 }
             }
         }
@@ -340,7 +398,7 @@ fn cached(package: &str) -> Option<(Icon, PathBuf)> {
     None
 }
 
-/// Packages whose icon couldn't be read lately: not retried for a while, so a
+/// Packages whose APK couldn't be read lately: not retried for a while, so a
 /// big APK isn't copied again on every page load.
 fn failed() -> &'static Mutex<HashMap<String, Instant>> {
     static FAILED: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
@@ -369,10 +427,72 @@ pub struct IconQuery {
     package: String,
 }
 
+/// What was read from an app's APK, kept next to its icon (`<package>.json`).
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Meta {
+    /// The app's display name, when the APK has a readable one.
+    pub label: Option<String>,
+    pub has_icon: bool,
+}
+
+fn meta_path(package: &str) -> PathBuf {
+    cache_dir().join(format!("{package}.json"))
+}
+
+fn cached_meta(package: &str) -> Option<Meta> {
+    serde_json::from_slice(&std::fs::read(meta_path(package)).ok()?).ok()
+}
+
 /// The APK path `pm path` prints (the base APK when the app is split).
 fn apk_path(pm_path: &str) -> Option<String> {
     let paths: Vec<&str> = pm_path.lines().filter_map(|l| l.trim().strip_prefix("package:")).collect();
     paths.iter().find(|p| p.ends_with("base.apk")).or(paths.first()).map(|p| p.to_string())
+}
+
+/// Icon and name of an app: from the cache, else by copying its APK off the
+/// phone once. An error means neither could be read.
+async fn ensure(state: &AppState, query: &IconQuery) -> Result<Meta, String> {
+    if !valid_package(&query.package) {
+        return Err("bad package id".into());
+    }
+    if let Some(meta) = cached_meta(&query.package) {
+        return Ok(meta);
+    }
+    if failed().lock().unwrap_or_else(|e| e.into_inner()).get(&query.package).is_some_and(|at| at.elapsed() < RETRY_AFTER) {
+        return Err("not readable (tried recently)".into());
+    }
+    // One APK copy at a time: they can be large.
+    static BUSY: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = BUSY.lock().await;
+    if let Some(meta) = cached_meta(&query.package) {
+        return Ok(meta);
+    }
+    match read_from_phone(state, query).await {
+        Ok((icon, label)) => {
+            let dir = cache_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            let has_icon = match &icon {
+                Ok(icon) => crate::shared_store::write_atomic(&dir.join(format!("{}.{}", query.package, icon.ext)), &icon.bytes).is_ok(),
+                Err(_) => false,
+            };
+            if !has_icon && label.is_none() {
+                let why = icon.err().unwrap_or_else(|| "nothing readable in the APK".into());
+                failed().lock().unwrap_or_else(|e| e.into_inner()).insert(query.package.clone(), Instant::now());
+                return Err(why);
+            }
+            let meta = Meta { label, has_icon };
+            if let Ok(json) = serde_json::to_vec(&meta) {
+                let _ = crate::shared_store::write_atomic(&meta_path(&query.package), &json);
+            }
+            Ok(meta)
+        }
+        Err(why) => {
+            tracing::info!("app info for {}: {why}", query.package);
+            failed().lock().unwrap_or_else(|e| e.into_inner()).insert(query.package.clone(), Instant::now());
+            Err(why)
+        }
+    }
 }
 
 pub async fn app_icon(State(state): State<AppState>, Query(query): Query<IconQuery>) -> Response {
@@ -382,32 +502,27 @@ pub async fn app_icon(State(state): State<AppState>, Query(query): Query<IconQue
     if let Some((icon, _)) = cached(&query.package) {
         return image_response(icon);
     }
-    if failed().lock().unwrap_or_else(|e| e.into_inner()).get(&query.package).is_some_and(|at| at.elapsed() < RETRY_AFTER) {
-        return not_found("icon not readable (tried recently)");
-    }
-    // One APK copy at a time: they can be large.
-    static BUSY: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    let _guard = BUSY.lock().await;
-    if let Some((icon, _)) = cached(&query.package) {
-        return image_response(icon);
-    }
-    let result = fetch_icon(&state, &query).await;
-    match result {
-        Ok(icon) => {
-            let dir = cache_dir();
-            let _ = std::fs::create_dir_all(&dir);
-            let _ = crate::shared_store::write_atomic(&dir.join(format!("{}.{}", query.package, icon.ext)), &icon.bytes);
-            image_response(icon)
-        }
-        Err(why) => {
-            tracing::info!("app icon for {}: {why}", query.package);
-            failed().lock().unwrap_or_else(|e| e.into_inner()).insert(query.package.clone(), Instant::now());
-            not_found(&why)
-        }
+    match ensure(&state, &query).await {
+        Ok(_) => match cached(&query.package) {
+            Some((icon, _)) => image_response(icon),
+            None => not_found("this app has no readable icon"),
+        },
+        Err(why) => not_found(&why),
     }
 }
 
-async fn fetch_icon(state: &AppState, query: &IconQuery) -> Result<Icon, String> {
+/// `GET /api/apps/meta?serial&package`: `{label, hasIcon}`.
+pub async fn app_meta(State(state): State<AppState>, Query(query): Query<IconQuery>) -> Response {
+    if !valid_package(&query.package) {
+        return (StatusCode::BAD_REQUEST, "bad package id").into_response();
+    }
+    match ensure(&state, &query).await {
+        Ok(meta) => axum::Json(meta).into_response(),
+        Err(why) => not_found(&why),
+    }
+}
+
+async fn read_from_phone(state: &AppState, query: &IconQuery) -> Result<(Result<Icon, String>, Option<String>), String> {
     // Test hook: read this APK instead of a phone's (the mock fleet has no apps).
     let fixture = crate::env::var("ICON_FIXTURE_APK").ok().filter(|p| !p.trim().is_empty());
     let temp = crate::paths::app_temp_dir().join(format!("icon-{}.apk", query.package));
@@ -422,16 +537,16 @@ async fn fetch_icon(state: &AppState, query: &IconQuery) -> Result<Icon, String>
         crate::device_ops::adb_text(&adb, &["-s".into(), serial.into(), "pull".into(), remote, temp.display().to_string()]).await?;
         (temp.clone(), true)
     };
-    let read = tokio::task::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let icon = icon_from_apk(&apk);
+        let label = label_from_apk(&apk);
         if remove {
             let _ = std::fs::remove_file(&apk);
         }
-        icon
+        (icon, label)
     })
     .await
-    .map_err(|e| e.to_string())?;
-    read
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -484,6 +599,25 @@ mod tests {
         assert!(icon.bytes.len() > 200, "{} bytes", icon.bytes.len());
         let magic: &[u8] = if icon.ext == "png" { b"\x89PNG" } else { b"RIFF" };
         assert!(icon.bytes.starts_with(magic));
+    }
+
+    #[test]
+    fn reads_the_name_of_a_real_apk() {
+        let Some(apk) = sample_apk() else {
+            eprintln!("no sample APK here; skipping");
+            return;
+        };
+        let label = label_from_apk(&apk).expect("label");
+        assert!(label.len() >= 3 && !label.contains('\u{0}'), "{label:?}");
+        eprintln!("label: {label}");
+    }
+
+    #[test]
+    fn meta_round_trips_as_camel_case() {
+        let meta = Meta { label: Some("Auto Clicker".into()), has_icon: true };
+        let json = serde_json::to_string(&meta).unwrap();
+        assert_eq!(json, r#"{"label":"Auto Clicker","hasIcon":true}"#);
+        assert_eq!(serde_json::from_str::<Meta>(&json).unwrap(), meta);
     }
 
     #[test]

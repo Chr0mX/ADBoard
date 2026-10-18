@@ -22,7 +22,7 @@ The page title is **Apps**, with three buttons: **Launcher**, **Install APK** an
 
 *Launcher: shortcuts sorted into groups, each with Launch, All, Edit and Delete.*
 
-Your shortcuts are shown in groups: **Games**, **Media**, **Tools** and **Custom**. A shortcut card shows the app's icon, its name and its package id. Shortcuts are saved with your ADBoard library (see [where ADBoard keeps your data](../storage.md)).
+Your shortcuts are shown by **category**: **Games**, **Media**, **Tools** and **Custom** are always there, followed by any category you make yourself. An app appears only under its own category. A shortcut card shows the app's icon, its name and its package id. Shortcuts are saved with your ADBoard library (see [where ADBoard keeps your data](../storage.md)).
 
 | Button | What it does |
 |---|---|
@@ -30,7 +30,9 @@ Your shortcuts are shown in groups: **Games**, **Media**, **Tools** and **Custom
 | All | Starts the app on every phone that is online, ignoring the ticks. |
 | Edit | Opens the shortcut so you can change it. |
 | Delete | Removes the shortcut from your list straight away, without asking. It does not touch the app on any phone. |
-| Launch group (top right of each group, when it has shortcuts) | Starts every app in that group, one after another, on the ticked phones. Result lines are prefixed with the app's name. |
+| Add app (top right of each category) | Opens the Add app dialog with that category already chosen. |
+| Add app (top right of the page) | Opens the Add app dialog; the category starts on Custom. |
+| Launch group (top right of each category, when it has shortcuts) | Starts every app in that group, one after another, on the ticked phones. Result lines are prefixed with the app's name. |
 | Add App (dashed box, in the Custom group) | Opens the form to create a new shortcut. |
 
 ### Shortcut icons
@@ -39,20 +41,31 @@ Your shortcuts are shown in groups: **Games**, **Media**, **Tools** and **Custom
 - If the Icon field is empty, ADBoard reads the app's own icon from the phone once and remembers it. A phone must be connected the first time. This uses the phone you are looking at if it is online, otherwise the first online phone.
 - If the icon cannot be read, you see a coloured badge with the first letter of the app's name. The colour is always the same for the same app. ADBoard tries again about a minute later.
 
-### The Add App / Edit app form
+### The Add app dialog
+
+![The Add app dialog after a scan, with the list of apps, the category and the Details section](images/apps-add.jpg)
+
+*Add app: scan a phone, tick the apps you want, choose a category, and add them.*
+
+One dialog covers finding an app, naming it and filing it under a category. **Edit** on a card opens the same dialog with that app's values.
+
+1. **Phone to scan:** the phone to read the app list from. Only online phones can be chosen; an offline phone is shown greyed out with its state.
+2. **Scan installed apps:** reads the phone's apps. The button shows "Scanning…" while it works and then "Found 37 apps you installed on S24." If the phone can't be reached you see the reason ("S24 is offline", or the message from ADB). By default only apps you installed are listed. Tick **Include system apps** to see the phone's built-in apps too. After a scan the button reads **Scan again**.
+3. **The list:** every app has a checkbox, its icon, its name and its package id. Names and icons are read from the phone as you scroll, so they appear a moment after the list does; until then (or if the phone doesn't give them) you see the package id and a coloured letter. **Search apps** filters by name or package id, for example `grand`. An app you have already saved shows "Already added (category)" and can't be ticked, so scanning again never makes a duplicate.
+4. **Category:** the dropdown lists Games, Media, Tools, Custom and any category you made before. Choose **New category…** and type a name to make one. A name that matches an existing category in any letter case reuses it.
+5. **Details:** the manual fields. Open this part to enter an app by hand, or to change what a scan filled in.
 
 | Field | What it does |
 |---|---|
-| Device | Which phone to use when scanning (it starts on the first online phone). |
-| Scan installed applications | Lists the apps installed on that phone. Once the list is shown, an **Application** drop-down appears. |
-| Application | Picking an app fills in Package, suggests a Name (the last part of the package id, if Name is empty) and tries to find the app's main Activity. |
-| Name | The label on the card. If left empty, the package id is used. |
+| Package | The package id, for example `com.example.grandsummoners`. Required, and it must not already be saved. |
+| Name | The label on the card. If empty, the app's name from the phone is used, or else the last part of the package id. |
 | Icon (optional: empty uses the app's own icon) | See "Shortcut icons" above. |
-| Package | The package id. Required to launch. |
-| Activity | Optional. A specific screen inside the app to open, for example `com.example.grandsummoners.MainActivity`. Empty means open the app normally. |
-| Arguments | Optional extra settings passed with the activity, such as `--es user bob`. Only used if Activity is filled in. |
-| Group | Games, Media, Tools or Custom. |
-| Save / Cancel | Save the shortcut, or close without saving. |
+| Activity (optional) | A specific screen inside the app to open, for example `com.example.grandsummoners.MainActivity`. Empty means open the app normally. Ticking one app in the scan fills this in for you when the phone knows it. |
+| Arguments (optional) | Extra settings passed with the activity, such as `--es user bob`. Only used if Activity is filled in. |
+
+**One app or several:** tick one app and its Package, Name and Activity are filled in, ready to adjust. Tick several and the dialog says how many are selected, and the button becomes **Add N apps**: they are all saved in the chosen category, named as shown in the list, with no icon of their own (so each uses its app's own icon). To change a name or icon, add the app on its own, or use **Edit** afterwards.
+
+**Refused:** a package that is already saved is refused with "Already saved as “Telegram” in Tools." (it names the existing shortcut and where it is), and a package id that isn't valid asks you to correct it.
 
 ## Install APK
 
@@ -94,11 +107,23 @@ The package id may only contain letters, numbers, dots and underscores, and must
 ### Add an app shortcut
 
 1. Open Apps, then **Launcher**.
-2. Press **Add App** in the Custom group.
-3. Choose a Device that is online and press **Scan installed applications**.
-4. Pick the app in the **Application** drop-down. Package, Name and Activity fill in.
-5. Optionally change Name, type an Icon, or change Group.
-6. Press **Save**. The card appears in its group.
+2. Press **Add app** at the top right of the category you want (or the one at the top of the page).
+3. Choose the phone in **Phone to scan** and press **Scan installed apps**.
+4. Type part of the name in **Search apps** if the list is long, then tick the app.
+5. Check **Category**; choose **New category…** to make one.
+6. Press **Add app**. The card appears under its category.
+
+### Add several apps at once
+
+1. In the Add app dialog, scan the phone and tick every app you want.
+2. Choose one category for all of them.
+3. Press **Add N apps**.
+
+### Make your own category
+
+1. In the Add app dialog, open **Category** and choose **New category…**.
+2. Type a name, such as `Farm bots`, and add your app. The category appears below Custom as its own section, and **Edit** on any app can move it to a different category later.
+3. A category you made disappears when no app uses it any more.
 
 ### Start an app on several phones
 
@@ -123,4 +148,4 @@ The package id may only contain letters, numbers, dots and underscores, and must
 - Offline phones are never sent commands. A ticked offline phone shows "No result" in the result list; if every ticked phone is offline, an install reports "no online targets for install".
 - The activity and arguments are checked for safety. Characters such as ; | & $ quotes and backslashes are refused in arguments.
 - Delete on a shortcut and Uninstall in Packages act immediately. Clear Data is the only action here that asks first.
-- On the demo phones, Install reports "Installed" without doing anything, Scan shows a short sample list (Settings, Chrome, YouTube, Camera), and Launch, Force Stop, Uninstall and Clear Data report that ADB is not available. Real results need a real phone and ADB.
+- On the demo phones, Install reports "Installed" without doing anything, Scan shows a short sample list, and Launch, Force Stop, Uninstall and Clear Data report that ADB is not available. Real results need a real phone and ADB.
