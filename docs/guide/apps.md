@@ -18,9 +18,9 @@ The page title is **Apps**, with three buttons: **Launcher**, **Install APK** an
 
 ## Launcher
 
-![The Launcher with app shortcuts in groups](images/apps-launcher.jpg)
+![The Launcher on real phones: apps sorted into Games and Tools, each showing its own icon](images/apps-launcher.jpg)
 
-*Launcher: shortcuts sorted into groups, each with Launch, All, Edit and Delete.*
+*Launcher: shortcuts sorted by category. Grand Summoners, Speedtest and Auto Clicker show their own icons, read from the phone. Each card has Launch, All, Edit and Delete.*
 
 Your shortcuts are shown by **category**: **Games**, **Media**, **Tools** and **Custom** are always there, followed by any category you make yourself. An app appears only under its own category. A shortcut card shows the app's icon, its name and its package id. Shortcuts are saved with your ADBoard library (see [where ADBoard keeps your data](../storage.md)).
 
