@@ -1,5 +1,6 @@
 mod adb;
 mod api;
+mod app_icon;
 mod audio;
 mod device_manager;
 mod data_dir;

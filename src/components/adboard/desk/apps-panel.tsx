@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
+import { typedIcon } from "@/lib/api/app-icon";
+import { AppIcon } from "@/components/adboard/app-icon";
 import type { Device } from "@/lib/devices/types";
 import {
   APP_GROUPS,
@@ -48,6 +50,7 @@ export function AppsPanel() {
 
   const targets = picked(desk.devices, checked);
   const online = desk.devices.filter((device) => device.status === "online");
+  const iconSerial = (desk.activeDevice?.status === "online" ? desk.activeDevice : online[0])?.serial ?? null;
 
   async function launch(app: AppShortcut, devices = targets) {
     if (devices.length === 0) return;
@@ -114,8 +117,9 @@ export function AppsPanel() {
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {apps.map((app) => (
                     <article key={app.id} data-app-shortcut={app.name} className="rounded-xl bg-[var(--pc-panel)] p-3">
-                      <p className="font-display text-sm font-semibold">
-                        {app.icon || "📱"} {app.name}
+                      <p className="flex items-center gap-1.5 font-display text-sm font-semibold">
+                        <AppIcon icon={app.icon} name={app.name} packageName={app.packageName} serial={iconSerial} />
+                        <span className="min-w-0 truncate">{app.name}</span>
                       </p>
                       <p className="truncate font-mono text-[10px] text-[var(--pc-muted)]">{app.packageName}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
@@ -378,7 +382,7 @@ function AppEditor({
   const [deviceId, setDeviceId] = useState(devices.find((device) => device.status === "online")?.id ?? "");
   const [packages, setPackages] = useState<string[]>([]);
   const [name, setName] = useState(initial?.name ?? "");
-  const [icon, setIcon] = useState(initial?.icon ?? "📱");
+  const [icon, setIcon] = useState(typedIcon(initial?.icon) ?? "");
   const [packageName, setPackageName] = useState(initial?.packageName ?? "");
   const [activity, setActivity] = useState(initial?.activity ?? "");
   const [args, setArgs] = useState(initial?.arguments ?? "");
@@ -477,7 +481,7 @@ function AppEditor({
           </label>
         )}
         <TextField label="Name" value={name} onChange={setName} />
-        <TextField label="Icon" value={icon} onChange={setIcon} />
+        <TextField label="Icon (optional: empty uses the app's own icon)" value={icon} onChange={setIcon} />
         <TextField label="Package" value={packageName} onChange={setPackageName} />
         <TextField label="Activity" value={activity} onChange={setActivity} />
         <TextField label="Arguments" value={args} onChange={setArgs} />

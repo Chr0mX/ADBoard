@@ -38,6 +38,7 @@ ADBoard\
 │                    corrupt\     copies of files that could not be read
 │                    backup-<date>\   made by Back up now and before a library import
 │                    legacy-<date>\   originals moved in from older versions
+├── cache\           app-icons\<package>.png: icons read from your phones for apps with no icon set (safe to delete)
 ├── files\           Files area: Screenshots, Recordings, APKs, Downloads
 └── temp\            staged uploads and installs (runtime only)
 ```
