@@ -20,13 +20,13 @@ The Dashboard runs across the top of ADBoard, in this order.
 |---|---|---|
 | <img src="../../site/assets/icon-live-control.svg" width="20" height="20" alt="" align="absmiddle"> **Control** | The live phone: tap, swipe, type, grid of all phones, app buttons | [control.md](control.md) |
 | <img src="../../site/assets/icon-device-fleet.svg" width="20" height="20" alt="" align="absmiddle"> **Manage** | Reconnect, reboot, screenshots, recording, device info, Wi-Fi pairing | [manage.md](manage.md) |
-| **Apps** | Saved app buttons, installing APKs, package tools | [apps.md](apps.md) |
-| **Files** | Move files between the PC and a phone | [files.md](files.md) |
+| <img src="../../site/assets/icon-apps.svg" width="20" height="20" alt="" align="absmiddle"> **Apps** | Saved app buttons, installing APKs, package tools | [apps.md](apps.md) |
+| <img src="../../site/assets/icon-files.svg" width="20" height="20" alt="" align="absmiddle"> **Files** | Move files between the PC and a phone | [files.md](files.md) |
 | <img src="../../site/assets/icon-automation.svg" width="20" height="20" alt="" align="absmiddle"> **Macros** | Replay finger taps and swipes, with timing, on many phones | [macros.md](macros.md) |
 | <img src="../../site/assets/icon-automation.svg" width="20" height="20" alt="" align="absmiddle"> **Shell Automation** | Run a list of actions (open app, wait, screenshot, send file, key, command) on many phones | [shell-automation.md](shell-automation.md) |
 | <img src="../../site/assets/icon-adb-terminal.svg" width="20" height="20" alt="" align="absmiddle"> **Developer** | Run an ADB shell command, read logs, device information | [developer.md](developer.md) |
 | <img src="../../site/assets/icon-device-fleet.svg" width="20" height="20" alt="" align="absmiddle"> **Hosts** | The computers that run ADB, and the phones on each | [hosts.md](hosts.md) |
-| **Settings** | Stream quality, keyboard, grid, account, data and backups | [settings.md](settings.md) |
+| <img src="../../site/assets/icon-settings.svg" width="20" height="20" alt="" align="absmiddle"> **Settings** | Stream quality, keyboard, grid, account, data and backups | [settings.md](settings.md) |
 
 ## Which one do I use?
 
