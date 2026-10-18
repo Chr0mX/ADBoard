@@ -39,7 +39,6 @@ export interface FloatingLayerProps {
   onCursorModeChange?: (on: boolean) => void;
   onRestart?: () => void;
   onOpenInfo?: () => void;
-  onOpenArrangement?: () => void;
   onQuickActions?: (anchor: HTMLElement) => void;
   onRotate?: () => void;
   fullscreen?: boolean;
@@ -95,7 +94,6 @@ export function FloatingLayer(props: FloatingLayerProps) {
         onCursorModeChange={props.onCursorModeChange}
         onRestart={props.onRestart}
         onOpenInfo={props.onOpenInfo}
-        onOpenArrangement={props.onOpenArrangement}
         onQuickActions={props.onQuickActions}
         onRotate={props.onRotate}
         fullscreen={props.fullscreen}

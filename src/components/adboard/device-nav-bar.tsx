@@ -3,7 +3,6 @@
 import {
   ChevronLeft,
   Circle,
-  Grid2x2,
   House,
   Info,
   Minimize2,
@@ -68,7 +67,6 @@ export interface TaskbarToolHandlers {
   onCursorModeChange?: (on: boolean) => void;
   onRestart?: () => void;
   onOpenInfo?: () => void;
-  onOpenArrangement?: () => void;
   /** Opens the Device actions menu (reconnect, restart ADB, power off) at the clicked button. */
   onQuickActions?: (anchor: HTMLElement) => void;
   /** Rotate the target phones (scrcpy ROTATE_DEVICE). */
@@ -433,20 +431,6 @@ function PinnedToolButton({
           onClick={handlers.onOpenInfo}
         >
           <Info className={iconClass} />
-        </Button>
-      );
-    case "arrangement":
-      return (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Arrangement"
-          data-taskbar-tool="arrangement"
-          className={hit}
-          onClick={handlers.onOpenArrangement}
-        >
-          <Grid2x2 className={iconClass} />
         </Button>
       );
     case "quick":

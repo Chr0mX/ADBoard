@@ -8,7 +8,6 @@ import {
 import {
   Camera,
   Circle,
-  Grid2x2,
   Info,
   Mouse,
   RotateCcw,
@@ -84,7 +83,6 @@ interface ControlPanelFloatProps {
   onCursorModeChange?: (on: boolean) => void;
   onRestart?: () => void;
   onOpenInfo?: () => void;
-  onOpenArrangement?: () => void;
   onQuickActions?: (anchor: HTMLElement) => void;
   onRotate?: () => void;
   fullscreen?: boolean;
@@ -174,7 +172,6 @@ export function ControlPanelFloat({
   onCursorModeChange,
   onRestart,
   onOpenInfo,
-  onOpenArrangement,
   onQuickActions,
   onRotate,
   fullscreen = false,
@@ -595,22 +592,6 @@ export function ControlPanelFloat({
                 onClick={onOpenInfo}
               >
                 <Info className="size-5" />
-              </Button>
-            </PinableTool>
-          )}
-          {onOpenArrangement && (
-            <PinableTool {...pinProps("arrangement")}>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label={taskbarEdit ? `${pins.includes("arrangement") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.arrangement}` : "Arrangement"}
-                aria-pressed={taskbarEdit ? pins.includes("arrangement") : undefined}
-                data-taskbar-pin="arrangement"
-                data-open-arrangement
-                className={HIT}
-                onClick={onOpenArrangement}
-              >
-                <Grid2x2 className="size-5" />
               </Button>
             </PinableTool>
           )}

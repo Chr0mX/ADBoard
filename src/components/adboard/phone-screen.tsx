@@ -1437,7 +1437,6 @@ export function PhoneScreen({
                 onCursorModeChange,
                 onRestart: actions.restart,
                 onOpenInfo: actions.openInfo,
-                onOpenArrangement: onToggleGrid ? actions.openArrangement : undefined,
                 onQuickActions: (anchor) => setQuickAnchor(anchor),
                 onRotate: actions.rotate,
                 fullscreen: fullscreen.active,
@@ -1509,7 +1508,6 @@ export function PhoneScreen({
           onCursorModeChange={onCursorModeChange}
           onRestart={actions.restart}
           onOpenInfo={actions.openInfo}
-          onOpenArrangement={onToggleGrid ? actions.openArrangement : undefined}
           onQuickActions={(anchor) => setQuickAnchor(anchor)}
           onRotate={actions.rotate}
           fullscreen={fullscreen.active}
