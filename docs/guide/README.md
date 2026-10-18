@@ -14,7 +14,7 @@ This guide explains every tab. The screenshots use ADBoard's demo phones, which 
 
 ## The Dashboard
 
-The Dashboard run across the top of ADBoard, in this order.
+The Dashboard runs across the top of ADBoard, in this order.
 
 | Dashboard | What it is for | Page |
 |---|---|---|
