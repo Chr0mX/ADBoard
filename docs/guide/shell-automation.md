@@ -28,7 +28,7 @@ A job is not the same as a touch macro. A [touch macro](macros.md) replays finge
 - [Groups](#groups)
 - [Profiles](#profiles)
 - [History](#history)
-- [Worked example 1: open a game, wait, take a screenshot on every phone](#worked-example-1-open-a-game-wait-take-a-screenshot-on-every-phone)
+- [Worked example 1: open Grand Summoners, wait, take a screenshot on every phone](#worked-example-1-open-grand-summoners-wait-take-a-screenshot-on-every-phone)
 - [Worked example 2: install an APK, then launch the app](#worked-example-2-install-an-apk-then-launch-the-app)
 - [Where jobs are saved](#where-jobs-are-saved)
 

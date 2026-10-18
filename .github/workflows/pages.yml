@@ -1,11 +1,16 @@
 name: pages
 
-# Publishes site/ (the ADBoard landing page) to GitHub Pages.
+# Publishes site/ (the ADBoard landing page) to GitHub Pages. The user-guide pages are
+# generated from docs/guide/*.md on every deploy, so they never go stale.
 # One-time setup: Settings → Pages → Build and deployment → Source: GitHub Actions.
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - "docs/guide/**"
+      - "scripts/build-site.mjs"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -26,6 +31,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the guide pages
+        run: node scripts/build-site.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

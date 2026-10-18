@@ -115,7 +115,7 @@ First, on the phone: open Developer options and turn on Wireless debugging. (Dev
 |---|---|
 | Pair with QR code | Starts QR pairing. A QR code appears. |
 | Cancel (under the QR code) | Stops the QR pairing and hides the code. |
-| Address | The phone's IP address, optionally with a port, for example 192.168.1.20:5555. If you leave the port out, 5555 is used. Spaces and symbols such as ; & | are refused. |
+| Address | The phone's IP address, optionally with a port, for example 192.168.1.20:5555. If you leave the port out, 5555 is used. Spaces and symbols such as ; & \| are refused. |
 | Pairing port | The "pairing" port shown on the phone's pairing screen (a different number from the connect port). Only needed with a pairing code. |
 | Pairing code | The 6-digit code shown on the phone. Needs the pairing port too. |
 | Add device | Connects (and pairs first, if you filled in the pairing port and code). The button reads "Connecting..." while it works. |
