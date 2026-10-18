@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="https://chr0mx.github.io/ADBoard/">Website</a> ·
+  <a href="docs/guide.md">User guide</a> ·
   <a href="#run-on-windows-operator">Quick start</a> ·
   <a href="#remote-access-nginx-proxy-manager--cloudflare">Remote access</a> ·
   <a href="docs/architecture.md">Architecture</a>
@@ -44,6 +45,8 @@
     </td>
   </tr>
 </table>
+
+New to ADBoard? Start with the [user guide](docs/guide.md): what Macros and Shell Automation are, with worked examples.
 
 ## How it works
 
