@@ -15,8 +15,22 @@ export function useVisualViewportLock(active = true) {
       (navigator as Navigator & { standalone?: boolean }).standalone === true ||
       window.matchMedia?.("(display-mode: standalone)").matches === true;
     if (standalone) root.dataset.standalone = "1";
+    // TEMP debug readout for the iPhone status-bar bug: open the page with ?vpdebug=1.
+    const debug = new URLSearchParams(window.location.search).has("vpdebug")
+      ? document.body.appendChild(Object.assign(document.createElement("pre"), {
+          style: "position:fixed;left:0;bottom:0;z-index:99999;margin:0;padding:2px 4px;font:10px/1.3 monospace;background:#000c;color:#0f0;pointer-events:none",
+        }))
+      : null;
     const sync = () => {
       const viewport = window.visualViewport;
+      if (debug) {
+        const s = getComputedStyle(root);
+        debug.textContent = [
+          `vv.offsetTop ${viewport?.offsetTop} vv.height ${viewport?.height}`,
+          `innerHeight ${window.innerHeight} clientHeight ${root.clientHeight}`,
+          `--pc-app-top ${s.getPropertyValue("--pc-app-top")} --pc-app-height ${s.getPropertyValue("--pc-app-height")}`,
+        ].join("\n");
+      }
       // The smallest of the visual viewport, innerHeight and the layout
       // viewport. An iOS Home Screen app (standalone, black-translucent
       // status bar) can report a visual viewport taller than the area it
@@ -56,6 +70,7 @@ export function useVisualViewportLock(active = true) {
     document.addEventListener("visibilitychange", onShow);
     return () => {
       late.forEach((id) => window.clearTimeout(id));
+      debug?.remove();
       window.removeEventListener("pageshow", onShow);
       document.removeEventListener("visibilitychange", onShow);
       viewport?.removeEventListener("resize", sync);
