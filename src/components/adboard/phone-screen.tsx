@@ -1463,6 +1463,10 @@ export function PhoneScreen({
                 onPip: togglePip,
                 quiet: quiet.on,
                 onQuietChange: quiet.toggle,
+                onOpenMacros: onMacroDockChange ? () => onMacroDockChange(true) : undefined,
+                onScreenshot: () => void takeScreenshot(),
+                screenRecording,
+                onScreenRecordToggle: () => void toggleScreenRecord(),
               }}
             />
             {statsMode === "show" && (

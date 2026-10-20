@@ -4,7 +4,7 @@ import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
 import { formatGridLayout, parseGridLayout } from "@/lib/ui/grid-layout";
 import { parseMobileStatsMode } from "@/lib/ui/mobile-stats-mode";
-import { TASKBAR_TOOL_IDS, TASKBAR_TOOL_LABELS } from "@/lib/ui/taskbar-pins";
+import { moveTaskbarPin, TASKBAR_TOOL_IDS, TASKBAR_TOOL_LABELS } from "@/lib/ui/taskbar-pins";
 import { Switch, SwitchRow } from "@/components/ui/switch";
 import { useDesk } from "@/components/adboard/desk/desk-context";
 import { PanelFrame } from "@/components/adboard/desk/bits";
@@ -29,7 +29,7 @@ export function SettingsPanel() {
   const [cursorMode, setCursorMode] = useStoredFlag("adboard-cursor-mode", false);
   const [keyboardOn, setKeyboardOn] = useStoredFlag("adboard-keyboard", true);
   const [touchDiagnostics, setTouchDiagnostics] = useStoredFlag(TOUCH_DIAGNOSTICS_KEY, false);
-  const { pins, togglePin, resetPins, atLimit } = useTaskbarPins();
+  const { pins, setPins, togglePin, resetPins, atLimit } = useTaskbarPins();
   const layout = parseGridLayout(layoutRaw);
   const target = desk.activeDevice ?? desk.targets[0] ?? null;
 
@@ -121,6 +121,39 @@ export function SettingsPanel() {
               );
             })}
           </div>
+          <p className="text-xs text-[var(--pc-muted)]">
+            Back, Home, Recent, Volume, Power and Minimize always stay. They are the phone&apos;s own controls and the Tools panel&apos;s fold button, so they can&apos;t be moved or removed.
+          </p>
+          {pins.length > 1 && (
+            <div className="flex flex-col gap-1" data-settings-pin-order>
+              <h4 className="text-xs font-semibold text-[var(--pc-ink)]">Order (left to right)</h4>
+              {pins.map((id, index) => (
+                <div key={id} className="flex items-center justify-between gap-2 text-sm text-[var(--pc-ink)]" data-pin-order-row={id}>
+                  <span>{index + 1}. {TASKBAR_TOOL_LABELS[id]}</span>
+                  <span className="flex gap-1">
+                    <button
+                      type="button"
+                      className="pc-toggle pc-toggle-sm"
+                      disabled={index === 0}
+                      aria-label={`Move ${TASKBAR_TOOL_LABELS[id]} earlier`}
+                      onClick={() => setPins(moveTaskbarPin(pins, id, -1))}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      className="pc-toggle pc-toggle-sm"
+                      disabled={index === pins.length - 1}
+                      aria-label={`Move ${TASKBAR_TOOL_LABELS[id]} later`}
+                      onClick={() => setPins(moveTaskbarPin(pins, id, 1))}
+                    >
+                      Down
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {(session.authRequired || session.canSetPassword) && (

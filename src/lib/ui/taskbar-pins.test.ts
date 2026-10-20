@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   DEFAULT_TASKBAR_PINS,
   MAX_TASKBAR_PINS,
+  moveTaskbarPin,
   normalizeTaskbarPins,
   TASKBAR_TOOL_IDS,
 } from "./taskbar-pins.ts";
@@ -30,3 +31,25 @@ describe("normalizeTaskbarPins", () => {
     assert.deepEqual(next, [...TASKBAR_TOOL_IDS]);
   });
 });
+
+describe("taskbar tools", () => {
+  it("offers Macros, Screenshot and Screen record in the customisation list", () => {
+    assert.ok(TASKBAR_TOOL_IDS.includes("macro"));
+    assert.ok(TASKBAR_TOOL_IDS.includes("screenshot"));
+    assert.ok(TASKBAR_TOOL_IDS.includes("screenrec"));
+  });
+});
+
+describe("moveTaskbarPin", () => {
+  it("moves a pin earlier and later, keeping the others in order", () => {
+    assert.deepEqual(moveTaskbarPin(["keyboard", "refresh", "apk"], "apk", -1), ["keyboard", "apk", "refresh"]);
+    assert.deepEqual(moveTaskbarPin(["keyboard", "refresh", "apk"], "keyboard", 1), ["refresh", "keyboard", "apk"]);
+  });
+
+  it("does nothing at the ends or for a pin that is not there", () => {
+    assert.deepEqual(moveTaskbarPin(["keyboard", "refresh"], "keyboard", -1), ["keyboard", "refresh"]);
+    assert.deepEqual(moveTaskbarPin(["keyboard", "refresh"], "refresh", 1), ["keyboard", "refresh"]);
+    assert.deepEqual(moveTaskbarPin(["keyboard"], "apk", 1), ["keyboard"]);
+  });
+});
+

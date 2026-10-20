@@ -1,30 +1,33 @@
 "use client";
 
 import {
+  Camera,
   ChevronLeft,
   Circle,
+  EllipsisVertical,
+  Expand,
   House,
   Info,
-  Minimize2,
-  Mouse,
   Keyboard,
   LayoutGrid,
+  Minimize2,
   Minus,
+  Moon,
+  Mouse,
   MousePointer2,
   PanelsTopLeft,
+  PictureInPicture2,
   Play,
   Plus,
   Power,
   RefreshCw,
   RotateCcw,
-  Smartphone,
-  EllipsisVertical,
-  Square,
-  Expand,
-  PictureInPicture2,
   RotateCwSquare,
   Shrink,
-  Moon,
+  Smartphone,
+  Square,
+  Video,
+  Workflow,
 } from "lucide-react";
 import { StatsBarsIcon } from "@/components/adboard/stats-bars-icon";
 import { Fragment } from "react";
@@ -80,6 +83,13 @@ export interface TaskbarToolHandlers {
   /** Quiet mode: every online phone's screen off and muted. */
   quiet?: boolean;
   onQuietChange?: (on: boolean) => void;
+  /** Opens the Macro dock (the same one as the Tools panel). Omitted where there is none. */
+  onOpenMacros?: () => void;
+  /** Saves a screenshot of each target phone. */
+  onScreenshot?: () => void;
+  screenRecording?: boolean;
+  /** Starts or stops the screen recording on each target phone. */
+  onScreenRecordToggle?: () => void;
 }
 
 interface DeviceNavBarProps {
@@ -461,6 +471,55 @@ function PinnedToolButton({
           onClick={handlers.onOpenDesk}
         >
           <PanelsTopLeft className={iconClass} />
+        </Button>
+      );
+    case "macro":
+      // Unsupported where there is no Macro dock: the pin is kept but shows nothing.
+      if (!handlers.onOpenMacros) return null;
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Macros"
+          data-taskbar-tool="macro"
+          className={hit}
+          onClick={handlers.onOpenMacros}
+        >
+          <Workflow className={iconClass} />
+        </Button>
+      );
+    case "screenshot":
+      if (!handlers.onScreenshot) return null;
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={offline}
+          aria-label="Screenshot"
+          data-taskbar-tool="screenshot"
+          className={hit}
+          onClick={handlers.onScreenshot}
+        >
+          <Camera className={iconClass} />
+        </Button>
+      );
+    case "screenrec":
+      if (!handlers.onScreenRecordToggle) return null;
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={offline}
+          aria-label={handlers.screenRecording ? "Stop screen record" : "Start screen record"}
+          aria-pressed={Boolean(handlers.screenRecording)}
+          data-taskbar-tool="screenrec"
+          className={hit}
+          onClick={handlers.onScreenRecordToggle}
+        >
+          <Video className={iconClass} />
         </Button>
       );
     default:

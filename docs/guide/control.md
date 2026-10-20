@@ -315,7 +315,7 @@ Always shown at the bottom:
 | **Volume down** (minus), **Volume up** (plus) | Volume. |
 | **Power** | The phone's power button. |
 
-After a thin divider come any tools you have pinned (below). The bar scrolls sideways if you pin many.
+After a thin divider come any tools you have pinned (below). The bar scrolls sideways if you pin many. These controls are always shown and can't be moved or removed, because they are the phone's own buttons (and Minimize folds the Tools panel): Back, Home, Recent, Volume down, Volume up, Power and Minimize.
 
 ### Tools panel
 
@@ -359,13 +359,24 @@ Then a grid of tool buttons (icons only):
 
 If the Pop out or Fullscreen features are not supported by your browser, those buttons do not appear.
 
-### Pinning tools to the taskbar
+### Customising the taskbar
 
-1. Open **Tools** and press **Taskbar** at the bottom of the panel (it shows how many are pinned, for example "Taskbar (3)").
-2. Tap any tool icon. A small pin badge appears on it, and it is added to (or removed from) the bottom taskbar. While you do this, tapping an icon pins it instead of using it.
-3. Press **Taskbar** again to finish. **Reset** (shown while editing) removes all pins.
+You can change which tools are on the taskbar, and their order, in two places. Both change the same list.
 
-You can pin up to 19 tools. These can be pinned: Keyboard, Touch, Record, Replay, Refresh, APK, Grid, Stats, Devices, Desk, Cursor, Restart device, Device info, Device actions, Rotate, Fullscreen, Pop out and Quiet mode. Screenshot, screen recording, Macro and the Quality and stream toggles stay in the Tools panel. Your pins are remembered in this browser.
+**From the Tools panel**
+
+1. Open **Tools** and press **Taskbar** at the bottom of the panel (it shows how many are pinned, for example "Taskbar (3)"). This is edit mode.
+2. Tap a tool icon to add it to the taskbar or remove it. A small pin badge shows on the pinned ones. While you are in edit mode, tapping an icon pins it instead of using it.
+3. Press **Taskbar** again to leave edit mode. **Reset** (shown while editing) removes all pins.
+
+**From Settings**
+
+1. Open **Settings** and find **Phone taskbar**. Switch a tool on to add it, or off to remove it.
+2. Under **Order (left to right)**, press **Up** or **Down** on a pinned tool to move it.
+
+Each tool can be pinned once. When you reach the limit of 21 tools, the other switches are greyed out until you turn one off. Pins are saved on the ADBoard computer, so every browser that opens this ADBoard shows the same taskbar, and it is kept after you restart ADBoard or refresh the page.
+
+These tools can be pinned: Keyboard, Touch, Record, Replay, Refresh, APK, Grid, Stats, Devices, Desk, Cursor, Restart device, Device info, Device actions, Rotate, Fullscreen, Pop out, Quiet mode, **Macros** (opens the Macro dock), **Screenshot** and **Screen record**. Fullscreen and Pop out only appear in browsers that support them. Stream quality and the other settings stay in the Tools panel.
 
 ### Stats on a phone
 

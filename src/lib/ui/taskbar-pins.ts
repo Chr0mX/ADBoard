@@ -22,6 +22,9 @@ export const TASKBAR_TOOL_IDS = [
   "fullscreen",
   "pip",
   "quiet",
+  "macro",
+  "screenshot",
+  "screenrec",
 ] as const;
 
 /**
@@ -51,6 +54,9 @@ export const TASKBAR_TOOL_LABELS: Record<TaskbarToolId, string> = {
   fullscreen: "Fullscreen",
   pip: "Pop out",
   quiet: "Quiet mode",
+  macro: "Macros",
+  screenshot: "Screenshot",
+  screenrec: "Screen record",
 };
 
 const ID_SET = new Set<string>(TASKBAR_TOOL_IDS);
@@ -72,6 +78,16 @@ export function normalizeTaskbarPins(value: unknown): TaskbarToolId[] {
     next.push(item);
     if (next.length >= MAX_TASKBAR_PINS) break;
   }
+  return next;
+}
+
+/** Moves a pinned tool one place earlier (-1) or later (+1). Other pins keep their order. */
+export function moveTaskbarPin(pins: TaskbarToolId[], id: TaskbarToolId, step: -1 | 1): TaskbarToolId[] {
+  const from = pins.indexOf(id);
+  const to = from + step;
+  if (from < 0 || to < 0 || to >= pins.length) return [...pins];
+  const next = [...pins];
+  [next[from], next[to]] = [next[to]!, next[from]!];
   return next;
 }
 
