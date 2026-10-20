@@ -370,6 +370,24 @@ export function PhoneScreen({
     return () => observer.disconnect();
   }, [fillWindow, floatingChrome, device?.id]);
 
+  // The observer can miss a stage resize (the stats strip appearing, iOS
+  // viewport changes). Then the picture is sized from a stale height and
+  // overflows the stage, where overflow-hidden cuts off its top. Re-measure after
+  // every render; setState is skipped when the size is unchanged.
+  useLayoutEffect(() => {
+    const node = stageRef.current;
+    if (!node) return;
+    const style = getComputedStyle(node);
+    const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const rails = fillWindow || floatingChrome ? 0 : 76 * 2 + 16;
+    const width = Math.max(0, Math.floor(node.clientWidth - padX - rails));
+    const height = Math.max(0, Math.floor(node.clientHeight - padY));
+    setStageSize((prev) =>
+      prev.width === width && prev.height === height ? prev : { width, height },
+    );
+  }, [fillWindow, floatingChrome, device?.id, statsMode, gridView]);
+
   const pointerFailed = lastTap?.targets.some((t) => t.inject === "error") ?? false;
   const installFailed = !!installNote && !installNote.startsWith("Installed");
   const library = useLibrary();
