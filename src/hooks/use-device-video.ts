@@ -126,12 +126,13 @@ export function useDeviceVideo(
       if (displayW > 0 && displayH > 0) {
         publishSize(displayW, displayH, "frame");
       }
-      const shown = frameSizeRef.current;
-      const width = shown?.width || displayW;
-      const height = shown?.height || displayH;
-      if (width > 0 && height > 0 && (canvas.width !== width || canvas.height !== height)) {
-        canvas.width = width;
-        canvas.height = height;
+      // The canvas keeps the decoded frame's own size, so every decoded pixel
+      // (status bar icons included) reaches the screen. A size reported by
+      // status or SPS can be smaller; the canvas is then stretched, which blurs
+      // small text on a high-density display.
+      if (displayW > 0 && displayH > 0 && (canvas.width !== displayW || canvas.height !== displayH)) {
+        canvas.width = displayW;
+        canvas.height = displayH;
       }
       const ctx = canvas.getContext("2d");
       if (ctx && canvas.width > 0 && canvas.height > 0) {
