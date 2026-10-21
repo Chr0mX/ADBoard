@@ -7,8 +7,8 @@
 <p align="center"><b>ANDROID DEVICE CONTROL</b></p>
 
 <p align="center">
-  <b>Every device. One dashboard.</b><br>
-  A self-hosted web interface for scrcpy, ADB, multi-device control, and automation.
+  Control Android phones from a web page on your own computer.<br>
+  ADBoard runs scrcpy and ADB on the host and shows every connected phone in one browser window.
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
     <td width="50%" valign="top">
       <img src="site/assets/icon-live-control.svg" width="32" height="32" alt=""><br>
       <b>Live Control</b><br>
-      Screen mirroring and input. Low-latency H.264 in the browser, touch, keyboard and navigation keys.
+      Live screen mirroring and input. Low-latency H.264 video in the browser, with touch, keyboard and navigation keys.
     </td>
     <td width="50%" valign="top">
       <img src="site/assets/icon-automation.svg" width="32" height="32" alt=""><br>
@@ -36,21 +36,21 @@
     <td width="50%" valign="top">
       <img src="site/assets/icon-adb-terminal.svg" width="32" height="32" alt=""><br>
       <b>ADB Terminal</b><br>
-      Shell and device commands. Run ADB shell, install APKs, push and pull files.
+      Run ADB shell and device commands, install APKs, and push or pull files.
     </td>
     <td width="50%" valign="top">
       <img src="site/assets/icon-device-fleet.svg" width="32" height="32" alt=""><br>
       <b>Device Fleet</b><br>
-      Manage every connected phone. USB and wireless devices across Windows and Linux hosts in one grid.
+      Manage every connected phone, over USB or Wi-Fi, from Windows and Linux hosts in one grid.
     </td>
   </tr>
 </table>
 
-New to ADBoard? Start with the [user guide](docs/guide/README.md): a page for every tab with screenshots and worked examples, from connecting your first phone to Macros and Shell Automation.
+New here? The [user guide](docs/guide/README.md) has a page for each tab, with screenshots and examples, from connecting your first phone to Macros and Shell Automation.
 
 ## How it works
 
-**scrcpy/ADB is the transport; ADBoard owns discovery, sessions, video/input abstraction, and the Web UI.** The browser never talks to ADB directly.
+scrcpy and ADB carry the video and input. ADBoard handles device discovery, sessions, and the web UI. The browser never talks to ADB directly.
 
 ## Components
 
@@ -58,12 +58,12 @@ New to ADBoard? Start with the [user guide](docs/guide/README.md): a page for ev
 |---|---|---|
 | Next.js Web UI | `src/` | **3847** |
 | Rust binary (`adboard-agent`) | `crates/adboard-agent` | **3848** controller / **3849** agent |
-| Shared protocol types | `crates/adboard-protocol` | — |
+| Shared protocol types | `crates/adboard-protocol` | none |
 
 Same binary, two roles via `--role` / `ADBOARD_ROLE`:
 
-- **controller** (default) — serves the UI API, owns local devices, aggregates remote agents, **proxies video WS**
-- **agent** — local ADB/scrcpy/testpattern only; registers with a controller over WebSocket
+- **controller** (default): serves the UI API, owns the local devices, collects the remote agents, and proxies their video WebSocket
+- **agent**: runs ADB, scrcpy or the test pattern locally, and registers with a controller over WebSocket
 
 ## Video (H264 over WebSocket)
 
@@ -71,10 +71,10 @@ Same binary, two roles via `--role` / `ADBOARD_ROLE`:
 
 | Frame | Meaning |
 |---|---|
-| **Text** JSON | `VideoStatusFrame` — `stream`, `backend`, optional `codec`/`codecString`/`width`/`height`/`framing` |
+| **Text** JSON | `VideoStatusFrame`: `stream`, `backend`, and optional `codec`, `codecString`, `width`, `height` and `framing` |
 | **Binary** | One **Annex-B** H264 access unit (start-code NALs; keyframes carry SPS/PPS + IDR) |
 
-UI decodes with **WebCodecs** `VideoDecoder` onto a canvas. Switching the active device only changes the video WS subscription — agent sessions stay up.
+The UI decodes the frames with **WebCodecs** `VideoDecoder` and draws them on a canvas. Switching the active device only changes the video subscription, so agent sessions stay up.
 
 ### Synthetic test pattern (no phones / no scrcpy)
 
@@ -88,7 +88,7 @@ cargo run -p adboard-agent
 
 - Prefers live **ffmpeg** `testsrc` → raw H264 on stdout when `ffmpeg` is on `PATH` (or `FFMPEG_PATH`)
 - Falls back to embedded fixture `crates/adboard-agent/fixtures/testpattern.h264` (360×640 loop)
-- Session `backend` = `testpattern`, `stream` = `streaming` (honest — not a stub wallpaper)
+- The session reports `backend` = `testpattern` and `stream` = `streaming`. It is a real video stream, not a placeholder image.
 
 Opening the phone screen (or any client on the video WS) auto-starts the pump; closing the WS does **not** stop the session.
 
@@ -197,7 +197,7 @@ curl -s http://127.0.0.1:3848/api/hosts | jq
 
 | Host | Role | Notes |
 |---|---|---|
-| Windows PC | `controller` (or agent) | Packaged as `ADBoard.exe` — see **Windows host pack** below |
+| Windows PC | `controller` (or agent) | Packaged as `ADBoard.exe`. See **Windows host pack** below. |
 | Proxmox LXC | `agent` | `--role agent` + `ADBOARD_CONTROLLER_URL`. Set `ADBOARD_HTTP_BASE` to a controller-reachable URL for video proxy. |
 | Browser | UI | Always talks to the **controller** (`NEXT_PUBLIC_AGENT_URL`). |
 
@@ -235,7 +235,7 @@ dist/windows/
   vendor/scrcpy/
 ```
 
-**Build on Linux / CI** (MinGW gnu target — works in this environment; MSVC needs a Windows SDK):
+**Build on Linux or CI** with the MinGW gnu target. MSVC needs the Windows SDK.
 
 ```bash
 # once: sudo apt-get install -y gcc-mingw-w64-x86-64
@@ -385,22 +385,22 @@ Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set;
 |---|---|---|
 | `ADBOARD_DATA_DIR` | see [Your data](#your-data) | Data folder (macros, scripts, settings, logs, backups); set it for portable mode |
 | `ADBOARD_ROLE` / `--role` | `controller` | `controller` or `agent` |
-| `ADBOARD_BIND` | `0.0.0.0` | Listen IP — `127.0.0.1` for loopback-only; `0.0.0.0` for LAN / LXC agents |
+| `ADBOARD_BIND` | `0.0.0.0` | Listen address. Use `127.0.0.1` for this computer only, `0.0.0.0` for LAN and LXC agents |
 | `ADBOARD_PORT` | `3848` / `3849` | Listen port (agent defaults to 3849) |
 | `ADBOARD_HOST` | OS hostname | Host display label on devices |
 | `ADBOARD_HOST_ID` | same as host | Stable mesh id |
 | `ADBOARD_CONTROLLER_URL` | `ws://127.0.0.1:3848/ws/agent` | Agent → controller |
 | `ADBOARD_HTTP_BASE` | `http://127.0.0.1:$PORT` | Advertised for controller video proxy |
 | `ADBOARD_MOCK_PROFILE` | `all` (agent → `lxc`) | `all` / `windows` / `lxc` |
-| `ADBOARD_VIDEO_SOURCE` | `auto` | `auto` / `testpattern` / `scrcpy` / `off` — auto prefers scrcpy when ADB + scrcpy-server are ready |
+| `ADBOARD_VIDEO_SOURCE` | `auto` | `auto`, `testpattern`, `scrcpy` or `off`. `auto` uses scrcpy when ADB and scrcpy-server are ready |
 | `FFMPEG_PATH` | `which ffmpeg` | Live testsrc encoder for testpattern |
 | `ADB_PATH` | vendored `tools/…` / `vendor/…`, else `which adb` | Override ADB binary |
 | `SCRCPY_PATH` | vendored scrcpy, else `which scrcpy` | Optional scrcpy CLI (version probe / sibling server jar) |
-| `SCRCPY_SERVER_PATH` | next to binary / vendored / distro paths | **Required for real frames** — standalone server jar |
+| `SCRCPY_SERVER_PATH` | next to the binary, vendored, or distro paths | **Required for real frames.** The standalone server jar |
 | `SCRCPY_SERVER_VERSION` | from filename / `scrcpy --version` | First arg to `com.genymobile.scrcpy.Server` |
 | `SCRCPY_MAX_SIZE` | `1280` | Server `max_size=` |
-| `SCRCPY_SERVER_OPTS` | — | Extra `key=value` server options |
-| `SCRCPY_EXTRA_ARGS` | — | Also maps `--max-size` / `-b` / `--max-fps` into server opts |
+| `SCRCPY_SERVER_OPTS` | none | Extra `key=value` server options |
+| `SCRCPY_EXTRA_ARGS` | none | Also maps `--max-size`, `-b` and `--max-fps` to server options |
 | `ADBOARD_SCRCPY_FIXTURE` | unset | `1` → mock scrcpy backend with embedded H264 (no USB) |
 | `ADBOARD_FORCE_MOCK` | unset | `1`/`true` → ignore ADB, use mock fleet |
 | `ADBOARD_AUTO_SESSION` | unset | Auto-start session when a device comes online |
@@ -436,9 +436,9 @@ Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set;
 | ADB discovery when `adb` exists | Full scrcpy control-socket inject (v1 uses `adb shell input`) |
 | Real tap/nav inject via ADB | Signed MSI / auto-update |
 | Session manager + **scrcpy-server `raw_stream` → Annex-B video WS** | Deep Proxmox USB docs |
-| Synthetic H264 testpattern → browser WebCodecs | — |
-| Multi-host mesh + video proxy | — |
-| Windows pack scripts (`ADBoard.exe` via MinGW cross-build) | — |
+| Synthetic H264 test pattern → browser WebCodecs | |
+| Multi-host mesh and video proxy | |
+| Windows pack scripts (`ADBoard.exe` via MinGW cross-build) | |
 
 ## Stack
 
