@@ -315,7 +315,7 @@ Always shown at the bottom:
 | **Volume down** (minus), **Volume up** (plus) | Volume. |
 | **Power** | The phone's power button. |
 
-After a thin divider come any tools you have pinned (below). The bar scrolls sideways if you pin many. These controls are always shown and can't be moved or removed, because they are the phone's own buttons (and Minimize folds the Tools panel): Back, Home, Recent, Volume down, Volume up, Power and Minimize.
+After a thin divider come any tools you have pinned (below). The bar scrolls sideways if you pin many. Back, Home, Recent and Minimize are always shown. Volume down, Volume up and Power can be hidden in **Settings → Phone taskbar**, under **Show on the bar**. The phone's own buttons (Back, Home, Recent) can't be moved or removed.
 
 ### Tools panel
 
@@ -363,6 +363,8 @@ If the Pop out or Fullscreen features are not supported by your browser, those b
 
 You can change which tools are on the taskbar, and their order, in two places. Both change the same list.
 
+On a touch screen, press and hold any taskbar button for half a second to open **Settings → Phone taskbar** directly. A quick tap shows the button's name above the bar.
+
 **From the Tools panel**
 
 1. Open **Tools** and press **Taskbar** at the bottom of the panel (it shows how many are pinned, for example "Taskbar (3)"). This is edit mode.
@@ -374,9 +376,9 @@ You can change which tools are on the taskbar, and their order, in two places. B
 1. Open **Settings** and find **Phone taskbar**. Switch a tool on to add it, or off to remove it.
 2. Under **Order (left to right)**, press **Up** or **Down** on a pinned tool to move it.
 
-Each tool can be pinned once. When you reach the limit of 21 tools, the other switches are greyed out until you turn one off. Pins are saved on the ADBoard computer, so every browser that opens this ADBoard shows the same taskbar, and it is kept after you restart ADBoard or refresh the page.
+Each tool can be pinned once. When you reach the limit of 21 tools, the other switches are greyed out until you turn one off. Pins and the Show on the bar choices are saved on the ADBoard computer, so every browser that opens this ADBoard shows the same taskbar, and it is kept after you restart ADBoard or refresh the page.
 
-These tools can be pinned: Keyboard, Touch, Record, Replay, Refresh, APK, Grid, Stats, Devices, Desk, Cursor, Restart device, Device info, Device actions, Rotate, Fullscreen, Pop out, Quiet mode, **Macros** (opens the Macro dock), **Screenshot** and **Screen record**. Fullscreen and Pop out only appear in browsers that support them. Stream quality and the other settings stay in the Tools panel.
+These tools can be pinned: Keyboard, Touch, Record, Replay, Refresh, APK, Grid, Stats, Devices, Desk, Cursor, Restart device, Device info, Device actions, Rotate, Fullscreen, Pop out, Quiet mode, **Macros** (opens the Macro dock), **Screenshot** and **Screen record**. Fullscreen and Pop out only appear in browsers that support them. Stream quality and the other settings stay in the Tools panel. A dot on the Macros button means a macro is running.
 
 ### Stats on a phone
 
