@@ -425,33 +425,45 @@ export function ControlPanelFloat({
               <RefreshCw className={cn("size-5", !taskbarEdit && refreshing && "animate-spin")} />
             </Button>
           </PinableTool>
-          {!taskbarEdit && (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Screenshot and download"
-                data-control-screenshot
-                disabled={offline || capturing || targetIds.length === 0}
-                className={HIT}
-                onClick={() => onScreenshot?.()}
-              >
-                <Camera className="size-5" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label={screenRecording ? "Stop screen record" : "Start screen record"}
-                data-control-screenrecord
-                data-pressed={screenRecording ? "true" : undefined}
-                disabled={offline || capturing || targetIds.length === 0}
-                className={cn(HIT, "pc-toggle-warn")}
-                onClick={() => onScreenRecordToggle?.()}
-              >
-                <Video className="size-5" />
-              </Button>
-            </>
-          )}
+          {/* Stay enabled while editing: a disabled button would swallow the pin tap. */}
+          <PinableTool {...pinProps("screenshot")}>
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label={
+                taskbarEdit
+                  ? `${pins.includes("screenshot") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.screenshot}`
+                  : "Screenshot and download"
+              }
+              data-control-screenshot
+              disabled={!taskbarEdit && (offline || capturing || targetIds.length === 0)}
+              className={HIT}
+              onClick={() => onScreenshot?.()}
+            >
+              <Camera className="size-5" />
+            </Button>
+          </PinableTool>
+          <PinableTool {...pinProps("screenrec")}>
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label={
+                taskbarEdit
+                  ? `${pins.includes("screenrec") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.screenrec}`
+                  : screenRecording
+                    ? "Stop screen record"
+                    : "Start screen record"
+              }
+              aria-pressed={taskbarEdit ? pins.includes("screenrec") : undefined}
+              data-control-screenrecord
+              data-pressed={!taskbarEdit && screenRecording ? "true" : undefined}
+              disabled={!taskbarEdit && (offline || capturing || targetIds.length === 0)}
+              className={cn(HIT, "pc-toggle-warn")}
+              onClick={() => onScreenRecordToggle?.()}
+            >
+              <Video className="size-5" />
+            </Button>
+          </PinableTool>
           <PinableTool {...pinProps("apk")}>
             <label
               data-taskbar-pin="apk"
@@ -686,18 +698,23 @@ export function ControlPanelFloat({
               )}
             </>
           )}
-          {onOpenMacros && !taskbarEdit && (
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Macro"
-              data-open-macros
-              className="pc-toggle pc-toggle-lg gap-1.5 px-3"
-              onClick={onOpenMacros}
-            >
-              <Zap className="size-5" />
-              <span data-macro-label>Macro</span>
-            </Button>
+          {onOpenMacros && (
+            <PinableTool {...pinProps("macro")}>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={
+                  taskbarEdit ? `${pins.includes("macro") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.macro}` : "Macro"
+                }
+                aria-pressed={taskbarEdit ? pins.includes("macro") : undefined}
+                data-open-macros
+                className="pc-toggle pc-toggle-lg gap-1.5 px-3"
+                onClick={onOpenMacros}
+              >
+                <Zap className="size-5" />
+                <span data-macro-label>Macro</span>
+              </Button>
+            </PinableTool>
           )}
           <PinableTool {...pinProps("desk")}>
             <Button
