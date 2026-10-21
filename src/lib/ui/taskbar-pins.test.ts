@@ -4,7 +4,9 @@ import {
   DEFAULT_TASKBAR_PINS,
   MAX_TASKBAR_PINS,
   moveTaskbarPin,
+  normalizeHiddenNav,
   normalizeTaskbarPins,
+  TASKBAR_TOOL_GROUP,
   TASKBAR_TOOL_IDS,
 } from "./taskbar-pins.ts";
 
@@ -50,6 +52,17 @@ describe("moveTaskbarPin", () => {
     assert.deepEqual(moveTaskbarPin(["keyboard", "refresh"], "keyboard", -1), ["keyboard", "refresh"]);
     assert.deepEqual(moveTaskbarPin(["keyboard", "refresh"], "refresh", 1), ["keyboard", "refresh"]);
     assert.deepEqual(moveTaskbarPin(["keyboard"], "apk", 1), ["keyboard"]);
+  });
+});
+
+describe("taskbar groups and hidden controls", () => {
+  it("puts every pinnable tool in a group", () => {
+    for (const id of TASKBAR_TOOL_IDS) assert.ok(TASKBAR_TOOL_GROUP[id], id);
+  });
+
+  it("keeps hidden controls in the fixed order, without duplicates or unknown ids", () => {
+    assert.deepEqual(normalizeHiddenNav(["power", "back", "volume_up", "power"]), ["volume_up", "power"]);
+    assert.deepEqual(normalizeHiddenNav("x"), []);
   });
 });
 

@@ -1,6 +1,52 @@
 /** Pinnable Tools → bottom DeviceNavBar preferences. */
 
 export const TASKBAR_PINS_KEY = "adboard-taskbar-pins";
+/** Fixed phone controls the user may hide (Back, Home, Recent and Minimize never hide). */
+export const TASKBAR_HIDDEN_KEY = "adboard-taskbar-hidden";
+export const HIDEABLE_NAV_IDS = ["volume_down", "volume_up", "power"] as const;
+export type HideableNavId = (typeof HIDEABLE_NAV_IDS)[number];
+export const HIDEABLE_NAV_LABELS: Record<HideableNavId, string> = {
+  volume_down: "Volume down",
+  volume_up: "Volume up",
+  power: "Power",
+};
+
+/** Visual group for each pinnable tool. Groups get a divider between them on the bar. */
+export type TaskbarGroup = "view" | "capture" | "device";
+export const TASKBAR_GROUP_LABELS: Record<TaskbarGroup, string> = {
+  view: "View and input",
+  capture: "Capture",
+  device: "Device",
+};
+export const TASKBAR_TOOL_GROUP: Record<TaskbarToolId, TaskbarGroup> = {
+  keyboard: "view",
+  mouse: "view",
+  grid: "view",
+  rotate: "view",
+  fullscreen: "view",
+  pip: "view",
+  quiet: "view",
+  refresh: "view",
+  desk: "view",
+  macro: "view",
+  record: "capture",
+  replay: "capture",
+  apk: "capture",
+  screenshot: "capture",
+  screenrec: "capture",
+  stats: "device",
+  devices: "device",
+  cursor: "device",
+  restart: "device",
+  info: "device",
+  quick: "device",
+};
+
+/** Hidden fixed controls, in the fixed order, without duplicates or unknown ids. */
+export function normalizeHiddenNav(value: unknown): HideableNavId[] {
+  if (!Array.isArray(value)) return [];
+  return HIDEABLE_NAV_IDS.filter((id) => value.includes(id));
+}
 
 /** Every tool in the floating Tools icon grid (pin-from-icon targets). */
 export const TASKBAR_TOOL_IDS = [

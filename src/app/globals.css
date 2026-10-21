@@ -392,6 +392,22 @@ body {
   display: none;
 }
 
+/* Fade the ends of a bar that scrolls sideways, so hidden buttons are visible
+   as a cue. The attributes are set by DeviceNavBar. */
+.pc-taskbar[data-scroll-start="1"][data-scroll-end="1"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 1.25rem, #000 calc(100% - 1.25rem), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 1.25rem, #000 calc(100% - 1.25rem), transparent);
+}
+.pc-taskbar[data-scroll-start="1"]:not([data-scroll-end="1"]) {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 1.25rem);
+  mask-image: linear-gradient(to right, transparent, #000 1.25rem);
+}
+.pc-taskbar:not([data-scroll-start="1"])[data-scroll-end="1"] {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 1.25rem);
+  mask-image: linear-gradient(to left, transparent, #000 1.25rem);
+}
+
+
 /* Side control dock (Screens or Devices folded): thin scrollbar. The dock
    pads its left edge by the scrollbar's width (see phone-screen) so the
    space to the rail and to the phone match on either side. */
@@ -789,4 +805,16 @@ body {
 .pc-segment:has(input:disabled) {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Touch screens: 44px targets (Apple's minimum). Desktop keeps 32/36px.
+   Last in the file so it wins over the compact size at equal specificity. */
+@media (pointer: coarse) {
+  .pc-taskbar[data-device-nav-compact] .pc-taskbar-item,
+  .pc-taskbar .pc-taskbar-item {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

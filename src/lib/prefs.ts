@@ -29,6 +29,7 @@ export const USER_KEYS = [
   "adboard-clipboard-sync",
   "adboard-quiet-mode",
   "adboard-taskbar-pins",
+  "adboard-taskbar-hidden",
   "adboard-grid-layout",
   "adboard-grid-bar",
   "adboard-mobile-stats-mode",

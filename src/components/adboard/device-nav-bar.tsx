@@ -30,12 +30,17 @@ import {
   Workflow,
 } from "lucide-react";
 import { StatsBarsIcon } from "@/components/adboard/stats-bars-icon";
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import type { NavAction } from "@/lib/devices/types";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
-import type { TaskbarToolId } from "@/lib/ui/taskbar-pins";
+import {
+  TASKBAR_GROUP_LABELS,
+  TASKBAR_TOOL_GROUP,
+  type HideableNavId,
+  type TaskbarToolId,
+} from "@/lib/ui/taskbar-pins";
 import { cn } from "@/lib/utils";
 
 const NAV_ACTIONS = [
@@ -85,6 +90,8 @@ export interface TaskbarToolHandlers {
   onQuietChange?: (on: boolean) => void;
   /** Opens the Macro dock (the same one as the Tools panel). Omitted where there is none. */
   onOpenMacros?: () => void;
+  /** A macro is running on some phone: the Macros button shows a dot. */
+  macroRunning?: boolean;
   /** Saves a screenshot of each target phone. */
   onScreenshot?: () => void;
   screenRecording?: boolean;
@@ -107,11 +114,25 @@ interface DeviceNavBarProps {
   toolHandlers?: TaskbarToolHandlers;
   /** Fold the floating Tools / Stats panels to chips (taskbar "Minimize"). */
   onMinimize?: () => void;
+  /** Fixed controls the user hid (volume, power). */
+  hiddenNav?: HideableNavId[];
+  /** Long-press on the bar opens the taskbar settings. */
+  onEditTaskbar?: () => void;
 }
+
+/** Pointer travel (px) that cancels a long-press. */
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP = 10;
+/** How long the tapped control's name stays above the bar. */
+const LABEL_MS = 1200;
 
 /**
  * Content-sized, horizontally centered taskbar.
  * Width follows nav + pinned tools; parent centers the capsule.
+ *
+ * Long-press (500 ms) any button to open the taskbar settings. A tap shows the
+ * control's name above the bar. Dividers separate the fixed controls and each
+ * group of pins.
  */
 export function DeviceNavBar({
   offline,
@@ -123,74 +144,197 @@ export function DeviceNavBar({
   pinnedTools = [],
   toolHandlers,
   onMinimize,
+  hiddenNav = [],
+  onEditTaskbar,
 }: DeviceNavBarProps) {
   const hasPins = Boolean(toolHandlers && pinnedTools.length > 0);
   const iconClass = compact ? "size-3.5" : "size-4";
   // Unified toggle look (.pc-toggle) at taskbar size: 36px, compact 32px.
+  // Touch screens get 44px from globals.css (coarse pointer).
   const itemClass = cn(
     "pc-toggle pc-taskbar-item p-0",
     compact ? "h-8 w-8 min-h-8 min-w-8" : "h-9 w-9 min-h-9 min-w-9",
   );
+  const barRef = useRef<HTMLDivElement>(null);
+  const pressTimer = useRef<number | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressClick = useRef(false);
+  const [tapLabel, setTapLabel] = useState<string | null>(null);
+
+  // Fade the edges while the bar has more to scroll to.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const update = () => {
+      const max = bar.scrollWidth - bar.clientWidth;
+      bar.dataset.scrollStart = bar.scrollLeft > 2 ? "1" : "";
+      bar.dataset.scrollEnd = max - bar.scrollLeft > 2 ? "1" : "";
+    };
+    update();
+    bar.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(bar);
+    return () => {
+      bar.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, [pinnedTools.length, hiddenNav.length]);
+
+  useEffect(() => {
+    if (!tapLabel) return;
+    const id = window.setTimeout(() => setTapLabel(null), LABEL_MS);
+    return () => window.clearTimeout(id);
+  }, [tapLabel]);
+
+  useEffect(() => () => {
+    if (pressTimer.current != null) window.clearTimeout(pressTimer.current);
+  }, []);
+
+  function cancelPress() {
+    if (pressTimer.current != null) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+    pressStart.current = null;
+  }
+
+  function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (!onEditTaskbar || !(event.target as HTMLElement).closest("button")) return;
+    pressStart.current = { x: event.clientX, y: event.clientY };
+    pressTimer.current = window.setTimeout(() => {
+      pressTimer.current = null;
+      suppressClick.current = true;
+      onEditTaskbar();
+    }, LONG_PRESS_MS);
+  }
+
+  function onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const start = pressStart.current;
+    if (!start) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > LONG_PRESS_SLOP) cancelPress();
+  }
+
+  function onClickCapture(event: React.MouseEvent<HTMLDivElement>) {
+    if (suppressClick.current) {
+      // The press became a long-press: do not also run the button.
+      suppressClick.current = false;
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
+    const button = (event.target as HTMLElement).closest("button");
+    const name = button?.getAttribute("aria-label");
+    if (name) setTapLabel(name);
+  }
+
+  const hiddenSet = new Set<string>(hiddenNav);
+  const navVisible = NAV_ACTIONS.filter(([action]) => !hiddenSet.has(action));
+  const navFixed = navVisible.filter(([action]) => !HIDEABLE_ACTIONS.has(action));
+  const navSide = navVisible.filter(([action]) => HIDEABLE_ACTIONS.has(action));
+
+  // Pins keep the user's order; a divider goes where the group changes.
+  const pinGroups = pinnedTools.map((id, index) => ({
+    id,
+    divider: index > 0 && TASKBAR_TOOL_GROUP[id] !== TASKBAR_TOOL_GROUP[pinnedTools[index - 1]!],
+  }));
 
   return (
     <div
-      data-device-nav-bar
-      data-device-nav-variant={variant}
-      data-device-nav-compact={compact ? "1" : "0"}
-      data-pin-count={pinnedTools.length}
-      className={cn(
-        "pc-taskbar",
-        safeBottom && "mb-[max(0.25rem,env(safe-area-inset-bottom))]",
-        className,
-      )}
+      className={cn("relative flex max-w-full flex-col items-center", safeBottom && "mb-[max(0.25rem,env(safe-area-inset-bottom))]", className)}
     >
-      {NAV_ACTIONS.map(([action, label, Icon]) => (
-        <Fragment key={action}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={offline}
-            aria-label={label}
-            className={itemClass}
-            onClick={() => onNav(action)}
-          >
-            <Icon className={iconClass} />
-          </Button>
-          {action === "recent" && onMinimize && (
+      {tapLabel && (
+        <p
+          role="status"
+          data-taskbar-label
+          className="pointer-events-none absolute bottom-full z-30 mb-1.5 max-w-[80vw] truncate rounded-md border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 py-0.5 text-xs text-[var(--pc-ink)] shadow-md"
+        >
+          {tapLabel}
+        </p>
+      )}
+      <div
+        ref={barRef}
+        data-device-nav-bar
+        data-device-nav-variant={variant}
+        data-device-nav-compact={compact ? "1" : "0"}
+        data-pin-count={pinnedTools.length}
+        data-taskbar-group-label={TASKBAR_GROUP_LABELS.view}
+        className="pc-taskbar"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={cancelPress}
+        onPointerCancel={cancelPress}
+        onPointerLeave={cancelPress}
+        onClickCapture={onClickCapture}
+      >
+        {navFixed.map(([action, label, Icon]) => (
+          <Fragment key={action}>
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              aria-label="Minimize floating panels"
-              title="Minimize: fold Tools and Stats to small chips"
-              data-taskbar-minimize
+              disabled={offline}
+              aria-label={label}
               className={itemClass}
-              onClick={onMinimize}
+              onClick={() => onNav(action)}
             >
-              <Minimize2 className={iconClass} />
+              <Icon className={iconClass} />
             </Button>
-          )}
-        </Fragment>
-      ))}
-      {hasPins && toolHandlers && (
-        <>
-          <span className="pc-taskbar-sep" aria-hidden />
-          {pinnedTools.map((id) => (
-            <PinnedToolButton
-              key={id}
-              id={id}
-              offline={offline}
-              hit={itemClass}
-              iconClass={iconClass}
-              handlers={toolHandlers}
-            />
-          ))}
-        </>
-      )}
+            {action === "recent" && onMinimize && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Minimize floating panels"
+                title="Minimize: fold Tools and Stats to small chips"
+                data-taskbar-minimize
+                className={itemClass}
+                onClick={onMinimize}
+              >
+                <Minimize2 className={iconClass} />
+              </Button>
+            )}
+          </Fragment>
+        ))}
+        {navSide.length > 0 && (
+          <>
+            <span className="pc-taskbar-sep" aria-hidden />
+            {navSide.map(([action, label, Icon]) => (
+              <Button
+                key={action}
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={offline}
+                aria-label={label}
+                className={itemClass}
+                onClick={() => onNav(action)}
+              >
+                <Icon className={iconClass} />
+              </Button>
+            ))}
+          </>
+        )}
+        {hasPins && toolHandlers && (
+          <>
+            <span className="pc-taskbar-sep" aria-hidden />
+            {pinGroups.map(({ id, divider }) => (
+              <Fragment key={id}>
+                {divider && <span className="pc-taskbar-sep" aria-hidden />}
+                <PinnedToolButton
+                  id={id}
+                  offline={offline}
+                  hit={itemClass}
+                  iconClass={iconClass}
+                  handlers={toolHandlers}
+                />
+              </Fragment>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   );
 }
+
+const HIDEABLE_ACTIONS = new Set<string>(["volume_down", "volume_up", "power"]);
 
 function PinnedToolButton({
   id,
@@ -483,10 +627,13 @@ function PinnedToolButton({
           size="icon"
           aria-label="Macros"
           data-taskbar-tool="macro"
-          className={hit}
+          className={cn(hit, "relative")}
           onClick={handlers.onOpenMacros}
         >
           <Workflow className={iconClass} />
+          {handlers.macroRunning && (
+            <span data-macro-running className="absolute right-1 top-1 size-1.5 rounded-full bg-[var(--pc-accent)]" aria-hidden />
+          )}
         </Button>
       );
     case "screenshot":

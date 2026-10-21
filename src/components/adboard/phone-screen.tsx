@@ -71,6 +71,8 @@ import { StatusBar } from "@/components/adboard/status-bar";
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { useDeskOptional } from "@/components/adboard/desk/desk-context";
 import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
+import { useTaskbarHidden } from "@/hooks/use-taskbar-hidden";
+import { runningTabIds, useRunVersion } from "@/lib/macro/runs";
 import { useDesktopShortcuts, useShortcutHint } from "@/hooks/use-desktop-shortcuts";
 import { gestureStep, makeRecordedMacro, recordedMacros, replayGesture } from "@/lib/desk/gesture";
 import { updateLibrary, useLibrary } from "@/lib/desk/store";
@@ -168,6 +170,10 @@ export function PhoneScreen({
 }: PhoneScreenProps) {
   const desk = useDeskOptional();
   const { pins: taskbarPins } = useTaskbarPins();
+  const { hidden: taskbarHiddenNav } = useTaskbarHidden();
+  // Re-render when a macro run starts or stops, so the taskbar dot follows it.
+  useRunVersion();
+  const macroRunning = runningTabIds().length > 0;
   const screenRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -1423,6 +1429,8 @@ export function PhoneScreen({
               safeBottom={false}
               compact
               pinnedTools={taskbarPins}
+              hiddenNav={taskbarHiddenNav}
+              onEditTaskbar={() => desk?.open("settings")}
               toolHandlers={{
                 keyboardOn,
                 mouseOn,
@@ -1464,6 +1472,7 @@ export function PhoneScreen({
                 quiet: quiet.on,
                 onQuietChange: quiet.toggle,
                 onOpenMacros: onMacroDockChange ? () => onMacroDockChange(true) : undefined,
+                macroRunning,
                 onScreenshot: () => void takeScreenshot(),
                 screenRecording,
                 onScreenRecordToggle: () => void toggleScreenRecord(),

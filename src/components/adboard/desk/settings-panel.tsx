@@ -2,9 +2,18 @@
 
 import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
+import { useTaskbarHidden } from "@/hooks/use-taskbar-hidden";
 import { formatGridLayout, parseGridLayout } from "@/lib/ui/grid-layout";
 import { parseMobileStatsMode } from "@/lib/ui/mobile-stats-mode";
-import { moveTaskbarPin, TASKBAR_TOOL_IDS, TASKBAR_TOOL_LABELS } from "@/lib/ui/taskbar-pins";
+import {
+  HIDEABLE_NAV_IDS,
+  HIDEABLE_NAV_LABELS,
+  moveTaskbarPin,
+  TASKBAR_TOOL_IDS,
+  TASKBAR_TOOL_LABELS,
+  type TaskbarToolId,
+} from "@/lib/ui/taskbar-pins";
+import { useSyncExternalStore } from "react";
 import { Switch, SwitchRow } from "@/components/ui/switch";
 import { useDesk } from "@/components/adboard/desk/desk-context";
 import { PanelFrame } from "@/components/adboard/desk/bits";
@@ -30,6 +39,10 @@ export function SettingsPanel() {
   const [keyboardOn, setKeyboardOn] = useStoredFlag("adboard-keyboard", true);
   const [touchDiagnostics, setTouchDiagnostics] = useStoredFlag(TOUCH_DIAGNOSTICS_KEY, false);
   const { pins, setPins, togglePin, resetPins, atLimit } = useTaskbarPins();
+  const { hidden: hiddenNav, toggleHidden } = useTaskbarHidden();
+  const support = useBrowserSupport();
+  const unavailable = (id: TaskbarToolId) =>
+    (id === "fullscreen" && !support.fullscreen) || (id === "pip" && !support.pip);
   const layout = parseGridLayout(layoutRaw);
   const target = desk.activeDevice ?? desk.targets[0] ?? null;
 
@@ -110,7 +123,10 @@ export function SettingsPanel() {
               const pinned = pins.includes(id);
               return (
                 <label key={id} className="pc-choice-row justify-between" aria-disabled={(!pinned && atLimit) || undefined}>
-                  <span>{TASKBAR_TOOL_LABELS[id]}</span>
+                  <span>
+                    {TASKBAR_TOOL_LABELS[id]}
+                    {unavailable(id) && <span className="block text-xs text-[var(--pc-muted)]">Not available in this browser</span>}
+                  </span>
                   <Switch
                     checked={pinned}
                     disabled={!pinned && atLimit}
@@ -124,6 +140,19 @@ export function SettingsPanel() {
           <p className="text-xs text-[var(--pc-muted)]">
             Back, Home, Recent, Volume, Power and Minimize always stay. They are the phone&apos;s own controls and the Tools panel&apos;s fold button, so they can&apos;t be moved or removed.
           </p>
+          <div className="flex flex-col gap-1" data-settings-hide-nav>
+            <h4 className="text-xs font-semibold text-[var(--pc-ink)]">Show on the bar</h4>
+            {HIDEABLE_NAV_IDS.map((id) => (
+              <label key={id} className="pc-choice-row justify-between">
+                <span>{HIDEABLE_NAV_LABELS[id]}</span>
+                <Switch
+                  checked={!hiddenNav.includes(id)}
+                  onChange={() => toggleHidden(id)}
+                  data-settings-nav={id}
+                />
+              </label>
+            ))}
+          </div>
           {pins.length > 1 && (
             <div className="flex flex-col gap-1" data-settings-pin-order>
               <h4 className="text-xs font-semibold text-[var(--pc-ink)]">Order (left to right)</h4>
@@ -179,4 +208,15 @@ export function SettingsPanel() {
       </div>
     </PanelFrame>
   );
+}
+
+/** What this browser can do. Read without a setState effect; safe during static prerender. */
+const noSubscribe = () => () => {};
+const readFullscreen = () => document.fullscreenEnabled === true;
+const readPip = () => "pictureInPictureEnabled" in document && document.pictureInPictureEnabled === true;
+
+function useBrowserSupport() {
+  const fullscreen = useSyncExternalStore(noSubscribe, readFullscreen, () => true);
+  const pip = useSyncExternalStore(noSubscribe, readPip, () => true);
+  return { fullscreen, pip };
 }
