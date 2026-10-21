@@ -27,7 +27,7 @@ import {
   Smartphone,
   Square,
   Video,
-  Workflow,
+  Zap,
 } from "lucide-react";
 import { StatsBarsIcon } from "@/components/adboard/stats-bars-icon";
 import { Fragment, useEffect, useRef, useState } from "react";
@@ -630,7 +630,7 @@ function PinnedToolButton({
           className={cn(hit, "relative")}
           onClick={handlers.onOpenMacros}
         >
-          <Workflow className={iconClass} />
+          <Zap className={iconClass} />
           {handlers.macroRunning && (
             <span data-macro-running className="absolute right-1 top-1 size-1.5 rounded-full bg-[var(--pc-accent)]" aria-hidden />
           )}
