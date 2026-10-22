@@ -131,7 +131,19 @@ pub fn write_location(app_dir: &Path, data_dir: &Path) -> Result<(), String> {
 /// The data folder inside the app folder (the switch target beside ADBoard.exe).
 pub fn app_data_folder() -> Option<PathBuf> {
     let set = std::env::var("ADBOARD_APP_DATA_DIR").ok().filter(|v| !v.trim().is_empty());
-    set.map(PathBuf::from).or_else(|| app_dir().map(|dir| dir.join(APP_FOLDER_DATA_NAME)))
+    set.map(PathBuf::from).or_else(|| app_dir().map(|dir| default_app_data(&dir)))
+}
+
+/// Default app folder for an app folder: the Windows pack (`<repo>\dist\windows`)
+/// uses `<repo>\ADBoard`; anything else uses `adboard-data` beside the executable.
+pub fn default_app_data(app: &Path) -> PathBuf {
+    let parts: Vec<String> = app.components().rev().take(2).map(|c| c.as_os_str().to_string_lossy().to_lowercase()).collect();
+    if parts == ["windows", "dist"] {
+        if let Some(repo) = app.parent().and_then(|p| p.parent()) {
+            return repo.join("ADBoard");
+        }
+    }
+    app.join(APP_FOLDER_DATA_NAME)
 }
 
 /// The per-user data folder (`%LOCALAPPDATA%\ADBoard` and its equivalents).
@@ -417,6 +429,12 @@ mod tests {
         let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), ..none() };
         let root = resolve(&env(&[("HOME", "/home/u")]), false, false, &inputs);
         assert_eq!((root.path, root.source), (PathBuf::from("/opt/adboard/adboard-data"), RootSource::AppFolder));
+    }
+
+    #[test]
+    fn windows_pack_defaults_to_the_repo_root_adboard_folder() {
+        assert_eq!(default_app_data(Path::new("/repo/dist/windows")), PathBuf::from("/repo/ADBoard"));
+        assert_eq!(default_app_data(Path::new("/opt/adboard")), PathBuf::from("/opt/adboard/adboard-data"));
     }
 
     #[test]
