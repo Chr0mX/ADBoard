@@ -21,6 +21,8 @@ export interface StorageInfo {
   /** Files and bytes per folder (scratch space included). */
   sizes?: Record<string, { files: number; bytes: number }>;
   location?: { appFolder: string | null; file: string | null; saved: string | null; restartRequired: boolean };
+  /** The app folder and the per-user folder, and whether each already holds data. */
+  targets?: { app: string | null; user: string | null; appHasData: boolean; userHasData: boolean };
   /** Store item id → file name in macros\ or shell_scripts\. */
   itemFiles: { macros: Record<string, string>; shellScripts: Record<string, string> };
   migration: { ranAt: number; backup: string | null; items: { kind: string; source: string; action: string; detail: string }[] } | null;

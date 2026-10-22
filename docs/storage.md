@@ -1,6 +1,6 @@
 # Where ADBoard keeps your data
 
-ADBoard keeps everything you make or change in one **data folder**. By default that folder is `ADBoard-data`, next to `ADBoard.exe` (or in the repository root for development builds). Git pulls, updates and reinstalls don't touch it.
+ADBoard keeps everything you make or change in one **data folder**. By default that folder is `adboard-data`, next to `ADBoard.exe` (or in the repository root for development builds). Git pulls, updates and reinstalls don't touch it.
 
 The **Storage** tab shows where the folder is, how big each part is, and lets you choose another location.
 
@@ -8,12 +8,14 @@ The **Storage** tab shows where the folder is, how big each part is, and lets yo
 |---|---|
 | `ADBOARD_DATA_DIR` | Set in the environment. This always wins. |
 | The location saved in the **Storage** tab | `adboard-location.json` in the app folder. Takes effect on the next start. |
-| `ADBoard-data` beside the executable | The default. |
+| `adboard-data` beside the executable | The default. |
 | Your user folder (`%LOCALAPPDATA%\ADBoard` on Windows, `~/Library/Application Support/ADBoard` on macOS, `~/.local/share/ADBoard` on Linux) | When it already holds data and the app folder doesn't. It is kept there until you move it. |
 
 ## Changing the location
 
 In the **Storage** tab:
+
+- **Switch to app folder** / **Switch to user folder** moves the data between the app folder (`adboard-data` beside `ADBoard.exe`) and your user folder. If the other folder already has data, ADBoard only uses it and copies nothing. Otherwise the data is copied there and checked first. Both copies are kept, so you can switch back at any time.
 
 - **Use this folder** saves a folder that already has data, or an empty one. Nothing is copied.
 - **Move data here** copies everything into a new, empty folder, then checks the copy before saving the location. Temporary files (`temp\`) are not copied. The old folder is never deleted.

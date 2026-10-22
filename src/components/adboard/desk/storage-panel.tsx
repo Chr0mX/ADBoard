@@ -40,7 +40,14 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-async function postLocation(path: string, mode: "use" | "move") {
+/** Windows paths are case-insensitive; a trailing separator is not part of the folder. */
+function samePath(a: string | null | undefined, b: string | null | undefined) {
+  if (!a || !b) return false;
+  const norm = (value: string) => value.replace(/[\\/]+$/, "").replace(/\//g, "\\").toLowerCase();
+  return norm(a) === norm(b);
+}
+
+async function postLocation(path: string, mode: "use" | "move" | "switch") {
   const base = agentBaseUrl();
   if (base === null) throw new Error("No ADBoard agent: data is kept in this browser only.");
   const res = await agentFetch(`${base}/api/system/location`, {
@@ -48,9 +55,9 @@ async function postLocation(path: string, mode: "use" | "move") {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, mode }),
   });
-  const body = (await res.json().catch(() => ({}))) as { error?: string; files?: number; bytes?: number; to?: string };
+  const body = (await res.json().catch(() => ({}))) as { error?: string; copied?: boolean; files?: number; bytes?: number; to?: string };
   if (!res.ok) throw new Error(body.error ?? `Couldn't change the location (${res.status})`);
-  return body;
+  return body as { copied?: boolean; files?: number; bytes?: number; to?: string };
 }
 
 export function StoragePanel() {
@@ -59,6 +66,7 @@ export function StoragePanel() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [confirmMove, setConfirmMove] = useState(false);
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
   const viaAgent = agentBaseUrl() !== null;
 
   const run = async (work: () => Promise<string>) => {
@@ -79,6 +87,28 @@ export function StoragePanel() {
       return "Saved. Restart ADBoard to use this folder. Nothing was copied.";
     });
 
+  const location = info?.location;
+  const targets = info?.targets;
+  const inApp = samePath(info?.dataDir, targets?.app);
+  const inUser = samePath(info?.dataDir, targets?.user);
+  // Switch to the place the data is not in (app folder first, if it is unclear).
+  const switchTo = inApp ? "user" : "app";
+  const switchPath = switchTo === "app" ? targets?.app : targets?.user;
+  const switchHasData = switchTo === "app" ? targets?.appHasData : targets?.userHasData;
+  const switchLabel = switchTo === "app" ? "Switch to app folder" : "Switch to user folder";
+
+  const switchData = () => {
+    setConfirmSwitch(false);
+    if (!switchPath) return;
+    void run(async () => {
+      const result = await postLocation(switchPath, "switch");
+      if (result.copied) {
+        return `Copied ${result.files ?? 0} files (${formatBytes(result.bytes ?? 0)}) to ${result.to}. Restart ADBoard to use it. The other copy was kept.`;
+      }
+      return `Switched to ${switchPath}. Nothing was copied, because that folder already has data. Restart ADBoard to use it.`;
+    });
+  };
+
   const moveData = () => {
     setConfirmMove(false);
     void run(async () => {
@@ -86,8 +116,6 @@ export function StoragePanel() {
       return `Copied ${result.files ?? 0} files (${formatBytes(result.bytes ?? 0)}) to ${result.to}. Restart ADBoard to use the new folder. The old folder was kept; delete it yourself once you're sure.`;
     });
   };
-
-  const location = info?.location;
 
   return (
     <PanelFrame title="Storage" panel="storage">
@@ -135,15 +163,37 @@ export function StoragePanel() {
             })}
           </section>
 
+          {(targets?.app || targets?.user) && (
+            <section className="flex flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-switch>
+              <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Switch between the two folders</h3>
+              <p className="text-xs text-[var(--pc-muted)]">
+                App folder: <span className="font-mono">{targets?.app ?? "not available"}</span>
+                <br />
+                User folder: <span className="font-mono">{targets?.user ?? "not available"}</span>
+              </p>
+              <p className="text-xs text-[var(--pc-muted)]">
+                Your data is in the {inApp ? "app folder" : inUser ? "user folder" : "another folder"}.
+              </p>
+              <button
+                type="button"
+                className="pc-toggle pc-toggle-md self-start"
+                disabled={!viaAgent || busy || !switchPath}
+                onClick={() => setConfirmSwitch(true)}
+                data-storage-switch-button
+              >
+                {switchLabel}
+              </button>
+            </section>
+          )}
           <section className="flex flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-change>
             <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Keep data somewhere else</h3>
             <p className="text-xs text-[var(--pc-muted)]">
-              Type a full folder path, for example <span className="font-mono">D:\ADBoard-data</span>. Use it to point ADBoard at a folder that already has data. Move copies everything into a new, empty folder first. Nothing is deleted.
+              Type a full folder path, for example <span className="font-mono">D:\adboard-data</span>. Use it to point ADBoard at a folder that already has data. Move copies everything into a new, empty folder first. Nothing is deleted.
             </p>
             <input
               value={target}
               onChange={(event) => setTarget(event.target.value)}
-              placeholder="D:\ADBoard-data"
+              placeholder="D:\adboard-data"
               aria-label="New data folder"
               disabled={!viaAgent || busy}
               className="min-w-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 py-1.5 font-mono text-sm text-[var(--pc-ink)]"
@@ -163,6 +213,20 @@ export function StoragePanel() {
             )}
           </section>
         </>
+      )}
+      {confirmSwitch && switchPath && (
+        <ConfirmDialog
+          title={switchLabel + "?"}
+          body={
+            switchHasData
+              ? `${switchPath} already has data, so ADBoard will use it after a restart. Nothing is copied, and the other copy stays as it is.`
+              : `Your data is copied to ${switchPath}. ADBoard uses it after a restart. The old copy is kept.`
+          }
+          confirmLabel={switchLabel}
+          busy={busy}
+          onCancel={() => setConfirmSwitch(false)}
+          onConfirm={switchData}
+        />
       )}
       {confirmMove && (
         <ConfirmDialog

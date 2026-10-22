@@ -58,6 +58,12 @@ pub async fn storage() -> Response {
         "platform": std::env::consts::OS,
         "folders": folders,
         "sizes": sizes,
+        "targets": {
+            "app": data_dir::app_data_folder().map(|p| p.display().to_string()),
+            "user": data_dir::user_folder().map(|p| p.display().to_string()),
+            "appHasData": data_dir::app_data_folder().is_some_and(|p| data_dir::has_data(&p)),
+            "userHasData": data_dir::user_folder().is_some_and(|p| data_dir::has_data(&p)),
+        },
         "location": {
             "appFolder": data_dir::app_dir().map(|dir| dir.display().to_string()),
             "file": data_dir::app_dir().map(|dir| dir.join(data_dir::LOCATION_FILE).display().to_string()),
@@ -75,7 +81,8 @@ pub async fn storage() -> Response {
 #[derive(serde::Deserialize)]
 pub struct LocationBody {
     path: String,
-    /// `use` saves the folder as it is; `move` copies the data there first.
+    /// `use` saves the folder as it is; `move` copies the data there first;
+    /// `switch` saves the folder, copying first only if it holds no data yet.
     mode: String,
 }
 
@@ -83,6 +90,39 @@ pub async fn set_location(Json(body): Json<LocationBody>) -> Response {
     tokio::task::spawn_blocking(move || set_location_blocking(body))
         .await
         .unwrap_or_else(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "The location change stopped unexpectedly."))
+}
+
+/// Copies the data to an empty `target`, checks the copy, then saves the location.
+/// The old folder is never changed or deleted.
+fn copy_and_save(from: &std::path::Path, target: &std::path::Path, app: &std::path::Path) -> Response {
+    // What should arrive: everything except the scratch folder.
+    let (all_files, all_bytes) = data_dir::tree_stats(from);
+    let (temp_files, temp_bytes) = data_dir::tree_stats(&from.join("temp"));
+    let expected = (all_files - temp_files, all_bytes - temp_bytes);
+    let (files, bytes) = match data_dir::copy_tree(from, target) {
+        Ok(copied) => copied,
+        Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, &format!("The copy failed, nothing was changed: {e}")),
+    };
+    if data_dir::tree_stats(target) != expected || (files, bytes) != expected {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "The copy did not match the original, so the location was not changed. Your data is still in the old folder.",
+        );
+    }
+    if let Err(e) = data_dir::write_location(app, target) {
+        return error(StatusCode::INTERNAL_SERVER_ERROR, &e);
+    }
+    tracing::info!(from = %from.display(), to = %target.display(), files, bytes, "data copied (restart to use it)");
+    Json(json!({
+        "ok": true,
+        "copied": true,
+        "from": from.display().to_string(),
+        "to": target.display().to_string(),
+        "files": files,
+        "bytes": bytes,
+        "restartRequired": true,
+    }))
+    .into_response()
 }
 
 fn set_location_blocking(body: LocationBody) -> Response {
@@ -94,7 +134,7 @@ fn set_location_blocking(body: LocationBody) -> Response {
     match body.mode.as_str() {
         "use" => {
             if !target.is_absolute() {
-                return error(StatusCode::BAD_REQUEST, "The folder must be a full path, for example D:\\ADBoard-data.");
+                return error(StatusCode::BAD_REQUEST, "The folder must be a full path, for example D:\\adboard-data.");
             }
             if let Err(e) = std::fs::create_dir_all(&target) {
                 return error(StatusCode::BAD_REQUEST, &format!("Can't use {}: {e}", target.display()));
@@ -109,36 +149,26 @@ fn set_location_blocking(body: LocationBody) -> Response {
             if let Some(reason) = data_dir::move_refusal(&from, &target) {
                 return error(StatusCode::CONFLICT, &reason);
             }
-            // What should arrive: everything except the scratch folder.
-            let (all_files, all_bytes) = data_dir::tree_stats(&from);
-            let (temp_files, temp_bytes) = data_dir::tree_stats(&from.join("temp"));
-            let expected = (all_files - temp_files, all_bytes - temp_bytes);
-            let (files, bytes) = match data_dir::copy_tree(&from, &target) {
-                Ok(copied) => copied,
-                Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, &format!("The copy failed, nothing was changed: {e}")),
-            };
-            if data_dir::tree_stats(&target) != expected || (files, bytes) != expected {
-                return error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "The copy did not match the original, so the location was not changed. Your data is still in the old folder.",
-                );
-            }
-            if let Err(e) = data_dir::write_location(&app, &target) {
-                return error(StatusCode::INTERNAL_SERVER_ERROR, &e);
-            }
-            tracing::info!(from = %from.display(), to = %target.display(), files, bytes, "data moved (restart to use it)");
-            Json(json!({
-                "ok": true,
-                "mode": "move",
-                "from": from.display().to_string(),
-                "to": target.display().to_string(),
-                "files": files,
-                "bytes": bytes,
-                "restartRequired": true,
-            }))
-            .into_response()
+            copy_and_save(&from, &target, &app)
         }
-        _ => error(StatusCode::BAD_REQUEST, "mode must be \"use\" or \"move\""),
+        "switch" => {
+            if !target.is_absolute() {
+                return error(StatusCode::BAD_REQUEST, "The folder must be a full path.");
+            }
+            // The other copy already holds data: point at it, touch nothing.
+            if data_dir::has_data(&target) {
+                if let Err(e) = data_dir::write_location(&app, &target) {
+                    return error(StatusCode::INTERNAL_SERVER_ERROR, &e);
+                }
+                tracing::info!(to = %target.display(), "data location switched (restart to use it)");
+                return Json(json!({ "ok": true, "mode": "switch", "copied": false, "path": target.display().to_string(), "restartRequired": true })).into_response();
+            }
+            if let Some(reason) = data_dir::move_refusal(&from, &target) {
+                return error(StatusCode::CONFLICT, &reason);
+            }
+            copy_and_save(&from, &target, &app)
+        }
+        _ => error(StatusCode::BAD_REQUEST, "mode must be \"use\", \"move\" or \"switch\""),
     }
 }
 
@@ -187,5 +217,48 @@ mod tests {
         assert!(folder("root").is_some());
         assert!(folder("../etc").is_none());
         assert!(folder("C:\\Windows").is_none());
+    }
+}
+
+#[cfg(test)]
+mod switch_tests {
+    use super::*;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("adboard-switch-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn copy_and_save_copies_checks_and_keeps_the_source() {
+        let base = temp("copy");
+        let from = base.join("from");
+        let to = base.join("to");
+        let app = base.join("app");
+        std::fs::create_dir_all(from.join("config")).unwrap();
+        std::fs::create_dir_all(from.join("temp")).unwrap();
+        std::fs::write(from.join("config").join("a.json"), b"hello").unwrap();
+        std::fs::write(from.join("temp").join("scratch"), b"skip").unwrap();
+        let response = copy_and_save(&from, &to, &app);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(data_dir::tree_stats(&to), (1, 5));
+        assert_eq!(data_dir::tree_stats(&from), (2, 9), "the source is unchanged");
+        assert_eq!(data_dir::read_location(&app), Some(to.clone()));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn switch_saves_without_copying_when_the_other_copy_has_data() {
+        let base = temp("switch");
+        let other = base.join("other");
+        let app = base.join("app");
+        std::fs::create_dir_all(other.join("macros")).unwrap();
+        assert!(data_dir::has_data(&other), "a folder with macros counts as data");
+        // Switching to it is a save only; the existing copy is not touched.
+        data_dir::write_location(&app, &other).unwrap();
+        assert_eq!(data_dir::read_location(&app), Some(other.clone()));
+        assert_eq!(data_dir::tree_stats(&other), (0, 0));
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

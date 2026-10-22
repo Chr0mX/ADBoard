@@ -5,8 +5,8 @@
 //! 1. `ADBOARD_DATA_DIR`, when set (explicit choice, e.g. a portable setup or tests).
 //! 2. The location saved in `adboard-location.json` in the app folder (set from
 //!    the Storage tab). It takes effect on the next start.
-//! 3. `ADBoard-data` beside the executable. Development builds (executable under
-//!    `target/`) use `ADBoard-data` in the repository root instead.
+//! 3. `adboard-data` beside the executable. Development builds (executable under
+//!    `target/`) use `adboard-data` in the repository root instead.
 //! 4. The per-user folder, when it already holds data and the app folder does
 //!    not. Existing data is kept where it is, and the Storage tab offers to move it.
 //! 5. The per-user folder otherwise: `%LOCALAPPDATA%\ADBoard` (Windows),
@@ -30,7 +30,7 @@ use std::sync::OnceLock;
 
 pub const APP_DIR_NAME: &str = "ADBoard";
 /// Default data folder beside the executable.
-pub const APP_FOLDER_DATA_NAME: &str = "ADBoard-data";
+pub const APP_FOLDER_DATA_NAME: &str = "adboard-data";
 /// Saved location, in the app folder. Read at startup only.
 pub const LOCATION_FILE: &str = "adboard-location.json";
 
@@ -42,7 +42,7 @@ pub enum RootSource {
     Override,
     /// Chosen in the Storage tab (`adboard-location.json`).
     Chosen,
-    /// `ADBoard-data` beside the executable (or in the repo for dev builds).
+    /// `adboard-data` beside the executable (or in the repo for dev builds).
     AppFolder,
     /// The per-user folder, because it already holds data.
     Platform,
@@ -59,7 +59,7 @@ pub struct DataRoot {
 /// Inputs to root selection, gathered once (see `inputs()`), so the rule is testable.
 #[derive(Debug, Clone, Default)]
 pub struct Inputs {
-    /// The app folder: holds `adboard-location.json` and `ADBoard-data/`.
+    /// The app folder: holds `adboard-location.json` and `adboard-data/`.
     pub app_dir: Option<PathBuf>,
     /// Target of a saved location, if the file exists and is valid.
     pub chosen: Option<PathBuf>,
@@ -122,6 +122,17 @@ pub fn write_location(app_dir: &Path, data_dir: &Path) -> Result<(), String> {
     std::fs::write(&tmp, serde_json::to_vec_pretty(&body).unwrap_or_default())
         .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, &target).map_err(|e| format!("cannot save {}: {e}", target.display()))
+}
+
+/// The data folder inside the app folder (the switch target beside ADBoard.exe).
+pub fn app_data_folder() -> Option<PathBuf> {
+    app_dir().map(|dir| dir.join(APP_FOLDER_DATA_NAME))
+}
+
+/// The per-user data folder (`%LOCALAPPDATA%\ADBoard` and its equivalents).
+pub fn user_folder() -> Option<PathBuf> {
+    let env = |name: &str| std::env::var(name).ok();
+    platform_base(&env, cfg!(windows), cfg!(target_os = "macos")).map(|base| base.join(APP_DIR_NAME))
 }
 
 /// Whether a folder already holds ADBoard data.
@@ -234,7 +245,7 @@ pub fn tree_stats(dir: &Path) -> (u64, u64) {
 /// and empty (or not exist yet). Existing data is never merged or overwritten.
 pub fn move_refusal(from: &Path, target: &Path) -> Option<String> {
     if !target.is_absolute() {
-        return Some("The folder must be a full path, for example D:\\ADBoard-data.".into());
+        return Some("The folder must be a full path, for example D:\\adboard-data.".into());
     }
     if target.starts_with(from) || from.starts_with(target) {
         return Some("The new folder can't be inside the current one, or contain it.".into());
@@ -243,7 +254,10 @@ pub fn move_refusal(from: &Path, target: &Path) -> Option<String> {
         if !target.is_dir() {
             return Some(format!("{} is a file, not a folder.", target.display()));
         }
-        let non_empty = std::fs::read_dir(target).map(|mut d| d.next().is_some()).unwrap_or(true);
+        // The scratch folder does not count: it is created on every start.
+        let non_empty = std::fs::read_dir(target)
+            .map(|entries| entries.flatten().any(|entry| entry.file_name() != "temp"))
+            .unwrap_or(true);
         if non_empty {
             return Some(format!("{} is not empty. Choose an empty folder, or use it as it is.", target.display()));
         }
@@ -397,7 +411,7 @@ mod tests {
     fn default_is_the_app_folder() {
         let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), ..none() };
         let root = resolve(&env(&[("HOME", "/home/u")]), false, false, &inputs);
-        assert_eq!((root.path, root.source), (PathBuf::from("/opt/adboard/ADBoard-data"), RootSource::AppFolder));
+        assert_eq!((root.path, root.source), (PathBuf::from("/opt/adboard/adboard-data"), RootSource::AppFolder));
     }
 
     #[test]
@@ -470,6 +484,9 @@ mod tests {
         let empty = base.join("empty");
         std::fs::create_dir_all(&empty).unwrap();
         assert!(move_refusal(&from, &empty).is_none());
+        let scratch_only = base.join("scratch");
+        std::fs::create_dir_all(scratch_only.join("temp")).unwrap();
+        assert!(move_refusal(&from, &scratch_only).is_none(), "a folder with only temp/ is empty");
         assert!(move_refusal(&from, &base.join("new")).is_none());
         let _ = std::fs::remove_dir_all(&base);
     }

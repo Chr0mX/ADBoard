@@ -78,11 +78,11 @@ test-results/
 # User data from before ADBoard kept it in %LOCALAPPDATA%\ADBoard (moved there
 # on first start), and portable-mode data folders. Never commit or clean these.
 adboard-data/
-ADBoard-data/
+adboard-data/
 /data/
 /dist/windows/data/
 site/guide/
 
 # Default data folder beside ADBoard.exe (Windows pack) and in the repo for dev builds.
-/ADBoard-data/
-dist/windows/ADBoard-data/
+/adboard-data/
+dist/windows/adboard-data/

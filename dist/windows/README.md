@@ -24,7 +24,7 @@ Your macros, scripts, settings and logs are **not** in this folder: they live in
 replacing this folder never touches them. Data from older versions that sat here
 (`adboard-data`, `data\phonecontrol-files`) is moved there on first start, with the
 originals kept in `%LOCALAPPDATA%\ADBoard\backups\legacy-<date>`. Portable mode:
-`.\Start-ADBoard.ps1 -DataDir "$PSScriptRoot\ADBoard-data"` or set `ADBOARD_DATA_DIR`.
+`.\Start-ADBoard.ps1 -DataDir "$PSScriptRoot\adboard-data"` or set `ADBOARD_DATA_DIR`.
 See [docs/storage.md](../../docs/storage.md).
 
 ## One-time setup
