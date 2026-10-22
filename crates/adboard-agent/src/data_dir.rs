@@ -61,6 +61,9 @@ pub struct DataRoot {
 pub struct Inputs {
     /// The app folder: holds `adboard-location.json` and `adboard-data/`.
     pub app_dir: Option<PathBuf>,
+    /// The folder used as the default data location and as the Switch target
+    /// (`ADBOARD_APP_DATA_DIR`, else `adboard-data` beside the executable).
+    pub app_data: Option<PathBuf>,
     /// Target of a saved location, if the file exists and is valid.
     pub chosen: Option<PathBuf>,
     /// Whether the per-user folder already has data (`config/` or `macros/` present).
@@ -75,6 +78,7 @@ pub fn root() -> &'static DataRoot {
         let platform = platform_base(&env, cfg!(windows), cfg!(target_os = "macos"));
         let inputs = Inputs {
             app_dir: app_dir(),
+            app_data: app_data_folder(),
             chosen: app_dir().and_then(|dir| read_location(&dir)),
             platform_has_data: platform
                 .as_ref()
@@ -126,7 +130,8 @@ pub fn write_location(app_dir: &Path, data_dir: &Path) -> Result<(), String> {
 
 /// The data folder inside the app folder (the switch target beside ADBoard.exe).
 pub fn app_data_folder() -> Option<PathBuf> {
-    app_dir().map(|dir| dir.join(APP_FOLDER_DATA_NAME))
+    let set = std::env::var("ADBOARD_APP_DATA_DIR").ok().filter(|v| !v.trim().is_empty());
+    set.map(PathBuf::from).or_else(|| app_dir().map(|dir| dir.join(APP_FOLDER_DATA_NAME)))
 }
 
 /// The per-user data folder (`%LOCALAPPDATA%\ADBoard` and its equivalents).
@@ -166,11 +171,11 @@ pub fn resolve(env: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool,
         return DataRoot { path: dir, source: RootSource::Chosen };
     }
     let platform = platform_base(env, windows, macos).map(|base| base.join(APP_DIR_NAME));
-    if let Some(app) = inputs.app_dir.as_ref() {
-        let app_data = app.join(APP_FOLDER_DATA_NAME);
+    let app_data = inputs.app_data.clone().or_else(|| inputs.app_dir.as_ref().map(|dir| dir.join(APP_FOLDER_DATA_NAME)));
+    if let Some(app_data) = app_data {
         // Data already in the per-user folder stays there until the user moves it.
         if inputs.platform_has_data && !has_data(&app_data) {
-            if let Some(base) = platform {
+            if let Some(base) = platform.clone() {
                 return DataRoot { path: base, source: RootSource::Platform };
             }
         }
@@ -412,6 +417,16 @@ mod tests {
         let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), ..none() };
         let root = resolve(&env(&[("HOME", "/home/u")]), false, false, &inputs);
         assert_eq!((root.path, root.source), (PathBuf::from("/opt/adboard/adboard-data"), RootSource::AppFolder));
+    }
+
+    #[test]
+    fn app_data_setting_moves_the_default_and_the_switch_target() {
+        let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), app_data: Some(PathBuf::from("/repo/ADBoard")), ..none() };
+        let root = resolve(&env(&[]), false, false, &inputs);
+        assert_eq!((root.path, root.source), (PathBuf::from("/repo/ADBoard"), RootSource::AppFolder));
+        // A full override still beats it.
+        let root = resolve(&env(&[("ADBOARD_DATA_DIR", "/srv/x")]), false, false, &inputs);
+        assert_eq!(root.source, RootSource::Override);
     }
 
     #[test]

@@ -54,6 +54,8 @@ $env:ADBOARD_PORT = "$Port"
 $env:ADBOARD_HOST = $HostName
 $env:ADBOARD_HOST_ID = $HostId
 $env:ADBOARD_VIDEO_SOURCE = $VideoSource
+# Data folder: the ADBoard folder in the repository root (two levels up from dist\windows).
+if (-not $env:ADBOARD_APP_DATA_DIR) { $env:ADBOARD_APP_DATA_DIR = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\ADBoard")) }
 if ($DataDir) { $env:ADBOARD_DATA_DIR = $DataDir }
 if ($Password) {
     $env:ADBOARD_PASSWORD = $Password

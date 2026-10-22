@@ -8,7 +8,7 @@ The **Storage** tab shows where the folder is, how big each part is, and lets yo
 |---|---|
 | `ADBOARD_DATA_DIR` | Set in the environment. This always wins. |
 | The location saved in the **Storage** tab | `adboard-location.json` in the app folder. Takes effect on the next start. |
-| `adboard-data` beside the executable | The default. |
+| `ADBOARD_APP_DATA_DIR`, or `adboard-data` beside the executable | The app folder. The Windows pack sets `ADBOARD_APP_DATA_DIR` to `ADBoard` in the repository root. |
 | Your user folder (`%LOCALAPPDATA%\ADBoard` on Windows, `~/Library/Application Support/ADBoard` on macOS, `~/.local/share/ADBoard` on Linux) | When it already holds data and the app folder doesn't. It is kept there until you move it. |
 
 ## Changing the location
@@ -147,6 +147,7 @@ Browser storage from older versions (`phonecontrol-*` keys) moves to the new
 | Variable | Purpose |
 |---|---|
 | `ADBOARD_DATA_DIR` | Data folder (portable mode, tests) |
+| `ADBOARD_APP_DATA_DIR` | The app folder: the default data location and the target of the Switch button. The Windows pack sets it to the `ADBoard` folder in the repository root. |
 | `ADBOARD_FILES` | Files area, if not `files\` |
 | `ADBOARD_TEMP` | Temp folder, if not `temp\` |
 | `ADBOARD_AUTH_FILE` | Sign-in account file, if not `config\auth.json` |
