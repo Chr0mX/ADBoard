@@ -131,7 +131,28 @@ pub fn write_location(app_dir: &Path, data_dir: &Path) -> Result<(), String> {
 /// The data folder inside the app folder (the switch target beside ADBoard.exe).
 pub fn app_data_folder() -> Option<PathBuf> {
     let set = std::env::var("ADBOARD_APP_DATA_DIR").ok().filter(|v| !v.trim().is_empty());
-    set.map(PathBuf::from).or_else(|| app_dir().map(|dir| default_app_data(&dir)))
+    set.map(|v| normalize_path(Path::new(&v))).or_else(|| app_dir().map(|dir| default_app_data(&dir)))
+}
+
+/// Resolves `.` and `..` parts without touching the disk (`D:\a\dist\windows\..\..\ADBoard` becomes `D:\a\ADBoard`).
+pub fn normalize_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                let last_is_normal = matches!(out.components().next_back(), Some(Component::Normal(_)));
+                if last_is_normal {
+                    out.pop();
+                } else {
+                    out.push("..");
+                }
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// Default app folder for an app folder: the Windows pack (`<repo>\dist\windows`)
@@ -429,6 +450,12 @@ mod tests {
         let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), ..none() };
         let root = resolve(&env(&[("HOME", "/home/u")]), false, false, &inputs);
         assert_eq!((root.path, root.source), (PathBuf::from("/opt/adboard/adboard-data"), RootSource::AppFolder));
+    }
+
+    #[test]
+    fn parent_parts_are_resolved_in_the_app_data_path() {
+        assert_eq!(normalize_path(Path::new("/repo/dist/windows/../../ADBoard")), PathBuf::from("/repo/ADBoard"));
+        assert_eq!(normalize_path(Path::new("/a/./b")), PathBuf::from("/a/b"));
     }
 
     #[test]
