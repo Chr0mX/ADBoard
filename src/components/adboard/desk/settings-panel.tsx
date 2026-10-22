@@ -21,7 +21,6 @@ import { ScrcpyOptions } from "@/components/adboard/scrcpy-options";
 import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
 import { TOUCH_DIAGNOSTICS_KEY } from "@/components/adboard/touch-diagnostics";
 import { InstallOnIphone } from "@/components/adboard/desk/install-on-iphone";
-import { DataStorageCard } from "@/components/adboard/desk/data-storage";
 
 /**
  * One place for the app's existing settings. Nothing here has its own
@@ -204,7 +203,13 @@ export function SettingsPanel() {
           </section>
         )}
 
-        <DataStorageCard />
+        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3 lg:col-span-2" data-settings-data-link>
+          <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Data &amp; storage</h3>
+          <p className="text-xs text-[var(--pc-muted)]">Where your data is kept, how to move it, and export, import and backup live in the Storage tab.</p>
+          <button type="button" className="pc-toggle pc-toggle-md self-start" onClick={() => desk?.open("storage")}>
+            Open Storage
+          </button>
+        </section>
       </div>
     </PanelFrame>
   );

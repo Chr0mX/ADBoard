@@ -216,7 +216,7 @@ export function DataStorageCard() {
           <ul className="flex flex-col gap-1">
             {FOLDERS.map((f) => (
               <li key={f.id}>
-                <PathRow label={f.label} what={f.what} path={info.folders[f.id] ?? ""} which={f.id} onNotice={setNotice} />
+                <PathRow label={f.label} what={f.what} path={info.folders[f.id] ?? ""} which={f.id} size={info.sizes?.[f.id]} onNotice={setNotice} />
               </li>
             ))}
           </ul>
@@ -340,19 +340,24 @@ function PathRow({
   what,
   path,
   which,
+  size,
   onNotice,
 }: {
   label: string;
   what: string;
   path: string;
   which: Folder;
+  size?: { files: number; bytes: number };
   onNotice: (n: { tone: "ok" | "error"; text: string }) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[var(--pc-line)] px-2 py-1.5" data-settings-folder={which}>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="text-xs font-semibold text-[var(--pc-ink)]">{label}</span>
-        <span className="text-[11px] text-[var(--pc-muted)]">{what}</span>
+        <span className="text-[11px] text-[var(--pc-muted)]">
+          {what}
+          {size && ` · ${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`}
+        </span>
         <span className="break-all font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
       </div>
       <button
@@ -372,4 +377,11 @@ function PathRow({
       </button>
     </div>
   );
+}
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }

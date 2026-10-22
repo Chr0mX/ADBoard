@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 import { ConfirmDialog, PanelFrame } from "@/components/adboard/desk/bits";
-import { openFolder, refreshStorageInfo, useStorageInfo } from "@/components/adboard/desk/data-storage";
+import { DataStorageCard, openFolder, refreshStorageInfo, useStorageInfo } from "@/components/adboard/desk/data-storage";
 
 /*
  * Settings-free home for "where is my data": the current folder, what is in
@@ -18,20 +18,6 @@ const SOURCE_TEXT: Record<string, string> = {
   platform: "Your user folder, from an earlier version. You can move it below.",
   fallback: "A temporary folder (no home folder was found).",
 };
-
-const FOLDER_TEXT: Record<string, string> = {
-  macros: "Touch macros, one file each",
-  shell_scripts: "Shell Automation scripts, one file each",
-  config: "Settings, layout, queue, schedules, sign-in account",
-  logs: "adboard.log and run history",
-  backups: "Earlier versions, deleted items, copies made before changes",
-  files: "Screenshots, recordings, APKs, downloads",
-  temp: "Scratch space (not moved)",
-};
-
-function countFiles(n: number) {
-  return `${n} ${n === 1 ? "file" : "files"}`;
-}
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -144,25 +130,6 @@ export function StoragePanel() {
             </div>
           </section>
 
-          <section className="flex flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-folders>
-            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">What is in it</h3>
-            {Object.keys(FOLDER_TEXT).map((name) => {
-              const size = info.sizes?.[name];
-              return (
-                <div key={name} className="flex flex-col gap-0.5 border-t border-[var(--pc-line)] pt-2 first:border-t-0 first:pt-0" data-storage-folder={name}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs text-[var(--pc-ink)]">{name}</span>
-                    <span className="text-xs text-[var(--pc-muted)]">
-                      {size ? `${countFiles(size.files)}, ${formatBytes(size.bytes)}` : ""}
-                    </span>
-                  </div>
-                  <span className="text-xs text-[var(--pc-muted)]">{FOLDER_TEXT[name]}</span>
-                  <span className="break-all font-mono text-[10px] text-[var(--pc-muted)]">{info.folders[name]}</span>
-                </div>
-              );
-            })}
-          </section>
-
           {(targets?.app || targets?.user) && (
             <section className="flex flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-switch>
               <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Switch between the two folders</h3>
@@ -214,6 +181,8 @@ export function StoragePanel() {
           </section>
         </>
       )}
+      {/* Export, import, backup and the folder rows: the same card that used to be in Settings. */}
+      <DataStorageCard />
       {confirmSwitch && switchPath && (
         <ConfirmDialog
           title={switchLabel + "?"}
