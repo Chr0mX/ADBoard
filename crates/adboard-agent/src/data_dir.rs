@@ -1,12 +1,17 @@
 //! Where ADBoard keeps user data.
 //!
-//! One folder per user, independent of where ADBoard is installed or started
-//! from, so Git pulls, branch switches, updates and reinstalls never touch it:
+//! Chosen in this order:
 //!
-//! - `ADBOARD_DATA_DIR`, when set (explicit choice, e.g. a portable setup or tests)
-//! - Windows: `%LOCALAPPDATA%\ADBoard`
-//! - macOS: `~/Library/Application Support/ADBoard`
-//! - Linux: `$XDG_DATA_HOME/ADBoard`, else `~/.local/share/ADBoard`
+//! 1. `ADBOARD_DATA_DIR`, when set (explicit choice, e.g. a portable setup or tests).
+//! 2. The location saved in `adboard-location.json` in the app folder (set from
+//!    the Storage tab). It takes effect on the next start.
+//! 3. `ADBoard-data` beside the executable. Development builds (executable under
+//!    `target/`) use `ADBoard-data` in the repository root instead.
+//! 4. The per-user folder, when it already holds data and the app folder does
+//!    not. Existing data is kept where it is, and the Storage tab offers to move it.
+//! 5. The per-user folder otherwise: `%LOCALAPPDATA%\ADBoard` (Windows),
+//!    `~/Library/Application Support/ADBoard` (macOS), `$XDG_DATA_HOME/ADBoard`
+//!    or `~/.local/share/ADBoard` (Linux).
 //!
 //! The working directory is never used. Layout:
 //!
@@ -17,20 +22,31 @@
 //! logs/            adboard.log, shell_run_history.json
 //! backups/         history/, deleted/, corrupt/, legacy-<date>/, backup-<date>/
 //! files/           the Files area (Screenshots, APKs, Recordings, Downloads)
-//! temp/            runtime scratch space
+//! temp/            runtime scratch space (not copied when the folder moves)
 //! ```
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 pub const APP_DIR_NAME: &str = "ADBoard";
+/// Default data folder beside the executable.
+pub const APP_FOLDER_DATA_NAME: &str = "ADBoard-data";
+/// Saved location, in the app folder. Read at startup only.
+pub const LOCATION_FILE: &str = "adboard-location.json";
 
 /// Where the root came from (shown in Settings and the log).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RootSource {
+    /// `ADBOARD_DATA_DIR`.
     Override,
+    /// Chosen in the Storage tab (`adboard-location.json`).
+    Chosen,
+    /// `ADBoard-data` beside the executable (or in the repo for dev builds).
+    AppFolder,
+    /// The per-user folder, because it already holds data.
     Platform,
+    /// No home folder: the system temp folder.
     Fallback,
 }
 
@@ -40,19 +56,83 @@ pub struct DataRoot {
     pub source: RootSource,
 }
 
+/// Inputs to root selection, gathered once (see `inputs()`), so the rule is testable.
+#[derive(Debug, Clone, Default)]
+pub struct Inputs {
+    /// The app folder: holds `adboard-location.json` and `ADBoard-data/`.
+    pub app_dir: Option<PathBuf>,
+    /// Target of a saved location, if the file exists and is valid.
+    pub chosen: Option<PathBuf>,
+    /// Whether the per-user folder already has data (`config/` or `macros/` present).
+    pub platform_has_data: bool,
+}
+
 /// The data root for this process (resolved once).
 pub fn root() -> &'static DataRoot {
     static ROOT: OnceLock<DataRoot> = OnceLock::new();
-    ROOT.get_or_init(|| resolve(&|name| std::env::var(name).ok(), cfg!(windows), cfg!(target_os = "macos")))
+    ROOT.get_or_init(|| {
+        let env = |name: &str| std::env::var(name).ok();
+        let platform = platform_base(&env, cfg!(windows), cfg!(target_os = "macos"));
+        let inputs = Inputs {
+            app_dir: app_dir(),
+            chosen: app_dir().and_then(|dir| read_location(&dir)),
+            platform_has_data: platform
+                .as_ref()
+                .map(|base| base.join(APP_DIR_NAME))
+                .map(|dir| has_data(&dir))
+                .unwrap_or(false),
+        };
+        resolve(&env, cfg!(windows), cfg!(target_os = "macos"), &inputs)
+    })
 }
 
-/// Resolve the root from an environment lookup (testable).
-pub fn resolve(env: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool) -> DataRoot {
-    let get = |name: &str| env(name).filter(|v| !v.trim().is_empty());
-    if let Some(dir) = get("ADBOARD_DATA_DIR") {
-        return DataRoot { path: PathBuf::from(dir), source: RootSource::Override };
+/// The app folder: the executable's folder, or the repository root for a
+/// development build (the executable under `target/`).
+pub fn app_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.to_path_buf();
+    if exe.components().any(|c| c.as_os_str() == "target") {
+        // Walk up to the repository root (the folder with Cargo.toml).
+        let mut cur: Option<&Path> = Some(dir.as_path());
+        while let Some(d) = cur {
+            if d.join("Cargo.toml").is_file() {
+                return Some(d.to_path_buf());
+            }
+            cur = d.parent();
+        }
+        return None;
     }
-    let platform = if windows {
+    Some(dir)
+}
+
+/// Reads `adboard-location.json` in the app folder. Returns the saved folder.
+pub fn read_location(app_dir: &Path) -> Option<PathBuf> {
+    let bytes = std::fs::read(app_dir.join(LOCATION_FILE)).ok()?;
+    let body: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let dir = body.get("dataDir")?.as_str()?.trim();
+    (!dir.is_empty()).then(|| PathBuf::from(dir))
+}
+
+/// Writes `adboard-location.json` atomically (temp file, then rename).
+pub fn write_location(app_dir: &Path, data_dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(app_dir).map_err(|e| format!("cannot create {}: {e}", app_dir.display()))?;
+    let target = app_dir.join(LOCATION_FILE);
+    let tmp = app_dir.join(format!("{LOCATION_FILE}.tmp"));
+    let body = serde_json::json!({ "dataDir": data_dir.display().to_string() });
+    std::fs::write(&tmp, serde_json::to_vec_pretty(&body).unwrap_or_default())
+        .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &target).map_err(|e| format!("cannot save {}: {e}", target.display()))
+}
+
+/// Whether a folder already holds ADBoard data.
+pub fn has_data(dir: &Path) -> bool {
+    dir.join("config").is_dir() || dir.join("macros").is_dir()
+}
+
+/// The per-user base folder (the parent of `ADBoard`), per platform.
+fn platform_base(env: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool) -> Option<PathBuf> {
+    let get = |name: &str| env(name).filter(|v| !v.trim().is_empty());
+    if windows {
         get("LOCALAPPDATA")
             .map(PathBuf::from)
             .or_else(|| get("USERPROFILE").map(|home| Path::new(&home).join("AppData").join("Local")))
@@ -62,9 +142,31 @@ pub fn resolve(env: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool)
         get("XDG_DATA_HOME")
             .map(PathBuf::from)
             .or_else(|| get("HOME").map(|home| Path::new(&home).join(".local").join("share")))
-    };
+    }
+}
+
+/// Select the root from the environment and the gathered inputs (testable).
+pub fn resolve(env: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool, inputs: &Inputs) -> DataRoot {
+    let get = |name: &str| env(name).filter(|v| !v.trim().is_empty());
+    if let Some(dir) = get("ADBOARD_DATA_DIR") {
+        return DataRoot { path: PathBuf::from(dir), source: RootSource::Override };
+    }
+    if let Some(dir) = inputs.chosen.clone() {
+        return DataRoot { path: dir, source: RootSource::Chosen };
+    }
+    let platform = platform_base(env, windows, macos).map(|base| base.join(APP_DIR_NAME));
+    if let Some(app) = inputs.app_dir.as_ref() {
+        let app_data = app.join(APP_FOLDER_DATA_NAME);
+        // Data already in the per-user folder stays there until the user moves it.
+        if inputs.platform_has_data && !has_data(&app_data) {
+            if let Some(base) = platform {
+                return DataRoot { path: base, source: RootSource::Platform };
+            }
+        }
+        return DataRoot { path: app_data, source: RootSource::AppFolder };
+    }
     match platform {
-        Some(base) => DataRoot { path: base.join(APP_DIR_NAME), source: RootSource::Platform },
+        Some(path) => DataRoot { path, source: RootSource::Platform },
         // No home folder at all (unusual service setups): the system temp
         // folder, never the working directory.
         None => DataRoot { path: std::env::temp_dir().join(APP_DIR_NAME), source: RootSource::Fallback },
@@ -103,6 +205,82 @@ pub fn ensure_layout() -> Result<(), String> {
         std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     }
     Ok(())
+}
+
+/// Files and bytes under a folder (0, 0 if it does not exist).
+pub fn tree_stats(dir: &Path) -> (u64, u64) {
+    let mut files = 0u64;
+    let mut bytes = 0u64;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => stack.push(path),
+                Ok(t) if t.is_file() => {
+                    files += 1;
+                    bytes += entry.metadata().map(|m| m.len()).unwrap_or(0);
+                }
+                _ => {}
+            }
+        }
+    }
+    (files, bytes)
+}
+
+/// Why `target` cannot receive a move of `from`, or `None` if it can.
+/// The target must be absolute, not inside the source (or the other way round),
+/// and empty (or not exist yet). Existing data is never merged or overwritten.
+pub fn move_refusal(from: &Path, target: &Path) -> Option<String> {
+    if !target.is_absolute() {
+        return Some("The folder must be a full path, for example D:\\ADBoard-data.".into());
+    }
+    if target.starts_with(from) || from.starts_with(target) {
+        return Some("The new folder can't be inside the current one, or contain it.".into());
+    }
+    if target.exists() {
+        if !target.is_dir() {
+            return Some(format!("{} is a file, not a folder.", target.display()));
+        }
+        let non_empty = std::fs::read_dir(target).map(|mut d| d.next().is_some()).unwrap_or(true);
+        if non_empty {
+            return Some(format!("{} is not empty. Choose an empty folder, or use it as it is.", target.display()));
+        }
+    }
+    None
+}
+
+/// Copies the data folder to `to`, leaving out `temp/` (scratch space). Returns
+/// the files and bytes copied. The source is never changed.
+pub fn copy_tree(from: &Path, to: &Path) -> Result<(u64, u64), String> {
+    std::fs::create_dir_all(to).map_err(|e| format!("cannot create {}: {e}", to.display()))?;
+    let mut files = 0u64;
+    let mut bytes = 0u64;
+    let mut stack = vec![(from.to_path_buf(), to.to_path_buf())];
+    while let Some((src, dst)) = stack.pop() {
+        std::fs::create_dir_all(&dst).map_err(|e| format!("cannot create {}: {e}", dst.display()))?;
+        let entries = std::fs::read_dir(&src).map_err(|e| format!("cannot read {}: {e}", src.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("cannot read {}: {e}", src.display()))?;
+            let name = entry.file_name();
+            let from_path = entry.path();
+            let to_path = dst.join(&name);
+            let file_type = entry.file_type().map_err(|e| format!("cannot read {}: {e}", from_path.display()))?;
+            if file_type.is_dir() {
+                if src == from && name == "temp" {
+                    continue;
+                }
+                stack.push((from_path, to_path));
+            } else if file_type.is_file() {
+                let copied = std::fs::copy(&from_path, &to_path)
+                    .map_err(|e| format!("cannot copy {}: {e}", from_path.display()))?;
+                files += 1;
+                bytes += copied;
+            }
+        }
+    }
+    Ok((files, bytes))
 }
 
 const LOG_FILE: &str = "adboard.log";
@@ -202,30 +380,115 @@ mod tests {
         move |name| map.get(name).cloned()
     }
 
+    fn none() -> Inputs {
+        Inputs::default()
+    }
+
     #[test]
-    fn windows_uses_localappdata() {
-        let root = resolve(&env(&[("LOCALAPPDATA", r"C:\Users\Admin\AppData\Local")]), true, false);
+    fn windows_uses_localappdata_without_an_app_folder() {
+        let root = resolve(&env(&[("LOCALAPPDATA", r"C:\Users\Admin\AppData\Local")]), true, false, &none());
         assert_eq!(root.path, Path::new(r"C:\Users\Admin\AppData\Local").join("ADBoard"));
         assert_eq!(root.source, RootSource::Platform);
-        let fallback = resolve(&env(&[("USERPROFILE", r"C:\Users\Admin")]), true, false);
+        let fallback = resolve(&env(&[("USERPROFILE", r"C:\Users\Admin")]), true, false, &none());
         assert_eq!(fallback.path, Path::new(r"C:\Users\Admin").join("AppData").join("Local").join("ADBoard"));
     }
 
     #[test]
-    fn override_wins_and_cwd_is_never_used() {
-        let root = resolve(&env(&[("ADBOARD_DATA_DIR", "/srv/adboard"), ("LOCALAPPDATA", "C:/x")]), true, false);
+    fn default_is_the_app_folder() {
+        let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), ..none() };
+        let root = resolve(&env(&[("HOME", "/home/u")]), false, false, &inputs);
+        assert_eq!((root.path, root.source), (PathBuf::from("/opt/adboard/ADBoard-data"), RootSource::AppFolder));
+    }
+
+    #[test]
+    fn saved_location_wins_over_the_app_folder() {
+        let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), chosen: Some(PathBuf::from("/srv/data")), ..none() };
+        let root = resolve(&env(&[]), false, false, &inputs);
+        assert_eq!((root.path, root.source), (PathBuf::from("/srv/data"), RootSource::Chosen));
+    }
+
+    #[test]
+    fn override_beats_everything() {
+        let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), chosen: Some(PathBuf::from("/srv/data")), ..none() };
+        let root = resolve(&env(&[("ADBOARD_DATA_DIR", "/srv/adboard")]), true, false, &inputs);
         assert_eq!((root.path, root.source), (PathBuf::from("/srv/adboard"), RootSource::Override));
+    }
+
+    #[test]
+    fn existing_per_user_data_is_kept_until_moved() {
+        let inputs = Inputs { app_dir: Some(PathBuf::from("/opt/adboard")), platform_has_data: true, ..none() };
+        let root = resolve(&env(&[("HOME", "/home/u")]), false, false, &inputs);
+        assert_eq!((root.path, root.source), (PathBuf::from("/home/u/.local/share/ADBoard"), RootSource::Platform));
+        // Once the app folder has data of its own, it is used.
+        let app = std::env::temp_dir().join(format!("adboard-app-{}", std::process::id()));
+        std::fs::create_dir_all(app.join(APP_FOLDER_DATA_NAME).join("config")).unwrap();
+        let inputs = Inputs { app_dir: Some(app.clone()), platform_has_data: true, ..none() };
+        let root = resolve(&env(&[("HOME", "/home/u")]), false, false, &inputs);
+        assert_eq!((root.path, root.source), (app.join(APP_FOLDER_DATA_NAME), RootSource::AppFolder));
+        let _ = std::fs::remove_dir_all(&app);
+    }
+
+    #[test]
+    fn legacy_variable_and_platform_paths() {
         // The legacy variable no longer chooses the root (it is only a migration source).
-        let legacy = resolve(&env(&[("PHONECONTROL_DATA_DIR", "/old"), ("HOME", "/home/u")]), false, false);
+        let legacy = resolve(&env(&[("PHONECONTROL_DATA_DIR", "/old"), ("HOME", "/home/u")]), false, false, &none());
         assert_eq!(legacy.path, PathBuf::from("/home/u/.local/share/ADBoard"));
-        let xdg = resolve(&env(&[("XDG_DATA_HOME", "/data"), ("HOME", "/home/u")]), false, false);
+        let xdg = resolve(&env(&[("XDG_DATA_HOME", "/data"), ("HOME", "/home/u")]), false, false, &none());
         assert_eq!(xdg.path, PathBuf::from("/data/ADBoard"));
-        let mac = resolve(&env(&[("HOME", "/Users/u")]), false, true);
+        let mac = resolve(&env(&[("HOME", "/Users/u")]), false, true, &none());
         assert_eq!(mac.path, PathBuf::from("/Users/u/Library/Application Support/ADBoard"));
-        let none = resolve(&env(&[]), false, false);
-        assert_eq!(none.source, RootSource::Fallback);
+        let no_home = resolve(&env(&[]), false, false, &none());
+        assert_eq!(no_home.source, RootSource::Fallback);
         let cwd = std::env::current_dir().unwrap();
-        assert!(!none.path.starts_with(&cwd) || cwd == std::env::temp_dir());
+        assert!(!no_home.path.starts_with(&cwd) || cwd == std::env::temp_dir());
+    }
+
+    #[test]
+    fn location_file_round_trips_and_ignores_garbage() {
+        let dir = std::env::temp_dir().join(format!("adboard-loc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(read_location(&dir), None);
+        write_location(&dir, Path::new("/srv/adboard data")).unwrap();
+        assert_eq!(read_location(&dir), Some(PathBuf::from("/srv/adboard data")));
+        std::fs::write(dir.join(LOCATION_FILE), b"not json").unwrap();
+        assert_eq!(read_location(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn move_refusals() {
+        let base = std::env::temp_dir().join(format!("adboard-move-{}", std::process::id()));
+        let from = base.join("from");
+        std::fs::create_dir_all(&from).unwrap();
+        assert!(move_refusal(&from, Path::new("relative/dir")).is_some());
+        assert!(move_refusal(&from, &from.join("inside")).is_some());
+        assert!(move_refusal(&from.join("sub"), &from).is_some());
+        let busy = base.join("busy");
+        std::fs::create_dir_all(&busy).unwrap();
+        std::fs::write(busy.join("x"), b"1").unwrap();
+        assert!(move_refusal(&from, &busy).is_some());
+        let empty = base.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(move_refusal(&from, &empty).is_none());
+        assert!(move_refusal(&from, &base.join("new")).is_none());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn copy_keeps_files_and_leaves_out_temp() {
+        let base = std::env::temp_dir().join(format!("adboard-copy-{}", std::process::id()));
+        let from = base.join("from");
+        let to = base.join("to");
+        std::fs::create_dir_all(from.join("config")).unwrap();
+        std::fs::create_dir_all(from.join("temp")).unwrap();
+        std::fs::write(from.join("config").join("a.json"), b"hello").unwrap();
+        std::fs::write(from.join("temp").join("scratch"), b"skip").unwrap();
+        let (files, bytes) = copy_tree(&from, &to).unwrap();
+        assert_eq!((files, bytes), (1, 5));
+        assert_eq!(tree_stats(&to), (1, 5));
+        assert!(!to.join("temp").exists());
+        assert_eq!(tree_stats(&from), (2, 9));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

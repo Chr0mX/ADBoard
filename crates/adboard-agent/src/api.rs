@@ -125,6 +125,7 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/system/storage", get(crate::system_api::storage))
         .route("/api/system/open-folder", post(crate::system_api::open_folder))
         .route("/api/system/backup", post(crate::system_api::backup))
+        .route("/api/system/location", post(crate::system_api::set_location))
         .route("/api/apps/icon", get(crate::app_icon::app_icon))
         .route("/api/apps/meta", get(crate::app_icon::app_meta))
         .route("/api/store/{name}/history", get(store_history))

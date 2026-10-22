@@ -1,20 +1,24 @@
 # Where ADBoard keeps your data
 
-ADBoard keeps everything you make or change in one **data folder** outside the
-app. Git pulls, `git clean`, updates, replacing the Windows pack and reinstalling
-never touch it, and it doesn't depend on the folder ADBoard was started from.
+ADBoard keeps everything you make or change in one **data folder**. By default that folder is `ADBoard-data`, next to `ADBoard.exe` (or in the repository root for development builds). Git pulls, updates and reinstalls don't touch it.
 
-| System | Data folder |
+The **Storage** tab shows where the folder is, how big each part is, and lets you choose another location.
+
+| Where the folder comes from | When |
 |---|---|
-| Windows | `%LOCALAPPDATA%\ADBoard` (usually `C:\Users\<you>\AppData\Local\ADBoard`) |
-| macOS | `~/Library/Application Support/ADBoard` |
-| Linux / LXC | `$XDG_DATA_HOME/ADBoard`, else `~/.local/share/ADBoard` |
-| Any (portable mode) | the folder in `ADBOARD_DATA_DIR` (`Start-ADBoard.ps1 -DataDir …`) |
+| `ADBOARD_DATA_DIR` | Set in the environment. This always wins. |
+| The location saved in the **Storage** tab | `adboard-location.json` in the app folder. Takes effect on the next start. |
+| `ADBoard-data` beside the executable | The default. |
+| Your user folder (`%LOCALAPPDATA%\ADBoard` on Windows, `~/Library/Application Support/ADBoard` on macOS, `~/.local/share/ADBoard` on Linux) | When it already holds data and the app folder doesn't. It is kept there until you move it. |
 
-**Settings → Data & storage** shows these paths, opens each folder on the
-ADBoard computer, copies a path, backs up, and exports or imports the whole
-library. Macros and the Shell Automation Library show the folder (and the open
-item's file name) above their lists.
+## Changing the location
+
+In the **Storage** tab:
+
+- **Use this folder** saves a folder that already has data, or an empty one. Nothing is copied.
+- **Move data here** copies everything into a new, empty folder, then checks the copy before saving the location. Temporary files (`temp\`) are not copied. The old folder is never deleted.
+
+Restart ADBoard to use the new folder. Stop changing things while a move runs.
 
 ## Folders
 

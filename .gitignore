@@ -82,3 +82,7 @@ ADBoard-data/
 /data/
 /dist/windows/data/
 site/guide/
+
+# Default data folder beside ADBoard.exe (Windows pack) and in the repo for dev builds.
+/ADBoard-data/
+dist/windows/ADBoard-data/

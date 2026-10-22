@@ -15,9 +15,12 @@ import { ConfirmDialog } from "@/components/adboard/desk/bits";
 
 export interface StorageInfo {
   dataDir: string;
-  source: "override" | "platform" | "fallback";
+  source: "override" | "chosen" | "appFolder" | "platform" | "fallback";
   platform: string;
   folders: Record<string, string>;
+  /** Files and bytes per folder (scratch space included). */
+  sizes?: Record<string, { files: number; bytes: number }>;
+  location?: { appFolder: string | null; file: string | null; saved: string | null; restartRequired: boolean };
   /** Store item id → file name in macros\ or shell_scripts\. */
   itemFiles: { macros: Record<string, string>; shellScripts: Record<string, string> };
   migration: { ranAt: number; backup: string | null; items: { kind: string; source: string; action: string; detail: string }[] } | null;

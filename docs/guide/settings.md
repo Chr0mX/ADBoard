@@ -115,7 +115,7 @@ A password is required to reach ADBoard from outside your home network. See [Rem
 
 This card shows where ADBoard keeps your macros, scripts and settings, and gives you tools to back them up and move them. It is wide and sits at the bottom. In the demo without the ADBoard agent it says "In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy." and some buttons are missing.
 
-**Folders.** First comes the **data folder** (on Windows usually `%LOCALAPPDATA%\ADBoard`). A line says that updating, reinstalling or a Git pull never touches it, or, in portable mode, that the folder was set with `ADBOARD_DATA_DIR`. Then one row per folder, each with its full path:
+**Folders.** First comes the **data folder** (by default `ADBoard-data` next to `ADBoard.exe`; see the **Storage** tab to see it or choose another folder). A line says that updating, reinstalling or a Git pull never touches it, or, in portable mode, that the folder was set with `ADBOARD_DATA_DIR`. Then one row per folder, each with its full path:
 
 | Folder | What is in it |
 |---|---|

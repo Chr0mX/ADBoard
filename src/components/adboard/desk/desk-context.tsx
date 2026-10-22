@@ -13,6 +13,7 @@ export const DESK_SECTIONS = [
   { id: "automate", label: "Shell Automation" },
   { id: "developer", label: "Developer" },
   { id: "hosts", label: "Hosts" },
+  { id: "storage", label: "Storage" },
   { id: "settings", label: "Settings" },
 ] as const;
 

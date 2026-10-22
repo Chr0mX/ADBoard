@@ -6,6 +6,9 @@
 //!   file manager of the computer running ADBoard.
 //! - `POST /api/system/backup` — copy macros, scripts, settings and logs to
 //!   `backups/backup-<date>/`.
+//! - `POST /api/system/location` `{ path, mode }` — `use` saves a folder as the
+//!   data location; `move` copies the data there first, checks the copy, then
+//!   saves it. Takes effect on the next start. The old folder is kept.
 
 use crate::data_dir;
 use crate::shared_store::store;
@@ -32,21 +35,111 @@ fn error(status: StatusCode, message: &str) -> Response {
 pub async fn storage() -> Response {
     let root = data_dir::root();
     let s = store();
-    let folders: serde_json::Map<String, serde_json::Value> = ["macros", "shell_scripts", "config", "logs", "backups", "files"]
+    let root_path = root.path.clone();
+    let sizes = tokio::task::spawn_blocking(move || {
+        ["macros", "shell_scripts", "config", "logs", "backups", "files", "temp"]
+            .iter()
+            .map(|name| {
+                let (files, bytes) = data_dir::tree_stats(&root_path.join(name));
+                (name.to_string(), json!({ "files": files, "bytes": bytes }))
+            })
+            .collect::<serde_json::Map<String, serde_json::Value>>()
+    })
+    .await
+    .unwrap_or_default();
+    let folders: serde_json::Map<String, serde_json::Value> = ["macros", "shell_scripts", "config", "logs", "backups", "files", "temp"]
         .iter()
         .map(|name| (name.to_string(), json!(root.path.join(name).display().to_string())))
         .collect();
+    let saved = data_dir::app_dir().and_then(|dir| data_dir::read_location(&dir));
     Json(json!({
         "dataDir": root.path.display().to_string(),
         "source": root.source,
         "platform": std::env::consts::OS,
         "folders": folders,
+        "sizes": sizes,
+        "location": {
+            "appFolder": data_dir::app_dir().map(|dir| dir.display().to_string()),
+            "file": data_dir::app_dir().map(|dir| dir.join(data_dir::LOCATION_FILE).display().to_string()),
+            "saved": saved.as_ref().map(|p| p.display().to_string()),
+            "restartRequired": saved.as_ref().is_some_and(|p| p != &root.path),
+        },
         "itemFiles": { "macros": s.item_files("macros"), "shellScripts": s.item_files("desk") },
         "migration": crate::migrate::last_report(&root.path),
         "editable": ["macros/*.adboard-macro.json", "shell_scripts/*.adboard-shell.json", "config/user_config.json"],
         "doNotEdit": ["config/.revisions.json", "config/browser_state.json", "config/builder_state.json", "config/migration.json", "config/auth.json"],
     }))
     .into_response()
+}
+
+#[derive(serde::Deserialize)]
+pub struct LocationBody {
+    path: String,
+    /// `use` saves the folder as it is; `move` copies the data there first.
+    mode: String,
+}
+
+pub async fn set_location(Json(body): Json<LocationBody>) -> Response {
+    tokio::task::spawn_blocking(move || set_location_blocking(body))
+        .await
+        .unwrap_or_else(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "The location change stopped unexpectedly."))
+}
+
+fn set_location_blocking(body: LocationBody) -> Response {
+    let target = PathBuf::from(body.path.trim());
+    let from = data_dir::root().path.clone();
+    let Some(app) = data_dir::app_dir() else {
+        return error(StatusCode::INTERNAL_SERVER_ERROR, "The app folder is not known, so the location can't be saved.");
+    };
+    match body.mode.as_str() {
+        "use" => {
+            if !target.is_absolute() {
+                return error(StatusCode::BAD_REQUEST, "The folder must be a full path, for example D:\\ADBoard-data.");
+            }
+            if let Err(e) = std::fs::create_dir_all(&target) {
+                return error(StatusCode::BAD_REQUEST, &format!("Can't use {}: {e}", target.display()));
+            }
+            if let Err(e) = data_dir::write_location(&app, &target) {
+                return error(StatusCode::INTERNAL_SERVER_ERROR, &e);
+            }
+            tracing::info!(to = %target.display(), "data location saved (restart to use it)");
+            Json(json!({ "ok": true, "mode": "use", "path": target.display().to_string(), "restartRequired": true })).into_response()
+        }
+        "move" => {
+            if let Some(reason) = data_dir::move_refusal(&from, &target) {
+                return error(StatusCode::CONFLICT, &reason);
+            }
+            // What should arrive: everything except the scratch folder.
+            let (all_files, all_bytes) = data_dir::tree_stats(&from);
+            let (temp_files, temp_bytes) = data_dir::tree_stats(&from.join("temp"));
+            let expected = (all_files - temp_files, all_bytes - temp_bytes);
+            let (files, bytes) = match data_dir::copy_tree(&from, &target) {
+                Ok(copied) => copied,
+                Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, &format!("The copy failed, nothing was changed: {e}")),
+            };
+            if data_dir::tree_stats(&target) != expected || (files, bytes) != expected {
+                return error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "The copy did not match the original, so the location was not changed. Your data is still in the old folder.",
+                );
+            }
+            if let Err(e) = data_dir::write_location(&app, &target) {
+                return error(StatusCode::INTERNAL_SERVER_ERROR, &e);
+            }
+            tracing::info!(from = %from.display(), to = %target.display(), files, bytes, "data moved (restart to use it)");
+            Json(json!({
+                "ok": true,
+                "mode": "move",
+                "from": from.display().to_string(),
+                "to": target.display().to_string(),
+                "files": files,
+                "bytes": bytes,
+                "restartRequired": true,
+            }))
+            .into_response()
+        }
+        _ => error(StatusCode::BAD_REQUEST, "mode must be \"use\" or \"move\""),
+    }
 }
 
 #[derive(serde::Deserialize)]

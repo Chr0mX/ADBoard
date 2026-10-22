@@ -16,6 +16,7 @@ import { MacrosPanel } from "@/components/adboard/macros/macros-panel";
 import { MacroDock } from "@/components/adboard/macros/macro-dock";
 import { MultiDeviceToolbar } from "@/components/adboard/multi-device-toolbar";
 import { SettingsPanel } from "@/components/adboard/desk/settings-panel";
+import { StoragePanel } from "@/components/adboard/desk/storage-panel";
 import {
   DESK_SECTIONS,
   DeskProvider,
@@ -250,6 +251,7 @@ export function ADBoardApp() {
             {section === "automate" && <AutomatePanel />}
             {section === "developer" && <DeveloperPanel />}
             {section === "hosts" && <HostsPanel />}
+            {section === "storage" && <StoragePanel />}
             {section === "settings" && <SettingsPanel />}
           </div>
         )}
