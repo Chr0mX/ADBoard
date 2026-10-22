@@ -153,3 +153,15 @@ Browser storage from older versions (`phonecontrol-*` keys) moves to the new
 | `ADBOARD_WIRELESS` | Saved Wi-Fi phones file, if not `config\wireless_devices.json` |
 
 Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set.
+
+## Moving the data from a command line
+
+`scripts\move-data.ps1` (Windows PowerShell, with ADBoard closed) copies the data to the app folder, checks every file against its SHA-256 hash, and only then deletes the old folder, if you ask it to:
+
+```powershell
+.\scripts\move-data.ps1                 # copy and check, keep the old folder
+.\scripts\move-data.ps1 -Delete         # also delete the old folder after the check passes
+```
+
+The script refuses to run while ADBoard is open, refuses a target that already has data, and deletes nothing if any file does not match.
+
