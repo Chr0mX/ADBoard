@@ -47,7 +47,7 @@ export function SettingsPanel() {
 
   return (
     <PanelFrame title="Settings" panel="settings">
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid items-start gap-3 lg:grid-cols-2">
         <InstallOnIphone />
         <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-stream>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Stream</h3>
