@@ -72,7 +72,7 @@ Each job has five buttons:
 | **Open** | Opens the job in the Builder. Clicking the job name does the same. |
 | **Duplicate** | Makes a copy called "<Name> copy" (or "<Name> copy 2" and so on if that exists). |
 | **Rename** | Asks for a new name. Two jobs cannot share a name: if yours is taken, a number is added and ADBoard tells you the name it used. |
-| **Export** | Saves just this job as `<Name>.adboard-shell.json`. |
+| **Export** | Saves just this job as `<Name>.json`. |
 | **Delete** | Asks first ("Delete ...?"). The job's steps are removed. Export it first if you want a copy. |
 
 If you have no jobs yet, the list says "No saved jobs yet. Add an action below, or press New job."
@@ -81,7 +81,7 @@ If you have no jobs yet, the list says "No saved jobs yet. Add an action below, 
 
 **Import** works out what a file is from what is inside it, not from its name. It accepts:
 
-- A single job file (`<Name>.adboard-shell.json`).
+- A single job file (`<Name>.json`).
 - The whole-library file `adboard-library.json`. Only its jobs, apps, variables, groups, tags and profiles are added here. Touch macros in that file are not imported on this screen (use Settings, see [Data and storage](settings.md#data--storage)).
 - A desk export from an older version (it has jobs or apps in it), or a plain job file with a name and steps.
 
@@ -371,6 +371,6 @@ Goal: put an APK on each phone and open the app.
 
 ## Where jobs are saved
 
-Each job is its own file named `<Name>.adboard-shell.json` in the `shell_scripts` folder of the ADBoard data folder (on Windows, `%LOCALAPPDATA%\ADBoard`). Your variables, per-phone values, tags, groups, apps and profiles are kept together in one file, `_library.json`, in the same folder. Everything is saved as soon as you edit.
+Each job is its own file named `<Name>.json` in the `shell_scripts` folder of the ADBoard data folder (on Windows, `%LOCALAPPDATA%\ADBoard`). Your variables, per-phone values, tags, groups, apps and profiles are kept together in one file, `_library.json`, in the same folder. Everything is saved as soon as you edit.
 
-Exports: one job is `<Name>.adboard-shell.json`; the whole library is `adboard-library.json`. See [where ADBoard keeps your data](../storage.md) for the full folder layout, backups and which files are safe to edit by hand, and [Settings](settings.md) for importing and exporting the whole library.
+Exports: one job is `<Name>.json`; the whole library is `adboard-library.json`. See [where ADBoard keeps your data](../storage.md) for the full folder layout, backups and which files are safe to edit by hand, and [Settings](settings.md) for importing and exporting the whole library.

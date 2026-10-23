@@ -72,7 +72,7 @@ pub async fn storage() -> Response {
         },
         "itemFiles": { "macros": s.item_files("macros"), "shellScripts": s.item_files("desk") },
         "migration": crate::migrate::last_report(&root.path),
-        "editable": ["macros/*.adboard-macro.json", "shell_scripts/*.adboard-shell.json", "config/user_config.json"],
+        "editable": ["macros/*.json", "shell_scripts/*.json", "config/user_config.json"],
         "doNotEdit": ["config/.revisions.json", "config/browser_state.json", "config/builder_state.json", "config/migration.json", "config/auth.json"],
     }))
     .into_response()

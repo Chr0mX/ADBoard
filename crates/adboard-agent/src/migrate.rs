@@ -15,10 +15,11 @@
 //!
 //! The result is kept in `config/migration.json` and shown in Settings.
 
-use crate::data_dir::stamp;
+use crate::data_dir::{stamp, unique_stem};
 use crate::shared_store::{copy_tree, write_atomic, SharedStore, StoredValue};
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Store names older versions used (one `<name>.json` each).
@@ -417,9 +418,91 @@ pub fn last_report(root: &Path) -> Option<Value> {
     body.get("runs")?.as_array()?.last().cloned()
 }
 
+/// Old per-item suffixes: (folder, old suffix, the format inside the file, index file).
+const OLD_ITEM_NAMES: [(&str, &str, &str, &str); 2] = [
+    ("macros", ".adboard-macro.json", "adboard-macros", "_workspace.json"),
+    ("shell_scripts", ".adboard-shell.json", "adboard-shell-script", "_library.json"),
+];
+
+/// Renames `<Name>.adboard-macro.json` / `<Name>.adboard-shell.json` to `<Name>.json`.
+/// Only files whose `format` says they are ADBoard files are renamed; a clash gets
+/// `_2`, `_3`… so nothing is overwritten. The folder's index file is updated to the
+/// new names, so the saved order is kept. Each rename is recorded in `items`.
+pub fn rename_item_files(root: &Path) -> Vec<Item> {
+    let mut items = Vec::new();
+    for (folder, old_suffix, format, index_name) in OLD_ITEM_NAMES {
+        let dir = root.join(folder);
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let names: Vec<String> = entries.flatten().filter(|e| e.path().is_file()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        // Stems of every `.json` file already here, so a rename never takes a used name.
+        let mut taken: HashSet<String> = names
+            .iter()
+            .filter_map(|n| n.strip_suffix(".json").map(|stem| stem.to_lowercase()))
+            .collect();
+        let mut old_names: Vec<String> = names.iter().filter(|n| n.to_lowercase().ends_with(old_suffix)).cloned().collect();
+        old_names.sort();
+        let mut renamed: Vec<(String, String)> = Vec::new();
+        for old in old_names {
+            let path = dir.join(&old);
+            let is_adboard = std::fs::read(&path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .is_some_and(|body| body.get("format").and_then(Value::as_str) == Some(format));
+            if !is_adboard {
+                continue;
+            }
+            let stem = &old[..old.len() - old_suffix.len()];
+            let new_stem = unique_stem(stem, &taken);
+            let new = format!("{new_stem}.json");
+            taken.insert(new_stem.to_lowercase());
+            match std::fs::rename(&path, dir.join(&new)) {
+                Ok(()) => {
+                    items.push(item("file-name", &path, "renamed", format!("{old} → {new}")));
+                    renamed.push((old, new));
+                }
+                Err(error) => items.push(item("file-name", &path, "failed", format!("could not rename to {new}: {error}"))),
+            }
+        }
+        if renamed.is_empty() {
+            continue;
+        }
+        // Keep the index in step with the new names.
+        let index_path = dir.join(index_name);
+        let Ok(Some(mut index)) = std::fs::read(&index_path).map(|b| serde_json::from_slice::<Value>(&b).ok()) else { continue };
+        if let Some(list) = index.get_mut("items").and_then(Value::as_array_mut) {
+            for entry in list.iter_mut() {
+                let Some(file) = entry.get("file").and_then(Value::as_str).map(str::to_string) else { continue };
+                if let Some((_, new)) = renamed.iter().find(|(old, _)| *old == file) {
+                    entry["file"] = Value::String(new.clone());
+                }
+            }
+        }
+        match serde_json::to_vec_pretty(&index) {
+            Ok(bytes) => {
+                if let Err(error) = write_atomic(&index_path, &bytes) {
+                    items.push(item("file-name", &index_path, "failed", format!("renamed the files but could not update {index_name}: {error}")));
+                }
+            }
+            Err(error) => items.push(item("file-name", &index_path, "failed", error.to_string())),
+        }
+    }
+    if items.iter().any(|i| i.action == "renamed") {
+        let report = Report { ran_at: crate::macro_runner::now_ms(), backup: None, items: items.clone() };
+        save_report(root, &report);
+    }
+    items
+}
+
 /// Detect and migrate at startup, logging the outcome.
 pub fn run_at_startup() {
     let store = crate::shared_store::store();
+    for entry in rename_item_files(store.root()) {
+        if entry.action == "failed" {
+            tracing::warn!(source = %entry.source, "file name: {}", entry.detail);
+        } else {
+            tracing::info!(source = %entry.source, "file name: {}", entry.detail);
+        }
+    }
     let sources = detect(store.root());
     if sources.store_dirs.is_empty() && sources.auth_files.is_empty() && sources.files_dirs.is_empty() && sources.wireless_files.is_empty() {
         return;
@@ -482,9 +565,9 @@ mod tests {
         assert!(!report.failed(), "{:?}", report.items);
 
         // Data is in the new layout, under descriptive file names.
-        assert!(root.join("macros/Daily_Login.adboard-macro.json").is_file());
-        assert!(root.join("macros/Collect_Rewards.adboard-macro.json").is_file());
-        assert!(root.join("shell_scripts/Launch_Game.adboard-shell.json").is_file());
+        assert!(root.join("macros/Daily_Login.json").is_file());
+        assert!(root.join("macros/Collect_Rewards.json").is_file());
+        assert!(root.join("shell_scripts/Launch_Game.json").is_file());
         assert_eq!(store.get("macros").unwrap().value["tabs"].as_array().unwrap().len(), 2);
         assert!(root.join("backups/history/macros.6.json").is_file(), "earlier versions kept");
         assert!(crate::web_auth::credentials_file_ok(&root.join("config/auth.json")));
@@ -532,5 +615,31 @@ mod tests {
     #[test]
     fn labels_are_readable() {
         assert_eq!(label(Path::new("/repo/dist/windows/adboard-data")), "dist_windows_adboard-data");
+    }
+
+    #[test]
+    fn renames_old_item_names_without_overwriting_or_touching_other_json() {
+        let root = temp("rename-items");
+        let macros = root.join("macros");
+        std::fs::create_dir_all(&macros).unwrap();
+        let tab = json!({ "format": "adboard-macros", "version": 1, "app": "ADBoard", "tabs": [{ "id": "t1", "name": "Arena", "steps": [] }] });
+        std::fs::write(macros.join("Arena.adboard-macro.json"), serde_json::to_vec(&tab).unwrap()).unwrap();
+        // A plain Arena.json already exists: the renamed one must not take its name.
+        std::fs::write(macros.join("Arena.json"), serde_json::to_vec(&tab).unwrap()).unwrap();
+        // Not an ADBoard file: stays exactly as it is.
+        std::fs::write(macros.join("notes.json"), b"{\"hello\": 1}").unwrap();
+        let index = json!({ "version": 1, "items": [{ "id": "t1", "file": "Arena.adboard-macro.json" }] });
+        std::fs::write(macros.join("_workspace.json"), serde_json::to_vec(&index).unwrap()).unwrap();
+
+        let items = rename_item_files(&root);
+        assert!(items.iter().any(|i| i.action == "renamed" && i.detail.ends_with("→ Arena_2.json")), "{items:?}");
+        assert!(macros.join("Arena.json").is_file() && macros.join("Arena_2.json").is_file());
+        assert!(!macros.join("Arena.adboard-macro.json").exists());
+        assert!(macros.join("notes.json").is_file(), "non-ADBoard JSON is left alone");
+        let saved: Value = serde_json::from_slice(&std::fs::read(macros.join("_workspace.json")).unwrap()).unwrap();
+        assert_eq!(saved["items"][0]["file"], "Arena_2.json", "the index follows the rename");
+        // Running again changes nothing.
+        assert!(rename_item_files(&root).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

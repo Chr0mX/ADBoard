@@ -36,10 +36,10 @@ describe("file names", () => {
   });
 
   it("gives ADBoard extensions", () => {
-    assert.equal(macroFileName("Launch Game"), "Launch_Game.adboard-macro.json");
-    assert.equal(shellFileName("Daily Login"), "Daily_Login.adboard-shell.json");
-    assert.equal(macroFileName(""), "Untitled_macro.adboard-macro.json");
-    assert.equal(shellFileName(""), "Untitled_script.adboard-shell.json");
+    assert.equal(macroFileName("Launch Game"), "Launch_Game.json");
+    assert.equal(shellFileName("Daily Login"), "Daily_Login.json");
+    assert.equal(macroFileName(""), "Untitled_macro.json");
+    assert.equal(shellFileName(""), "Untitled_script.json");
   });
 
   it("suffixes duplicate display names case-insensitively", () => {

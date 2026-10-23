@@ -120,8 +120,8 @@ Data & storage now lives in the **Storage** tab. The Settings page has a short c
 | Folder | What is in it |
 |---|---|
 | **Data folder** | Everything below |
-| **macros** | Touch macros, one `.adboard-macro.json` file each |
-| **shell_scripts** | Shell Automation jobs, one `.adboard-shell.json` file each, and `_library.json` (apps, variables, groups, profiles) |
+| **macros** | Touch macros, one `.json` file each |
+| **shell_scripts** | Shell Automation jobs, one `.json` file each, and `_library.json` (apps, variables, groups, profiles) |
 | **config** | Settings, layout per browser, editor state, queue, schedules, phone choices and the sign-in account |
 | **logs** | `adboard.log` and the Shell Automation run history |
 | **backups** | Earlier versions, deleted items, unreadable files, **Back up now** copies and data moved from older versions |

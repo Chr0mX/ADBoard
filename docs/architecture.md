@@ -36,8 +36,8 @@ Application
 │   ├── hooks/use-device-video.ts
 │   └── lib/api/{client,auth}.ts
 └── Data (data_dir.rs, shared_store.rs, migrate.rs; see docs/storage.md)
-    ├── %LOCALAPPDATA%\ADBoard\macros         one .adboard-macro.json per touch macro
-    ├── …\shell_scripts                         one .adboard-shell.json per script
+    ├── %LOCALAPPDATA%\ADBoard\macros         one .json per touch macro
+    ├── …\shell_scripts                         one .json per script
     ├── …\config, logs, backups, files, temp
     └── browser storage adboard-*              working copy, mirrored to config\
 ```

@@ -16,7 +16,7 @@ Each tab is a separate macro with its own data:
 - target phones
 - notes
 
-Each tab is kept on ADBoard as its own file, `<Name>.adboard-macro.json` in the `macros` folder of the data folder (`%LOCALAPPDATA%\ADBoard`; see [storage.md](storage.md)) and shared by every browser that opens this ADBoard. Each browser keeps a copy in `localStorage["adboard-macros"]` (up to 50 tabs) and uses it when ADBoard can't be reached. See [Sharing and versions](#sharing-and-versions).
+Each tab is kept on ADBoard as its own file, `<Name>.json` in the `macros` folder of the data folder (`%LOCALAPPDATA%\ADBoard`; see [storage.md](storage.md)) and shared by every browser that opens this ADBoard. Each browser keeps a copy in `localStorage["adboard-macros"]` (up to 50 tabs) and uses it when ADBoard can't be reached. See [Sharing and versions](#sharing-and-versions).
 
 - **New / Rename / Duplicate / Delete / ◀ ▶** manage tabs. Double-click a tab to rename it. A duplicate gets fresh ids, so editing it never touches the original.
 - Switching tabs keeps each tab's selected step and preview screen.
@@ -122,7 +122,7 @@ Positions are stored in the tab's **reference screen**, the resolution the macro
 
 ## Import / export
 
-**Export** offers this tab (`<Name>.adboard-macro.json`), all tabs (`adboard-macros.adboard-macro.json`), or Auto Clicker format. Chrome and Edge ask where to save it; other browsers download it. The whole library, including Shell Automation, is exported from Settings → Data & storage as `adboard-library.json`. **Import** accepts:
+**Export** offers this tab (`<Name>.json`), all tabs (`adboard-macros.json`), or Auto Clicker format. Chrome and Edge ask where to save it; other browsers download it. The whole library, including Shell Automation, is exported from Settings → Data & storage as `adboard-library.json`. **Import** accepts:
 
 | File | Notes |
 |---|---|
@@ -155,7 +155,7 @@ Macros, the queue, schedules and phone choices are shared through ADBoard (`/api
 - ADBoard keeps the last 20 saved copies in `backups\history` in the data folder.
 - **Versions** (next to Import / Export) lists both. **Restore** puts one back; a restore is itself a new version, so it can be undone.
 
-Macros lost before this protection existed were browser data, not code. Bring them back with **Import** from a saved `.adboard-macro.json` (or older `.adboard-macros.json`) or Auto Clicker file.
+Macros lost before this protection existed were browser data, not code. Bring them back with **Import** from a saved `.json` (or older `.adboard-macros.json`) or Auto Clicker file.
 
 ## Limits
 

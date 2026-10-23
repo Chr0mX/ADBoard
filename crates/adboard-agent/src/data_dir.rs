@@ -16,8 +16,8 @@
 //! The working directory is never used. Layout:
 //!
 //! ```text
-//! macros/          one <Name>.adboard-macro.json per touch macro, _workspace.json
-//! shell_scripts/   one <Name>.adboard-shell.json per Shell Automation script, _library.json
+//! macros/          one <Name>.json per touch macro, _workspace.json
+//! shell_scripts/   one <Name>.json per Shell Automation script, _library.json
 //! config/          user_config.json, browser_state.json, builder_state.json, …
 //! logs/            adboard.log, shell_run_history.json
 //! backups/         history/, deleted/, corrupt/, legacy-<date>/, backup-<date>/

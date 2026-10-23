@@ -6,10 +6,10 @@
 //! The browser API is name-based (`/api/store/{name}`, a revision number per
 //! name, 409 on a stale write). On disk:
 //!
-//! - `macros` → one `macros/<Name>.adboard-macro.json` per touch macro (the
+//! - `macros` → one `macros/<Name>.json` per touch macro (the
 //!   same format as an exported macro) plus `macros/_workspace.json` (order,
 //!   active tab).
-//! - `desk` → one `shell_scripts/<Name>.adboard-shell.json` per Shell
+//! - `desk` → one `shell_scripts/<Name>.json` per Shell
 //!   Automation script, `shell_scripts/_library.json` (apps, variables,
 //!   groups, tags, profiles) and `logs/shell_run_history.json` (runs).
 //! - everything else → one plain JSON file in `config/`.
@@ -46,8 +46,11 @@ pub const MAX_STORE_BYTES: usize = 8 * 1024 * 1024;
 /// Earlier revisions kept per name in `backups/history/`, so an overwrite can be undone.
 pub const HISTORY_LIMIT: usize = 20;
 
-pub const MACRO_EXT: &str = ".adboard-macro.json";
-pub const SHELL_EXT: &str = ".adboard-shell.json";
+/// Macro and script files are `<Name>.json`: the folder says what they are, and the
+/// `format` field inside says it again. Older `<Name>.adboard-*.json` names are renamed
+/// at startup (see migrate::rename_item_files).
+pub const MACRO_EXT: &str = ".json";
+pub const SHELL_EXT: &str = ".json";
 pub const MACRO_FORMAT: &str = "adboard-macros";
 pub const SHELL_FORMAT: &str = "adboard-shell-script";
 
@@ -396,7 +399,7 @@ impl SharedStore {
                     .flatten()
                     .filter(|e| e.path().is_file())
                     .map(|e| e.file_name().to_string_lossy().to_string())
-                    .filter(|n| n.to_lowercase().ends_with(kind.ext()))
+                    .filter(|n| n.to_lowercase().ends_with(kind.ext()) && !n.eq_ignore_ascii_case(kind.index()))
                     .collect()
             })
             .unwrap_or_default();
@@ -448,6 +451,10 @@ impl SharedStore {
                     if !single {
                         absorbed.push(file.clone());
                     }
+                }
+                // Valid JSON that is not an ADBoard file of this kind: left where it is.
+                Err(error) if matches!(read_json(&path), Ok(Some(_))) => {
+                    warnings.push(format!("{file} is not an ADBoard {} file, so it was left alone ({error})", kind.dir()));
                 }
                 Err(error) => warnings.push(self.quarantine(&path, &error, true)),
             }
@@ -829,20 +836,20 @@ mod tests {
         let (store, dir) = temp_store();
         let mdir = dir.join("macros");
         store.put("macros", workspace(vec![tab("t1", "Daily Login"), tab("t2", "Collect:Rewards?")]), 0).unwrap();
-        assert_eq!(files_in(&mdir), vec!["Collect_Rewards_.adboard-macro.json", "Daily_Login.adboard-macro.json", "_workspace.json"]);
+        assert_eq!(files_in(&mdir), vec!["Collect_Rewards_.json", "Daily_Login.json", "_workspace.json"]);
         // Each file is a normal macro export (importable as is).
-        let body: Value = serde_json::from_slice(&std::fs::read(mdir.join("Daily_Login.adboard-macro.json")).unwrap()).unwrap();
+        let body: Value = serde_json::from_slice(&std::fs::read(mdir.join("Daily_Login.json")).unwrap()).unwrap();
         assert_eq!(body["format"], MACRO_FORMAT);
         assert_eq!(body["tabs"][0]["name"], "Daily Login");
         // Same name twice → _2; rename moves the file, keeps the id.
         store.put("macros", workspace(vec![tab("t1", "Morning"), tab("t2", "Collect:Rewards?"), tab("t3", "Morning")]), 1).unwrap();
         assert_eq!(
             files_in(&mdir),
-            vec!["Collect_Rewards_.adboard-macro.json", "Morning.adboard-macro.json", "Morning_2.adboard-macro.json", "_workspace.json"]
+            vec!["Collect_Rewards_.json", "Morning.json", "Morning_2.json", "_workspace.json"]
         );
         // Delete: the file goes to backups/deleted, nothing is erased.
         store.put("macros", workspace(vec![tab("t1", "Morning")]), 2).unwrap();
-        assert_eq!(files_in(&mdir), vec!["Morning.adboard-macro.json", "_workspace.json"]);
+        assert_eq!(files_in(&mdir), vec!["Morning.json", "_workspace.json"]);
         let deleted = files_in(&dir.join("backups/deleted"));
         assert_eq!(deleted.len(), 2, "{deleted:?}");
         // Round trip after a restart: same value, same order.
@@ -867,9 +874,9 @@ mod tests {
         store.put("desk", desk.clone(), 0).unwrap();
         assert_eq!(
             files_in(&dir.join("shell_scripts")),
-            vec!["Daily_Device_Setup.adboard-shell.json", "Launch_Game.adboard-shell.json", "_library.json"]
+            vec!["Daily_Device_Setup.json", "Launch_Game.json", "_library.json"]
         );
-        let script: Value = serde_json::from_slice(&std::fs::read(dir.join("shell_scripts/Launch_Game.adboard-shell.json")).unwrap()).unwrap();
+        let script: Value = serde_json::from_slice(&std::fs::read(dir.join("shell_scripts/Launch_Game.json")).unwrap()).unwrap();
         assert_eq!((script["format"].as_str(), script["script"]["id"].as_str()), (Some(SHELL_FORMAT), Some("m2")));
         assert!(dir.join("logs/shell_run_history.json").is_file());
         let library = std::fs::read_to_string(dir.join("shell_scripts/_library.json")).unwrap();
@@ -886,7 +893,7 @@ mod tests {
         // While ADBoard is closed: edit a config file, drop in an exported file with two tabs.
         std::fs::write(dir.join("config/user_config.json"), r#"{ "keyboard": "0" }"#).unwrap();
         let export = json!({ "format": MACRO_FORMAT, "version": 1, "tabs": [tab("x1", "B"), tab("t1", "Dup id")] });
-        std::fs::write(dir.join("macros/Shared.adboard-macro.json"), serde_json::to_vec(&export).unwrap()).unwrap();
+        std::fs::write(dir.join("macros/Shared.json"), serde_json::to_vec(&export).unwrap()).unwrap();
 
         let reopened = SharedStore::new(dir.clone());
         let config = reopened.get("user-config").unwrap();
@@ -900,9 +907,9 @@ mod tests {
         reopened.put("macros", macros.value.clone(), 2).unwrap();
         assert_eq!(
             files_in(&dir.join("macros")),
-            vec!["A.adboard-macro.json", "B.adboard-macro.json", "Dup_id.adboard-macro.json", "_workspace.json"]
+            vec!["A.json", "B.json", "Dup_id.json", "_workspace.json"]
         );
-        assert!(files_in(&dir.join("backups/deleted")).iter().any(|f| f.ends_with("Shared.adboard-macro.json")));
+        assert!(files_in(&dir.join("backups/deleted")).iter().any(|f| f.ends_with("Shared.json")));
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -910,17 +917,17 @@ mod tests {
     fn corrupt_files_are_set_aside_with_a_warning() {
         let (store, dir) = temp_store();
         store.put("macros", workspace(vec![tab("t1", "Good")]), 0).unwrap();
-        std::fs::write(dir.join("macros/Broken.adboard-macro.json"), "{ not json").unwrap();
+        std::fs::write(dir.join("macros/Broken.json"), "{ not json").unwrap();
         std::fs::write(dir.join("config/user_config.json"), "{ truncated").unwrap();
         let reopened = SharedStore::new(dir.clone());
         let macros = reopened.get("macros").unwrap();
         assert_eq!(macros.value["tabs"].as_array().unwrap().len(), 1);
-        assert!(macros.warnings.iter().any(|w| w.contains("Broken.adboard-macro.json")), "{:?}", macros.warnings);
+        assert!(macros.warnings.iter().any(|w| w.contains("Broken.json")), "{:?}", macros.warnings);
         let config = reopened.get("user-config").unwrap();
         assert_eq!(config.value, Value::Null, "defaults");
         assert_eq!(config.warnings.len(), 1);
         assert_eq!(files_in(&dir.join("backups/corrupt")).len(), 2);
-        assert!(!dir.join("macros/Broken.adboard-macro.json").exists(), "moved out of the way");
+        assert!(!dir.join("macros/Broken.json").exists(), "moved out of the way");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -953,7 +960,7 @@ mod tests {
         store.put("user-config", json!({ "a": 1 }), 0).unwrap();
         let (target, count) = store.backup_now().unwrap();
         assert!(count >= 3, "{count}");
-        assert!(target.join("macros/A.adboard-macro.json").is_file());
+        assert!(target.join("macros/A.json").is_file());
         assert!(target.join("config/user_config.json").is_file());
         let _ = std::fs::remove_dir_all(dir);
     }

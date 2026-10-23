@@ -57,7 +57,7 @@ Each macro is one **tab** at the top of the page. A tab shows its name, a small 
 
 **Names are unique.** Every macro is its own file, so two macros cannot share a name. If you pick a name that is taken, ADBoard adds " 2" (then " 3" and so on) and tells you, for example: "Farm" is taken; renamed to "Farm 2". The check ignores upper and lower case.
 
-**Where the file is.** Under the buttons you see, for example, "Saved in /home/you/.local/share/ADBoard/macros as Daily_Login.adboard-macro.json". Each macro is saved as `<Name>.adboard-macro.json` in the `macros` folder of the ADBoard data folder (on Windows that is `%LOCALAPPDATA%\ADBoard`). Spaces and characters Windows does not allow become `_` in the file name; the name you see in the tab stays as you typed it. **Open folder** opens that folder on the computer where ADBoard runs. See [Where ADBoard keeps your data](../storage.md) for the whole folder layout.
+**Where the file is.** Under the buttons you see, for example, "Saved in /home/you/.local/share/ADBoard/macros as Daily_Login.json". Each macro is saved as `<Name>.json` in the `macros` folder of the ADBoard data folder (on Windows that is `%LOCALAPPDATA%\ADBoard`). Spaces and characters Windows does not allow become `_` in the file name; the name you see in the tab stays as you typed it. **Open folder** opens that folder on the computer where ADBoard runs. See [Where ADBoard keeps your data](../storage.md) for the whole folder layout.
 
 **If a file cannot be read.** When ADBoard starts and finds a macro file it cannot read, it keeps a copy of the file in the `backups\corrupt` folder, loads all the other macros as normal, and shows a warning in a coloured box under this line. Nothing is deleted.
 
@@ -244,8 +244,8 @@ A scheduled macro plays on the phones ticked in that macro. If a phone is busy o
 
 | Choice | File |
 |---|---|
-| **This tab** | `<Name>.adboard-macro.json` (for example `Daily_Login.adboard-macro.json`) |
-| **All tabs** | `adboard-macros.adboard-macro.json` |
+| **This tab** | `<Name>.json` (for example `Daily_Login.json`) |
+| **All tabs** | `adboard-macros.json` |
 | **This tab for Auto Clicker** | `<Name>-autoclicker.txt` |
 | **All tabs for Auto Clicker** | `autoclicker-config.txt` |
 

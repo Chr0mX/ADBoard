@@ -6,7 +6,7 @@
 
 - **Saved jobs:** every job, grouped by folder. Only folders that hold jobs are shown. Each job has:
   - **Open** (in the Builder), **Duplicate**, **Rename**, **Export** and **Delete** (asks first)
-  - **New job**, **Import** and **Export library**. Import reads an ADBoard script file (`.adboard-shell.json`), an older desk export or a single job file, by its contents, and adds to the library: a script already there is skipped and a name clash gets " 2". **Export** on a job saves `<Name>.adboard-shell.json`; **Export library** saves everything (touch macros, scripts, queue and schedules) as `adboard-library.json`.
+  - **New job**, **Import** and **Export library**. Import reads an ADBoard script file (`.json`), an older desk export or a single job file, by its contents, and adds to the library: a script already there is skipped and a name clash gets " 2". **Export** on a job saves `<Name>.json`; **Export library** saves everything (touch macros, scripts, queue and schedules) as `adboard-library.json`.
 - **Actions:** every action a job can use, grouped by category. Each card says what the action does and how it reaches the phone. **Add** puts it in the open job and switches to the Builder (with no job open, it creates one).
 
 | Category | Actions |

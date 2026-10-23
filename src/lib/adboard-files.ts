@@ -16,10 +16,10 @@ import type { DeskLibrary, SavedMacro } from "@/lib/desk/store";
 
 /* ------------------------------ names ------------------------------ */
 
-/** Touch macro file (one or more macro tabs). */
-export const MACRO_EXT = ".adboard-macro.json";
-/** Shell Automation script file (one script). */
-export const SHELL_EXT = ".adboard-shell.json";
+/** Touch macro file (one or more macro tabs): `<Name>.json`. The `format` inside says what it is. */
+export const MACRO_EXT = ".json";
+/** Shell Automation script file (one script): `<Name>.json`. */
+export const SHELL_EXT = ".json";
 /** Whole library: touch macros, Shell Automation, queue, schedules, phone choices. */
 export const LIBRARY_FILE = "adboard-library.json";
 /** All touch macros in one file. */
@@ -126,7 +126,7 @@ export function parseShellImport(text: string): ShellImport {
     return { kind: "library", library: parsed as Partial<DeskLibrary>, source: "desk" };
   }
   if (isJob(parsed)) return { kind: "scripts", scripts: [parsed], source: "job" };
-  throw new Error("Not a Shell Automation file — expected an ADBoard script (.adboard-shell.json) or library file");
+  throw new Error("Not a Shell Automation file — expected an ADBoard script or library file");
 }
 
 /* --------------------------- library file --------------------------- */

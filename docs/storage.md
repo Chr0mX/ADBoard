@@ -17,7 +17,7 @@ In the **Storage** tab:
 
 - **Switch to app folder** / **Switch to user folder** changes the location between the app folder and your user folder. If the other folder already has data, ADBoard only saves the location and copies nothing. If it is empty, the data is copied there and checked first. Both copies are kept, so you can switch back at any time.
 - **Use this folder** saves a folder that already has data, or an empty one. Nothing is copied.
-- **Move data here** copies everything into a new folder, then checks the copy before saving the location. A folder that already has files is refused. A folder that holds only `temp\` counts as empty. Temporary files (`temp\`) are never copied. The old folder is never deleted.
+- **Move data here** copies everything into a new folder, then checks the copy before saving the location. A folder that already has files is refused. A folder that holds only `temp` counts as empty. Temporary files (`temp`) are never copied. The old folder is never deleted.
 
 Restart ADBoard to use the new folder. Stop changing things while a move runs.
 
@@ -25,9 +25,9 @@ Restart ADBoard to use the new folder. Stop changing things while a move runs.
 
 ```
 ADBoard\
-├── macros\          <Name>.adboard-macro.json   one file per touch macro
+├── macros\          <Name>.json   one file per touch macro
 │                    _workspace.json              tab order and the open tab
-├── shell_scripts\   <Name>.adboard-shell.json   one file per Shell Automation script
+├── shell_scripts\   <Name>.json   one file per Shell Automation script
 │                    _library.json                apps, variables, groups, tags, phone profiles
 ├── config\          user_config.json             settings shared by every browser
 │                    browser_state.json           layout and navigation, per browser
@@ -50,7 +50,7 @@ ADBoard\
 
 ## What is saved, and how
 
-- **Automation files** (`macros\`, `shell_scripts\`) are saved as soon as you
+- **Automation files** (`macros`, `shell_scripts`) are saved as soon as you
   edit. Each file is named after the item: invalid Windows characters
   (`<>:"/\|?*`) and spaces become `_`, reserved names such as `CON` get a `_`,
   names are capped at 80 characters, and an empty name becomes
@@ -70,22 +70,30 @@ ADBoard\
   their own storage, so ADBoard still works for a moment if the agent restarts.
 - **Not saved:** passwords, session cookies and API tokens never go into these
   files. The sign-in account is stored only as a salted hash in `config\auth.json`.
-- **Temporary:** `temp\`, live runs, and floating panel positions (per tab).
+- **Temporary:** `temp`, live runs, and floating panel positions (per tab).
 
 Every write goes to a temporary file first and then replaces the old one, so a
 crash can't leave half a file.
+
+## File names
+
+Macro and script files are named `<Name>.json`, for example `Arena.json` or `New_macro.json`. The folder says what a file is, and the `format` field inside each file says it again (`adboard-macros` or `adboard-shell-script`). ADBoard finds its files by that field, not by the name.
+
+Older versions named them `<Name>.adboard-macro.json` and `<Name>.adboard-shell.json`. On the first start after the update, ADBoard renames those files to `<Name>.json` and updates the folder's index (`_workspace.json` or `_library.json`) to match, so the order is kept. If a plain `<Name>.json` already exists, the renamed file becomes `<Name>_2.json`. No file is overwritten. Each rename is recorded in `config\migration.json`.
+
+Any other `.json` file in `macros` or `shell_scripts` is not an ADBoard file. ADBoard leaves it where it is and shows a warning.
 
 ## Editing files by hand
 
 Safe to edit or copy in **while ADBoard is closed**:
 
-- `macros\*.adboard-macro.json`: a touch macro file (also what Export makes,
+- `macros\*.json`: a touch macro file (also what Export makes,
   so you can drop an exported macro in here).
-- `shell_scripts\*.adboard-shell.json`: a Shell Automation script file.
+- `shell_scripts\*.json`: a Shell Automation script file.
 - `config\user_config.json`.
 
 ADBoard notices the change at the next start. A file it can't read is copied to
-`backups\corrupt\` and reported in Macros or Shell Automation; the rest still
+`backups\corrupt` and reported in Macros or Shell Automation; the rest still
 loads, and nothing is deleted.
 
 Don't edit `.revisions.json`, `browser_state.json`, `builder_state.json`,
@@ -95,9 +103,9 @@ Don't edit `.revisions.json`, `browser_state.json`, `builder_state.json`,
 
 | What | File | Where |
 |---|---|---|
-| One touch macro | `<Name>.adboard-macro.json` | Macros → Export → This tab |
-| All touch macros | `adboard-macros.adboard-macro.json` | Macros → Export → All tabs |
-| One Shell Automation script | `<Name>.adboard-shell.json` | Shell Automation → Library → Export |
+| One touch macro | `<Name>.json` | Macros → Export → This tab |
+| All touch macros | `adboard-macros.json` | Macros → Export → All tabs |
+| One Shell Automation script | `<Name>.json` | Shell Automation → Library → Export |
 | Everything | `adboard-library.json` | Storage tab (export, import and backup), or Shell Automation → Export library |
 | Auto Clicker | `<Name>-autoclicker.txt` | Macros → Export (third-party format) |
 
@@ -117,7 +125,7 @@ macro choices.
   (same id and contents) is skipped, and a name clash gets " 2".
 - **Library import** offers **Add**, which keeps the current items, skips ones
   already there and renames clashes, or **Replace**, which asks to confirm.
-  Either way the data folder is backed up to `backups\backup-<date>\` first.
+  Either way the data folder is backed up to `backups\backup-<date>` first.
 
 ## Moving in data from older versions
 
@@ -125,13 +133,13 @@ On start, ADBoard looks for data from before it used the data folder. It checks
 next to `ADBoard.exe`, in the repo's `dist\windows`, the repo, the folder it was
 started from, and `PHONECONTROL_DATA_DIR`. It looks for:
 
-- `adboard-data\` (macros, Shell Automation, queue, schedules, phone choices)
+- `adboard-data` (macros, Shell Automation, queue, schedules, phone choices)
 - `adboard-auth.json` / `rasiel-auth.json` (sign-in account)
-- `data\phonecontrol-files\` (Files area)
+- `data\phonecontrol-files` (Files area)
 - `data\wireless-adb.json` (saved Wi-Fi phones)
 
 Each one is copied in and read back to check it matches. Only then is the
-original moved to `backups\legacy-<date>\`, with a `MOVED_TO_ADBOARD.txt` note
+original moved to `backups\legacy-<date>`, with a `MOVED_TO_ADBOARD.txt` note
 left in its old place. Existing data is never overwritten: if the data folder
 already has macros, the older copy is kept in the backup and listed in
 the Storage tab, where you can import it. If a check fails, the
@@ -147,8 +155,8 @@ Browser storage from older versions (`phonecontrol-*` keys) moves to the new
 |---|---|
 | `ADBOARD_DATA_DIR` | Data folder (portable mode, tests) |
 | `ADBOARD_APP_DATA_DIR` | The app folder: the default data location and the target of the Switch button. The Windows pack sets it to the `ADBoard` folder in the repository root. |
-| `ADBOARD_FILES` | Files area, if not `files\` |
-| `ADBOARD_TEMP` | Temp folder, if not `temp\` |
+| `ADBOARD_FILES` | Files area, if not `files` |
+| `ADBOARD_TEMP` | Temp folder, if not `temp` |
 | `ADBOARD_AUTH_FILE` | Sign-in account file, if not `config\auth.json` |
 | `ADBOARD_WIRELESS` | Saved Wi-Fi phones file, if not `config\wireless_devices.json` |
 

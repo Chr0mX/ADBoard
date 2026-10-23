@@ -33,8 +33,8 @@ export interface StorageInfo {
 type Folder = "root" | "macros" | "shell_scripts" | "config" | "logs" | "backups" | "files";
 
 const FOLDERS: { id: Folder; label: string; what: string }[] = [
-  { id: "macros", label: "macros", what: "Touch macros, one .adboard-macro.json file each" },
-  { id: "shell_scripts", label: "shell_scripts", what: "Shell Automation scripts, one .adboard-shell.json file each, and _library.json (apps, variables, groups, profiles)" },
+  { id: "macros", label: "macros", what: "Touch macros, one .json file each" },
+  { id: "shell_scripts", label: "shell_scripts", what: "Shell Automation scripts, one .json file each, and _library.json (apps, variables, groups, profiles)" },
   { id: "config", label: "config", what: "Settings (user_config.json), layout per browser, editor state, queue, schedules, phone choices, sign-in account" },
   { id: "logs", label: "logs", what: "adboard.log and the Shell Automation run history" },
   { id: "backups", label: "backups", what: "Earlier versions, deleted items, unreadable files, Back up now copies, data moved from older versions" },
