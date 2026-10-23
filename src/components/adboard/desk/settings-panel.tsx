@@ -203,7 +203,7 @@ export function SettingsPanel() {
           </section>
         )}
 
-        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3 lg:col-span-2" data-settings-data-link>
+        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-data-link>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Data &amp; storage</h3>
           <p className="text-xs text-[var(--pc-muted)]">Where your data is kept, how to move it, and export, import and backup live in the Storage tab.</p>
           <button type="button" className="pc-toggle pc-toggle-md self-start" onClick={() => desk?.open("storage")}>
