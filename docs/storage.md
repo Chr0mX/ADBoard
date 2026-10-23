@@ -1,6 +1,6 @@
 # Where ADBoard keeps your data
 
-ADBoard keeps everything you make or change in one **data folder**. By default that folder is `adboard-data`, next to `ADBoard.exe` (or in the repository root for development builds). Git pulls, updates and reinstalls don't touch it.
+ADBoard keeps everything you make or change in one **data folder**. On the Windows pack that folder is `ADBoard` in the repository root, for example `D:\GitHub\Phone-farm\ADBoard`. Other installs use `adboard-data` next to `ADBoard.exe`. Git pulls, updates and reinstalls don't touch it.
 
 The **Storage** tab shows where the folder is, how big each part is, and lets you choose another location.
 
@@ -15,10 +15,9 @@ The **Storage** tab shows where the folder is, how big each part is, and lets yo
 
 In the **Storage** tab:
 
-- **Switch to app folder** / **Switch to user folder** moves the data between the app folder (`adboard-data` beside `ADBoard.exe`) and your user folder. If the other folder already has data, ADBoard only uses it and copies nothing. Otherwise the data is copied there and checked first. Both copies are kept, so you can switch back at any time.
-
+- **Switch to app folder** / **Switch to user folder** changes the location between the app folder and your user folder. If the other folder already has data, ADBoard only saves the location and copies nothing. If it is empty, the data is copied there and checked first. Both copies are kept, so you can switch back at any time.
 - **Use this folder** saves a folder that already has data, or an empty one. Nothing is copied.
-- **Move data here** copies everything into a new, empty folder, then checks the copy before saving the location. Temporary files (`temp\`) are not copied. The old folder is never deleted.
+- **Move data here** copies everything into a new folder, then checks the copy before saving the location. A folder that already has files is refused. A folder that holds only `temp\` counts as empty. Temporary files (`temp\`) are never copied. The old folder is never deleted.
 
 Restart ADBoard to use the new folder. Stop changing things while a move runs.
 
@@ -99,7 +98,7 @@ Don't edit `.revisions.json`, `browser_state.json`, `builder_state.json`,
 | One touch macro | `<Name>.adboard-macro.json` | Macros → Export → This tab |
 | All touch macros | `adboard-macros.adboard-macro.json` | Macros → Export → All tabs |
 | One Shell Automation script | `<Name>.adboard-shell.json` | Shell Automation → Library → Export |
-| Everything | `adboard-library.json` | Settings → Data & storage, or Shell Automation → Export library |
+| Everything | `adboard-library.json` | Storage tab (export, import and backup), or Shell Automation → Export library |
 | Auto Clicker | `<Name>-autoclicker.txt` | Macros → Export (third-party format) |
 
 `adboard-library.json` holds touch macros, Shell Automation scripts, apps,
@@ -135,7 +134,7 @@ Each one is copied in and read back to check it matches. Only then is the
 original moved to `backups\legacy-<date>\`, with a `MOVED_TO_ADBOARD.txt` note
 left in its old place. Existing data is never overwritten: if the data folder
 already has macros, the older copy is kept in the backup and listed in
-Settings → Data & storage, where you can import it. If a check fails, the
+the Storage tab, where you can import it. If a check fails, the
 original stays where it was and the error is shown. The result is recorded in
 `config\migration.json`.
 

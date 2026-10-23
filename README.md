@@ -333,7 +333,7 @@ The tabs across the top, left to right (each has a full page in the [user guide]
 - <img src="site/assets/icon-device-fleet.svg" width="20" height="20" alt="" align="absmiddle"> **Hosts:** the computers that run ADB and their phones. A second PC or an LXC joins as an agent (see [Real Windows + Linux LXC](#real-windows--linux-lxc)).
 - <img src="site/assets/icon-settings.svg" width="20" height="20" alt="" align="absmiddle"> **Storage:** where your data is kept (the folder, what is in each part, and the size of each). Choose another folder, either to use one that already has data or to move the data there. A new location takes effect after a restart.
 - <img src="site/assets/icon-settings.svg" width="20" height="20" alt="" align="absmiddle"> **Storage:** where your data is kept (the folder, what is in each part, and the size of each). Choose another folder, either to use one that already has data or to move the data there. A new location takes effect after a restart.
-- <img src="site/assets/icon-settings.svg" width="20" height="20" alt="" align="absmiddle"> **Settings:** stream quality and screen size, keyboard, cursor and touch diagnostics, stats on phones, grid and taskbar options, the account, installing ADBoard on an iPhone, and **Data & storage** (where your data is, Back up now, export or import the whole library). See [Your data](#your-data).
+- <img src="site/assets/icon-settings.svg" width="20" height="20" alt="" align="absmiddle"> **Settings:** stream quality and screen size, keyboard, cursor and touch diagnostics, stats on phones, grid and taskbar options, the account, installing ADBoard on an iPhone, and **Storage** (where your data is kept, switching or moving it, Back up now, export or import the whole library). See [Your data](#your-data).
 
 ## Layout tips
 
@@ -359,7 +359,7 @@ Macros, Shell Automation scripts, settings, logs and backups live in one folder 
 | macOS | `~/Library/Application Support/ADBoard` |
 | Linux / LXC | `$XDG_DATA_HOME/ADBoard` or `~/.local/share/ADBoard` |
 
-Each touch macro is saved as `macros\<Name>.adboard-macro.json` and each Shell Automation script as `shell_scripts\<Name>.adboard-shell.json`. **Settings → Data & storage** shows the paths and opens the folders, backs up, and exports or imports the whole library (`adboard-library.json`). Set `ADBOARD_DATA_DIR` for a portable install. Data from older versions (`adboard-data`, `data\phonecontrol-files`) is moved in on first start, and the originals are kept in `backups\legacy-<date>`. Details: [docs/storage.md](docs/storage.md).
+Each touch macro is saved as `macros\<Name>.adboard-macro.json` and each Shell Automation script as `shell_scripts\<Name>.adboard-shell.json`. The **Storage** tab shows the paths and opens the folders, switches or moves the data, backs up, and exports or imports the whole library (`adboard-library.json`). On the Windows pack the data is kept in the `ADBoard` folder in the repository root. Set `ADBOARD_DATA_DIR` for a portable install. Data from older versions (`adboard-data`, `data\phonecontrol-files`) is moved in on first start, and the originals are kept in `backups\legacy-<date>`. Details: [docs/storage.md](docs/storage.md).
 
 ## Temporary files
 
