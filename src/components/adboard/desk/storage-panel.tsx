@@ -6,9 +6,10 @@ import { ConfirmDialog, PanelFrame } from "@/components/adboard/desk/bits";
 import { DataStorageCard, openFolder, refreshStorageInfo, useStorageInfo } from "@/components/adboard/desk/data-storage";
 
 /*
- * Settings-free home for "where is my data": the current folder, what is in
- * each folder, and a choice of any other folder (use it, or move the data
- * there). A changed location takes effect on the next start of ADBoard.
+ * Settings-free home for "where is my data": the current folder, the two
+ * standard folders (switch between them), and any other folder (use it, or
+ * move the data there). A changed location takes effect on the next start of
+ * ADBoard.
  */
 
 const SOURCE_TEXT: Record<string, string> = {
@@ -46,13 +47,15 @@ async function postLocation(path: string, mode: "use" | "move" | "switch") {
   return body as { copied?: boolean; files?: number; bytes?: number; to?: string };
 }
 
+type StandardKey = "app" | "user";
+
 export function StoragePanel() {
   const { info, error } = useStorageInfo();
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [confirmMove, setConfirmMove] = useState(false);
-  const [confirmSwitch, setConfirmSwitch] = useState(false);
+  const [confirmSwitch, setConfirmSwitch] = useState<StandardKey | null>(null);
   const viaAgent = agentBaseUrl() !== null;
 
   const run = async (work: () => Promise<string>) => {
@@ -75,87 +78,130 @@ export function StoragePanel() {
 
   const location = info?.location;
   const targets = info?.targets;
-  const inApp = samePath(info?.dataDir, targets?.app);
-  const inUser = samePath(info?.dataDir, targets?.user);
-  // Switch to the place the data is not in (app folder first, if it is unclear).
-  const switchTo = inApp ? "user" : "app";
-  const switchPath = switchTo === "app" ? targets?.app : targets?.user;
-  const switchHasData = switchTo === "app" ? targets?.appHasData : targets?.userHasData;
-  const switchLabel = switchTo === "app" ? "Switch to app folder" : "Switch to user folder";
+  const dataDir = info?.dataDir;
+  const inApp = samePath(dataDir, targets?.app);
+  const inUser = samePath(dataDir, targets?.user);
+  const customPath = target.trim();
+  const customIsCurrent = !!customPath && samePath(customPath, dataDir);
 
-  const switchData = () => {
-    setConfirmSwitch(false);
-    if (!switchPath) return;
+  const standard: Record<StandardKey, { title: string; what: string; path: string | null | undefined; hasData: boolean | undefined; current: boolean }> = {
+    app: {
+      title: "App Folder (Default)",
+      what: "Stores data beside the application.",
+      path: targets?.app,
+      hasData: targets?.appHasData,
+      current: inApp,
+    },
+    user: {
+      title: "User Folder",
+      what: "Stores data separately from the application.",
+      path: targets?.user,
+      hasData: targets?.userHasData,
+      current: inUser,
+    },
+  };
+  const currentLabel = inApp ? "the app folder" : inUser ? "the user folder" : "a custom folder";
+
+  const switchData = (key: StandardKey) => {
+    setConfirmSwitch(null);
+    const path = standard[key].path;
+    if (!path) return;
     void run(async () => {
-      const result = await postLocation(switchPath, "switch");
+      const result = await postLocation(path, "switch");
       if (result.copied) {
         return `Copied ${result.files ?? 0} files (${formatBytes(result.bytes ?? 0)}) to ${result.to}. Restart ADBoard to use it. The other copy was kept.`;
       }
-      return `Switched to ${switchPath}. Nothing was copied, because that folder already has data. Restart ADBoard to use it.`;
+      return `Switched to ${path}. Nothing was copied, because that folder already has data. Restart ADBoard to use it.`;
     });
   };
 
   const moveData = () => {
     setConfirmMove(false);
     void run(async () => {
-      const result = await postLocation(target.trim(), "move");
+      const result = await postLocation(customPath, "move");
       return `Copied ${result.files ?? 0} files (${formatBytes(result.bytes ?? 0)}) to ${result.to}. Restart ADBoard to use the new folder. The old folder was kept; delete it yourself once you're sure.`;
     });
   };
 
   return (
-    <PanelFrame title="Storage" panel="storage">
-      {!viaAgent && (
-        <p className="text-xs text-[var(--pc-muted)]">In the browser demo, data is kept in this browser only.</p>
-      )}
+    <PanelFrame title="Data Storage" panel="storage">
+      <p className="text-xs text-[var(--pc-muted)]">Choose where ADBoard stores your data, including macros, scripts, and configuration.</p>
+      {!viaAgent && <p className="text-xs text-[var(--pc-muted)]">In the browser demo, data is kept in this browser only.</p>}
       {error && <p className="text-xs text-[var(--pc-warn)]">{error}</p>}
       {info && (
         <>
-          <section className="flex flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-current>
-            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Your data is kept in</h3>
-            <p className="break-all font-mono text-xs text-[var(--pc-ink)]" data-storage-path>{info.dataDir}</p>
+          <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-current>
+            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Current Storage Location</h3>
+            <p className="text-xs text-[var(--pc-muted)]">
+              Your data is currently stored in {currentLabel}.
+            </p>
+            <p className="text-xs font-semibold text-[var(--pc-ink)]">{inApp ? "App folder" : inUser ? "User folder" : "Custom folder"}</p>
+            <p className="break-all font-mono text-xs text-[var(--pc-ink)]" data-storage-path>
+              {dataDir}
+            </p>
             <p className="text-xs text-[var(--pc-muted)]">{SOURCE_TEXT[info.source] ?? ""}</p>
             {location?.restartRequired && (
               <p className="rounded-lg border border-[var(--pc-line)] px-2 py-1 text-xs text-[var(--pc-warn)]" data-storage-restart>
                 A new location is saved ({location.saved}). Restart ADBoard to use it.
               </p>
             )}
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="pc-toggle pc-toggle-sm" onClick={() => void navigator.clipboard?.writeText(info.dataDir)}>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <button type="button" className="pc-toggle pc-toggle-md" onClick={() => void navigator.clipboard?.writeText(info.dataDir)}>
                 Copy path
               </button>
-              <button type="button" className="pc-toggle pc-toggle-sm" disabled={!viaAgent} onClick={() => void run(async () => `Opened ${await openFolder("root")}`)}>
+              <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent} onClick={() => void run(async () => `Opened ${await openFolder("root")}`)}>
                 Open folder
               </button>
             </div>
           </section>
 
           {(targets?.app || targets?.user) && (
-            <section className="flex flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-switch>
-              <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Switch between the two folders</h3>
-              <p className="text-xs text-[var(--pc-muted)]">
-                App folder: <span className="font-mono">{targets?.app ?? "not available"}</span>
-                <br />
-                User folder: <span className="font-mono">{targets?.user ?? "not available"}</span>
-              </p>
-              <p className="text-xs text-[var(--pc-muted)]">
-                Your data is in the {inApp ? "app folder" : inUser ? "user folder" : "another folder"}.
-              </p>
-              <button
-                type="button"
-                className="pc-toggle pc-toggle-md self-start"
-                disabled={!viaAgent || busy || !switchPath}
-                onClick={() => setConfirmSwitch(true)}
-                data-storage-switch-button
-              >
-                {switchLabel}
-              </button>
+            <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-switch>
+              <div className="flex flex-col gap-1">
+                <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Switch Storage Location</h3>
+                <p className="text-xs text-[var(--pc-muted)]">Choose between the app folder and your Windows user folder.</p>
+              </div>
+              {(["app", "user"] as StandardKey[]).map((key) => {
+                const option = standard[key];
+                return (
+                  <div
+                    key={key}
+                    className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] p-3"
+                    data-storage-option={key}
+                    data-storage-current-option={option.current ? "true" : "false"}
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-[var(--pc-ink)]">{option.title}</span>
+                      {option.current && (
+                        <span className="rounded-full border border-[var(--pc-accent)] px-2 py-0.5 text-[11px] font-semibold text-[var(--pc-accent)]" data-storage-current-tag>
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <p className="break-all font-mono text-xs text-[var(--pc-ink)]">{option.path ?? "not available"}</p>
+                    <p className="text-xs text-[var(--pc-muted)]">{option.what}</p>
+                    {!option.current && (
+                      <button
+                        type="button"
+                        className="pc-toggle pc-toggle-md self-start"
+                        disabled={!viaAgent || busy || !option.path}
+                        onClick={() => setConfirmSwitch(key)}
+                        data-storage-switch-button={key}
+                      >
+                        Use {option.title.replace(" (Default)", "").toLowerCase()}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </section>
           )}
-          <section className="flex flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-change>
-            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Keep data somewhere else</h3>
+
+          <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-change>
+            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Custom Storage Location</h3>
+            <p className="text-xs text-[var(--pc-muted)]">Enter a full folder path to use an existing data folder or choose a new location.</p>
             <p className="text-xs text-[var(--pc-muted)]">
-              Type a full folder path, for example <span className="font-mono">D:\adboard-data</span>. Use it to point ADBoard at a folder that already has data. Move copies everything into a new, empty folder first. Nothing is deleted.
+              Example: <span className="break-all font-mono">D:\adboard-data</span>
             </p>
             <input
               value={target}
@@ -163,16 +209,25 @@ export function StoragePanel() {
               placeholder="D:\adboard-data"
               aria-label="New data folder"
               disabled={!viaAgent || busy}
-              className="min-w-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 py-1.5 font-mono text-sm text-[var(--pc-ink)]"
+              className="w-full min-w-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 py-2 font-mono text-sm text-[var(--pc-ink)]"
             />
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent || busy || !target.trim()} onClick={() => void saveFolder()}>
+            {customPath && (
+              <p className="break-all font-mono text-xs text-[var(--pc-muted)]" data-storage-custom-path>
+                {customPath}
+                {customIsCurrent && <span className="ml-2 font-sans font-semibold text-[var(--pc-accent)]">Current</span>}
+              </p>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent || busy || !customPath} onClick={() => void saveFolder()}>
                 Use this folder
               </button>
-              <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent || busy || !target.trim()} onClick={() => setConfirmMove(true)}>
-                Move data here
+              <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent || busy || !customPath} onClick={() => setConfirmMove(true)}>
+                Move data
               </button>
             </div>
+            <p className="text-xs text-[var(--pc-muted)]">
+              <span className="font-semibold text-[var(--pc-ink)]">Move data:</span> Copies everything into a new, empty folder. The original data is kept, and nothing is deleted.
+            </p>
             {notice && (
               <p className={notice.tone === "error" ? "text-xs text-[var(--pc-warn)]" : "text-xs text-[var(--pc-muted)]"} role="status" data-storage-notice>
                 {notice.text}
@@ -183,24 +238,24 @@ export function StoragePanel() {
       )}
       {/* Export, import, backup and the folder rows: the same card that used to be in Settings. */}
       <DataStorageCard />
-      {confirmSwitch && switchPath && (
+      {confirmSwitch && standard[confirmSwitch].path && (
         <ConfirmDialog
-          title={switchLabel + "?"}
+          title={`Use ${standard[confirmSwitch].title.replace(" (Default)", "").toLowerCase()}?`}
           body={
-            switchHasData
-              ? `${switchPath} already has data, so ADBoard will use it after a restart. Nothing is copied, and the other copy stays as it is.`
-              : `Your data is copied to ${switchPath}. ADBoard uses it after a restart. The old copy is kept.`
+            standard[confirmSwitch].hasData
+              ? `${standard[confirmSwitch].path} already has data, so ADBoard will use it after a restart. Nothing is copied, and the other copy stays as it is.`
+              : `Your data is copied to ${standard[confirmSwitch].path}. ADBoard uses it after a restart. The old copy is kept.`
           }
-          confirmLabel={switchLabel}
+          confirmLabel="Switch location"
           busy={busy}
-          onCancel={() => setConfirmSwitch(false)}
-          onConfirm={switchData}
+          onCancel={() => setConfirmSwitch(null)}
+          onConfirm={() => switchData(confirmSwitch)}
         />
       )}
       {confirmMove && (
         <ConfirmDialog
           title="Move your data?"
-          body={`Everything except temp\\ is copied to ${target.trim()}. ADBoard uses the new folder after a restart. The old folder stays where it is.`}
+          body={`Everything except temp\\ is copied to ${customPath}. ADBoard uses the new folder after a restart. The old folder stays where it is.`}
           confirmLabel="Move data"
           busy={busy}
           onCancel={() => setConfirmMove(false)}

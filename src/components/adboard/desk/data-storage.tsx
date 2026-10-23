@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/adboard/desk/bits";
 
 /*
  * Where ADBoard keeps its data (GET /api/system/storage) and the tools around
- * it: open a folder on the ADBoard computer, copy a path, back up now, export
+ * it: open a folder on the ADBoard computer, copy a path, back up, export
  * or import the whole library.
  */
 
@@ -37,7 +37,7 @@ const FOLDERS: { id: Folder; label: string; what: string }[] = [
   { id: "shell_scripts", label: "shell_scripts", what: "Shell Automation scripts, one .json file each, and _library.json (apps, variables, groups, profiles)" },
   { id: "config", label: "config", what: "Settings (user_config.json), layout per browser, editor state, queue, schedules, phone choices, sign-in account" },
   { id: "logs", label: "logs", what: "adboard.log and the Shell Automation run history" },
-  { id: "backups", label: "backups", what: "Earlier versions, deleted items, unreadable files, Back up now copies, data moved from older versions" },
+  { id: "backups", label: "backups", what: "Earlier versions, deleted items, unreadable files, Back up copies, data moved from older versions" },
   { id: "files", label: "files", what: "Files area: screenshots, recordings, APKs, downloads" },
 ];
 
@@ -232,7 +232,7 @@ export function DataStorageCard() {
             onClick={() => void run(async () => `Backed up to ${await backupNow()}`)}
             data-settings-backup
           >
-            Back up now
+            Back up
           </button>
         )}
         <button type="button" className="pc-toggle pc-toggle-md" onClick={() => void exportWholeLibrary()} data-settings-export-library>

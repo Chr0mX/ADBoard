@@ -41,7 +41,7 @@ ADBoard\
 ├── backups\         history\     the last 20 saved versions of each store (Macros → Versions)
 │                    deleted\     files of deleted or renamed macros and scripts
 │                    corrupt\     copies of files that could not be read
-│                    backup-<date>\   made by Back up now and before a library import
+│                    backup-<date>\   made by Back up and before a library import
 │                    legacy-<date>\   originals moved in from older versions
 ├── cache\           app-icons\<package>.png and .json: the icon and name read from your phone the first time an app is shown in a scan or without an icon (the phone must be connected; safe to delete)
 ├── files\           Files area: Screenshots, Recordings, APKs, Downloads

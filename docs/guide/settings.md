@@ -123,7 +123,7 @@ Data & storage now lives in the **Storage** tab. The Settings page has a short c
 | **shell_scripts** | Shell Automation jobs, one `.json` file each, and `_library.json` (apps, variables, groups, profiles) |
 | **config** | Settings, layout per browser, editor state, queue, schedules, phone choices and the sign-in account |
 | **logs** | `adboard.log` and the Shell Automation run history |
-| **backups** | Earlier versions, deleted items, unreadable files, **Back up now** copies and data moved from older versions |
+| **backups** | Earlier versions, deleted items, unreadable files, **Back up** copies and data moved from older versions |
 | **files** | The Files area: screenshots, recordings, APKs and downloads |
 
 Each row has two buttons:
@@ -133,7 +133,7 @@ Each row has two buttons:
 
 **Buttons.**
 
-- **Back up now** copies the whole data folder to `backups\backup-<date>` and tells you the folder it made. It is only shown when ADBoard runs with its agent.
+- **Back up** copies the whole data folder to `backups\backup-<date>` and tells you the folder it made. It is only shown when ADBoard runs with its agent.
 - **Export library** saves everything in one file, `adboard-library.json`: touch macros, Shell Automation jobs, apps, variables, groups, profiles, the macro queue, schedules and per-phone macro choices. To export just one macro or job, use Macros or the Shell Automation Library.
 - **Import library** asks you to pick an `adboard-library.json`. The file is fully checked first, and if anything is wrong you get a message and nothing changes. Then you choose:
   - **Add (keep current items)**: keeps everything you have, adds what is new, skips items that are already here, and renames clashes by adding " 2".
