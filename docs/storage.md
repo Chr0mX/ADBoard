@@ -67,7 +67,7 @@ ADBoard\
   script, preview phone, selected step) are saved per browser in
   `browser_state.json` / `builder_state.json`. A browser opened for the first
   time starts from the most recent layout. Browsers keep a working copy in
-  their own storage (macros: up to 50 tabs), so ADBoard still works for a moment if the agent restarts.
+  their own storage, so ADBoard still works for a moment if the agent restarts.
 - **Not saved:** passwords, session cookies and API tokens never go into these
   files. The sign-in account is stored only as a salted hash in `config\auth.json`.
 - **Temporary:** `temp`, live runs, and floating panel positions (per tab).

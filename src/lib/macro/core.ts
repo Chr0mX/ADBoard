@@ -793,7 +793,7 @@ export function parseMacroFile(text: string, options: ImportOptions = {}): Impor
       .slice(0, MAX_TABS)
       .map((m, i) => legacyMacroToTab(m, i, options.reference, warnings))
       .filter((t): t is MacroTab => t !== null);
-    if (tabs.length === 0) throw new MacroImportError("Export file has no macros with touch steps");
+    if (tabs.length === 0) throw new MacroImportError("Desk file has no macros with touch steps");
     return { format: "desk-library", tabs, warnings, guessedReference: !options.reference };
   }
 

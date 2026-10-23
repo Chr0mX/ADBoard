@@ -328,14 +328,3 @@ When no phone is selected, the panel has a "Macro tab" list instead and works on
 8. Watch the status: one line for each phone, each showing Touching. Click **Stop** to end both runs.
 
 To give each phone a different imported macro instead, use the **Phones** card: pick a macro for each phone and click **Start all**.
-
-## Limits
-
-- Export and Import move macros to another ADBoard. Export writes the same structure as Auto Clicker, so an imported Auto Clicker file exports back unchanged. A multi-touch step becomes one target per finger, because Auto Clicker plays one target at a time.
-- Macros don't run while ADBoard is closed.
-- Multi-touch and exact timing need the live scrcpy session. The ADB fallback covers one finger only.
-- A real cable unplug mid-run is detected by the connection check before each step. Check it on real phones.
-- The orientation check in runs uses the phone's reported size. The live preview warns using the real video size.
-- Live video needs a browser with H.264 WebCodecs (Chrome, Edge, Safari). Test browsers without video show the markers only.
-- On the mock fleet (`ADBOARD_FORCE_MOCK=1`) gestures keep their timing and report *Mock (not sent)*.
-- Macros lost before the saved-copy protection existed were browser data, not code. Bring them back with **Import** from a saved `.json` (or older `.adboard-macros.json`) or an Auto Clicker file.
