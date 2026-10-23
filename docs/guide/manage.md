@@ -4,7 +4,6 @@ Back to the [guide index](README.md)
 
 The Manage tab is where you look after your phones as devices. You can reconnect them, restart their ADB link, reboot or shut them down, take screenshots, record the screen, read basic phone details and add phones over Wi-Fi. Almost everything works on the phones you tick in the **Target devices** list, so one click can act on several phones at once.
 
-*A note on the screenshots in this guide: they were taken with demo phones, which have no real screen, so the phone pictures are blank.*
 
 **ADB** (Android Debug Bridge) is the tool ADBoard uses to talk to your phones. "ADB link" below means that connection between the ADBoard computer and one phone.
 

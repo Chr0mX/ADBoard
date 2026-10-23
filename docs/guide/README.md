@@ -45,6 +45,6 @@ Short version: **Macros are about where a finger goes and when. Shell Automation
 |---|---|
 | [Your files and backups](../storage.md) | Where ADBoard keeps your macros, scripts and settings; export, import, backup, migration |
 | [Troubleshooting](troubleshooting.md) | When a phone doesn't show up, the screen is black, or a run does nothing |
-| [Macros reference](../macros.md) | Technical details of how macros run |
-| [Shell Automation reference](../shell-automation.md) | Technical details of the actions |
+| [Macros reference](../macros.md) | How macros are timed and played back, and their file format |
+| [Shell Automation reference](../shell-automation.md) | Each action, its fields, and how a job runs |
 | [Remote access](../../README.md#remote-access-nginx-proxy-manager--cloudflare) | Using ADBoard from outside your network |

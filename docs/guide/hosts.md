@@ -4,7 +4,7 @@ Back to the [guide index](README.md)
 
 A **host** is a computer that has phones plugged in (or connected over Wi-Fi) and runs ADBoard's agent program. The agent is the part that runs ADB, the phone screen stream, file transfers and macros. The web page in your browser never talks to a phone directly. It talks to one main ADBoard, called the **controller**, and the controller passes work on to the other hosts.
 
-The Hosts tab simply lists the computers ADBoard knows about and the phones on each. It is for checking, not for changing anything.
+The Hosts tab lists the computers ADBoard knows about and the phones on each. Use it to check what is connected. It doesn't change anything.
 
 ![The Hosts tab with one card per computer](images/hosts.jpg)
 

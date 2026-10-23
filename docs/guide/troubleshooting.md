@@ -5,7 +5,7 @@ Back to the [guide index](README.md).
 ## No phone appears
 
 1. Check that **USB debugging** is on (see [Getting started](getting-started.md)) and the cable carries data, not only power. Try another cable or port.
-2. Look at the phone: accept the **Allow USB debugging?** prompt. A phone that hasn't accepted it shows **unauthorized**; the Control screen says to accept the prompt and tap **Reconnect**.
+2. Look at the phone: accept the **Allow USB debugging?** prompt. A phone that hasn't accepted it shows **unauthorized** in ADBoard, with the hint to unlock USB debugging. Accept the prompt, then press **Reconnect**.
 3. Open **Manage → Actions** with the phone ticked and press **Reconnect**, then **Restart ADB** if it still doesn't show.
 4. Make sure no other program (another ADB, an emulator tool) is holding the phone.
 5. On the PC, check that `vendor\adb\adb.exe` exists. Without ADB, ADBoard can't see real phones.
@@ -40,7 +40,7 @@ The first time, the phone must be connected so ADBoard can read the app's icon, 
 
 ## Something I made is gone, or two copies exist
 
-Nothing is deleted without being kept: look in `%LOCALAPPDATA%\ADBoard\backups`. **Macros → Versions** restores an earlier copy of your macros. See [Your files and backups](../storage.md).
+Nothing is deleted without being kept: look in the `backups` folder of the data folder (the **Storage** tab shows its path). **Macros → Versions** restores an earlier copy of your macros. See [Your files and backups](../storage.md).
 
 ## I forgot my password
 
@@ -48,4 +48,4 @@ Start ADBoard once with `ADBOARD_PASSWORD` set to a new password and `ADBOARD_RE
 
 ## Still stuck
 
-The log file `%LOCALAPPDATA%\ADBoard\logs\adboard.log` records what ADBoard did, and **Developer → Logs** shows a phone's own log.
+The file `logs\adboard.log` in the data folder records what ADBoard did. **Developer → Logs** shows a phone's own log.

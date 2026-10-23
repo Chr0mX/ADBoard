@@ -6,7 +6,6 @@ Back to the [guide index](README.md)
 
 A job is not the same as a touch macro. A [touch macro](macros.md) replays finger movements with exact timing, and it can keep running in the background. A job says what the phone should do (open an app, install something, press a key, copy a file). It runs from your browser, so keep the page open until it finishes. Use macros for "where does the finger go and when". Use jobs for "what should the phone do".
 
-> The screenshots in this guide use demo phones, so the phone screens show no picture.
 
 ## Contents
 
@@ -371,6 +370,6 @@ Goal: put an APK on each phone and open the app.
 
 ## Where jobs are saved
 
-Each job is its own file named `<Name>.json` in the `shell_scripts` folder of the ADBoard data folder (on Windows, `%LOCALAPPDATA%\ADBoard`). Your variables, per-phone values, tags, groups, apps and profiles are kept together in one file, `_library.json`, in the same folder. Everything is saved as soon as you edit.
+Each job is its own file named `<Name>.json` in the `shell_scripts` folder of the data folder (the **Storage** tab shows where that is). Your variables, per-phone values, tags, groups, apps and profiles are kept together in one file, `_library.json`, in the same folder. Everything is saved as soon as you edit.
 
 Exports: one job is `<Name>.json`; the whole library is `adboard-library.json`. See [where ADBoard keeps your data](../storage.md) for the full folder layout, backups and which files are safe to edit by hand, and [Settings](settings.md) for importing and exporting the whole library.

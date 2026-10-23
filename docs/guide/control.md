@@ -2,7 +2,6 @@
 
 **Control** is the first tab in ADBoard and the one you will use most. It shows a live picture of an Android phone and lets you tap, swipe and type on it from your computer or from another phone. You can drive one phone, a few ticked phones, or every online phone at once. Around the picture you get buttons for Back, Home and Recent, volume and power, screenshots, stream quality, your saved apps, and a Grid view that shows all your phones as tiles. On a phone-sized screen the same tools move into a floating **Tools** panel and a bottom taskbar.
 
-All screenshots in this guide use the demo phones, which show a plain coloured background instead of a real picture.
 
 ## Contents
 

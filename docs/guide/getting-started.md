@@ -8,7 +8,7 @@ This page takes you from nothing to controlling a phone, then shows what is on t
 
 - A Windows PC that the phones will be plugged into (the "ADBoard PC"). ADBoard can also run on Linux.
 - A USB cable per phone, or phones on the same Wi-Fi.
-- A browser: Chrome, Edge or Safari. The live picture needs H.264 video support, which these have.
+- A current version of Chrome, Edge or Safari. The live picture is decoded in the browser with WebCodecs.
 - **ADB** and **scrcpy**, the two small tools ADBoard uses to talk to phones and show their screens. They go in the pack's `vendor` folder.
 
 ## Install and start (Windows)
@@ -18,11 +18,11 @@ This page takes you from nothing to controlling a phone, then shows what is on t
 3. Double-click **`run.bat`**. A window opens and stays open while ADBoard runs.
 4. Open **http://127.0.0.1:3848/** in a browser on that PC. From another computer or a phone on your network, open `http://<the PC's address>:3848/` instead; allow TCP port 3848 in Windows Firewall if the PC blocks it.
 
-Your macros, scripts and settings are kept in `%LOCALAPPDATA%\ADBoard`, outside the ADBoard folder, so updating or replacing the folder never touches them. See [Your files and backups](../storage.md).
+Your macros, scripts and settings are kept in the data folder, separate from the program, so updating or replacing `dist\windows` doesn't touch them. The **Storage** tab shows where the folder is. See [Your files and backups](../storage.md).
 
 ## Prepare each phone
 
-1. Open **Settings → About phone** and tap **Build number** seven times to turn on Developer options.
+1. Open **Settings → About phone** and tap **Build number** seven times to turn on Developer options. The menu names vary a little between manufacturers.
 2. In **Developer options**, turn on **USB debugging**.
 3. Plug the phone in. On the phone, tap **Allow** on the "Allow USB debugging?" prompt (tick "Always allow from this computer" to see it only once).
 
@@ -30,7 +30,7 @@ Your macros, scripts and settings are kept in `%LOCALAPPDATA%\ADBoard`, outside 
 
 1. Open the **Control** tab. Within a few seconds the phone appears under **Devices** (right) and **Screens** (left), with a green dot when it is online.
 2. Click it. Its screen appears in the middle.
-3. Click on the screen to tap; drag to swipe. Turn **Keyboard** on (the first button under the phone) and type on your computer's keyboard to type on the phone.
+3. Click on the screen to tap; drag to swipe. Turn on **Keyboard** in the tool row, then type on your computer's keyboard to type on the phone.
 4. Use **Back**, **Home** and **Recent** under the screen for Android's navigation.
 
 To add more phones, plug them in. Phones on Wi-Fi are added in **Manage → Wireless** (see [manage.md](manage.md)).

@@ -4,7 +4,6 @@ Back to the [guide index](README.md)
 
 The **Settings** tab is one place for the choices that change how ADBoard looks and behaves: how the phone screens are streamed, how your keyboard and mouse reach the phones, how the grid and the phone taskbar are arranged, your account, and where ADBoard keeps your data. Every switch here is the same switch you find elsewhere in ADBoard (for example in Control), so a change made here shows up there too.
 
-> The screenshot in this guide uses demo phones, so the phone screens show no picture.
 
 ![The Settings tab with its cards](images/settings.jpg)
 
