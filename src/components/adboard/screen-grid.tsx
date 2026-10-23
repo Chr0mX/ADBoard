@@ -29,7 +29,7 @@ export function ScreenGrid({
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {online.length === 0 ? (
-          <p className="px-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
+          <p className="px-1 font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">
             No online screens
           </p>
         ) : (
@@ -107,7 +107,7 @@ function ScreenTile({
           />
         )}
       </div>
-      <span className="truncate px-0.5 font-mono text-[10px] text-[var(--pc-ink)]">
+      <span className="truncate px-0.5 font-mono text-[11px] text-[var(--pc-ink)]">
         {device.name}
       </span>
     </button>

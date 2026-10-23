@@ -65,7 +65,7 @@ export function AppShortcuts() {
         ))}
       </div>
       {note && (
-        <p data-app-shortcut-note className="w-full truncate px-1 text-center font-mono text-[10px] text-[var(--pc-muted)]">
+        <p data-app-shortcut-note className="w-full truncate px-1 text-center font-mono text-[11px] text-[var(--pc-muted)]">
           {note}
         </p>
       )}

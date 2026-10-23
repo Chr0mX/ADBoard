@@ -189,7 +189,7 @@ export function WirelessAdb({ initialOpen = false }: { initialOpen?: boolean }) 
             <p
               data-wireless-qr-status
               className={cn(
-                "font-mono text-[10px] leading-snug",
+                "font-mono text-[11px] leading-snug",
                 qrFailed ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]",
               )}
             >
@@ -245,7 +245,7 @@ export function WirelessAdb({ initialOpen = false }: { initialOpen?: boolean }) 
             <p
               data-wireless-note
               className={cn(
-                "font-mono text-[10px] leading-snug",
+                "font-mono text-[11px] leading-snug",
                 failed ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]",
               )}
             >

@@ -235,7 +235,7 @@ function TabStrip({
               >
                 {running && <span aria-label="running" className="size-2 shrink-0 animate-pulse rounded-full bg-[var(--pc-signal)]" />}
                 <span className="truncate">{tab.name}</span>
-                <span className="font-mono text-[10px] text-[var(--pc-muted)]">{tab.steps.length}</span>
+                <span className="font-mono text-[11px] text-[var(--pc-muted)]">{tab.steps.length}</span>
               </button>
             );
           })}
@@ -479,7 +479,7 @@ function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: 
                         className={cn("size-1.5 rounded-full", d.status === "online" ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-muted)]")}
                       />
                       <span className="font-medium">{d.name}</span>
-                      {d.id === activeDevice?.id && <span className="font-mono text-[10px] text-[var(--pc-muted)]">in Control</span>}
+                      {d.id === activeDevice?.id && <span className="font-mono text-[11px] text-[var(--pc-muted)]">in Control</span>}
                     </button>
                   );
                 })}
@@ -517,7 +517,7 @@ function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: 
           <Card
             title={`Steps (${tab.steps.length})`}
             className="@container"
-            action={<span className="font-mono text-[10px] text-[var(--pc-muted)]">cycle ≈ {formatMs(cycleMs(tab))}</span>}
+            action={<span className="font-mono text-[11px] text-[var(--pc-muted)]">cycle ≈ {formatMs(cycleMs(tab))}</span>}
           >
             <AddStepBar
               disabled={tab.steps.length >= MAX_STEPS}
@@ -670,7 +670,7 @@ function SettingsCard({
         </label>
       </div>
       {tab.source && tab.source.kind !== "adboard" && (
-        <p className="font-mono text-[10px] text-[var(--pc-muted)]">
+        <p className="font-mono text-[11px] text-[var(--pc-muted)]">
           Imported from {tab.source.kind === "autoclicker" ? "Auto Clicker" : "ADBoard Automate"}
           {tab.source.file ? ` · ${tab.source.file}` : ""}
         </p>
@@ -745,12 +745,12 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
             <label key={device.id} className="pc-choice-row" aria-disabled={running || undefined}>
               <Checkbox checked={checked} disabled={running} onChange={() => toggleTarget(device.id)} data-macro-target={device.name} />
               <span className="font-medium">{device.name}</span>
-              <span className="font-mono text-[10px] text-[var(--pc-muted)]">
+              <span className="font-mono text-[11px] text-[var(--pc-muted)]">
                 {device.resolution.width}×{device.resolution.height}
               </span>
               <span
                 className={cn(
-                  "ml-auto font-mono text-[10px] uppercase",
+                  "ml-auto font-mono text-[11px] uppercase",
                   device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]",
                 )}
               >
@@ -876,7 +876,7 @@ function ReferenceDensity({
           ? `Made for ${tab.reference.width}×${tab.reference.height} @ ${dpi} dpi. Touches scale with resolution; matching the density keeps game buttons where the macro expects them.`
           : "Optional: the dpi of the screen the macro was made on (e.g. 320 for a 900×1600 emulator). 0 = not set."}
       </p>
-      {note && <p className="font-mono text-[10px] text-[var(--pc-muted)]" data-macro-dpi-note>{note}</p>}
+      {note && <p className="font-mono text-[11px] text-[var(--pc-muted)]" data-macro-dpi-note>{note}</p>}
     </div>
   );
 }
@@ -925,7 +925,7 @@ function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
       </summary>
       {open && (
         <div className="absolute right-0 z-30 mt-1 flex max-h-80 w-72 flex-col overflow-y-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg">
-          <p className="px-2 py-1 font-mono text-[10px] uppercase text-[var(--pc-muted)]">Saved on ADBoard</p>
+          <p className="px-2 py-1 font-mono text-[11px] uppercase text-[var(--pc-muted)]">Saved on ADBoard</p>
           {error && <p className="px-2 py-1 text-xs text-[var(--pc-warn)]">{error}</p>}
           {agent?.length === 0 && <p className="px-2 py-1 text-xs text-[var(--pc-muted)]">No earlier versions yet.</p>}
           {agent?.map((entry) => (
@@ -950,10 +950,10 @@ function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
               }}
             >
               <span>{when(entry.savedAt)}</span>
-              <span className="font-mono text-[10px] text-[var(--pc-muted)]">{entry.items} tabs · restore</span>
+              <span className="font-mono text-[11px] text-[var(--pc-muted)]">{entry.items} tabs · restore</span>
             </button>
           ))}
-          <p className="mt-1 px-2 py-1 font-mono text-[10px] uppercase text-[var(--pc-muted)]">Kept in this browser</p>
+          <p className="mt-1 px-2 py-1 font-mono text-[11px] uppercase text-[var(--pc-muted)]">Kept in this browser</p>
           {backups.length === 0 && <p className="px-2 py-1 text-xs text-[var(--pc-muted)]">None.</p>}
           {backups.map((backup) => (
             <button
@@ -968,7 +968,7 @@ function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
               }}
             >
               <span>{when(backup.at)}</span>
-              <span className="font-mono text-[10px] text-[var(--pc-muted)]">{tabsIn(backup.value)} tabs · restore</span>
+              <span className="font-mono text-[11px] text-[var(--pc-muted)]">{tabsIn(backup.value)} tabs · restore</span>
             </button>
           ))}
         </div>
@@ -988,7 +988,7 @@ export function MacroSyncNote() {
   return (
     <p
       data-macro-sync={status.state}
-      className={cn("font-mono text-[10px]", status.state === "conflict" ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]")}
+      className={cn("font-mono text-[11px]", status.state === "conflict" ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]")}
     >
       {text}
     </p>

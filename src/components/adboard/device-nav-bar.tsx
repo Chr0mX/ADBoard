@@ -427,7 +427,7 @@ function PinnedToolButton({
           data-taskbar-tool="apk"
           className={cn(hit, "cursor-pointer", (offline || handlers.installing) && "pointer-events-none opacity-40")}
         >
-          <span className="font-mono text-[9px] font-semibold leading-none">APK</span>
+          <span className="font-mono text-[11px] font-semibold leading-none">APK</span>
           <input
             type="file"
             accept=".apk,application/vnd.android.package-archive"

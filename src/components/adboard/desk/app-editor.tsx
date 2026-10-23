@@ -404,10 +404,10 @@ function ScanRow({
           <span className="truncate text-sm text-[var(--pc-ink)]" data-app-row-name>
             {title}
           </span>
-          <span className="truncate font-mono text-[10px] text-[var(--pc-muted)]">{pkg}</span>
+          <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{pkg}</span>
         </span>
         {existing && (
-          <span className="shrink-0 text-[10px] text-[var(--pc-muted)]" data-app-row-added>
+          <span className="shrink-0 text-[11px] text-[var(--pc-muted)]" data-app-row-added>
             Already added ({existing.group || DEFAULT_CATEGORY})
           </span>
         )}

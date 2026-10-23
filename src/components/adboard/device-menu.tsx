@@ -128,7 +128,7 @@ export function DeviceMenu({
           {item.label}
         </button>
       ))}
-      {note && <p className="px-2 py-1 font-mono text-[10px] text-[var(--pc-muted)]">{note}</p>}
+      {note && <p className="px-2 py-1 font-mono text-[11px] text-[var(--pc-muted)]">{note}</p>}
       {confirm && (
         <ConfirmDialog
           title={confirm === "reboot" ? "Reboot Device?" : "Shut down device?"}

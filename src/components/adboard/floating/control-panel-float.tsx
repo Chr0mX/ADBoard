@@ -226,7 +226,7 @@ export function ControlPanelFloat({
           className="flex flex-col gap-1.5 border-b border-[var(--pc-line)] pb-2.5"
         >
           <label className="flex h-12 min-h-12 items-center gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3">
-            <span className="font-mono text-[10px] uppercase tracking-wide text-[var(--pc-muted)]">
+            <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--pc-muted)]">
               Quality
             </span>
             <select
@@ -310,7 +310,7 @@ export function ControlPanelFloat({
           {streamHint && (
             <p
               data-scrcpy-note
-              className="truncate font-mono text-[10px] text-[var(--pc-muted)]"
+              className="truncate font-mono text-[11px] text-[var(--pc-muted)]"
             >
               {streamHint}
             </p>
@@ -322,7 +322,7 @@ export function ControlPanelFloat({
           className="flex flex-wrap gap-1.5"
         >
           {taskbarEdit && (
-            <p className="w-full px-0.5 font-mono text-[10px] text-[var(--pc-muted)]">
+            <p className="w-full px-0.5 font-mono text-[11px] text-[var(--pc-muted)]">
               Tap icons to pin up to {maxPins} on the bottom bar
               {atLimit ? " · full" : pins.length > 0 ? ` · ${pins.length} pinned` : ""}
             </p>
@@ -479,7 +479,7 @@ export function ControlPanelFloat({
                 !taskbarEdit && (offline || installing) && "pointer-events-none opacity-40",
               )}
             >
-              <span className="font-mono text-[10px] font-semibold">APK</span>
+              <span className="font-mono text-[11px] font-semibold">APK</span>
               {!taskbarEdit && (
                 <input
                   type="file"
@@ -777,7 +777,7 @@ export function ControlPanelFloat({
               }}
             >
               <Pin className={cn("size-4", pins.length > 0 && "fill-current")} />
-              <span className="font-mono text-[10px]">
+              <span className="font-mono text-[11px]">
                 Taskbar{pins.length > 0 ? ` (${pins.length})` : ""}
               </span>
             </Button>
@@ -790,7 +790,7 @@ export function ControlPanelFloat({
                 className="pc-toggle pc-toggle-lg px-2"
                 onClick={resetPins}
               >
-                <span className="font-mono text-[10px]">Reset</span>
+                <span className="font-mono text-[11px]">Reset</span>
               </Button>
             )}
           </div>

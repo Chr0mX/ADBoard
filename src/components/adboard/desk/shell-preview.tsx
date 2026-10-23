@@ -165,7 +165,7 @@ export function ShellPreview({
                 <span
                   className={cn(
                     "flex items-center justify-center rounded-full font-mono font-bold shadow-[0_0_0_2px_rgba(0,0,0,0.55)] transition-transform",
-                    end === "end" ? "size-5 border-2 bg-transparent text-[9px]" : "size-7 text-[11px] text-[#071016]",
+                    end === "end" ? "size-5 border-2 bg-transparent text-[11px]" : "size-7 text-[11px] text-[#071016]",
                     selected ? "scale-110" : "opacity-60",
                     step.enabled === false && "opacity-30",
                     running && "animate-pulse ring-2 ring-white",
@@ -184,7 +184,7 @@ export function ShellPreview({
           )}
         </div>
       </div>
-      <p className="text-center font-mono text-[10px] text-[var(--pc-muted)]">
+      <p className="text-center font-mono text-[11px] text-[var(--pc-muted)]">
         {device.name}
         {streaming ? " · live" : ""} · {known ? `${frame.width}×${frame.height}` : "screen size unknown"}
       </p>

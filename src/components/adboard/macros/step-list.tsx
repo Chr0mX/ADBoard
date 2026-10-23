@@ -158,12 +158,12 @@ export function StepList({
                   <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--pc-ink)]">
                     {step.label || KIND_LABEL[kind]}
                     {kind === "multi" && (
-                      <span className="rounded bg-[var(--pc-accent-soft)] px-1 font-mono text-[9px] text-[var(--pc-accent)]">
+                      <span className="rounded bg-[var(--pc-accent-soft)] px-1 font-mono text-[11px] text-[var(--pc-accent)]">
                         {step.fingers.length} fingers
                       </span>
                     )}
                   </span>
-                  <span className="truncate font-mono text-[10px] text-[var(--pc-muted)]">
+                  <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">
                     {summary(step)} · {formatMs(stepTouchMs(step))} · wait {formatMs(step.delayMs)}
                   </span>
                 </span>
@@ -353,7 +353,7 @@ function StepEditor({
         <div aria-label="Finger timeline" className="flex flex-col gap-1 rounded-xl bg-[var(--pc-panel)] p-2">
           {step.fingers.map((finger, fingerIndex) => (
             <div key={finger.id} className="flex items-center gap-2">
-              <span className="w-5 font-mono text-[10px] text-[var(--pc-muted)]">{String.fromCharCode(97 + fingerIndex)}</span>
+              <span className="w-5 font-mono text-[11px] text-[var(--pc-muted)]">{String.fromCharCode(97 + fingerIndex)}</span>
               <div className="relative h-2.5 flex-1 rounded-full bg-[var(--pc-line)]">
                 <div
                   className="absolute h-full rounded-full"
@@ -366,7 +366,7 @@ function StepEditor({
               </div>
             </div>
           ))}
-          <span className="text-right font-mono text-[10px] text-[var(--pc-muted)]">{formatMs(total)} with fingers down</span>
+          <span className="text-right font-mono text-[11px] text-[var(--pc-muted)]">{formatMs(total)} with fingers down</span>
         </div>
       )}
 

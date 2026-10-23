@@ -60,7 +60,7 @@ export function ControlModes({
               className={cn("pc-segment", compact ? (stretch ? "flex-1 sm:flex-none" : "flex-none") : "min-h-11 flex-col gap-0 py-1")}
             >
               <span className={compact ? undefined : "block text-sm"}>{m.label}</span>
-              <span className="font-mono text-[10px]">{counts[m.id]}</span>
+              <span className="font-mono text-[11px]">{counts[m.id]}</span>
             </button>
           );
         })}

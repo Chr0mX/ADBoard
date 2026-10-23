@@ -37,7 +37,7 @@ export function MechanismBadge({ mechanism }: { mechanism: Mechanism }) {
       title={info.hint}
       data-mechanism={mechanism}
       className={cn(
-        "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider",
+        "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider",
         mechanism === "touch" && "bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
         mechanism === "shell" && "bg-[color-mix(in_srgb,#ffb86b_18%,transparent)] text-[#ffb86b]",
         mechanism === "key" && "bg-[color-mix(in_srgb,#c3a6ff_18%,transparent)] text-[#c3a6ff]",
@@ -637,7 +637,7 @@ function StepRow({
               {status && (
                 <span
                   className={cn(
-                    "font-mono text-[10px] uppercase",
+                    "font-mono text-[11px] uppercase",
                     status.status === "ok" && "text-[var(--pc-signal)]",
                     status.status === "failed" && "text-[var(--pc-warn)]",
                     (status.status === "skipped" || status.status === "stopped") && "text-[var(--pc-muted)]",
@@ -648,7 +648,7 @@ function StepRow({
                 </span>
               )}
             </span>
-            <span className="truncate font-mono text-[10px] text-[var(--pc-muted)]">
+            <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">
               {summarizeStep(step)}
               {step.delayAfterMs ? ` · then ${step.delayAfterMs} ms` : ""}
               {broken && !off ? " · needs fixing" : ""}
@@ -788,7 +788,7 @@ function RunLog({ logs, steps, onClear }: { logs: StepLog[]; steps: MacroStep[];
     <section className="flex flex-col gap-2 border-t border-[var(--pc-line)] pt-3" data-shell-log>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-[var(--pc-ink)]">
-          Log <span className="font-mono text-[10px] text-[var(--pc-muted)]">{logs.length} entries{failed ? ` · ${failed} failed` : ""}</span>
+          Log <span className="font-mono text-[11px] text-[var(--pc-muted)]">{logs.length} entries{failed ? ` · ${failed} failed` : ""}</span>
         </h4>
         <div className="flex items-center gap-2">
           <label className="pc-choice-row gap-2 text-xs">

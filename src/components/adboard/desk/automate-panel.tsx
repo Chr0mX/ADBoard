@@ -20,6 +20,7 @@ import {
 import { useDesk } from "@/components/adboard/desk/desk-context";
 import {
   ConfirmDialog,
+  EmptyState,
   PanelFrame,
   PrimaryButton,
   TargetChecks,
@@ -118,7 +119,7 @@ export function AutomatePanel() {
             data-automate-tab={item.id}
           >
             <span className="text-sm leading-tight">{item.label}</span>
-            <span className={`text-[10px] leading-tight ${tab === item.id ? "text-white/80" : "text-[var(--pc-muted)]"}`}>{item.sub}</span>
+            <span className={`text-[11px] leading-tight ${tab === item.id ? "text-white/80" : "text-[var(--pc-muted)]"}`}>{item.sub}</span>
           </button>
         ))}
       </div>
@@ -255,10 +256,12 @@ function JobLibrary({
             {notice.text}
           </p>
         )}
-        {library.macros.length === 0 && <p className="text-xs text-[var(--pc-muted)]">No saved jobs yet. Add an action below, or press New job.</p>}
+        {library.macros.length === 0 && (
+          <EmptyState title="No saved jobs yet.">Add an action below, or press New job.</EmptyState>
+        )}
         {folders.map((folder) => (
           <div key={folder} className="flex flex-col gap-1" data-shell-folder={folder}>
-            <h4 className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">{folder}</h4>
+            <h4 className="font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">{folder}</h4>
             <ul className="flex flex-col gap-1">
               {library.macros
                 .filter((macro) => (macro.folder || "Custom") === folder)
@@ -270,7 +273,7 @@ function JobLibrary({
                   >
                     <button type="button" className="flex min-h-10 min-w-0 flex-1 flex-col items-start text-left" onClick={() => onOpen(macro.id)}>
                       <span className="text-sm font-medium text-[var(--pc-ink)]">{macro.name}</span>
-                      <span className="font-mono text-[10px] text-[var(--pc-muted)]">
+                      <span className="font-mono text-[11px] text-[var(--pc-muted)]">
                         {macro.steps.length} step{macro.steps.length === 1 ? "" : "s"}
                         {(macro.repeat ?? 1) > 1 ? ` · ×${macro.repeat}` : ""}
                         {macro.id === openId ? " · open in Builder" : ""}
@@ -332,7 +335,7 @@ function JobLibrary({
         </div>
         {CATEGORIES.map((category) => (
           <div key={category} className="flex flex-col gap-1.5" data-shell-category={category}>
-            <h4 className="font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">{category}</h4>
+            <h4 className="font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">{category}</h4>
             <ul className="grid gap-2 @xl:grid-cols-2 @5xl:grid-cols-3">
               {ACTIONS.filter((a) => a.category === category).map((action) => (
                 <li key={action.kind} className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-2.5" data-shell-action={action.kind}>

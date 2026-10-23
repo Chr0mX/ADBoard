@@ -12,6 +12,7 @@ import {
   ConfirmDialog,
   PanelFrame,
   PrimaryButton,
+  EmptyState,
   ResultList,
   TargetChecks,
   TextField,
@@ -101,6 +102,11 @@ export function AppsPanel() {
               Add app
             </button>
           </div>
+          {library.apps.length === 0 && (
+            <EmptyState title="No apps saved yet." action={<button type="button" className="pc-toggle pc-toggle-md" onClick={() => setAdding({})}>Add app</button>}>
+              Save an app here to launch it on one phone or on all of them with one tap.
+            </EmptyState>
+          )}
           {groups.map((group) => {
             const apps = library.apps.filter((app) => (app.group || "Custom") === group);
             return (
@@ -125,7 +131,7 @@ export function AppsPanel() {
                         <AppIcon icon={app.icon} name={app.name} packageName={app.packageName} serial={iconSerial} />
                         <span className="min-w-0 truncate">{app.name}</span>
                       </p>
-                      <p className="truncate font-mono text-[10px] text-[var(--pc-muted)]">{app.packageName}</p>
+                      <p className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{app.packageName}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
                         <Mini label="Launch" onClick={() => void launch(app)} />
                         <Mini label="All" onClick={() => void launch(app, online)} />

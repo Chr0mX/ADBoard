@@ -106,7 +106,7 @@ export function TouchDiagnostics() {
           style={{ left: tap.x, top: tap.y }}
         />
       ))}
-      <div className="absolute left-2 right-2 top-[max(0.5rem,env(safe-area-inset-top))] rounded-xl border border-[var(--pc-line)] bg-[color-mix(in_srgb,var(--pc-panel)_94%,transparent)] p-2 font-mono text-[10px] leading-snug text-[var(--pc-ink)]">
+      <div className="absolute left-2 right-2 top-[max(0.5rem,env(safe-area-inset-top))] rounded-xl border border-[var(--pc-line)] bg-[color-mix(in_srgb,var(--pc-panel)_94%,transparent)] p-2 font-mono text-[11px] leading-snug text-[var(--pc-ink)]">
         <p className="text-[var(--pc-muted)]">Touch diagnostics · {info || "tap anywhere"}</p>
         {taps.map((tap) => (
           <p key={tap.at} data-touch-record className="[overflow-wrap:anywhere]">

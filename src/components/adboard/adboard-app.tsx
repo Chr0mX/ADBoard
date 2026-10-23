@@ -260,7 +260,7 @@ export function ADBoardApp() {
         {!loading && section === "control" && (
           <>
             {error && !fillWindow && (
-              <p className="mb-1 shrink-0 truncate px-1 font-mono text-[10px] text-[var(--pc-warn)]">
+              <p className="mb-1 shrink-0 truncate px-1 font-mono text-[11px] text-[var(--pc-warn)]">
                 {error}
               </p>
             )}
@@ -589,7 +589,7 @@ function PanelRail({
         <span className="font-mono text-[11px] tracking-wider [writing-mode:vertical-rl]">
           {label}
         </span>
-        <span className="font-mono text-[10px] text-[var(--pc-ink)]">{count}</span>
+        <span className="font-mono text-[11px] text-[var(--pc-ink)]">{count}</span>
       </button>
     </aside>
   );

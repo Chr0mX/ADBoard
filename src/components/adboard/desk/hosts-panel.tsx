@@ -42,7 +42,7 @@ export function HostsPanel() {
               <h3 className="font-display text-sm font-semibold">
                 {host.os.toLowerCase().includes("win") ? "🖥" : "🐧"} {host.name}
               </h3>
-              <p className="font-mono text-[10px] uppercase text-[var(--pc-muted)]">
+              <p className="font-mono text-[11px] uppercase text-[var(--pc-muted)]">
                 {host.os} · {host.status} · {host.local ? "this controller" : "remote agent"}
               </p>
               <ul className="mt-2 text-sm">

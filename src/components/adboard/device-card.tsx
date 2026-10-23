@@ -89,7 +89,7 @@ export function DeviceCard({
         <span className="mt-1 flex min-w-0 flex-col items-start gap-0.5 text-xs leading-4 text-[var(--pc-muted)]">
           <span
             className={cn(
-              "inline-flex items-center gap-1 font-mono text-[10px] uppercase",
+              "inline-flex items-center gap-1 font-mono text-[11px] uppercase",
               device.status === "online"
                 ? "text-[var(--pc-signal)]"
                 : device.status === "unauthorized"
@@ -112,18 +112,18 @@ export function DeviceCard({
           <span data-card-model className="max-w-full break-words">
             {device.model}
           </span>
-          <span data-card-resolution className="max-w-full break-words font-mono text-[10px]">
+          <span data-card-resolution className="max-w-full break-words font-mono text-[11px]">
             {formatResolution(device.resolution.width, device.resolution.height)}
           </span>
           {(device.battery != null || device.temperatureC != null) && (
             <span className="flex flex-wrap gap-x-2">
               {device.battery != null && (
-                <span data-card-battery className="font-mono text-[10px]">
+                <span data-card-battery className="font-mono text-[11px]">
                   {device.battery}%
                 </span>
               )}
               {device.temperatureC != null && (
-                <span data-card-temperature className="font-mono text-[10px]">
+                <span data-card-temperature className="font-mono text-[11px]">
                   {device.temperatureC.toFixed(1)}°C
                 </span>
               )}

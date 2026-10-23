@@ -58,10 +58,10 @@ export function QueueCard({ tabs, activeTab }: { tabs: MacroTab[]; activeTab: Ma
             const state = progress?.states[item.id];
             return (
               <li key={item.id} className="flex items-center gap-2 rounded-xl border border-[var(--pc-line)] px-2 py-1" data-macro-queue-item={name(item.tabId)} data-state={state?.state ?? ""}>
-                <span className="w-5 font-mono text-[10px] text-[var(--pc-muted)]">{index + 1}</span>
+                <span className="w-5 font-mono text-[11px] text-[var(--pc-muted)]">{index + 1}</span>
                 <span className="min-w-0 flex-1 truncate text-sm text-[var(--pc-ink)]">{name(item.tabId)}</span>
                 {state && (
-                  <span className={cn("font-mono text-[10px] uppercase text-[var(--pc-muted)]", STATE_TONE[state.state])} title={state.detail}>
+                  <span className={cn("font-mono text-[11px] uppercase text-[var(--pc-muted)]", STATE_TONE[state.state])} title={state.detail}>
                     {state.state}
                   </span>
                 )}
@@ -200,11 +200,11 @@ export function ScheduleCard({ tabs, activeTab }: { tabs: MacroTab[]; activeTab:
               <Switch checked={s.enabled} onChange={() => patchSchedule(s.id, { enabled: !s.enabled })} aria-label={`Enable schedule for ${label(s)}`} />
               <span className="min-w-0 flex-1 text-sm text-[var(--pc-ink)]">
                 {label(s)}
-                <span className="ml-2 font-mono text-[10px] text-[var(--pc-muted)]">
+                <span className="ml-2 font-mono text-[11px] text-[var(--pc-muted)]">
                   {s.kind === "every" ? `every ${s.everyMinutes} min` : "once"} · {describeNext(s, now)}
                 </span>
                 {s.lastResult && (
-                  <span className="block font-mono text-[10px] text-[var(--pc-muted)]" data-macro-schedule-last>
+                  <span className="block font-mono text-[11px] text-[var(--pc-muted)]" data-macro-schedule-last>
                     {new Date(s.lastRunAt ?? 0).toLocaleTimeString([], { timeStyle: "short" })}: {s.lastResult}
                   </span>
                 )}

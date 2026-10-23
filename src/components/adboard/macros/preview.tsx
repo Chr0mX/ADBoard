@@ -206,7 +206,7 @@ export function MacroPreview({
                     <span
                       className={cn(
                         "flex items-center justify-center rounded-full font-mono font-bold shadow-[0_0_0_2px_rgba(0,0,0,0.55)] transition-transform",
-                        end === "end" ? "size-5 border-2 bg-transparent text-[9px]" : "size-7 text-[11px] text-[#071016]",
+                        end === "end" ? "size-5 border-2 bg-transparent text-[11px]" : "size-7 text-[11px] text-[#071016]",
                         selected ? "scale-110" : "opacity-55",
                         !step.enabled && "opacity-30",
                       )}
@@ -230,7 +230,7 @@ export function MacroPreview({
           )}
         </div>
       </div>
-      <p className="text-center font-mono text-[10px] text-[var(--pc-muted)]">
+      <p className="text-center font-mono text-[11px] text-[var(--pc-muted)]">
         {frameLabel} · {screen.width}×{screen.height}
         {device && tab.scale === "fit" && (box.width < 1 || box.height < 1) ? " · keep aspect (dashed = macro area)" : ""}
       </p>
@@ -275,7 +275,7 @@ export function useLiveScreen(device: Device, live: boolean) {
     <span
       data-macro-live={state.key}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider",
         playing ? "bg-[var(--pc-signal)] text-[#04140c]" : "bg-[var(--pc-panel)]/90 text-[var(--pc-muted)]",
       )}
     >

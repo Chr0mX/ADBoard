@@ -211,7 +211,7 @@ export function FilesPanel() {
               Refresh
             </button>
           </div>
-          <p className="mb-1 min-w-0 truncate font-mono text-[10px] text-[var(--pc-muted)]">{phone ? phone.name : "No phone selected"}</p>
+          <p className="mb-1 min-w-0 truncate font-mono text-[11px] text-[var(--pc-muted)]">{phone ? phone.name : "No phone selected"}</p>
           {phoneError && <p className="text-xs text-[var(--pc-warn)]">{phoneError}</p>}
           <ul
             className="flex min-w-0 flex-col overflow-x-hidden"
@@ -361,7 +361,7 @@ function Pane({
     <section data-file-pane={pane} className="flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--pc-line)] p-3">
       <header className="mb-2 flex min-w-0 items-baseline justify-between gap-2">
         <h3 className="shrink-0 font-display text-sm font-semibold">{title}</h3>
-        <span className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-[var(--pc-muted)]">{path}</span>
+        <span className="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
       </header>
       {children}
     </section>

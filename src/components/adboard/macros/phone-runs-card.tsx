@@ -104,7 +104,7 @@ function PhoneRow({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-[var(--pc-ink)]">{device.name}</span>
-        <span className={cn("font-mono text-[10px] uppercase", online ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
+        <span className={cn("font-mono text-[11px] uppercase", online ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
           {device.status}
         </span>
         <select

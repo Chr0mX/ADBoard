@@ -239,7 +239,7 @@ export function QuickActionsMenu({
         >
           <span className="flex min-w-0 flex-col items-start">
             <span>{item.label}</span>
-            <span className="truncate text-[10px] text-[var(--pc-muted)]">{item.hint}</span>
+            <span className="truncate text-[11px] text-[var(--pc-muted)]">{item.hint}</span>
           </span>
         </button>
       ))}

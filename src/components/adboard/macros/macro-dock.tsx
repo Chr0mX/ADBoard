@@ -95,7 +95,7 @@ export function MacroDock({
       {phone && (
         <div className="flex items-center gap-2" data-macro-dock-header>
           <span className="font-display text-sm font-semibold text-[var(--pc-ink)]">Macros · {phone.name}</span>
-          <span className={cn("font-mono text-[10px] uppercase", phone.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
+          <span className={cn("font-mono text-[11px] uppercase", phone.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
             {phone.status}
           </span>
         </div>
@@ -121,7 +121,7 @@ export function MacroDock({
             </option>
           ))}
         </select>
-        {phone && !assignedTab && <span className="text-[10px]">Not chosen yet: Start keeps it as {phone.name}&apos;s macro.</span>}
+        {phone && !assignedTab && <span className="text-[11px]">Not chosen yet: Start keeps it as {phone.name}&apos;s macro.</span>}
       </label>
 
       <Segmented
@@ -314,14 +314,14 @@ function DockSteps({
               className="flex min-h-10 min-w-0 flex-1 items-center gap-2 text-left"
             >
               <span
-                className="flex size-5 shrink-0 items-center justify-center rounded-full font-mono text-[10px] font-bold text-[#071016]"
+                className="flex size-5 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold text-[#071016]"
                 style={{ backgroundColor: stepColor(index) }}
               >
                 {index + 1}
               </span>
               <span className="min-w-0 truncate text-xs text-[var(--pc-ink)]">
                 {step.label || KIND[stepKind(step)]}
-                <span className="ml-1.5 font-mono text-[10px] text-[var(--pc-muted)]">
+                <span className="ml-1.5 font-mono text-[11px] text-[var(--pc-muted)]">
                   {step.fingers.length > 1 ? `${step.fingers.length}f · ` : ""}
                   {formatMs(stepTouchMs(step))} · {formatMs(step.delayMs)}
                 </span>

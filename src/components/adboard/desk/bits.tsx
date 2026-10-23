@@ -5,6 +5,25 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { Device, DeviceOpResult } from "@/lib/devices/types";
 import { cn } from "@/lib/utils";
 
+/** Shown instead of an empty list: what the list is for, and the next step. */
+export function EmptyState({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children?: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-dashed border-[var(--pc-line)] p-4 text-center">
+      <p className="text-sm font-semibold text-[var(--pc-ink)]">{title}</p>
+      {children && <p className="mt-1 text-sm text-[var(--pc-muted)]">{children}</p>}
+      {action && <div className="mt-3 flex justify-center">{action}</div>}
+    </div>
+  );
+}
+
 export function PanelFrame({
   title,
   children,
@@ -36,7 +55,7 @@ export function TargetChecks({
 }) {
   return (
     <fieldset className="flex flex-col gap-1">
-      <legend className="mb-1 font-mono text-[10px] uppercase tracking-wider text-[var(--pc-muted)]">
+      <legend className="mb-1 font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">
         Target devices
       </legend>
       {devices.map((device) => (
@@ -51,7 +70,7 @@ export function TargetChecks({
             }}
           />
           <span className="font-medium">{device.name}</span>
-          <span className="ml-auto font-mono text-[10px] uppercase text-[var(--pc-muted)]">
+          <span className="ml-auto font-mono text-[11px] uppercase text-[var(--pc-muted)]">
             {device.status}
           </span>
         </label>
