@@ -8,18 +8,10 @@ import { DataStorageCard, openFolder, refreshStorageInfo, useStorageInfo } from 
 
 /*
  * Settings-free home for "where is my data": the current folder, the two
- * standard folders (switch between them), and any other folder (use it, or
+ * standard folders (tap one to switch to it), and any other folder (use it, or
  * move the data there). A changed location takes effect on the next start of
  * ADBoard.
  */
-
-const SOURCE_TEXT: Record<string, string> = {
-  override: "Set by the ADBOARD_DATA_DIR environment variable.",
-  chosen: "Chosen below.",
-  appFolder: "The default: a folder beside ADBoard.",
-  platform: "Your user folder, from an earlier version. You can move it below.",
-  fallback: "A temporary folder (no home folder was found).",
-};
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -83,8 +75,8 @@ export function StoragePanel() {
   const inApp = samePath(dataDir, targets?.app);
   const inUser = samePath(dataDir, targets?.user);
   const customPath = target.trim();
-  const customIsCurrent = !!customPath && samePath(customPath, dataDir);
 
+  // The App folder is the default; the wording follows the design brief.
   const standard: Record<StandardKey, { title: string; what: string; path: string | null | undefined; hasData: boolean | undefined; current: boolean }> = {
     app: {
       title: "App Folder (Default)",
@@ -146,7 +138,6 @@ export function StoragePanel() {
               </p>
             </div>
             <span className="self-start rounded-full bg-[var(--pc-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--pc-accent)]">Currently in use</span>
-            <p className="text-xs text-[var(--pc-muted)]">{SOURCE_TEXT[info.source] ?? ""}</p>
             {location?.restartRequired && (
               <p className="rounded-lg border border-[var(--pc-line)] px-2 py-1 text-xs text-[var(--pc-warn)]" data-storage-restart>
                 A new location is saved ({location.saved}). Restart ADBoard to use it.
@@ -170,32 +161,41 @@ export function StoragePanel() {
               </div>
               {(["app", "user"] as StandardKey[]).map((key) => {
                 const option = standard[key];
-                return (
-                  <div
-                    key={key}
-                    className={`flex min-w-0 flex-col gap-2 rounded-2xl border p-4 ${option.current ? "border-[var(--pc-accent)] bg-[var(--pc-panel)]" : "border-[var(--pc-line)]"}`}
-                    data-storage-option={key}
-                    data-storage-current-option={option.current ? "true" : "false"}
-                  >
+                const body = (
+                  <>
                     <h4 className="font-display text-base font-semibold text-[var(--pc-ink)]">{option.title}</h4>
                     <p className="break-all rounded-md bg-[var(--pc-paper)] px-2 py-1 font-mono text-sm text-[var(--pc-ink)]">{option.path ?? "not available"}</p>
                     <p className="text-sm text-[var(--pc-muted)]">{option.what}</p>
-                    {option.current ? (
+                  </>
+                );
+                if (option.current) {
+                  return (
+                    <div
+                      key={key}
+                      className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-accent)] bg-[var(--pc-panel)] p-4"
+                      data-storage-option={key}
+                      data-storage-current-option="true"
+                    >
+                      {body}
                       <span className="self-start rounded-full bg-[var(--pc-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--pc-accent)]" data-storage-current-tag>
                         Currently in use
                       </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="pc-toggle pc-toggle-md self-start"
-                        disabled={!viaAgent || busy || !option.path}
-                        onClick={() => setConfirmSwitch(key)}
-                        data-storage-switch-button={key}
-                      >
-                        Use {option.title.replace(" (Default)", "").toLowerCase()}
-                      </button>
-                    )}
-                  </div>
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] p-4 text-left disabled:opacity-60"
+                    disabled={!viaAgent || busy || !option.path}
+                    onClick={() => setConfirmSwitch(key)}
+                    data-storage-option={key}
+                    data-storage-current-option="false"
+                    data-storage-switch-button={key}
+                  >
+                    {body}
+                  </button>
                 );
               })}
             </section>
@@ -217,12 +217,6 @@ export function StoragePanel() {
               disabled={!viaAgent || busy}
               className="w-full min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 py-2.5 font-mono text-sm text-[var(--pc-ink)]"
             />
-            {customPath && (
-              <p className="break-all font-mono text-xs text-[var(--pc-muted)]" data-storage-custom-path>
-                {customPath}
-                {customIsCurrent && <span className="ml-2 font-sans font-semibold text-[var(--pc-accent)]">Currently in use</span>}
-              </p>
-            )}
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent || busy || !customPath} onClick={() => void saveFolder()}>
                 Use this folder
