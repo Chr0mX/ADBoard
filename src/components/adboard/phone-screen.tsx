@@ -1049,8 +1049,6 @@ export function PhoneScreen({
         data-more-tools-panel={optionsPopover ? (moreOpen ? "open" : "closed") : sideDock ? "inline" : undefined}
         className={cn(
           "w-full",
-          // Fill on a wide window: keep the options in a centred column, not edge to edge.
-          fillWindow && !sideDock && "mx-auto max-w-4xl",
           optionsPopover &&
             "absolute bottom-full left-1/2 z-30 mb-2 w-[min(40rem,100%)] -translate-x-1/2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-2 shadow-lg",
         )}
@@ -1066,7 +1064,7 @@ export function PhoneScreen({
           className={cn(
             "mt-2 flex gap-1.5 border-t border-[var(--pc-line)] pt-2",
             // Side dock: one full-width column, like the tool buttons.
-            sideDock ? "flex-col items-stretch [&>button]:w-full [&>button]:justify-start" : "flex-wrap items-center justify-center",
+            sideDock ? "flex-col items-stretch [&>button]:w-full [&>button]:justify-start" : "flex-wrap items-center",
           )}
         >
           {onCursorModeChange && (
