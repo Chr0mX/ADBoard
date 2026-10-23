@@ -609,7 +609,7 @@ function PinnedToolButton({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="Desk"
+          aria-label="Manage"
           data-taskbar-tool="desk"
           className={hit}
           onClick={handlers.onOpenDesk}

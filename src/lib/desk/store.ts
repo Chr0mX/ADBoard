@@ -318,10 +318,10 @@ export function parseDeskExport(raw: string): DeskLibrary {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error("Desk file is not valid JSON");
+    throw new Error("Export file is not valid JSON");
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Desk file must be an object");
+    throw new Error("Export file must be an object");
   }
   const body = parsed as Partial<DeskLibrary>;
   if (body.macros !== undefined && !Array.isArray(body.macros)) {

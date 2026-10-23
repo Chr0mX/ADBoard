@@ -97,7 +97,7 @@ Four switches:
 
 ## Phone taskbar
 
-The row of pinned tools that sits beside **Back / Home / Recent** on phones. Each tool has a switch: **Keyboard**, **Touch**, **Record**, **Replay**, **Refresh**, **APK**, **Grid**, **Stats mode**, **Devices**, **Desk**, **Cursor**, **Restart device**, **Device info**, **Device actions**, **Rotate**, **Fullscreen**, **Pop out**, **Quiet mode**, **Macros**, **Screenshot** and **Screen record**. Once a tool is pinned, **Order (left to right)** lists the pinned tools with **Up** and **Down** buttons to change their order. Back, Home, Recent and Minimize always stay. **Show on the bar** lets you hide Volume down, Volume up and Power. Tools that this browser can't run, such as Fullscreen in some browsers, are marked as not available.
+The row of pinned tools that sits beside **Back / Home / Recent** on phones. Each tool has a switch: **Keyboard**, **Touch**, **Record**, **Replay**, **Refresh**, **APK**, **Grid**, **Stats**, **Devices**, **Manage**, **Cursor**, **Restart device**, **Device info**, **Device actions**, **Rotate**, **Fullscreen**, **Pop out**, **Quiet mode**, **Macros**, **Screenshot** and **Screen record**. Once a tool is pinned, **Order (left to right)** lists the pinned tools with **Up** and **Down** buttons to change their order. Back, Home, Recent and Minimize always stay. **Show on the bar** lets you hide Volume down, Volume up and Power. Tools that this browser can't run, such as Fullscreen in some browsers, are marked as not available.
 
 You can pin up to 21 tools. When you reach the limit the remaining switches are greyed out until you turn one off. **Reset** removes all pins (it is greyed out when none are pinned). By default nothing is pinned and the taskbar only has Back, Home and Recent.
 

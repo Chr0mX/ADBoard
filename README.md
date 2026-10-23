@@ -347,7 +347,7 @@ The tabs across the top, left to right (each has a full page in the [user guide]
 - **Shared:** macros are kept on ADBoard and shared by every browser. Differing copies are merged, never replaced, and **Versions** restores earlier copies.
 - **Per phone:** **Phones** gives each phone its own macro, with its own Start / Pause / Stop and live status. Runs live in ADBoard, so they keep going when the browser closes, and stopping or disconnecting one phone leaves the others running. Runs stop when ADBoard itself is closed.
 
-See [docs/macros.md](docs/macros.md).
+See [the Macros guide](docs/guide/macros.md).
 
 ## Your data
 

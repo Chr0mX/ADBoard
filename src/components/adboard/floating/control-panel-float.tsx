@@ -723,7 +723,7 @@ export function ControlPanelFloat({
               aria-label={
                 taskbarEdit
                   ? `${pins.includes("desk") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.desk}`
-                  : "Desk"
+                  : "Manage"
               }
               aria-expanded={!taskbarEdit && deskOpen}
               aria-pressed={taskbarEdit ? pins.includes("desk") : deskOpen}

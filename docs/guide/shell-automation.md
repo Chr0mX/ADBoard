@@ -368,6 +368,16 @@ Goal: put an APK on each phone and open the app.
 9. Press **Run on N phones** and watch the progress. When it finishes, each phone says **Completed**.
 10. If an install fails, the **Log** shows the message from the phone. Use **Failures only** to find it.
 
+## Errors and limits
+
+- An offline phone is skipped when the run starts.
+- A phone that disconnects during a run fails at its next step with "Phone disconnected". The other phones go on.
+- Agent errors are shown as they are, for example "adb is not available", "package name is not valid", or a touch that failed.
+- On the mock fleet, touches and keys report **"mock phone: not sent"** instead of claiming success.
+- Jobs run from the browser: keep the page open until the job ends. Touch macros that must keep going without a browser belong in Macros.
+- Shell, File and Clear data / Uninstall steps need a real phone with ADB. The mock fleet returns "adb is not available".
+- Per-phone coordinate overrides are applied when a job runs, but there is no editor for them yet. Profiles hold notes and tags only.
+
 ## Where jobs are saved
 
 Each job is its own file named `<Name>.json` in the `shell_scripts` folder of the data folder (the **Storage** tab shows where that is). Your variables, per-phone values, tags, groups, apps and profiles are kept together in one file, `_library.json`, in the same folder. Everything is saved as soon as you edit.

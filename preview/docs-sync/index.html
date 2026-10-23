@@ -31,13 +31,13 @@ code { font: 13px ui-monospace, monospace; }
 <body>
 <main>
   <h1>Docs sync check</h1>
-  <p class="lede">A mock-up of what the docs folder is checked against, and what is still out of step. Read-only: nothing in <code>docs/</code>, the app or the site was changed.</p>
+  <p class="lede">A mock-up of what the docs folder is checked against, and what is still out of step. Updated after the Stats / Manage rename and the page merge.</p>
 
   <div class="cards">
     <div class="card"><b class="ok">0</b><span>site pages that differ from <code>docs/guide</code> after a rebuild</span></div>
     <div class="card"><b class="ok">0</b><span>broken links or anchors in the Pages site</span></div>
     <div class="card"><b class="ok">all</b><span>env var names in the docs are read by the agent (checked by name)</span></div>
-    <div class="card"><b class="warn">4</b><span>open items: names and duplicate pages (below)</span></div>
+    <div class="card"><b class="ok">0</b><span>open items after the rename and merge</span></div>
   </div>
 
   <h2>What is in sync</h2>
@@ -51,16 +51,16 @@ code { font: 13px ui-monospace, monospace; }
     <tr><td>Internal links</td><td>all guide pages</td><td>link checker, 0 problems</td><td><span class="tag ok">in sync</span></td></tr>
   </table></div>
 
-  <h2>What is out of step</h2>
+  <h2>What was out of step (now fixed)</h2>
   <div class="wrap"><table>
     <tr><th>Term</th><th>Where the docs say it</th><th>Where the app says it</th><th>Status</th></tr>
-    <tr><td>Stats</td><td><code>guide/control.md</code>: "Stats"; <code>guide/settings.md</code>: "Stats mode"</td><td>Taskbar label is "Stats mode" (<code>taskbar-pins.ts</code>)</td><td><span class="tag warn">needs a name</span></td></tr>
-    <tr><td>Desk / Manage</td><td><code>guide/control.md</code>, <code>guide/settings.md</code>: "Desk"</td><td>Taskbar and Tools say "Desk"; the tab is "Manage" (<code>DESK_SECTIONS</code>)</td><td><span class="tag warn">needs a name</span></td></tr>
-    <tr><td>Macros reference</td><td><code>docs/macros.md</code> (168 lines) and <code>guide/macros.md</code> (330 lines) cover the same feature</td><td>one feature</td><td><span class="tag warn">duplicate</span></td></tr>
-    <tr><td>Shell Automation reference</td><td><code>docs/shell-automation.md</code> and <code>guide/shell-automation.md</code></td><td>one feature</td><td><span class="tag warn">duplicate</span></td></tr>
+    <tr><td>Stats</td><td><code>guide/control.md</code>: "Stats"; <code>guide/settings.md</code>: "Stats mode"</td><td>Taskbar label is "Stats mode" (<code>taskbar-pins.ts</code>)</td><td><span class="tag ok">renamed</span></td></tr>
+    <tr><td>Desk / Manage</td><td><code>guide/control.md</code>, <code>guide/settings.md</code>: "Desk"</td><td>Taskbar and Tools say "Desk"; the tab is "Manage" (<code>DESK_SECTIONS</code>)</td><td><span class="tag ok">renamed</span></td></tr>
+    <tr><td>Macros reference</td><td><code>docs/macros.md</code> (168 lines) and <code>guide/macros.md</code> (330 lines) cover the same feature</td><td>one feature</td><td><span class="tag ok">merged</span></td></tr>
+    <tr><td>Shell Automation reference</td><td><code>docs/shell-automation.md</code> and <code>guide/shell-automation.md</code></td><td>one feature</td><td><span class="tag ok">merged</span></td></tr>
   </table></div>
 
-  <div class="note"><b>Proposed, waiting for approval:</b> use one name per concept (Stats, Manage, Taskbar), change the labels in the app, the guide and the link checks in the same change, and keep one reference page per feature in <code>docs/guide</code>, with <code>docs/macros.md</code> and <code>docs/shell-automation.md</code> turned into short pointers. This changes what users read, so it needs your decision first.</div>
+  <div class="note"><b>Done:</b> the taskbar and Tools labels, the guide and the export error text now use Stats and Manage. The macro and Shell Automation details live in <code>docs/guide</code>, and <code>docs/macros.md</code> and <code>docs/shell-automation.md</code> are short pointers.</div>
 </main>
 </body>
 </html>

@@ -20,7 +20,7 @@ Testing used the mock fleet (`ADBOARD_FORCE_MOCK=1`) in Chromium at desktop and 
 | Select All / Deselect All | Existing | Devices sidebar: "Select all" / "Clear" |
 | Group Control | Existing | Saved groups (Shell Automation → Groups) as chips |
 | Broadcast Input | Existing | Selected / Multi / All |
-| Device Manager | Existing | Desk → Manage |
+| Device Manager | Existing | Manage |
 | Connect / Disconnect | Existing | Manage → Wireless: `adb pair`, `adb connect` and `adb disconnect`, plus QR pairing |
 | Reconnect | Existing | Sidebar, Device actions (⋮) and the device menu. Offline phones get `adb reconnect`. |
 | Restart Device | Existing | Reboot, with confirmation |

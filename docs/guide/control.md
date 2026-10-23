@@ -354,7 +354,7 @@ Then a grid of tool buttons (icons only):
 | Device actions (three dots) | Menu with **Reconnect video**, **Restart ADB link** and **Power off**. |
 | Screen tools | Opens a small group with **Rotate**, **Fullscreen** and **Pop out**. |
 | **Macro** | Opens the Macro sheet. |
-| Desk | Lists the other tabs (Manage, Apps, Files, Macros, Shell Automation, Developer, Hosts, Settings) so you can switch. |
+| **Manage** | Opens the Manage tab. In the Tools panel the same button lists the other tabs (Manage, Apps, Files, Macros, Shell Automation, Developer, Hosts, Settings) so you can switch. |
 
 If the Pop out or Fullscreen features are not supported by your browser, those buttons do not appear.
 
@@ -377,7 +377,7 @@ On a touch screen, press and hold any taskbar button for half a second to open *
 
 Each tool can be pinned once. When you reach the limit of 21 tools, the other switches are greyed out until you turn one off. Pins and the Show on the bar choices are saved on the ADBoard computer, so every browser that opens this ADBoard shows the same taskbar, and it is kept after you restart ADBoard or refresh the page.
 
-These tools can be pinned: Keyboard, Touch, Record, Replay, Refresh, APK, Grid, Stats, Devices, Desk, Cursor, Restart device, Device info, Device actions, Rotate, Fullscreen, Pop out, Quiet mode, **Macros** (opens the Macro dock), **Screenshot** and **Screen record**. Fullscreen and Pop out only appear in browsers that support them. Stream quality and the other settings stay in the Tools panel. A dot on the Macros button means a macro is running.
+These tools can be pinned: Keyboard, Touch, Record, Replay, Refresh, APK, Grid, Stats, Devices, Manage, Cursor, Restart device, Device info, Device actions, Rotate, Fullscreen, Pop out, Quiet mode, **Macros** (opens the Macro dock), **Screenshot** and **Screen record**. Fullscreen and Pop out only appear in browsers that support them. Stream quality and the other settings stay in the Tools panel. A dot on the Macros button means a macro is running.
 
 ### Stats on a phone
 
