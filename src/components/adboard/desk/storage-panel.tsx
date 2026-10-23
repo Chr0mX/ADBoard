@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FolderOpen } from "lucide-react";
 import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 import { ConfirmDialog, PanelFrame } from "@/components/adboard/desk/bits";
 import { DataStorageCard, openFolder, refreshStorageInfo, useStorageInfo } from "@/components/adboard/desk/data-storage";
@@ -125,20 +126,26 @@ export function StoragePanel() {
 
   return (
     <PanelFrame title="Data Storage" panel="storage">
-      <p className="text-xs text-[var(--pc-muted)]">Choose where ADBoard stores your data, including macros, scripts, and configuration.</p>
-      {!viaAgent && <p className="text-xs text-[var(--pc-muted)]">In the browser demo, data is kept in this browser only.</p>}
-      {error && <p className="text-xs text-[var(--pc-warn)]">{error}</p>}
+      <div className="flex flex-col gap-1">
+        <p className="text-sm text-[var(--pc-muted)]">Choose where ADBoard stores your data, including macros, scripts, and configuration.</p>
+        {!viaAgent && <p className="text-xs text-[var(--pc-muted)]">In the browser demo, data is kept in this browser only.</p>}
+        {error && <p className="text-xs text-[var(--pc-warn)]">{error}</p>}
+      </div>
       {info && (
         <>
-          <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-current>
-            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Current Storage Location</h3>
-            <p className="text-xs text-[var(--pc-muted)]">
-              Your data is currently stored in {currentLabel}.
-            </p>
-            <p className="text-xs font-semibold text-[var(--pc-ink)]">{inApp ? "App folder" : inUser ? "User folder" : "Custom folder"}</p>
-            <p className="break-all font-mono text-xs text-[var(--pc-ink)]" data-storage-path>
-              {dataDir}
-            </p>
+          <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-storage-current>
+            <div className="flex min-w-0 items-center gap-3">
+              <FolderOpen className="size-6 shrink-0 text-[var(--pc-ink)]" aria-hidden />
+              <h3 className="font-display text-lg font-semibold text-[var(--pc-ink)]">Current Storage Location</h3>
+            </div>
+            <p className="text-sm text-[var(--pc-muted)]">Your data is currently stored in {currentLabel}.</p>
+            <div className="flex min-w-0 flex-col gap-2">
+              <p className="text-sm font-semibold text-[var(--pc-ink)]">{inApp ? "App folder" : inUser ? "User folder" : "Custom folder"}</p>
+              <p className="break-all rounded-md bg-[var(--pc-paper)] px-2 py-1 font-mono text-sm text-[var(--pc-ink)]" data-storage-path>
+                {dataDir}
+              </p>
+            </div>
+            <span className="self-start rounded-full bg-[var(--pc-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--pc-accent)]">Currently in use</span>
             <p className="text-xs text-[var(--pc-muted)]">{SOURCE_TEXT[info.source] ?? ""}</p>
             {location?.restartRequired && (
               <p className="rounded-lg border border-[var(--pc-line)] px-2 py-1 text-xs text-[var(--pc-warn)]" data-storage-restart>
@@ -156,31 +163,28 @@ export function StoragePanel() {
           </section>
 
           {(targets?.app || targets?.user) && (
-            <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-switch>
-              <div className="flex flex-col gap-1">
-                <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Switch Storage Location</h3>
-                <p className="text-xs text-[var(--pc-muted)]">Choose between the app folder and your Windows user folder.</p>
+            <section className="flex min-w-0 flex-col gap-3" data-storage-switch>
+              <div className="flex min-w-0 flex-col gap-1">
+                <h3 className="font-display text-lg font-semibold text-[var(--pc-ink)]">Switch Storage Location</h3>
+                <p className="text-sm text-[var(--pc-muted)]">Choose between the app folder and your Windows user folder.</p>
               </div>
               {(["app", "user"] as StandardKey[]).map((key) => {
                 const option = standard[key];
                 return (
                   <div
                     key={key}
-                    className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] p-3"
+                    className={`flex min-w-0 flex-col gap-2 rounded-2xl border p-4 ${option.current ? "border-[var(--pc-accent)] bg-[var(--pc-panel)]" : "border-[var(--pc-line)]"}`}
                     data-storage-option={key}
                     data-storage-current-option={option.current ? "true" : "false"}
                   >
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-[var(--pc-ink)]">{option.title}</span>
-                      {option.current && (
-                        <span className="rounded-full border border-[var(--pc-accent)] px-2 py-0.5 text-[11px] font-semibold text-[var(--pc-accent)]" data-storage-current-tag>
-                          Current
-                        </span>
-                      )}
-                    </div>
-                    <p className="break-all font-mono text-xs text-[var(--pc-ink)]">{option.path ?? "not available"}</p>
-                    <p className="text-xs text-[var(--pc-muted)]">{option.what}</p>
-                    {!option.current && (
+                    <h4 className="font-display text-base font-semibold text-[var(--pc-ink)]">{option.title}</h4>
+                    <p className="break-all rounded-md bg-[var(--pc-paper)] px-2 py-1 font-mono text-sm text-[var(--pc-ink)]">{option.path ?? "not available"}</p>
+                    <p className="text-sm text-[var(--pc-muted)]">{option.what}</p>
+                    {option.current ? (
+                      <span className="self-start rounded-full bg-[var(--pc-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--pc-accent)]" data-storage-current-tag>
+                        Currently in use
+                      </span>
+                    ) : (
                       <button
                         type="button"
                         className="pc-toggle pc-toggle-md self-start"
@@ -197,24 +201,26 @@ export function StoragePanel() {
             </section>
           )}
 
-          <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-storage-change>
-            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Custom Storage Location</h3>
-            <p className="text-xs text-[var(--pc-muted)]">Enter a full folder path to use an existing data folder or choose a new location.</p>
-            <p className="text-xs text-[var(--pc-muted)]">
-              Example: <span className="break-all font-mono">D:\adboard-data</span>
-            </p>
+          <section className="flex min-w-0 flex-col gap-3" data-storage-change>
+            <div className="flex min-w-0 flex-col gap-1">
+              <h3 className="font-display text-lg font-semibold text-[var(--pc-ink)]">Custom Storage Location</h3>
+              <p className="text-sm text-[var(--pc-muted)]">Enter a full folder path to use an existing data folder or choose a new location.</p>
+              <p className="text-sm text-[var(--pc-muted)]">
+                Example: <span className="break-all rounded-md bg-[var(--pc-paper)] px-1.5 py-0.5 font-mono text-[var(--pc-ink)]">D:\adboard-data</span>
+              </p>
+            </div>
             <input
               value={target}
               onChange={(event) => setTarget(event.target.value)}
               placeholder="D:\adboard-data"
               aria-label="New data folder"
               disabled={!viaAgent || busy}
-              className="w-full min-w-0 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 py-2 font-mono text-sm text-[var(--pc-ink)]"
+              className="w-full min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 py-2.5 font-mono text-sm text-[var(--pc-ink)]"
             />
             {customPath && (
               <p className="break-all font-mono text-xs text-[var(--pc-muted)]" data-storage-custom-path>
                 {customPath}
-                {customIsCurrent && <span className="ml-2 font-sans font-semibold text-[var(--pc-accent)]">Current</span>}
+                {customIsCurrent && <span className="ml-2 font-sans font-semibold text-[var(--pc-accent)]">Currently in use</span>}
               </p>
             )}
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -225,7 +231,7 @@ export function StoragePanel() {
                 Move data
               </button>
             </div>
-            <p className="text-xs text-[var(--pc-muted)]">
+            <p className="text-sm text-[var(--pc-muted)]">
               <span className="font-semibold text-[var(--pc-ink)]">Move data:</span> Copies everything into a new, empty folder. The original data is kept, and nothing is deleted.
             </p>
             {notice && (
