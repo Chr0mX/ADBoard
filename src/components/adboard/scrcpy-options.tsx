@@ -41,15 +41,12 @@ export function ScrcpyOptions({
   serial,
   disabled,
   align = "center",
-  fill = false,
 }: {
   targetIds: string[];
   serial: string | null;
   disabled?: boolean;
   /** `start`: rows fill the column edge to edge (side control dock). */
   align?: "center" | "start";
-  /** `fill`: Fill mode, where the rows stretch across the whole overlay. */
-  fill?: boolean;
 }) {
   const start = align === "start";
   const { options, apply, note, setNote, audioNote, audioError } = useScrcpyOptions({
@@ -195,13 +192,13 @@ export function ScrcpyOptions({
   };
 
   return (
-    <div className={cn("flex w-full shrink-0 flex-col gap-1", start ? "items-stretch" : "items-center", fill && "px-2")} data-scrcpy-options data-align={align}>
+    <div className={cn("flex w-full shrink-0 flex-col gap-1", start ? "items-stretch" : "items-center")} data-scrcpy-options data-align={align}>
       <div
         className={cn(
           "flex w-full items-center gap-1.5",
           start
             ? "flex-wrap justify-start [&>*]:flex-1 [&>*]:basis-auto"
-            : cn("flex-wrap justify-start", fill && "[&>*]:flex-1 [&>*]:basis-auto"),
+            : "flex-wrap justify-start",
         )}
       >
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
