@@ -291,7 +291,7 @@ Click an entry to restore it. A message confirms what came back. A restore is it
 
 You do not have to leave the Control tab to run a macro. The **Macro** button in the Control tool row opens the **Macros** panel next to the phone. On a wide screen it appears as a side panel (it takes the place of the phone list until you close it); on a small screen it opens as a full-screen sheet with a **Close** button. The panel is for running macros. To edit one, use the Macros tab.
 
-When a phone is selected in Control, the panel belongs to that phone and is titled "Macros . <phone name>", with its online state. It contains:
+When a phone is selected in Control, the panel belongs to that phone and is titled "Macros · <phone name>", with its online state. It contains:
 
 - **Macro for <phone>**: that phone's own macro. Changing it changes only this phone's choice; the Macros tab, other phones and other browsers stay as they are. If none has been chosen yet it says "Not chosen yet: Start keeps it as <phone>'s macro."
 - **Run on**: **This phone** (the default), **Control targets (n)** (the phones that Selected, Multi or All point at in Control) or **Tab's phones (n)** (the phones ticked in the Macros tab).

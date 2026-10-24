@@ -2,7 +2,7 @@ Back to the [guide index](README.md)
 
 # Settings
 
-The **Settings** tab is one place for the choices that change how ADBoard looks and behaves: how the phone screens are streamed, how your keyboard and mouse reach the phones, how the grid and the phone taskbar are arranged, your account, and where ADBoard keeps your data. Every switch here is the same switch you find elsewhere in ADBoard (for example in Control), so a change made here shows up there too.
+The **Settings** tab is one place for the choices that change how ADBoard looks and behaves: how the phone screens are streamed, how your keyboard and mouse reach the phones, how the grid and the phone taskbar are arranged, and your account. Where ADBoard keeps your data is in the **Storage** tab. Every switch here is the same switch you find elsewhere in ADBoard (for example in Control), so a change made here shows up there too.
 
 
 ![The Settings tab with its cards](images/settings.jpg)
@@ -17,7 +17,7 @@ The **Settings** tab is one place for the choices that change how ADBoard looks 
 - [Grid view](#grid-view)
 - [Phone taskbar](#phone-taskbar)
 - [Account](#account)
-- [Data and storage](#data--storage)
+- [Storage](../storage.md) (its own tab)
 - [What is shared by all browsers and what is remembered per browser](#what-is-shared-by-all-browsers-and-what-is-remembered-per-browser)
 
 The cards appear in this order. On a wide screen they sit in two columns.
@@ -112,7 +112,7 @@ This card only appears when a password is in use, or when you can still set one.
 
 A password is required to reach ADBoard from outside your home network. See [Remote access](../../README.md#remote-access-nginx-proxy-manager--cloudflare) for the full steps with Nginx Proxy Manager and Cloudflare. Your password is never stored in a readable form, only as a salted hash.
 
-## Data & storage
+## Storage
 
 Data & storage lives in the **Storage** tab, a tab of its own at the top of the window; Settings has no card for it. The Storage tab shows where ADBoard keeps your macros, scripts and settings, and gives you tools to back them up and move them. In the demo without the ADBoard agent it says "In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy." and some buttons are missing.
 

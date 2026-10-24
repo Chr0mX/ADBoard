@@ -26,8 +26,8 @@ The Dashboard runs across the top of ADBoard, in this order.
 | <img src="../../site/assets/icon-automation.svg" width="20" height="20" alt="" align="absmiddle"> **Shell Automation** | Run a list of actions (open app, wait, screenshot, send file, key, command) on many phones | [shell-automation.md](shell-automation.md) |
 | <img src="../../site/assets/icon-adb-terminal.svg" width="20" height="20" alt="" align="absmiddle"> **Developer** | Run an ADB shell command, read logs, device information | [developer.md](developer.md) |
 | <img src="../../site/assets/icon-device-fleet.svg" width="20" height="20" alt="" align="absmiddle"> **Hosts** | The computers that run ADB, and the phones on each | [hosts.md](hosts.md) |
-| **Storage** | Where your data is kept, its size, and how to move it | [settings.md](settings.md#data--storage) |
-| <img src="../../site/assets/icon-settings.svg" width="20" height="20" alt="" align="absmiddle"> **Settings** | Stream quality, keyboard, grid, account, data and backups | [settings.md](settings.md) |
+| **Storage** | Where your data is kept, its size, and how to move it | [storage](../storage.md) |
+| <img src="../../site/assets/icon-settings.svg" width="20" height="20" alt="" align="absmiddle"> **Settings** | Stream quality, keyboard, grid, Tools at the edge, account and taskbar | [settings.md](settings.md) |
 
 ## Which one do I use?
 

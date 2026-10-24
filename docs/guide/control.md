@@ -136,7 +136,7 @@ The row of buttons under the phone. On a wide window each button shows a text la
 | **Refresh** | Drops the video and starts it again. Use it when the picture freezes or looks broken. |
 | **APK** | Opens a file picker. Choose an .apk file and ADBoard installs it on the target phones. A note under the phone says how it went. |
 | **Shot** | Takes a screenshot of each target phone and downloads each one to your computer as a PNG named after the phone. |
-| **Rec** | Starts a screen recording on the phone itself (720p, in the phone's Movies folder). The button changes to **Stop**. The video file stays on the phone. |
+| **Rec** | Starts a screen recording on the phone itself, saved in its Movies folder. The button changes to **Stop**. The video file stays on the phone. |
 | **Fill** | Makes the phone view fill the whole window. See [Fill window](#fill-window). |
 | **Grid** | Switches to Grid view. See [Grid view](#grid-view). |
 | **Macro** | Opens or closes the [Macro panel](#macro-panel). |

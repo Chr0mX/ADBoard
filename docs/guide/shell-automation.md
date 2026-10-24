@@ -41,7 +41,7 @@ Open **Shell Automation** from the desk header. Along the top are six sub-tabs, 
 | **Builder** | Make a job step by step next to the phone's live screen, test it and run it |
 | **Variables** | Values you can use inside steps, the same for every phone or different per phone |
 | **Groups** | Saved sets of phones |
-| **Profiles** | Per-phone notes and tags |
+| **Profiles** | Per-phone settings: which jobs belong to a phone, and tags to sort phones |
 | **History** | The last 30 runs and how each phone did |
 
 ADBoard remembers which sub-tab and which job you had open, so a reload brings you back to the same place.

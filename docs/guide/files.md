@@ -100,7 +100,7 @@ The PC folder named Recordings is there for your own use. ADBoard does not fill 
 - Files folder only: the PC pane cannot leave the ADBoard files folder.
 - Delete and the phone's Rename and Delete do not ask for confirmation. Deleting a phone folder removes everything in it.
 - Offline phones are not used. If the open phone goes offline, the PHONE pane shows an error under its shortcut row and the list stays empty.
-- Large files: files over 64 MB are sent in pieces automatically (the largest allowed is 256 MB).
+- Large files: uploads are sent in pieces of 32 MB automatically. The largest file allowed is 256 MB.
 - ADBoard remembers the last PC and phone folder you had open in each browser.
 - Both panes show only names and folder markers, not sizes or dates.
 - On the demo phones, the PHONE pane shows a sample list of folders and one very long file name, and sending, renaming, deleting and making folders need a real phone and ADB.

@@ -32,7 +32,7 @@ Press **Refresh** under the phone, or **Reconnect** in the Devices column. The s
 
 ## A script step fails
 
-Open the **Log** in the Builder. The reason from the phone or ADBoard is shown as reported, for example "adb is not available" or "package name is not valid". Steps that use ADB (shell commands, files, install, uninstall) need a real phone; the demo phones can't run them. Steps that need fixing are outlined in red, and **Run** is blocked until they are fixed.
+Open the **Log** in the Builder. The reason from the phone or ADBoard is shown as reported, for example "adb is not available" or "package name is not valid". Steps that use ADB (shell commands, files, install, uninstall) need a real phone; the demo phones can't run them. Steps that need fixing are outlined in orange, and **Run** is blocked until they are fixed.
 
 ## An app button has no icon
 
