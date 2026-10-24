@@ -18,7 +18,6 @@
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [The phone-sized layout](#the-phone-sized-layout)
 - [The stats line](#the-stats-line)
-- [What needs real phones](#what-needs-real-phones)
 
 ## What you see on screen
 
@@ -26,7 +25,7 @@ On a desktop-sized window (1024 pixels wide or more) Control has three columns.
 
 ![The Control tab on a desktop window: Screens on the left, the phone in the middle, Devices on the right.](images/control.jpg)
 
-*The main Control view with the demo phones.*
+*The main Control view.*
 
 | Area | What it holds |
 |---|---|
@@ -212,7 +211,7 @@ Hover over a button to see the app's package name.
 
 Grid view shows every phone as a live tile, so you can watch and drive many phones at once. Open it with the **Grid** button, with Alt+Shift+G, or from More tools -> **Arrangement**. Leave it with **Exit** in the bar or the same shortcut. While Grid view is open, the Screens and Devices columns and the tool row are hidden.
 
-![Grid view with four demo phones. The last one is offline.](images/control-grid.jpg)
+![Grid view with several phones.](images/control-grid.jpg)
 
 *Grid view: the bar on top, one tile per phone, and the strip under each tile.*
 
@@ -399,16 +398,3 @@ A single line of live numbers for the phone you are looking at. It sits at the b
 | A message | Shown only when something is wrong, for example "unauthorized - unlock USB debugging", "ADB offline - reconnect", "stream starting..." or "stream error - tap Refresh or Reconnect". |
 
 If no phone is selected, it says "No active device".
-
-## What needs real phones
-
-The demo phones let you try the layout and buttons, but they have no real screen, apps or sound. These features need real phones connected by USB or Wi-Fi (with the ADB tools and the screen-mirroring server set up) and will not do anything real on the demo fleet:
-
-- the live picture itself, taps, swipes and typing,
-- Audio, Screen off, Stay awake, Quiet mode, Size and the clipboard buttons,
-- Shot and Rec, and installing an APK,
-- Rotate, Restart device, Reconnect video, Restart ADB link and Power off,
-- app shortcuts opening apps, and app icons read from the phone (you will see letter badges instead),
-- battery, temperature, CPU and RAM numbers.
-
-Layout, folding, control modes, Grid view and its Arrangement, the taskbar and pinning, and the keyboard shortcuts work on the demo phones.

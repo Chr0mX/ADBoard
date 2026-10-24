@@ -4,7 +4,7 @@
 
 ADBoard is a web page for controlling Android phones that are plugged into a PC, or joined over Wi-Fi. You see each phone's screen live, tap and type on it from your computer, and run the same steps on many phones at once.
 
-This guide explains every tab. The screenshots use ADBoard's demo phones, which show no picture; with real phones you see their screens.
+This guide explains every tab.
 
 ## Start here
 

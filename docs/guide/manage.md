@@ -96,7 +96,7 @@ A recording stops by itself after 3 minutes (180 seconds). To keep a recording, 
 
 This shows a list of facts about one phone. It uses the first ticked phone, or the phone you were last looking at if none is ticked. If there is no phone, it says "Select a device."
 
-The list shows: Name, Model, Android (version), Serial, Resolution, Refresh Rate, Battery, Temperature, Storage, RAM, Connection (USB or Network), Host (the computer the phone is attached to) and ADB (Connected, or the phone's state). A dash means the value was not available. On demo phones, Storage and RAM are always blank.
+The list shows: Name, Model, Android (version), Serial, Resolution, Refresh Rate, Battery, Temperature, Storage, RAM, Connection (USB or Network), Host (the computer the phone is attached to) and ADB (Connected, or the phone's state). A dash means the value was not available.
 
 ## Wireless
 
@@ -104,7 +104,7 @@ The list shows: Name, Model, Android (version), Serial, Resolution, Refresh Rate
 
 *Wireless: add a phone over Wi-Fi.*
 
-This lets you connect a phone without a cable. The phone and the ADBoard computer must be on the same network. Wireless connections need a real phone and working ADB; the demo phones cannot use this.
+This lets you connect a phone without a cable. The phone and the ADBoard computer must be on the same network. Wireless connections need a phone that supports Wireless debugging and working ADB.
 
 The sub-tab opens with an **Add wireless** button (it opens or closes the form) and a form that starts open.
 
@@ -168,5 +168,4 @@ Once a phone has been paired, you can connect later by entering just the address
 - Reboot and Shutdown always ask first. With more than one phone you must also type the word to confirm.
 - The result list shows one line per phone: a tick and the outcome, a cross and the error, or a dash and "Skipped" for phones you did not tick. A ticked phone that is offline shows "No result", because ADBoard does not send commands to phones that are not online. The exceptions are Reconnect and Restart ADB, which do try offline phones.
 - Screen recordings stay on the phone and last at most 3 minutes.
-- On the demo phones, screenshots are tiny blank placeholder pictures, and Reboot, Shutdown, Record and Wireless report that ADB is not available. They need a real phone and ADB.
 - Phones on another computer ("host") are handled by that computer. If it cannot be reached, the result line says so. See the [Hosts guide](hosts.md).

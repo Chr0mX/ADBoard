@@ -86,5 +86,4 @@ This sub-tab shows a single button, "Open <phone name> information", for the pho
 - There are no confirmations in the shell. Be careful with commands that remove files or change settings.
 - Offline phones are not sent commands. A ticked offline phone shows "No result".
 - Results can be long. The result list shows the phone's full answer on the line; the dark log box scrolls sideways.
-- On the demo phones every shell command reports that ADB is not available. The shell needs a real phone and ADB.
 - Phones attached to another computer are run through that computer (see the [Hosts guide](hosts.md)).

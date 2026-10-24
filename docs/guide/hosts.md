@@ -73,7 +73,6 @@ ADBOARD_TOKEN=<the same shared secret>
 | ADBOARD_PORT | The port the agent listens on (3849 by default for an agent). |
 | ADBOARD_TOKEN | A shared secret. Set the same value on both sides when the controller is open to the network. |
 
-To try this without any phones, add `ADBOARD_FORCE_MOCK=1` and `ADBOARD_VIDEO_SOURCE=testpattern` to each, which gives demo phones.
 
 ## How to
 
@@ -96,4 +95,3 @@ To try this without any phones, add `ADBOARD_FORCE_MOCK=1` and `ADBOARD_VIDEO_SO
 - An agent that is stopped or loses the network will show as not online, and its phones will be offline; commands are not sent to offline phones.
 - A phone is attached to one computer. Wireless phones (see the [Manage guide](manage.md#wireless)) belong to the computer whose ADB connected to them.
 - This tab is read only: there are no buttons to add, remove or restart hosts. That is done by starting or stopping the agent program on that computer.
-- The demo fleet has fake hosts, so the cards here do not mean real computers.

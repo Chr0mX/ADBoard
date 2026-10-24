@@ -148,4 +148,3 @@ The package id may only contain letters, numbers, dots and underscores, and must
 - Offline phones are never sent commands. A ticked offline phone shows "No result" in the result list; if every ticked phone is offline, an install reports "no online targets for install".
 - The activity and arguments are checked for safety. Characters such as ; | & $ quotes and backslashes are refused in arguments.
 - Delete on a shortcut and Uninstall in Packages act immediately. Clear Data is the only action here that asks first.
-- On the demo phones, Install reports "Installed" without doing anything, Scan shows a short sample list, and Launch, Force Stop, Uninstall and Clear Data report that ADB is not available. Real results need a real phone and ADB.

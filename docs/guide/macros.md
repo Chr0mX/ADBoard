@@ -8,7 +8,7 @@ This page covers the Macros tab: managing macros, placing touches, running them 
 
 ![The Macros tab with the tab bar, Preview and Steps](images/macros.jpg)
 
-*The Macros tab. The screenshots in this guide use demo phones, so the preview shows no picture, only the numbered touch markers.*
+*The Macros tab.*
 
 ## Contents
 
@@ -43,7 +43,7 @@ If a job needs both, build each part where it fits. Shell Automation can start t
 - A run **keeps going when you close the browser**. Any browser that opens ADBoard later sees the run and can pause or stop it.
 - Runs **stop when ADBoard itself is closed**. Your macros and your phone choices are kept, but you have to start the runs again.
 - Macros are saved on ADBoard and shared by every browser that opens it. If the line under the page title says "Saved in this browser only", ADBoard could not be reached and your edits are only in this browser for now. When macros are shared, no line is shown.
-- If ADBoard is not connected at all (the in-browser demo), runs happen inside the browser page and end when you close it.
+- If ADBoard is not connected at all, runs happen inside the browser page and end when you close it.
 
 ## The tab bar
 
@@ -68,7 +68,7 @@ At the right of the bar are **Import**, **Versions** and **Export**, described b
 The **Preview** card shows the screen of a phone and draws your touches on it.
 
 - **Show on** is a row of chips: one for each connected phone (with a dot that is green when the phone is online) and a **Reference** chip such as "Reference 900x1600". Click a chip to draw the touches on that phone's screen, or on a blank frame the size of the reference screen. A phone whose screen size is unknown cannot be picked. The chip of the phone you are controlling in the Control tab says "in Control". A macro opens on the phone you are controlling, otherwise on an online phone ticked in Run, otherwise on any online phone, and remembers the last chip you picked.
-- **Live** is a switch that shows when a phone chip is selected. On, the phone's live picture is shown under the touch markers. Off, you only see the markers. A badge in the corner tells you the state: "Live", "Connecting...", "Waiting for picture...", "Video unavailable" or "No video (mock UI)".
+- **Live** is a switch that shows when a phone chip is selected. On, the phone's live picture is shown under the touch markers. Off, you only see the markers. A badge in the corner tells you the state: "Live", "Connecting...", "Waiting for picture...", "Video unavailable".
 - Each touch is a numbered coloured circle: the number is the step. A step with several fingers shows "1a", "1b" and so on. A swipe also has a line, and a hollow ring marks where the swipe ends. Steps you have switched off are faded. The selected step is drawn brighter.
 - A caption under the picture shows the screen name and size. If the macro is set to **Keep aspect** and the phone has a different shape, a dashed outline marks the area the macro uses.
 - If the phone is turned sideways compared with the macro and the macro is set to skip other orientations, a warning appears above the picture.
@@ -177,7 +177,7 @@ When you press it, ADBoard starts one independent run on each ticked online phon
 - **Pause** waits until the touch in progress is finished, then holds before the next step. The phones stay reserved for this macro. The button changes to **Resume**, which continues from the next step.
 - **Stop** ends the run after the touch in progress, which always lifts every finger. The button says "Stopping..." for a moment.
 
-**The status area** under the buttons shows the state (RUNNING, PAUSED, STOPPING, DONE, STOPPED or FAILED), the cycle ("cycle 3/10", or "cycle 3 - infinity until stopped"), the step ("step 2/4"), how many touches were sent, the seconds elapsed and, for For time, the seconds left. A progress bar follows the current step. Below that is one line per phone: Waiting, Touching, Failed, Skipped, Busy or "Mock (not sent)" when the phone is a pretend one, with the reason where there is one.
+**The status area** under the buttons shows the state (RUNNING, PAUSED, STOPPING, DONE, STOPPED or FAILED), the cycle ("cycle 3/10", or "cycle 3 - infinity until stopped"), the step ("step 2/4"), how many touches were sent, the seconds elapsed and, for For time, the seconds left. A progress bar follows the current step. Below that is one line per phone: Waiting, Touching, Failed, Skipped, or Busy, with the reason where there is one.
 
 If a phone fails (for example it is unplugged) only that phone leaves the run; the others carry on. If every phone fails the run ends as FAILED.
 

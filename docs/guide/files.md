@@ -103,4 +103,3 @@ The PC folder named Recordings is there for your own use. ADBoard does not fill 
 - Large files: uploads are sent in pieces of 32 MB automatically. The largest file allowed is 256 MB.
 - ADBoard remembers the last PC and phone folder you had open in each browser.
 - Both panes show only names and folder markers, not sizes or dates.
-- On the demo phones, the PHONE pane shows a sample list of folders and one very long file name, and sending, renaming, deleting and making folders need a real phone and ADB.

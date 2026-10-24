@@ -114,7 +114,7 @@ A password is required to reach ADBoard from outside your home network. See [Rem
 
 ## Storage
 
-Data & storage lives in the **Storage** tab, a tab of its own at the top of the window; Settings has no card for it. The Storage tab shows where ADBoard keeps your macros, scripts and settings, and gives you tools to back them up and move them. In the demo without the ADBoard agent it says "In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy." and some buttons are missing.
+Data & storage lives in the **Storage** tab, a tab of its own at the top of the window; Settings has no card for it. The Storage tab shows where ADBoard keeps your macros, scripts and settings, and gives you tools to back them up and move them.
 
 **Folders.** First comes the **data folder** (on the Windows pack, the `ADBoard` folder in the repository root; other installs use `adboard-data` next to `ADBoard.exe`. The **Storage** tab shows the folder and lets you choose another one). In portable mode a line says the folder was set with `ADBOARD_DATA_DIR`. Then one row per folder: its name, a short description with its file count and size, and its full path:
 

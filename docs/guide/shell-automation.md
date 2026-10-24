@@ -267,7 +267,7 @@ The finished run is also saved to [History](#history). A single-step test is not
 
 ### What needs ADB
 
-**Shell** and **File** actions need ADB on the phone (a real phone connected through USB or Wi-Fi ADB). On the demo phones used for screenshots, those steps fail with a message such as "adb is not available". Touch and Press key steps on a demo phone report "mock phone: touch not sent" or "mock phone: key not sent" instead of claiming success. **Wait** steps never touch the phone.
+**Shell** and **File** actions need ADB on the phone (a real phone connected through USB or Wi-Fi ADB). **Wait** steps never touch the phone.
 
 ## Rules your steps are checked against
 
@@ -373,9 +373,7 @@ Goal: put an APK on each phone and open the app.
 - An offline phone is skipped when the run starts.
 - A phone that disconnects during a run fails at its next step with "Phone disconnected". The other phones go on.
 - Agent errors are shown as they are, for example "adb is not available", "package name is not valid", or a touch that failed.
-- On the mock fleet, touches and keys report **"mock phone: not sent"** instead of claiming success.
 - Jobs run from the browser: keep the page open until the job ends. Touch macros that must keep going without a browser belong in Macros.
-- Shell, File and Clear data / Uninstall steps need a real phone with ADB. The mock fleet returns "adb is not available".
 - Per-phone coordinate overrides are applied when a job runs, but there is no editor for them yet. Profiles hold notes and tags only.
 
 ## Where jobs are saved
