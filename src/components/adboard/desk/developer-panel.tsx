@@ -100,7 +100,7 @@ export function DeveloperPanel() {
       </div>
       {tab === "shell" && (
         <form
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-3 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4"
           data-shell
           onSubmit={(event) => {
             event.preventDefault();
@@ -127,16 +127,16 @@ export function DeveloperPanel() {
           </label>
           <TargetChecks devices={desk.devices} checked={checked} onChange={setChecked} />
           <PrimaryButton type="submit" disabled={busy} className="self-start px-6">
-            RUN
+            Run
           </PrimaryButton>
           <ResultList rows={rows} />
-          <pre data-shell-log className="overflow-x-auto rounded-xl bg-[var(--pc-frame)] p-3 font-mono text-xs text-white">
+          <pre data-shell-log className="overflow-x-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-frame)] p-3 font-mono text-xs text-[var(--pc-ink)]">
             {log.join("\n") || "$"}
           </pre>
         </form>
       )}
       {tab === "logs" && (
-        <ul data-session-logs className="flex flex-col gap-2 font-mono text-xs">
+        <ul data-session-logs className="flex flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4 font-mono text-xs">
           {desk.devices.map((device) => {
             const session = desk.sessions.get(device.serial);
             return (
