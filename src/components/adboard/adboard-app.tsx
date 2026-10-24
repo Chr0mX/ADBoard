@@ -280,17 +280,11 @@ export function ADBoardApp() {
               />
             )}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              {dockedScreens && !screensCollapsed && (
-                <div data-side-panel="screens" className="flex min-w-0 shrink-0 items-center gap-2 pb-2">
+              {/* With the Devices panel open, phones are picked there; the chips
+                  stand in for it only when that panel is hidden. */}
+              {dockedScreens && devicesCollapsed && !macroDockSide && (
+                <div data-side-panel="screens" className="flex min-w-0 shrink-0 items-center pb-2">
                   <ScreenChips devices={devices} activeId={activeId} onSelect={selectDevice} />
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-full px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)] hover:text-[var(--pc-ink)]"
-                    onClick={() => setScreensCollapsed(true)}
-                    {...hint("Hide screens", "screens")}
-                  >
-                    Hide
-                  </button>
                 </div>
               )}
               <PhoneScreen

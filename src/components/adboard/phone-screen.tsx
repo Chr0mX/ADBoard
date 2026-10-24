@@ -1175,6 +1175,8 @@ export function PhoneScreen({
         data-controls-layout={sideDock ?? "bottom"}
         className={sideDock ? cn("flex min-h-0 w-full flex-1 gap-3", sideDock === "left" && "flex-row-reverse") : "contents"}
       >
+      {/* Mirror the side dock's width so the phone stays centred in the window. */}
+      {sideDock && <div aria-hidden className="w-[200px] shrink-0 xl:w-[240px]" />}
       <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
         {gridView ? (
           <TouchScreenGrid
