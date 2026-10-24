@@ -25,7 +25,7 @@ The page title is **Device management**. Under it are five buttons: **Actions**,
 
 Below that, the page has two columns:
 
-- On the left, **Target devices**. Each phone has a tick box, its name and its state (for example ONLINE or OFFLINE). Tick the phones you want to act on.
+- On the left, **Target devices**. Each phone has a tick box, its name and its state (for example Online or Offline). Tick the phones you want to act on.
 - On the right, the controls for the open sub-tab, then a result list, then (if any phone is offline) the recovery list.
 
 When you open Manage, the phones you already had selected on the Control tab are ticked. If none were, the phone you were last looking at is ticked.
