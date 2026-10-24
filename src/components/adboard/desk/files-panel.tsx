@@ -88,7 +88,7 @@ export function FilesPanel() {
 
   return (
     <PanelFrame title="Files" panel="files" clean>
-      <div className="grid min-w-0 gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         <Pane title="PC" path={pcPath || "/"} pane="pc">
           <div className="mb-2 flex flex-wrap gap-1">
             <button type="button" className="h-9 px-2 text-xs" onClick={() => setPcPath("")}>
@@ -127,7 +127,7 @@ export function FilesPanel() {
               </li>
             )}
             {pcEntries.map((entry) => (
-              <li key={entry.path} className="flex min-w-0 items-center gap-2">
+              <li key={entry.path} className="flex min-w-0 items-center gap-2 border-b border-[var(--pc-line)] last:border-0">
                 <button
                   type="button"
                   draggable={!entry.dir}
@@ -148,7 +148,7 @@ export function FilesPanel() {
                 {!entry.dir && (
                   <button
                     type="button"
-                    className="inline-flex h-11 shrink-0 items-center text-xs text-[var(--pc-accent)]"
+                    className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
                     onClick={() => void devicesClient.fetchHostFile(entry.path).then((blob) => saveBlob(blob, entry.name))}
                   >
                     Download
@@ -156,7 +156,7 @@ export function FilesPanel() {
                 )}
                 <button
                   type="button"
-                  className="inline-flex h-11 shrink-0 items-center px-2 text-xs"
+                  className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
                   onClick={() => void devicesClient.deleteHostFile(entry.path).then(() => loadPc(pcPath))}
                 >
                   Delete
@@ -234,7 +234,7 @@ export function FilesPanel() {
               </li>
             )}
             {phoneEntries.map((entry) => (
-              <li key={entry.path} className="flex min-w-0 items-center gap-2">
+              <li key={entry.path} className="flex min-w-0 items-center gap-2 border-b border-[var(--pc-line)] last:border-0">
                 <button
                   type="button"
                   draggable={!entry.dir}
@@ -254,7 +254,7 @@ export function FilesPanel() {
                 {!entry.dir && phone && (
                   <button
                     type="button"
-                    className="inline-flex h-11 shrink-0 items-center px-2 text-xs"
+                    className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
                     onClick={() => {
                       void devicesClient.pullFromDevice(phone.id, entry.path).then(async (blob) => {
                         await devicesClient.uploadHostFile(new File([blob], entry.name), "Downloads");
@@ -267,7 +267,7 @@ export function FilesPanel() {
                 )}
                 <button
                   type="button"
-                  className="inline-flex h-11 shrink-0 items-center px-2 text-xs"
+                  className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
                   onClick={() => {
                     if (!phone) return;
                     const next = window.prompt("Rename to", entry.name);
@@ -280,7 +280,7 @@ export function FilesPanel() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-11 shrink-0 items-center px-2 text-xs"
+                  className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
                   onClick={() => {
                     if (!phone) return;
                     void devicesClient.runCommand([phone], "delete", entry.path).then(() => loadPhone(phone, phonePath));
@@ -358,7 +358,7 @@ function Pane({
   children: React.ReactNode;
 }) {
   return (
-    <section data-file-pane={pane} className="flex min-w-0 flex-col rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4 lg:min-h-64 lg:overflow-hidden">
+    <section data-file-pane={pane} className="flex min-w-0 flex-col rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4">
       <header className="mb-2 flex min-w-0 shrink-0 items-baseline justify-between gap-2">
         <h3 className="shrink-0 font-display text-sm font-semibold">{title}</h3>
         <span className="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
