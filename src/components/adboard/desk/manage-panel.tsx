@@ -78,8 +78,10 @@ export function ManagePanel() {
           </button>
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <TargetChecks devices={desk.devices} checked={checked} onChange={setChecked} />
+      <div className="flex flex-col gap-4">
+        <div className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4">
+          <TargetChecks devices={desk.devices} checked={checked} onChange={setChecked} />
+        </div>
         <div className="flex flex-col gap-3">
           {tab === "actions" && (
             <div className="flex flex-wrap gap-2">
