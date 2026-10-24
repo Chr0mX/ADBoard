@@ -49,6 +49,46 @@ export function ScreenGrid({
   );
 }
 
+/** Online phones as a row of chips (the Stage layout's screen list on PC). */
+export function ScreenChips({ devices, activeId, onSelect }: Omit<ScreenGridProps, "showHeading">) {
+  const online = devices.filter((device) => device.status === "online");
+  if (online.length === 0) return null;
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2" data-screen-chips>
+      {online.map((device) => {
+        const isActive = device.id === activeId;
+        return (
+          <button
+            key={device.id}
+            type="button"
+            data-screen-chip={device.id}
+            aria-label={`Show ${device.name}`}
+            aria-pressed={isActive}
+            onClick={(event) =>
+              onSelect({
+                deviceId: device.id,
+                ctrlKey: event.ctrlKey,
+                shiftKey: event.shiftKey,
+                metaKey: event.metaKey,
+              })
+            }
+            className={cn(
+              "inline-flex h-9 max-w-[12rem] items-center gap-2 rounded-full border px-3 text-sm",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pc-accent)]",
+              isActive
+                ? "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]"
+                : "border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)] hover:border-[var(--pc-accent)]/40",
+            )}
+          >
+            <span className="size-1.5 shrink-0 rounded-full bg-[var(--pc-signal)]" aria-hidden />
+            <span className="truncate">{device.name}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function ScreenTile({
   device,
   isActive,

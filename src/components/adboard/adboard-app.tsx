@@ -8,7 +8,7 @@ import { ControlHeader } from "@/components/adboard/control-header";
 import { ControlModes } from "@/components/adboard/control-modes";
 import { DeviceGrid } from "@/components/adboard/device-grid";
 import { PhoneScreen } from "@/components/adboard/phone-screen";
-import { ScreenGrid } from "@/components/adboard/screen-grid";
+import { ScreenChips, ScreenGrid } from "@/components/adboard/screen-grid";
 import { StatusBar } from "@/components/adboard/status-bar";
 import { AppsPanel } from "@/components/adboard/desk/apps-panel";
 import { AutomatePanel } from "@/components/adboard/desk/automate-panel";
@@ -279,26 +279,20 @@ export function ADBoardApp() {
                 hintProps={hint("Show screens", "screens")}
               />
             )}
-            {dockedScreens && !screensCollapsed && (
-              <aside
-                data-side-panel="screens"
-                className="flex min-h-0 w-[200px] shrink-0 flex-col gap-2 xl:w-[240px]"
-              >
-                <PanelHeader
-                  title="Screens"
-                  side="left"
-                  onCollapse={() => setScreensCollapsed(true)}
-                  hintProps={hint("Hide screens", "screens")}
-                />
-                <ScreenGrid
-                  devices={devices}
-                  activeId={activeId}
-                  showHeading={false}
-                  onSelect={selectDevice}
-                />
-              </aside>
-            )}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {dockedScreens && !screensCollapsed && (
+                <div data-side-panel="screens" className="flex min-w-0 shrink-0 items-center gap-2 pb-2">
+                  <ScreenChips devices={devices} activeId={activeId} onSelect={selectDevice} />
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-full px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)] hover:text-[var(--pc-ink)]"
+                    onClick={() => setScreensCollapsed(true)}
+                    {...hint("Hide screens", "screens")}
+                  >
+                    Hide
+                  </button>
+                </div>
+              )}
               <PhoneScreen
                 device={activeDevice}
                 devices={devices}
