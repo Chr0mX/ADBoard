@@ -88,7 +88,7 @@ export function FilesPanel() {
 
   return (
     <PanelFrame title="Files" panel="files">
-      <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-2">
         <Pane title="PC" path={pcPath || "/"} pane="pc">
           <div className="mb-2 flex flex-wrap gap-1">
             <button type="button" className="h-9 px-2 text-xs" onClick={() => setPcPath("")}>
@@ -358,7 +358,7 @@ function Pane({
   children: React.ReactNode;
 }) {
   return (
-    <section data-file-pane={pane} className="flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--pc-line)] p-3">
+    <section data-file-pane={pane} className="flex min-w-0 flex-col rounded-xl border border-[var(--pc-line)] p-3 lg:min-h-64 lg:overflow-hidden">
       <header className="mb-2 flex min-w-0 items-baseline justify-between gap-2">
         <h3 className="shrink-0 font-display text-sm font-semibold">{title}</h3>
         <span className="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
