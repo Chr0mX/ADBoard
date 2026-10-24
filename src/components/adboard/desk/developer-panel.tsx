@@ -78,7 +78,7 @@ export function DeveloperPanel() {
   }
 
   return (
-    <PanelFrame title="Developer" panel="developer" clean>
+    <PanelFrame title="Developer" panel="developer" clean description="Run an ADB shell command, read logs, device information.">
       <div className="flex gap-2">
         {(
           [
@@ -126,7 +126,7 @@ export function DeveloperPanel() {
             </select>
           </label>
           <TargetChecks devices={desk.devices} checked={checked} onChange={setChecked} />
-          <PrimaryButton type="submit" disabled={busy}>
+          <PrimaryButton type="submit" disabled={busy} className="self-start px-6">
             RUN
           </PrimaryButton>
           <ResultList rows={rows} />

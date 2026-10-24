@@ -46,7 +46,7 @@ export function SettingsPanel() {
   const target = desk.activeDevice ?? desk.targets[0] ?? null;
 
   return (
-    <PanelFrame title="Settings" panel="settings" clean>
+    <PanelFrame title="Settings" panel="settings" clean description="Stream quality, keyboard, grid, account, taskbar and data.">
       <div className="grid gap-3 lg:grid-cols-2">
         <InstallOnIphone />
         <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-stream>

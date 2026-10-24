@@ -64,7 +64,7 @@ export function ManagePanel() {
   }
 
   return (
-    <PanelFrame title="Device management" panel="manage" clean>
+    <PanelFrame title="Device management" panel="manage" clean description="Actions for the phones you select.">
       <div className="flex flex-wrap gap-2">
         {TABS.map((item) => (
           <button

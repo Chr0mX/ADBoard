@@ -30,11 +30,14 @@ export function PanelFrame({
   children,
   panel,
   clean = false,
+  description,
 }: {
   title: string;
   panel: string;
   children: React.ReactNode;
   clean?: boolean;
+  /** Clean design: one muted line under the title. */
+  description?: string;
 }) {
   return (
     <section
@@ -49,6 +52,7 @@ export function PanelFrame({
       >
         {title}
       </h2>
+      {clean && description && <p className="-mt-3 text-sm text-[var(--pc-muted)]">{description}</p>}
       {children}
     </section>
   );
@@ -264,18 +268,23 @@ export function PrimaryButton({
   onClick,
   disabled,
   type = "button",
+  className,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   type?: "button" | "submit";
+  className?: string;
 }) {
   return (
     <button
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className="h-11 min-h-11 rounded-xl bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold tracking-wide text-white disabled:opacity-60"
+      className={cn(
+        "h-11 min-h-11 rounded-xl bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold tracking-wide text-white disabled:opacity-60",
+        className,
+      )}
     >
       {children}
     </button>
