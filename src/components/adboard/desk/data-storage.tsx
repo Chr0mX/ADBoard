@@ -6,7 +6,6 @@ import { useSyncWarnings } from "@/lib/sync/agent-store";
 import { backupNow, describeImport, exportWholeLibrary, importWholeLibrary } from "@/lib/library";
 import { LIBRARY_FILE } from "@/lib/adboard-files";
 import { ConfirmDialog } from "@/components/adboard/desk/bits";
-import { sentenceCase } from "@/lib/utils";
 
 /*
  * Where ADBoard keeps its data (GET /api/system/storage) and the tools around
@@ -34,13 +33,13 @@ export interface StorageInfo {
 type Folder = "root" | "macros" | "shell_scripts" | "config" | "logs" | "backups" | "files" | "device";
 
 const FOLDERS: { id: Folder; label: string; what: string }[] = [
-  { id: "macros", label: "macros", what: "Touch macros, one .json file each" },
-  { id: "shell_scripts", label: "shell_scripts", what: "Shell Automation scripts, one .json file each, and _library.json (apps, variables, groups, profiles)" },
-  { id: "config", label: "config", what: "Settings (user_config.json), layout per browser, editor state, queue, schedules, phone choices, sign-in account" },
-  { id: "logs", label: "logs", what: "adboard.log and the Shell Automation run history" },
-  { id: "backups", label: "backups", what: "Earlier versions, deleted items, unreadable files, Back up copies, data moved from older versions" },
-  { id: "files", label: "files", what: "Files area: screenshots, recordings, APKs, downloads" },
-  { id: "device", label: "device", what: "Phone model names cached from the device-models database" },
+  { id: "macros", label: "Macros", what: "Touch macros, one .json file each" },
+  { id: "shell_scripts", label: "Shell scripts", what: "Shell Automation scripts, one .json file each, and _library.json (apps, variables, groups, profiles)" },
+  { id: "config", label: "Config", what: "Settings (user_config.json), layout per browser, editor state, queue, schedules, phone choices, sign-in account" },
+  { id: "logs", label: "Logs", what: "adboard.log and the Shell Automation run history" },
+  { id: "backups", label: "Backups", what: "Earlier versions, deleted items, unreadable files, Back up copies, data moved from older versions" },
+  { id: "files", label: "Files", what: "Files area: screenshots, recordings, APKs, downloads" },
+  { id: "device", label: "Phone Models", what: "Phone model names cached from the device-models database" },
 ];
 
 /* --------------------------- shared fetch --------------------------- */
@@ -363,11 +362,14 @@ function PathRow({
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[var(--pc-line)] px-2 py-1.5" data-settings-folder={which}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-xs font-semibold text-[var(--pc-ink)]">{sentenceCase(label.replace(/_/g, " "))}</span>
-        <span className="text-sm text-[var(--pc-muted)]">
-          {what}
-          {size && ` · ${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`}
+        <span className="text-xs font-semibold text-[var(--pc-ink)]" title={what}>
+          {label}
         </span>
+        {size && (
+          <span className="text-sm text-[var(--pc-muted)]">
+            {`${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`}
+          </span>
+        )}
         <span className="break-all font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
       </div>
       <button
