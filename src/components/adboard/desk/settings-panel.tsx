@@ -3,6 +3,7 @@
 import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
 import { useTaskbarHidden } from "@/hooks/use-taskbar-hidden";
+import { useEdgeTabStyle } from "@/hooks/use-edge-tab-style";
 import { formatGridLayout, parseGridLayout } from "@/lib/ui/grid-layout";
 import { parseMobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import {
@@ -36,6 +37,7 @@ export function SettingsPanel() {
   const [barRaw, setBarRaw] = useStoredString("adboard-grid-bar");
   const [cursorMode, setCursorMode] = useStoredFlag("adboard-cursor-mode", false);
   const [keyboardOn, setKeyboardOn] = useStoredFlag("adboard-keyboard", true);
+  const [edgeTabStyle, setEdgeTabStyle] = useEdgeTabStyle();
   const [touchDiagnostics, setTouchDiagnostics] = useStoredFlag(TOUCH_DIAGNOSTICS_KEY, false);
   const { pins, setPins, togglePin, resetPins, atLimit } = useTaskbarPins();
   const { hidden: hiddenNav, toggleHidden } = useTaskbarHidden();
@@ -73,6 +75,30 @@ export function SettingsPanel() {
             onChange={(event) => setTouchDiagnostics(event.target.checked)}
             data-settings-touch-diagnostics
           />
+          <div className="flex flex-col gap-1.5 py-1" data-settings-edge-tab>
+            <div>
+              <p className="text-sm text-[var(--pc-ink)]">Tools and Stats tab at the edge</p>
+              <p className="text-xs text-[var(--pc-muted)]">Shown on the screen edge when the panel is hidden</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="pc-toggle pc-toggle-sm"
+                aria-pressed={edgeTabStyle === "words"}
+                onClick={() => setEdgeTabStyle("words")}
+              >
+                Words
+              </button>
+              <button
+                type="button"
+                className="pc-toggle pc-toggle-sm"
+                aria-pressed={edgeTabStyle === "icons"}
+                onClick={() => setEdgeTabStyle("icons")}
+              >
+                Icons
+              </button>
+            </div>
+          </div>
           <SwitchRow
             label="Cursor mode"
             description="Send clicks and taps as a mouse, so the phone shows a pointer"

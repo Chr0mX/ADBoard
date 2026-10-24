@@ -9,7 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { ChevronDown, ChevronUp, Pin } from "lucide-react";
+import { Activity, ChevronDown, ChevronUp, Pin, Wrench } from "lucide-react";
 import {
   EDGE_PEEK,
   TASKBAR_FLOAT_RESERVE,
@@ -25,6 +25,7 @@ import {
 } from "@/lib/ui/floating-clamp";
 import { cn } from "@/lib/utils";
 import { MINIMIZE_FLOATS_EVENT } from "@/components/adboard/device-actions";
+import { useEdgeTabStyle } from "@/hooks/use-edge-tab-style";
 
 /** Dispatch on window when page chrome the floats avoid changes size. */
 export const FLOAT_RECLAMP_EVENT = "pc-float-reclamp";
@@ -572,6 +573,8 @@ export function FloatingPanel({
 
   const vp = typeof window !== "undefined" ? viewportSize() : { offsetLeft: 0, offsetTop: 0 };
   const label = title ?? PANEL_LABEL[kind];
+  const PeekIcon = kind === "stats" ? Activity : Wrench;
+  const [tabStyle] = useEdgeTabStyle();
   const edgeHidden = collapsed && edge != null && !dragging;
 
   return (
@@ -595,6 +598,8 @@ export function FloatingPanel({
         top: (pos?.y ?? 0) + (typeof window !== "undefined" ? vp.offsetTop : 0),
         visibility: pos ? "visible" : "hidden",
         zIndex: edgeHidden ? 25 : 20,
+        // Hidden at the edge, only the tab shows: no frame around the touch strip.
+        ...(edgeHidden ? { background: "transparent", border: 0, boxShadow: "none", backdropFilter: "none" } : {}),
         // Override panel min-width utilities (e.g. Stats min-w-[10rem]) so the
         // peek strip is truly EDGE_PEEK wide — otherwise a right dock centers
         // the label in the off-screen portion of a wide panel.
@@ -614,7 +619,10 @@ export function FloatingPanel({
           type="button"
           data-float-edge-peek
           aria-label={`Show ${label}. Tap or swipe toward the screen.`}
-          className="flex h-full w-full touch-auto items-center justify-center overflow-hidden bg-[var(--pc-accent-fill)] text-white transition-[filter] duration-150 active:brightness-110"
+          className={cn(
+            "flex h-full w-full touch-auto items-center overflow-hidden transition-[filter] duration-150 active:brightness-110",
+            edge === "right" ? "justify-end" : "justify-start",
+          )}
           onPointerDown={onPeekPointerDown}
           onPointerMove={onPeekPointerMove}
           onPointerUp={onPeekPointerUp}
@@ -623,18 +631,23 @@ export function FloatingPanel({
           }}
         >
           {/*
-            Stack letters (no writing-mode / rotate): Safari/iOS has painted
-            vertical-lr and rotated flex labels at zero size inside a clipped
-            EDGE_PEEK strip, which left the Stats word blank.
+            The visible tab is narrower than the EDGE_PEEK touch strip, so
+            taps still land on the full 44px. Word or icon comes from Settings.
+            Rotated text was blank on Safari/iOS inside this strip, so the word
+            is horizontal.
           */}
           <span
             data-float-edge-label
+            data-float-edge-style={tabStyle}
             aria-hidden
-            className="pointer-events-none flex flex-col items-center justify-center gap-0.5 font-mono text-[11px] font-semibold leading-none tracking-wide text-white"
+            className={cn(
+              "pointer-events-none flex flex-col items-center justify-center gap-1 bg-[var(--pc-accent-fill)] text-white shadow-md",
+              tabStyle === "icons" ? "w-8 py-2.5" : "w-9 py-2",
+              edge === "right" ? "rounded-l-xl" : "rounded-r-xl",
+            )}
           >
-            {Array.from(label).map((ch, i) => (
-              <span key={`${ch}-${i}`}>{ch}</span>
-            ))}
+            <PeekIcon className="size-4" />
+            {tabStyle === "words" && <span className="font-mono text-[10px] font-semibold leading-none tracking-wide">{label}</span>}
           </span>
         </button>
       ) : (
