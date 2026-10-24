@@ -198,7 +198,7 @@ export function ScrcpyOptions({
           "flex w-full items-center gap-1.5",
           start
             ? "flex-wrap justify-start [&>*]:flex-1 [&>*]:basis-auto"
-            : "flex-wrap justify-start lg:justify-center",
+            : "flex-wrap justify-start",
         )}
       >
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
@@ -290,7 +290,7 @@ export function ScrcpyOptions({
           <Moon className="size-4" />
           Quiet mode
         </Toggle>
-        <div className={start ? "grid w-full grid-cols-2 gap-1.5 [&>input]:col-span-2 [&>input]:min-w-0" : "max-lg:hidden lg:contents"}>
+        <div className={start ? "grid w-full grid-cols-2 gap-1.5 [&>input]:col-span-2 [&>input]:min-w-0" : "max-lg:hidden lg:flex lg:w-full lg:items-center lg:gap-1.5"}>
           <input
             aria-label="Clipboard"
             data-scrcpy-clipboard
@@ -335,7 +335,7 @@ export function ScrcpyOptions({
           {QUALITY_HINTS[options.quality] ?? ""}
         </p>
       )}
-      <div className={cn("w-full", !start && "max-w-md")} data-scrcpy-clipboard-sync-row>
+      <div className="w-full" data-scrcpy-clipboard-sync-row>
         <SwitchRow
           label="Sync clipboard"
           description="Phone copies land on this PC; Ctrl/Cmd+V pastes this PC's clipboard on the target phones"
