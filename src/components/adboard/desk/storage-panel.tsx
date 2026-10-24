@@ -183,7 +183,7 @@ export function StoragePanel() {
                   <button
                     key={key}
                     type="button"
-                    className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] p-4 text-left disabled:opacity-60"
+                    className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] p-4 text-left font-sans text-sm font-normal text-[var(--pc-ink)] disabled:opacity-60"
                     disabled={!viaAgent || busy || !option.path}
                     onClick={() => setConfirmSwitch(key)}
                     data-storage-option={key}
