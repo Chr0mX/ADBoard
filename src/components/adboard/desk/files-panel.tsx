@@ -105,7 +105,7 @@ export function FilesPanel() {
           </div>
           {pcError && <p className="text-xs text-[var(--pc-warn)]">{pcError}</p>}
           <ul
-            className="flex min-w-0 flex-col overflow-x-hidden"
+            className="flex min-w-0 flex-col overflow-x-hidden lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
@@ -211,10 +211,10 @@ export function FilesPanel() {
               Refresh
             </button>
           </div>
-          <p className="mb-1 min-w-0 truncate font-mono text-[11px] text-[var(--pc-muted)]">{phone ? phone.name : "No phone selected"}</p>
+          <p className="mb-1 min-w-0 shrink-0 truncate font-mono text-[11px] text-[var(--pc-muted)]">{phone ? phone.name : "No phone selected"}</p>
           {phoneError && <p className="text-xs text-[var(--pc-warn)]">{phoneError}</p>}
           <ul
-            className="flex min-w-0 flex-col overflow-x-hidden"
+            className="flex min-w-0 flex-col overflow-x-hidden lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
@@ -359,7 +359,7 @@ function Pane({
 }) {
   return (
     <section data-file-pane={pane} className="flex min-w-0 flex-col rounded-xl border border-[var(--pc-line)] p-3 lg:min-h-64 lg:overflow-hidden">
-      <header className="mb-2 flex min-w-0 items-baseline justify-between gap-2">
+      <header className="mb-2 flex min-w-0 shrink-0 items-baseline justify-between gap-2">
         <h3 className="shrink-0 font-display text-sm font-semibold">{title}</h3>
         <span className="min-w-0 flex-1 truncate text-right font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
       </header>
