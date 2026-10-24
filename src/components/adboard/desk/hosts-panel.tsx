@@ -31,29 +31,33 @@ export function HostsPanel() {
   const sections = hostSections(listed, desk.devices);
 
   return (
-    <PanelFrame title="Hosts" panel="hosts" clean>
-      <p className="text-sm text-[var(--pc-muted)]">
-        The Web UI never talks to USB or ADB. Each host agent runs ADB, scrcpy, discovery, files, and macros.
-      </p>
+    <PanelFrame title="Hosts" panel="hosts" clean description="The computers that run ADB, and the phones on each.">
       {error && <p className="text-sm text-[var(--pc-warn)]">{error}</p>}
-      <div className="flex flex-col gap-4">
+      <div className="grid gap-4 md:grid-cols-2">
         {sections.map(({ host, devices }) => {
+          const online = devices.filter((device) => device.status === "online").length;
           return (
-            <section key={host.hostId} data-host-card={host.hostId} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4">
-              <h3 className="font-display text-sm font-semibold">
-                {host.os.toLowerCase().includes("win") ? "🖥" : "🐧"} {host.name}
-              </h3>
- <p className="font-mono text-[11px] text-[var(--pc-muted)]">
+            <section key={host.hostId} data-host-card={host.hostId} className="flex flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="min-w-0 truncate font-display text-base font-semibold">{host.name}</h3>
+                <span className="shrink-0 text-sm text-[var(--pc-muted)]">
+                  {online}/{devices.length}
+                </span>
+              </div>
+              <p className="text-xs text-[var(--pc-muted)]">
                 {sentenceCase(host.os)} · {sentenceCase(host.status)} · {host.local ? "this controller" : "remote agent"}
               </p>
-              <ul className="mt-2 text-sm">
-                {devices.map((device) => (
-                  <li key={device.id}>
-                    {device.name} · {sentenceCase(device.status)} · {sentenceCase(device.connection)}
-                  </li>
-                ))}
-                {devices.length === 0 && <li className="text-[var(--pc-muted)]">No devices reported.</li>}
-              </ul>
+              {devices.length === 0 && <p className="text-sm text-[var(--pc-muted)]">No devices reported.</p>}
+              {devices.map((device) => (
+                <div key={device.id} className="flex items-center justify-between gap-3 border-b border-[var(--pc-line)] py-2 last:border-b-0">
+                  <span className="min-w-0 truncate text-sm">{device.name}</span>
+                  <span
+                    className={`shrink-0 font-mono text-[11px] ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}
+                  >
+                    {sentenceCase(device.status)}
+                  </span>
+                </div>
+              ))}
             </section>
           );
         })}
