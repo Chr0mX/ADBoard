@@ -228,7 +228,10 @@ export function PhoneScreen({
     if (!dock || !sideDockOn) return;
     const fit = () => {
       const bar = dock.offsetWidth - dock.clientWidth;
-      dock.style.paddingLeft = bar > 0 ? `${bar}px` : "";
+      // A gap sits between the buttons and the bar on the right, as the left
+      // padding (the bar's width) keeps the buttons clear of the rail.
+      dock.style.paddingLeft = bar > 0 ? `${bar + 8}px` : "";
+      dock.style.paddingRight = bar > 0 ? "8px" : "";
     };
     fit();
     const observer = new ResizeObserver(fit);
