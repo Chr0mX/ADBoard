@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en" data-view="pc">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBoard Control mock-ups</title>
+<!--
+  Mockup only. Isolated in mockups/control/. Not imported by the app.
+  Labels come from src/components/adboard/device-nav-bar.tsx and
+  floating/control-panel-float.tsx. Colours and fonts come from the Clean design
+  tokens in src/app/globals.css. Delete this folder to remove the mockups.
+-->
+<style>
+:root {
+  --pc-paper: #0e141b; --pc-ink: #e8eef2; --pc-muted: #9aadb8;
+  --pc-line: color-mix(in srgb, #e8eef2 14%, transparent);
+  --pc-panel: #1a242e; --pc-accent: #8eeadf; --pc-accent-fill: #0e7a73;
+  --pc-accent-soft: color-mix(in srgb, #8eeadf 16%, #121a22);
+  --pc-signal: #3dcc8a; --pc-frame: #070b0f;
+  --font-display: "Geist", "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; background: var(--pc-paper); color: var(--pc-ink); font: 14px/1.5 var(--font-body); }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--pc-accent); outline-offset: 2px; }
+.hidden { display: none !important; }
+.chrome { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--pc-paper) 92%, black); border-bottom: 1px solid var(--pc-line); padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.chrome h1 { font: 600 15px/1.2 var(--font-display); margin: 0 8px 0 0; }
+.label { font: 600 11px/1 var(--font-mono); color: var(--pc-muted); text-transform: uppercase; letter-spacing: .06em; }
+.seg { display: inline-flex; gap: 6px; }
+.seg button { background: transparent; border: 1px solid var(--pc-line); padding: 6px 12px; border-radius: 10px; color: var(--pc-muted); min-height: 34px; }
+.seg button[aria-pressed="true"] { color: var(--pc-accent); border-color: var(--pc-accent); background: var(--pc-accent-soft); }
+main { padding: 18px 16px 60px; max-width: 1400px; margin: 0 auto; }
+.note { font: 12px/1.5 var(--font-mono); color: var(--pc-muted); margin: 0 0 14px; }
+.design-title { font: 600 18px/1.3 var(--font-display); margin: 0 0 4px; }
+.design-desc { color: var(--pc-muted); margin: 0 0 14px; max-width: 80ch; }
+
+/* PC frame: a desktop window; mobile frame: a 393px phone */
+.frame { background: var(--pc-paper); border: 1px solid var(--pc-line); border-radius: 14px; overflow: hidden; min-width: 0; }
+.frame-pc { width: 100%; height: 620px; }
+.frame-mobile { width: 393px; max-width: 100%; height: 760px; margin: 0 auto; border-radius: 28px; box-shadow: 0 0 0 6px var(--pc-frame); }
+.views { display: flex; flex-direction: column; gap: 28px; }
+.pair { display: grid; grid-template-columns: minmax(0,1fr) 393px; gap: 16px; align-items: start; }
+.design { min-width: 0; }
+[data-view="pc"] .frame-mobile { display: none; }
+[data-view="mobile"] .frame-pc { display: none; }
+
+
+/* shared parts */
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--pc-line); }
+.logo { font: 600 14px/1 var(--font-display); }
+.pill { font: 600 12px/1 var(--font-body); color: var(--pc-signal); }
+.chip { border: 1px solid var(--pc-line); border-radius: 999px; padding: 6px 11px; font-size: 13px; background: var(--pc-paper); white-space: nowrap; }
+.chip.on { border-color: var(--pc-accent); background: var(--pc-accent-soft); color: var(--pc-accent); }
+.tool { border: 1px solid var(--pc-line); background: var(--pc-panel); border-radius: 12px; min-width: 44px; height: 44px; padding: 0 10px; font-size: 13px; }
+.tool.on { border-color: var(--pc-accent); color: var(--pc-accent); background: var(--pc-accent-soft); }
+.nav3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.screen { background: linear-gradient(170deg, #1d2a36, #0b1117); border: 1px solid var(--pc-line); border-radius: 18px; display: grid; place-items: center; color: var(--pc-muted); font: 12px var(--font-mono); }
+.devrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--pc-line); }
+.devrow:last-child { border-bottom: 0; }
+.status { font: 600 11px/1 var(--font-mono); color: var(--pc-signal); }
+.status.off { color: var(--pc-muted); }
+.muted { color: var(--pc-muted); }
+.kicker { font: 600 11px/1 var(--font-mono); color: var(--pc-muted); text-transform: uppercase; letter-spacing: .06em; }
+.dock { background: var(--pc-panel); border: 1px solid var(--pc-line); border-radius: 14px; padding: 10px; }
+
+/* ----- DESIGN 1 · Stage: centred phone, tool row under it, device list on the right ----- */
+.d1-pc { display: grid; grid-template-columns: 1fr 280px; height: 100%; }
+.d1-stage { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 14px; }
+.d1-stage .screen { width: 260px; height: 440px; }
+.d1-side { border-left: 1px solid var(--pc-line); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.d1-mob { height: 100%; display: flex; flex-direction: column; }
+.d1-mob .screen { flex: 1; margin: 10px; }
+.d1-tools { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+
+/* ----- DESIGN 2 · Rail: left device rail with checkboxes, phone grid in the middle, tools in a column ----- */
+.d2-pc { display: grid; grid-template-columns: 230px 1fr 64px; height: 100%; }
+.d2-rail { border-right: 1px solid var(--pc-line); padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.d2-grid { padding: 12px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; align-content: start; }
+.d2-grid .screen { aspect-ratio: 9 / 16; }
+.d2-tools { border-left: 1px solid var(--pc-line); padding: 10px 8px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.d2-mob { height: 100%; display: flex; flex-direction: column; }
+.d2-mob .screen { flex: 1; margin: 10px; }
+.sheet { border-top: 1px solid var(--pc-line); padding: 10px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; background: var(--pc-panel); }
+
+/* ----- DESIGN 3 · Dock: full-height phone, macro dock along the bottom, grouped tool bar on top ----- */
+.d3-pc { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+.d3-top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--pc-line); }
+.d3-body { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; min-height: 0; }
+.d3-body .screen { height: 100%; min-height: 380px; }
+.d3-body aside { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.d3-dock { border-top: 1px solid var(--pc-line); padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.d3-mob { height: 100%; display: flex; flex-direction: column; }
+.d3-mob .screen { flex: 1; margin: 10px; }
+.d3-mob .dock { margin: 0 10px 10px; }
+
+
+@media (max-width: 1100px) {
+  .pair { grid-template-columns: 1fr; }
+  .frame-mobile { margin: 0 auto; }
+}
+@media (max-width: 720px) {
+  .d1-pc, .d2-pc, .d3-pc { grid-template-columns: 1fr; }
+  .d2-pc { display: grid; }
+  .d1-side, .d2-rail, .d2-tools, .d3-body aside { border: 0; }
+  .d3-body { grid-template-columns: 1fr; }
+  .d3-body .screen { min-height: 300px; }
+}
+</style>
+</head>
+<body>
+<header class="chrome">
+  <h1>Control · mock-ups</h1>
+  <span class="label">View</span>
+  <div class="seg" role="group" aria-label="View">
+    <button type="button" data-set-view="pc" aria-pressed="true">PC</button>
+    <button type="button" data-set-view="mobile" aria-pressed="false">Mobile 393 px</button>
+  </div>
+</header>
+
+<main>
+  <p class="note">Mock-up only, for review. Nothing in the app is changed. Labels are the real Control labels. Pick one design before any Control code changes.</p>
+  <div class="views">
+    <section class="design">
+      <h2 class="design-title">1 · Stage</h2>
+      <p class="design-desc">Centred phone with the tool row under it, and the device list on the right. Navigation sits close to the picture.</p>
+      <div class="pair">
+    <div class="frame frame-pc">
+      
+      <!-- DESIGN 1 · PC -->
+      <div class="d1-pc">
+        <div class="d1-stage">
+          <div class="row" style="display:flex;gap:6px;align-items:center"><span class="chip on">S24</span><span class="chip">S23</span><span class="chip">Pixel</span><span class="chip">A52</span></div>
+          <div class="screen">S24 · live picture</div>
+          <div class="d1-tools">
+            <button class="tool on">Keyboard</button><button class="tool on">Touch</button><button class="tool">Record</button><button class="tool">Replay</button><button class="tool">Refresh</button><button class="tool">APK</button><button class="tool">Grid</button><button class="tool">Stats</button><button class="tool">Macro</button><button class="tool">Manage</button>
+          </div>
+          <div class="nav3" style="width:260px"><button class="tool">Back</button><button class="tool">Home</button><button class="tool">Recent</button></div>
+        </div>
+        <aside class="d1-side">
+          <p class="kicker">Devices</p>
+          <div class="row" style="display:flex;gap:6px"><span class="chip on">Selected 1</span><span class="chip">Multi 1</span><span class="chip">All 3</span></div>
+          <div class="devrow"><span>S24</span><span class="status">ONLINE</span></div>
+          <div class="devrow"><span>S23</span><span class="status">ONLINE</span></div>
+          <div class="devrow"><span>Pixel</span><span class="status">ONLINE</span></div>
+          <div class="devrow"><span>A52</span><span class="status off">OFFLINE</span></div>
+          <button class="tool" style="height:38px">Select all</button>
+          <button class="tool" style="height:38px">Reconnect 1 phone</button>
+        </aside>
+      </div>
+    </div>
+
+    <div class="frame frame-mobile">
+      <!-- DESIGN 1 · mobile -->
+      <div class="d1-mob">
+        <div class="bar"><span class="logo">ADBoard</span><span class="pill">3/4 online</span></div>
+        <div class="row" style="display:flex;gap:6px;padding:10px;overflow:auto"><span class="chip on">S24</span><span class="chip">S23</span><span class="chip">Pixel</span></div>
+        <div class="screen">S24 · live picture</div>
+        <div class="nav3" style="padding:0 10px"><button class="tool">Back</button><button class="tool">Home</button><button class="tool">Recent</button></div>
+        <div class="d1-tools" style="padding:10px"><button class="tool on">Keyboard</button><button class="tool on">Touch</button><button class="tool">Record</button><button class="tool">Replay</button><button class="tool">Manage</button></div>
+      </div>
+    </div>
+
+      </div>
+    </section>
+
+    <section class="design">
+      <h2 class="design-title">2 · Rail</h2>
+      <p class="design-desc">Device rail on the left with checkboxes, a phone grid in the middle and a tool column on the right. Best when several phones are on screen.</p>
+      <div class="pair">
+    <div class="frame frame-pc">
+      <!-- DESIGN 2 · PC -->
+      <div class="d2-pc">
+        <div class="d2-rail">
+          <p class="kicker">Devices</p>
+          <div class="devrow"><span>☑ S24</span><span class="status">ONLINE</span></div>
+          <div class="devrow"><span>☐ S23</span><span class="status">ONLINE</span></div>
+          <div class="devrow"><span>☐ Pixel</span><span class="status">ONLINE</span></div>
+          <div class="devrow"><span>☐ A52</span><span class="status off">OFFLINE</span></div>
+          <button class="tool" style="height:38px;margin-top:6px">Select all</button>
+          <button class="tool" style="height:38px">Reconnect 1 phone</button>
+        </div>
+        <div class="d2-grid">
+          <div class="screen">S24</div><div class="screen">S23</div><div class="screen">Pixel</div><div class="screen">A52 (offline)</div>
+        </div>
+        <div class="d2-tools">
+          <button class="tool on" style="width:48px">⌨</button><button class="tool on" style="width:48px">☝</button><button class="tool" style="width:48px">●</button><button class="tool" style="width:48px">⟲</button><button class="tool" style="width:48px">APK</button><button class="tool" style="width:48px">Grid</button><button class="tool" style="width:48px">Stats</button><button class="tool" style="width:48px">⚡</button><button class="tool" style="width:48px">Manage</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame frame-mobile">
+      <!-- DESIGN 2 · mobile -->
+      <div class="d2-mob">
+        <div class="bar"><span class="logo">ADBoard</span><span class="pill">3/4 online</span></div>
+        <div class="row" style="display:flex;gap:6px;padding:10px;overflow:auto"><span class="chip on">☑ S24</span><span class="chip">☐ S23</span><span class="chip">☐ Pixel</span></div>
+        <div class="screen">S24 · live picture</div>
+        <div class="nav3" style="padding:0 10px"><button class="tool">Back</button><button class="tool">Home</button><button class="tool">Recent</button></div>
+        <div class="sheet"><button class="tool on">Keyboard</button><button class="tool on">Touch</button><button class="tool">Record</button><button class="tool">APK</button><button class="tool">Grid</button><button class="tool">Manage</button></div>
+      </div>
+    </div>
+
+      </div>
+    </section>
+
+    <section class="design">
+      <h2 class="design-title">3 · Dock</h2>
+      <p class="design-desc">Tool bar along the top, the picture with a side panel, and the macro dock along the bottom. Most room for macros.</p>
+      <div class="pair">
+    <div class="frame frame-pc">
+      <!-- DESIGN 3 · PC -->
+      <div class="d3-pc">
+        <div class="d3-top">
+          <span class="chip on">S24</span><span class="chip">S23</span><span class="chip">Pixel</span><span class="chip">A52</span>
+          <span style="flex:1"></span>
+          <button class="tool on">Keyboard</button><button class="tool on">Touch</button><button class="tool">Record</button><button class="tool">Replay</button><button class="tool">Stats</button><button class="tool">Manage</button>
+        </div>
+        <div class="d3-body">
+          <div class="screen">S24 · live picture</div>
+          <aside>
+            <p class="kicker">Navigation</p>
+            <div class="nav3"><button class="tool">Back</button><button class="tool">Home</button><button class="tool">Recent</button></div>
+            <p class="kicker" style="margin-top:8px">Devices</p>
+            <div class="devrow"><span>S24</span><span class="status">ONLINE</span></div>
+            <div class="devrow"><span>S23</span><span class="status">ONLINE</span></div>
+            <div class="devrow"><span>A52</span><span class="status off">OFFLINE</span></div>
+          </aside>
+        </div>
+        <div class="d3-dock"><span class="kicker">Macro</span><span class="chip on">AutoLB · running</span><span class="chip">Auto Multi</span><button class="tool">Open dock</button></div>
+      </div>
+    </div>
+
+    <!-- MOBILE (393 px) -->
+    <div class="frame frame-mobile">
+      <!-- DESIGN 3 · mobile -->
+      <div class="d3-mob">
+        <div class="bar"><span class="logo">ADBoard</span><span class="pill">3/4 online</span></div>
+        <div class="row" style="display:flex;gap:6px;padding:10px;overflow:auto"><span class="chip on">S24</span><span class="chip">S23</span><span class="chip">Pixel</span></div>
+        <div class="screen">S24 · live picture</div>
+        <div class="nav3" style="padding:10px"><button class="tool">Back</button><button class="tool">Home</button><button class="tool">Recent</button></div>
+        <div class="dock"><span class="kicker">Macro</span> <span class="chip on">AutoLB · running</span></div>
+      </div>
+    </div>
+
+  </div>
+
+      </div>
+    </section>
+
+  </main>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  const $$ = (s) => [...document.querySelectorAll(s)];
+  $$('[data-set-view]').forEach(b => b.addEventListener('click', () => {
+    root.dataset.view = b.dataset.setView;
+    $$('[data-set-view]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+})();
+</script>
+</body>
+</html>
