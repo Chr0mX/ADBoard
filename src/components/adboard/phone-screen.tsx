@@ -1094,13 +1094,16 @@ export function PhoneScreen({
           serial={device?.serial ?? null}
           disabled={offline}
           align={sideDock ? "start" : "center"}
+          fill={fillWindow}
         />
         <div
           data-device-actions
           className={cn(
             "mt-2 flex gap-1.5 border-t border-[var(--pc-line)] pt-2",
             // Side dock: one full-width column, like the tool buttons.
-            sideDock ? "flex-col items-stretch [&>button]:w-full [&>button]:justify-start" : "flex-wrap items-center",
+            sideDock
+              ? "flex-col items-stretch [&>button]:w-full [&>button]:justify-start"
+              : cn("flex-wrap items-center", fillWindow && "[&>button]:flex-1 [&>button]:basis-auto px-2"),
           )}
         >
           {onCursorModeChange && (
