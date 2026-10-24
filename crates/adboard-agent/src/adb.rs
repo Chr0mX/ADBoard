@@ -345,14 +345,18 @@ pub fn adb_line_to_device(
     let hue = wallpaper_hue(&line.serial);
     let online = line.status == DeviceStatus::Online;
 
+    let model = line
+        .model
+        .clone()
+        .or_else(|| line.product.clone())
+        .unwrap_or_else(|| "Android".into());
+    let model_name = crate::device_models::lookup(&model).map(|hit| crate::device_models::display_name(&hit));
+
     Device {
         id,
         name: short,
-        model: line
-            .model
-            .clone()
-            .or_else(|| line.product.clone())
-            .unwrap_or_else(|| "Android".into()),
+        model,
+        model_name,
         android_version: "—".into(),
         serial: line.serial.clone(),
         connection: line.connection,

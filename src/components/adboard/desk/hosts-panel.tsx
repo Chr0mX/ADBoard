@@ -50,7 +50,10 @@ export function HostsPanel() {
               {devices.length === 0 && <p className="text-sm text-[var(--pc-muted)]">No devices reported.</p>}
               {devices.map((device) => (
                 <div key={device.id} className="flex items-center justify-between gap-3 border-b border-[var(--pc-line)] py-2 last:border-b-0">
-                  <span className="min-w-0 truncate text-sm">{device.name}</span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm">{device.modelName ?? device.model}</span>
+                    {device.modelName && <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{device.model}</span>}
+                  </span>
                   <span
                     className={`shrink-0 font-mono text-[11px] ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}
                   >

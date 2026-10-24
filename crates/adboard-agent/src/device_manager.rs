@@ -2987,6 +2987,7 @@ mod tests {
             id: serial.into(),
             name: serial.into(),
             model: "m".into(),
+            model_name: None,
             android_version: "15".into(),
             serial: serial.into(),
             connection: adboard_protocol::ConnectionType::Usb,

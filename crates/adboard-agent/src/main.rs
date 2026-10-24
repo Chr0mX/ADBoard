@@ -92,6 +92,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Macro schedules run on the agent, with or without a browser open.
     macro_automation::spawn_scheduler(state.clone());
+    // Every data folder exists from the start, even when empty.
+    data_dir::ensure_folders(&data_dir::root().path);
     // Phone model names: cached in the data folder, refreshed in the background.
     device_models::start(data_dir::root().path.clone());
     let app = api::router(state);

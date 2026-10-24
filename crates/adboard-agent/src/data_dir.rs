@@ -27,6 +27,21 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use tracing::warn;
+
+/// The folders kept inside the data root. They are created when the agent
+/// starts and whenever the Storage tab reads them, so they exist even when empty.
+pub const FOLDERS: [&str; 8] = ["macros", "shell_scripts", "config", "logs", "backups", "files", "device", "temp"];
+
+/// Create every folder in `FOLDERS` under `root`. A failure is logged, not fatal.
+pub fn ensure_folders(root: &Path) {
+    for name in FOLDERS {
+        let folder = root.join(name);
+        if let Err(error) = std::fs::create_dir_all(&folder) {
+            warn!(%error, path = %folder.display(), "cannot create a data folder");
+        }
+    }
+}
 
 pub const APP_DIR_NAME: &str = "ADBoard";
 /// Default data folder beside the executable.
@@ -434,6 +449,17 @@ mod tests {
 
     fn none() -> Inputs {
         Inputs::default()
+    }
+
+    #[test]
+    fn ensure_folders_creates_every_folder_even_when_empty() {
+        let root = std::env::temp_dir().join(format!("adboard-folders-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        ensure_folders(&root);
+        for name in FOLDERS {
+            assert!(root.join(name).is_dir(), "{name} should exist");
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

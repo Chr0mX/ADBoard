@@ -37,7 +37,8 @@ pub async fn storage() -> Response {
     let s = store();
     let root_path = root.path.clone();
     let sizes = tokio::task::spawn_blocking(move || {
-        ["macros", "shell_scripts", "config", "logs", "backups", "files", "device", "temp"]
+        data_dir::ensure_folders(&root_path);
+        data_dir::FOLDERS
             .iter()
             .map(|name| {
                 let (files, bytes) = data_dir::tree_stats(&root_path.join(name));
@@ -47,13 +48,9 @@ pub async fn storage() -> Response {
     })
     .await
     .unwrap_or_default();
-    let folders: serde_json::Map<String, serde_json::Value> = ["macros", "shell_scripts", "config", "logs", "backups", "files", "device", "temp"]
+    let folders: serde_json::Map<String, serde_json::Value> = data_dir::FOLDERS
         .iter()
         .map(|name| (name.to_string(), json!(root.path.join(name).display().to_string())))
-        .collect();
-    let folder_exists: serde_json::Map<String, serde_json::Value> = ["macros", "shell_scripts", "config", "logs", "backups", "files", "device", "temp"]
-        .iter()
-        .map(|name| (name.to_string(), json!(root.path.join(name).is_dir())))
         .collect();
     let saved = data_dir::app_dir().and_then(|dir| data_dir::read_location(&dir));
     Json(json!({
@@ -61,7 +58,6 @@ pub async fn storage() -> Response {
         "source": root.source,
         "platform": std::env::consts::OS,
         "folders": folders,
-        "folderExists": folder_exists,
         "sizes": sizes,
         "targets": {
             "app": data_dir::app_data_folder().map(|p| p.display().to_string()),

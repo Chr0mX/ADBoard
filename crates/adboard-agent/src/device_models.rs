@@ -173,8 +173,7 @@ pub fn state() -> CacheState {
 }
 
 /// Brand and marketing name for a model code, if the cache has it.
-// Used by the Hosts tab once it shows model names.
-#[allow(dead_code)]
+/// ADB reports `SM S921B`; the database keys are `SM-S921B`, so both spellings are tried.
 pub fn lookup(model: &str) -> Option<ModelName> {
     let key = model.trim();
     if key.is_empty() {
@@ -187,10 +186,22 @@ pub fn lookup(model: &str) -> Option<ModelName> {
 }
 
 fn find(models: &BTreeMap<String, ModelName>, key: &str) -> Option<ModelName> {
+    let upper = key.to_ascii_uppercase();
     models
         .get(key)
-        .or_else(|| models.get(&key.to_ascii_uppercase()))
+        .or_else(|| models.get(&upper))
+        .or_else(|| models.get(&upper.replace(' ', "-")))
         .cloned()
+}
+
+/// The label shown to people: "Samsung Galaxy S24". The name already carries the
+/// brand for some entries ("Redmi Note 13 5G"), so it is not repeated.
+pub fn display_name(model: &ModelName) -> String {
+    if model.name.to_ascii_lowercase().starts_with(&model.brand.to_ascii_lowercase()) {
+        model.name.clone()
+    } else {
+        format!("{} {}", model.brand, model.name)
+    }
 }
 
 /// Clears the in-flight flag when a download ends, however it ends.
@@ -270,12 +281,6 @@ async fn refresh_if_due(path: &Path) {
 /// startup, inside the Tokio runtime.
 pub fn start(data_dir: PathBuf) {
     let path = cache_path(&data_dir);
-    // The folder exists from the start, even before the first download succeeds.
-    if let Some(folder) = path.parent() {
-        if let Err(error) = std::fs::create_dir_all(folder) {
-            warn!(%error, path = %folder.display(), "cannot create the device folder; model names are unavailable");
-        }
-    }
     let now = now_secs();
     match read_cache(&path) {
         Ok(file) => {
@@ -448,5 +453,19 @@ mod tests {
         assert_eq!(find(&map, "SM-S921B").unwrap().brand, "Samsung");
         assert_eq!(find(&map, "sm-s921b").unwrap().brand, "Samsung");
         assert!(find(&map, "NOT-A-MODEL").is_none());
+    }
+
+    #[test]
+    fn adb_spelling_with_spaces_finds_the_dashed_key() {
+        let map = models(0);
+        assert_eq!(find(&map, "SM S921B").unwrap().name, "Galaxy S24");
+    }
+
+    #[test]
+    fn display_name_adds_the_brand_only_when_the_name_lacks_it() {
+        let galaxy = ModelName { brand: "Samsung".into(), name: "Galaxy S24".into() };
+        let redmi = ModelName { brand: "Redmi".into(), name: "Redmi Note 13 5G".into() };
+        assert_eq!(display_name(&galaxy), "Samsung Galaxy S24");
+        assert_eq!(display_name(&redmi), "Redmi Note 13 5G");
     }
 }

@@ -127,6 +127,9 @@ pub struct Device {
     pub id: String,
     pub name: String,
     pub model: String,
+    /// Marketing name for `model` ("Samsung Galaxy S24") from the device-model cache, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<String>,
     pub android_version: String,
     pub serial: String,
     pub connection: ConnectionType,
@@ -855,6 +858,7 @@ mod tests {
             id: "s24".into(),
             name: "S24".into(),
             model: "SM-S921B".into(),
+            model_name: None,
             android_version: "14".into(),
             serial: "R5CW90ABC1".into(),
             connection: ConnectionType::Usb,

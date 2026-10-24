@@ -31,6 +31,8 @@ export interface Device {
   host: string;
   /** Stable mesh host id when provided by the agent. */
   hostId?: string;
+  /** Marketing name for `model` from the agent's device-model cache; absent when unknown. */
+  modelName?: string;
   wallpaperHue: number;
 }
 
