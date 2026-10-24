@@ -2,8 +2,7 @@
 //! marketing name (`Samsung`, `Galaxy S24`).
 //!
 //! The database is the open `bsthen/device-models` JSON. It is downloaded with
-//! `curl` and cached at `<data folder>/cache/device-models.json`, next to the
-//! icon cache. The cache is read at startup and used whether it is fresh or
+//! `curl` and cached at `<data folder>/device/device-models.json`. The cache is read at startup and used whether it is fresh or
 //! expired. A refresh runs in the background, at most once per 24 hours, and a
 //! failed download never touches the cache. Device discovery never waits for it.
 
@@ -71,7 +70,7 @@ fn now_secs() -> u64 {
 
 /// Where the cache lives inside the ADBoard data folder.
 pub fn cache_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("cache").join(CACHE_FILE)
+    data_dir.join("device").join(CACHE_FILE)
 }
 
 /// Fresh, expired or unavailable, judged against `now` (unix seconds).
@@ -430,7 +429,7 @@ mod tests {
     fn unwritable_location_is_an_error_not_a_panic() {
         let root = dir("unwritable");
         std::fs::create_dir_all(&root).unwrap();
-        let blocker = root.join("cache");
+        let blocker = root.join("device");
         std::fs::write(&blocker, b"a file, not a folder").unwrap();
         let path = cache_path(&root);
         assert!(write_cache(&path, &file(1, MIN_MODELS)).is_err());
