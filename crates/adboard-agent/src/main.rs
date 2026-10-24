@@ -3,6 +3,7 @@ mod api;
 mod app_icon;
 mod audio;
 mod device_manager;
+mod device_models;
 mod data_dir;
 mod device_ops;
 mod env;
@@ -91,6 +92,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Macro schedules run on the agent, with or without a browser open.
     macro_automation::spawn_scheduler(state.clone());
+    // Phone model names: cached in the data folder, refreshed in the background.
+    device_models::start(data_dir::root().path.clone());
     let app = api::router(state);
     let addr = SocketAddr::from((bind_ip, port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
