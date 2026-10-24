@@ -33,13 +33,13 @@ export interface StorageInfo {
 type Folder = "root" | "macros" | "shell_scripts" | "config" | "logs" | "backups" | "files" | "device";
 
 const FOLDERS: { id: Folder; label: string; what: string }[] = [
-  { id: "macros", label: "Macros", what: "Touch macros, one .json file each" },
-  { id: "shell_scripts", label: "Shell scripts", what: "Shell Automation scripts, one .json file each, and _library.json (apps, variables, groups, profiles)" },
-  { id: "config", label: "Config", what: "Settings (user_config.json), layout per browser, editor state, queue, schedules, phone choices, sign-in account" },
+  { id: "macros", label: "Macros", what: "Touch macros" },
+  { id: "shell_scripts", label: "Shell scripts", what: "Shell Automation scripts" },
+  { id: "config", label: "Config", what: "Settings" },
   { id: "logs", label: "Logs", what: "adboard.log and the Shell Automation run history" },
   { id: "backups", label: "Backups", what: "Earlier versions, deleted items, unreadable files, Back up copies, data moved from older versions" },
-  { id: "files", label: "Files", what: "Files area: screenshots, recordings, APKs, downloads" },
-  { id: "device", label: "Phone Models", what: "Phone model names cached from the device-models database" },
+  { id: "files", label: "Files", what: "Files area" },
+  { id: "device", label: "Phone Models", what: "Phone model names cache" },
 ];
 
 /* --------------------------- shared fetch --------------------------- */
@@ -362,14 +362,10 @@ function PathRow({
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[var(--pc-line)] px-2 py-1.5" data-settings-folder={which}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-xs font-semibold text-[var(--pc-ink)]" title={what}>
-          {label}
+        <span className="text-xs font-semibold text-[var(--pc-ink)]">{label}</span>
+        <span className="text-sm text-[var(--pc-muted)]">
+          {[what, size && `${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`].filter(Boolean).join(" · ")}
         </span>
-        {size && (
-          <span className="text-sm text-[var(--pc-muted)]">
-            {`${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`}
-          </span>
-        )}
         <span className="break-all font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
       </div>
       <button
