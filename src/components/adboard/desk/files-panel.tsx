@@ -324,7 +324,7 @@ export function FilesPanel() {
         <PrimaryButton disabled={!selectedPc || selectedPc.dir} onClick={() => void sendSelected().catch((error: unknown) => {
           setRows([{ deviceId: "send", deviceName: "Send", state: "error", detail: error instanceof Error ? error.message : "Failed" }]);
         })}>
-          SEND
+          Send
         </PrimaryButton>
         <ResultList rows={rows} />
       </div>
