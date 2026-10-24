@@ -685,7 +685,7 @@ export function ControlPanelFloat({
                           if (!taskbarEdit) onPip();
                         }}
                         disabled={!taskbarEdit && offline}
-                        aria-label={taskbarEdit ? `${pins.includes("pip") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.pip}` : "Pop out (always on top, view only)"}
+                        aria-label={taskbarEdit ? `${pins.includes("pip") ? "Unpin" : "Pin"} ${TASKBAR_TOOL_LABELS.pip}` : "Pop out (always on top)"}
                         data-taskbar-pin="pip"
                         data-pip-toggle
                         className={HIT}

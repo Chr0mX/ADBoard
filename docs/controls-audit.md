@@ -42,7 +42,7 @@ Testing used the mock fleet (`ADBOARD_FORCE_MOCK=1`) in Chromium at desktop and 
 | Screenshot, Screen Recording | Existing | Use every control target |
 | Quality Settings | Existing presets + **Custom added** | Each preset now shows its size, bitrate and FPS. Custom sends max size (0–4096, 0 = native), bitrate (0.25–40 Mbps) and FPS (5–120) to scrcpy-server, and the stream restarts. (**device**) |
 | Clipboard Sync | Manual existing + **auto added** | "Sync clipboard" switch:<br>• Phone copies go to the PC clipboard.<br>• Ctrl/Cmd+V pastes the PC clipboard on the targets (scrcpy `SET_CLIPBOARD` with paste).<br>The browser must allow clipboard access (HTTPS or localhost); otherwise it says so and Ctrl+V goes through as a key. |
-| Always on Top | **Added (view only)** | "Pop out": the live screen in the browser's picture-in-picture window, which stays on top. A page can't pin its own window, and the pop-out can't send input. |
+| Always on Top | **Added (touch control in Chrome and Edge)** | "Pop out": the live screen in the browser's picture-in-picture window, which stays on top. A page can't pin its own window, and the pop-out can't send input. |
 
 ## 4. Automation and macros (one engine, running on the agent)
 

@@ -184,7 +184,7 @@ A short note appears at the bottom when something fails or finishes.
 | **Arrangement** | Opens Grid view with the Arrangement strip showing. |
 | **Rotate** | Turns the phone a quarter turn. Needs the live screen. |
 | **Fullscreen** | Makes your browser go fullscreen (Esc leaves). This is different from Fill, which only resizes inside the page. |
-| **Pop out** | Opens a small always-on-top picture-in-picture window of the phone. View only: you still control the phone from the page. It needs a live picture. |
+| **Pop out** | Opens a small always-on-top window of the phone. In Chrome and Edge you can tap and drag the picture in that window to control the phone. Other browsers get a view-only picture-in-picture window. It needs a live picture. |
 
 Then, after the label **Device actions**:
 

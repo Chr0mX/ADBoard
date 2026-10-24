@@ -537,7 +537,7 @@ function PinnedToolButton({
           pressed={Boolean(handlers.pip)}
           onPressedChange={() => handlers.onPip?.()}
           disabled={offline}
-          aria-label="Pop out (always on top, view only)"
+          aria-label="Pop out (always on top)"
           data-taskbar-tool="pip"
           size="none"
           className={hit}

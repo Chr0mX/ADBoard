@@ -57,6 +57,7 @@ import { offlineOverlayCopy } from "@/lib/ui/connection-copy";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { useQuietMode } from "@/hooks/use-quiet-mode";
 import { usePictureInPicture } from "@/hooks/use-picture-in-picture";
+import { useDocumentPip, type PipPointer } from "@/hooks/use-document-pip";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { useMacroTouches } from "@/lib/macro/runs";
 import { TouchRipples } from "@/components/adboard/macros/preview";
@@ -242,33 +243,7 @@ export function PhoneScreen({
   // Rotate / Fullscreen / Pop out, shared by More tools, floating Tools and pins.
   const fullscreen = useFullscreen();
   const quiet = useQuietMode();
-  const pip = usePictureInPicture(canvasRef);
-  const toggleFullscreen = fullscreen.supported
-    ? () => void fullscreen.toggle().then((error) => error && actions.setNote(error))
-    : undefined;
-  const togglePip = pip.supported
-    ? () => {
-        if (!pip.active && !showingVideo) {
-          actions.setNote("No live picture to pop out yet");
-          return;
-        }
-        void pip.toggle().then((error) => error && actions.setNote(error));
-      }
-    : undefined;
-  const showingVideo =
-    !offline &&
-    configured &&
-    decodeState === "decoding" &&
-    (status?.stream === "streaming" || session?.stream === "streaming");
 
-  const awaitingPicture =
-    !showingVideo &&
-    configured &&
-    !offline &&
-    (status?.stream === "streaming" ||
-      status?.stream === "starting" ||
-      session?.stream === "streaming" ||
-      session?.stream === "starting");
 
   // Device name is already the heading inside the screen and in the device
   // list, so this status line only carries the stream state.
@@ -418,9 +393,11 @@ export function PhoneScreen({
     clientX: number,
     clientY: number,
     tool: PointerTool,
+    target?: DOMRect,
   ) => {
-    if (!screenRef.current) return;
-    const rect = screenRef.current.getBoundingClientRect();
+    // `target` is the pop-out window's picture when the input came from there.
+    const rect = target ?? screenRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const point = normalizePoint(clientX, clientY, rect);
     if (phase === "down") {
       setRipple({ x: point.x * 100, y: point.y * 100, key: Date.now() });
@@ -442,6 +419,62 @@ export function PhoneScreen({
       tool,
     });
   };
+
+  // Touch and mouse in the Document PiP window use the same gating and drag
+  // tracking as the main screen; only the picture they are measured against differs.
+  const pipPointer: PipPointer = (phase, event, rect) => {
+    if (phase === "down") {
+      if (offline || !mouseOn || event.button !== 0 || replaying) return;
+      const tool: PointerTool = cursorMode ? "mouse" : event.pointerType === "touch" ? "finger" : "mouse";
+      dragRef.current = { id: event.pointerId, lastX: event.clientX, lastY: event.clientY, lastSent: performance.now(), tool };
+      emitPointer("down", event.clientX, event.clientY, tool, rect);
+      return;
+    }
+    const drag = dragRef.current;
+    if (!drag || drag.id !== event.pointerId) return;
+    if (phase === "move") {
+      const now = performance.now();
+      const dx = event.clientX - drag.lastX;
+      const dy = event.clientY - drag.lastY;
+      if (now - drag.lastSent < 16 && dx * dx + dy * dy < 4) return;
+      drag.lastX = event.clientX;
+      drag.lastY = event.clientY;
+      drag.lastSent = now;
+      emitPointer("move", event.clientX, event.clientY, drag.tool, rect);
+      return;
+    }
+    dragRef.current = null;
+    emitPointer(phase, event.clientX, event.clientY, drag.tool, rect);
+  };
+  const videoPip = usePictureInPicture(canvasRef);
+  const docPip = useDocumentPip(canvasRef, pipPointer);
+  const pip = docPip.supported ? docPip : videoPip;
+  const toggleFullscreen = fullscreen.supported
+    ? () => void fullscreen.toggle().then((error) => error && actions.setNote(error))
+    : undefined;
+  const togglePip = pip.supported
+    ? () => {
+        if (!pip.active && !showingVideo) {
+          actions.setNote("No live picture to pop out yet");
+          return;
+        }
+        void pip.toggle().then((error) => error && actions.setNote(error));
+      }
+    : undefined;
+  const showingVideo =
+    !offline &&
+    configured &&
+    decodeState === "decoding" &&
+    (status?.stream === "streaming" || session?.stream === "streaming");
+
+  const awaitingPicture =
+    !showingVideo &&
+    configured &&
+    !offline &&
+    (status?.stream === "streaming" ||
+      status?.stream === "starting" ||
+      session?.stream === "streaming" ||
+      session?.stream === "starting");
 
   const refreshVideo = async () => {
     if (refreshing) return;
@@ -1127,8 +1160,8 @@ export function PhoneScreen({
               pressed={pip.active}
               onPressedChange={togglePip}
               disabled={offline}
-              aria-label="Pop out (always on top, view only)"
-              title="Picture-in-picture window that stays on top. View only: control from this page."
+              aria-label="Pop out (always on top)"
+              title="Window that stays on top. In Chrome and Edge you can tap and drag the picture in it to control the phone."
               data-pip-toggle
             >
               <PictureInPicture2 className="size-4" />
