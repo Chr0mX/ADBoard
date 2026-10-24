@@ -425,6 +425,47 @@ body {
   background: color-mix(in srgb, var(--pc-ink) 22%, transparent);
 }
 
+/* Every scroll area in the app: a thin bar with no arrow buttons on a
+   computer. On a touch screen or a narrow window there is no bar; touch and
+   the wheel still scroll. A wide bar took width from the content and clipped
+   buttons such as Copy path. Components with their own rule (taskbar, side
+   dock) keep it, because a class rule outranks this one. */
+html,
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--pc-ink) 22%, transparent) transparent;
+}
+
+html::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+html::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button {
+  display: none;
+}
+
+html::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pc-ink) 22%, transparent);
+}
+
+@media (pointer: coarse), (max-width: 760px) {
+  html,
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  html::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .pc-taskbar-item {
   display: inline-flex;
   align-items: center;

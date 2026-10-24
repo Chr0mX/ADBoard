@@ -198,7 +198,7 @@ export function ScrcpyOptions({
           "flex w-full items-center gap-1.5",
           start
             ? "flex-wrap justify-start [&>*]:flex-1 [&>*]:basis-auto"
-            : "flex-nowrap justify-start overflow-x-auto lg:flex-wrap lg:justify-center",
+            : "flex-wrap justify-start lg:justify-center",
         )}
       >
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">

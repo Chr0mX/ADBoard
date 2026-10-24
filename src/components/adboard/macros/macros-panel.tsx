@@ -453,7 +453,7 @@ function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: 
               <div
                 role="group"
                 aria-labelledby={`macro-preview-label-${tab.id}`}
-                className="flex gap-1.5 overflow-x-auto pb-1"
+                className="flex flex-wrap gap-1.5 pb-1"
                 data-macro-preview-chips
               >
                 {devices.map((d) => {
