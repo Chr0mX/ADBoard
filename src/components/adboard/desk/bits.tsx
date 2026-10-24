@@ -42,7 +42,7 @@ export function PanelFrame({
   return (
     <section
       data-desk-panel={panel}
-      className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto", clean ? "gap-4" : "gap-3")}
+      className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto", clean ? "pc-clean gap-4" : "gap-3")}
     >
       <h2
         className={cn(

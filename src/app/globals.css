@@ -818,3 +818,29 @@ body {
     min-height: 44px;
   }
 }
+
+/* ---------- Clean design (mock-up A) ----------
+   Scoped to pages rendered inside PanelFrame `clean` (.pc-clean). Control is not
+   wrapped, so its controls keep the shared styles above. */
+.pc-clean .pc-toggle {
+  background: var(--pc-paper);
+  border: 1px solid var(--pc-line);
+  border-radius: 12px;
+  color: var(--pc-ink);
+  font-weight: 600;
+  box-shadow: none;
+}
+.pc-clean .pc-toggle:is([aria-pressed="true"], [data-pressed="true"], [data-pressed=""], [aria-expanded="true"]) {
+  background: var(--pc-accent-soft);
+  border-color: var(--pc-accent);
+  color: var(--pc-accent);
+}
+.pc-clean .pc-toggle-sm {
+  border-radius: 10px;
+}
+.pc-clean input:not([type]),
+.pc-clean input[type="text"],
+.pc-clean select,
+.pc-clean textarea {
+  border-radius: 12px;
+}

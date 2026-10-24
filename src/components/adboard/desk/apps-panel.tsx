@@ -86,7 +86,7 @@ export function AppsPanel() {
             key={id}
             type="button"
             aria-pressed={tab === id}
-            className={`h-11 rounded-lg px-3 text-sm ${tab === id ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
+            className="pc-toggle pc-toggle-md px-3 text-sm"
             onClick={() => setTab(id)}
           >
             {label}
@@ -114,11 +114,11 @@ export function AppsPanel() {
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <h3 className="font-display text-sm font-semibold">{group}</h3>
                   <div className="flex items-center gap-1">
-                    <button type="button" className="h-11 px-2 text-sm text-[var(--pc-accent)]" onClick={() => setAdding({ group })} data-add-app-in={group}>
+                    <button type="button" className="pc-toggle pc-toggle-sm h-9 px-3 text-sm" onClick={() => setAdding({ group })} data-add-app-in={group}>
                       Add app
                     </button>
                     {apps.length > 0 && (
-                      <button type="button" className="h-11 px-2 text-sm text-[var(--pc-accent)]" onClick={() => void launchGroup(group)}>
+                      <button type="button" className="pc-toggle pc-toggle-sm h-9 px-3 text-sm" onClick={() => void launchGroup(group)}>
                         Launch group
                       </button>
                     )}
@@ -126,7 +126,7 @@ export function AppsPanel() {
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {apps.map((app) => (
-                    <article key={app.id} data-app-shortcut={app.name} className="rounded-xl bg-[var(--pc-panel)] p-3">
+                    <article key={app.id} data-app-shortcut={app.name} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-3">
                       <p className="flex items-center gap-1.5 font-display text-sm font-semibold">
                         <AppIcon icon={app.icon} name={app.name} packageName={app.packageName} serial={iconSerial} />
                         <span className="min-w-0 truncate">{app.name}</span>
@@ -199,7 +199,7 @@ export function AppsPanel() {
 
 function Mini({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button type="button" className="h-9 rounded-md px-2 text-xs text-[var(--pc-accent)]" onClick={onClick}>
+    <button type="button" className="pc-toggle pc-toggle-sm h-9 px-3 text-xs" onClick={onClick}>
       {label}
     </button>
   );

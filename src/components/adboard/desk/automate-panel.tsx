@@ -104,7 +104,7 @@ export function AutomatePanel() {
   };
 
   return (
-    <PanelFrame title="Shell Automation" panel="automate">
+    <PanelFrame title="Shell Automation" panel="automate" clean description="Build and run jobs made of app, device, file, key and touch steps.">
       <p className="text-sm text-[var(--pc-muted)]">
         Shell Automation runs app, file and shell-command jobs on many phones. Finger-touch macros live in Macros.
       </p>
@@ -114,12 +114,12 @@ export function AutomatePanel() {
             key={item.id}
             type="button"
             aria-pressed={tab === item.id}
-            className={`flex min-h-11 flex-col items-start justify-center rounded-lg px-3 py-1 text-left ${tab === item.id ? "bg-[var(--pc-accent-fill)] text-white" : "border border-[var(--pc-line)]"}`}
+            className="pc-toggle pc-toggle-md flex-col items-start justify-center px-3 py-1 text-left"
             onClick={() => setTab(item.id)}
             data-automate-tab={item.id}
           >
             <span className="text-sm leading-tight">{item.label}</span>
-            <span className={`text-[11px] leading-tight ${tab === item.id ? "text-white/80" : "text-[var(--pc-muted)]"}`}>{item.sub}</span>
+            <span className="text-[11px] leading-tight text-[var(--pc-muted)]">{item.sub}</span>
           </button>
         ))}
       </div>
