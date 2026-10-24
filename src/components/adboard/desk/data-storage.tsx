@@ -6,6 +6,7 @@ import { useSyncWarnings } from "@/lib/sync/agent-store";
 import { backupNow, describeImport, exportWholeLibrary, importWholeLibrary } from "@/lib/library";
 import { LIBRARY_FILE } from "@/lib/adboard-files";
 import { ConfirmDialog } from "@/components/adboard/desk/bits";
+import { sentenceCase } from "@/lib/utils";
 
 /*
  * Where ADBoard keeps its data (GET /api/system/storage) and the tools around
@@ -201,12 +202,12 @@ export function DataStorageCard() {
     <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4 lg:col-span-2" data-settings-data>
       <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Data &amp; storage</h3>
       {!viaAgent && (
-        <p className="text-xs text-[var(--pc-muted)]">In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy.</p>
+        <p className="text-sm text-[var(--pc-muted)]">In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy.</p>
       )}
       {error && <p className="text-xs text-[var(--pc-warn)]">{error}</p>}
       {info && (
         <>
-          <p className="text-xs text-[var(--pc-muted)]">
+          <p className="text-sm text-[var(--pc-muted)]">
             ADBoard keeps macros, scripts and settings on the ADBoard computer in{" "}
             <span className="break-all font-mono text-[var(--pc-ink)]" data-settings-data-dir>
               {info.dataDir}
@@ -251,7 +252,7 @@ export function DataStorageCard() {
           }}
         />
       </div>
-      <p className="text-xs text-[var(--pc-muted)]">
+      <p className="text-sm text-[var(--pc-muted)]">
         <span className="font-mono">{LIBRARY_FILE}</span> holds everything: touch macros, Shell Automation scripts, apps, variables, groups, profiles, the queue, schedules
         and per-phone macro choices. One macro or script is exported from Macros or the Shell Library.
       </p>
@@ -362,8 +363,8 @@ function PathRow({
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[var(--pc-line)] px-2 py-1.5" data-settings-folder={which}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-xs font-semibold text-[var(--pc-ink)]">{label}</span>
-        <span className="text-[11px] text-[var(--pc-muted)]">
+        <span className="text-xs font-semibold text-[var(--pc-ink)]">{sentenceCase(label.replace(/_/g, " "))}</span>
+        <span className="text-sm text-[var(--pc-muted)]">
           {what}
           {size && ` · ${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`}
         </span>
