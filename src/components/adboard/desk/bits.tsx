@@ -84,7 +84,7 @@ export function TargetChecks({
             }}
           />
           <span className="font-medium">{device.name}</span>
- <span className="ml-auto font-mono text-[11px] text-[var(--pc-muted)]">
+ <span className={`ml-auto font-mono text-[11px] ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}>
             {sentenceCase(device.status)}
           </span>
         </label>
