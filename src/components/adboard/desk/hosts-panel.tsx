@@ -30,7 +30,7 @@ export function HostsPanel() {
   const sections = hostSections(listed, desk.devices);
 
   return (
-    <PanelFrame title="Hosts" panel="hosts">
+    <PanelFrame title="Hosts" panel="hosts" clean>
       <p className="text-sm text-[var(--pc-muted)]">
         The Web UI never talks to USB or ADB. Each host agent runs ADB, scrcpy, discovery, files, and macros.
       </p>
@@ -38,7 +38,7 @@ export function HostsPanel() {
       <div className="flex flex-col gap-4">
         {sections.map(({ host, devices }) => {
           return (
-            <section key={host.hostId} data-host-card={host.hostId} className="rounded-xl border border-[var(--pc-line)] p-3">
+            <section key={host.hostId} data-host-card={host.hostId} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4">
               <h3 className="font-display text-sm font-semibold">
                 {host.os.toLowerCase().includes("win") ? "🖥" : "🐧"} {host.name}
               </h3>

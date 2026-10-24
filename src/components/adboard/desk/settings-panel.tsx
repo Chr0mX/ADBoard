@@ -46,10 +46,10 @@ export function SettingsPanel() {
   const target = desk.activeDevice ?? desk.targets[0] ?? null;
 
   return (
-    <PanelFrame title="Settings" panel="settings">
+    <PanelFrame title="Settings" panel="settings" clean>
       <div className="grid gap-3 lg:grid-cols-2">
         <InstallOnIphone />
-        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-stream>
+        <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-stream>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Stream</h3>
           <p className="text-xs text-[var(--pc-muted)]">
             Quality, screen size, audio and screen-off for {desk.targets.length > 1 ? `${desk.targets.length} target phones` : target?.name ?? "the selected phone"}.
@@ -57,7 +57,7 @@ export function SettingsPanel() {
           <ScrcpyOptions targetIds={desk.targets.map((d) => d.id)} serial={target?.serial ?? null} disabled={!target} />
         </section>
 
-        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-control>
+        <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-control>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Control</h3>
           <SwitchRow
             label="Keyboard injection"
@@ -89,7 +89,7 @@ export function SettingsPanel() {
           />
         </section>
 
-        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-grid>
+        <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-grid>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Grid view</h3>
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[var(--pc-ink)]">
             <span>
@@ -109,7 +109,7 @@ export function SettingsPanel() {
           />
         </section>
 
-        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-taskbar>
+        <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-taskbar>
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Phone taskbar</h3>
             <button type="button" className="pc-toggle pc-toggle-sm" disabled={pins.length === 0} onClick={resetPins}>
@@ -185,7 +185,7 @@ export function SettingsPanel() {
         </section>
 
         {(session.authRequired || session.canSetPassword) && (
-          <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-account>
+          <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-account>
             <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Account</h3>
             <p className="text-xs text-[var(--pc-muted)]">
               {session.authRequired ? `Signed in as ${session.username ?? "admin"}.` : "No password yet: needed before using ADBoard through a reverse proxy."}
@@ -203,7 +203,7 @@ export function SettingsPanel() {
           </section>
         )}
 
-        <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3" data-settings-data-link>
+        <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-data-link>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Data &amp; storage</h3>
           <p className="text-xs text-[var(--pc-muted)]">Where your data is kept, how to move it, and export, import and backup live in the Storage tab.</p>
           <button type="button" className="pc-toggle pc-toggle-md self-start" onClick={() => desk?.open("storage")}>

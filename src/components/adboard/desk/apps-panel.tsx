@@ -73,7 +73,7 @@ export function AppsPanel() {
   }
 
   return (
-    <PanelFrame title="Apps" panel="apps">
+    <PanelFrame title="Apps" panel="apps" clean>
       <div className="flex flex-wrap gap-2">
         {(
           [
@@ -110,7 +110,7 @@ export function AppsPanel() {
           {groups.map((group) => {
             const apps = library.apps.filter((app) => (app.group || "Custom") === group);
             return (
-              <section key={group} className="rounded-xl border border-[var(--pc-line)] p-3">
+              <section key={group} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <h3 className="font-display text-sm font-semibold">{group}</h3>
                   <div className="flex items-center gap-1">

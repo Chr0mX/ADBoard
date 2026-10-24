@@ -24,21 +24,31 @@ export function EmptyState({
   );
 }
 
+/** `clean`: the Clean design (larger heading, wider section gap). Pages opt in. */
 export function PanelFrame({
   title,
   children,
   panel,
+  clean = false,
 }: {
   title: string;
   panel: string;
   children: React.ReactNode;
+  clean?: boolean;
 }) {
   return (
     <section
       data-desk-panel={panel}
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto"
+      className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto", clean ? "gap-4" : "gap-3")}
     >
-      <h2 className="font-display text-lg font-semibold text-[var(--pc-ink)]">{title}</h2>
+      <h2
+        className={cn(
+          "font-display font-semibold text-[var(--pc-ink)]",
+          clean ? "text-xl" : "text-lg",
+        )}
+      >
+        {title}
+      </h2>
       {children}
     </section>
   );

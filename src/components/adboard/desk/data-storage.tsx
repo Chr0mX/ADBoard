@@ -197,7 +197,7 @@ export function DataStorageCard() {
   const kept = migration?.items.filter((i) => i.action === "kept-existing") ?? [];
 
   return (
-    <section className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3 lg:col-span-2" data-settings-data>
+    <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4 lg:col-span-2" data-settings-data>
       <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Data &amp; storage</h3>
       {!viaAgent && (
         <p className="text-xs text-[var(--pc-muted)]">In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy.</p>

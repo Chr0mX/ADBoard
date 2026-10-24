@@ -78,7 +78,7 @@ export function DeveloperPanel() {
   }
 
   return (
-    <PanelFrame title="Developer" panel="developer">
+    <PanelFrame title="Developer" panel="developer" clean>
       <div className="flex gap-2">
         {(
           [

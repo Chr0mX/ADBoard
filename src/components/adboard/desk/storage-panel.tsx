@@ -117,7 +117,7 @@ export function StoragePanel() {
   };
 
   return (
-    <PanelFrame title="Data Storage" panel="storage">
+    <PanelFrame title="Data Storage" panel="storage" clean>
       <div className="flex flex-col gap-1">
         <p className="text-sm text-[var(--pc-muted)]">Choose where ADBoard stores your data, including macros, scripts, and configuration.</p>
         {!viaAgent && <p className="text-xs text-[var(--pc-muted)]">In the browser demo, data is kept in this browser only.</p>}
@@ -172,7 +172,7 @@ export function StoragePanel() {
                   return (
                     <div
                       key={key}
-                      className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-accent)] bg-[var(--pc-panel)] p-4"
+                      className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-accent)] bg-[var(--pc-panel)] p-4"
                       data-storage-option={key}
                       data-storage-current-option="true"
                     >
@@ -187,7 +187,7 @@ export function StoragePanel() {
                   <button
                     key={key}
                     type="button"
-                    className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] p-4 text-left disabled:opacity-60"
+                    className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] p-4 text-left disabled:opacity-60"
                     disabled={!viaAgent || busy || !option.path}
                     onClick={() => setConfirmSwitch(key)}
                     data-storage-option={key}
