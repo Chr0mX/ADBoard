@@ -34,39 +34,33 @@ const TABS = [
   {
     id: "library",
     label: "Library",
-    sub: "Saved jobs",
     explain: "Your saved jobs, and every action a job can use, grouped by what it does. Add an action to send it to the Builder.",
   },
   {
     id: "builder",
     label: "Builder",
-    sub: "Make a job",
     explain:
       "Build a job step by step next to the phone's live screen: touch steps show where they land. Test one step, or run the whole job on the phones you tick. Example: Force stop game → Launch game → Wait 10 s → Tap Start.",
   },
   {
     id: "variables",
     label: "Variables",
-    sub: "Per-phone values",
     explain:
       "Write ${NAME} in a step and it becomes this value when it runs: one value for every phone, or a different one per phone. Example: ${USERNAME} = farm01 on S24, farm02 on S23.",
   },
   {
     id: "groups",
     label: "Groups",
-    sub: "Phone sets",
     explain: "Saved sets of phones. They also appear in the Devices sidebar to select many phones in one tap.",
   },
   {
     id: "profiles",
     label: "Profiles",
-    sub: "Per-phone settings",
     explain: "Per-phone settings for Automation jobs: which jobs belong to this phone, and tags to sort phones.",
   },
   {
     id: "history",
     label: "History",
-    sub: "Past runs",
     explain: "The last 30 Automation runs and how each phone did.",
   },
 ] as const;
@@ -114,12 +108,11 @@ export function AutomatePanel() {
             key={item.id}
             type="button"
             aria-pressed={tab === item.id}
-            className="pc-toggle pc-toggle-md flex-col items-start justify-center px-3 py-1 text-left"
+            className="pc-toggle pc-toggle-md px-3 text-sm"
             onClick={() => setTab(item.id)}
             data-automate-tab={item.id}
           >
-            <span className="text-sm leading-tight">{item.label}</span>
-            <span className="text-[11px] leading-tight text-[var(--pc-muted)]">{item.sub}</span>
+            {item.label}
           </button>
         ))}
       </div>
