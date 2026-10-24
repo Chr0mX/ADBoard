@@ -226,7 +226,7 @@ export function ControlPanelFloat({
           className="flex flex-col gap-1.5 border-b border-[var(--pc-line)] pb-2.5"
         >
           <label className="flex h-12 min-h-12 items-center gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3">
-            <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--pc-muted)]">
+ <span className="font-mono text-[11px] tracking-wide text-[var(--pc-muted)]">
               Quality
             </span>
             <select

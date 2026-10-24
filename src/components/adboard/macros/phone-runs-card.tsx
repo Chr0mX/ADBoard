@@ -15,7 +15,7 @@ import {
   useRunVersion,
   type PhoneRun,
 } from "@/lib/macro/runs";
-import { cn } from "@/lib/utils";
+import { cn, sentenceCase } from "@/lib/utils";
 import { Card, GhostButton } from "@/components/adboard/macros/fields";
 
 const STATUS_TONE: Record<string, string> = {
@@ -104,8 +104,8 @@ function PhoneRow({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-[var(--pc-ink)]">{device.name}</span>
-        <span className={cn("font-mono text-[11px] uppercase", online ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
-          {device.status}
+ <span className={cn("font-mono text-[11px] ", online ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
+          {sentenceCase(device.status)}
         </span>
         <select
           aria-label={`Macro for ${device.name}`}
@@ -163,7 +163,7 @@ function PhoneRow({
       </div>
       {run && (
         <p className="flex flex-wrap gap-x-3 font-mono text-[11px]" data-macro-phone-status={run.status} aria-live="polite">
-          <span className={cn("font-semibold uppercase", STATUS_TONE[run.status])}>{run.status}</span>
+ <span className={cn("font-semibold ", STATUS_TONE[run.status])}>{sentenceCase(run.status)}</span>
           <span className="truncate">“{run.tabName}”</span>
           <span>cycle {run.cycle}</span>
           <span>

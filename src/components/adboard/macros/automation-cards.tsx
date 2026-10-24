@@ -17,7 +17,7 @@ import {
   useQueueProgress,
 } from "@/lib/macro/automation-store";
 import type { MacroTab } from "@/lib/macro/core";
-import { cn } from "@/lib/utils";
+import { cn, sentenceCase } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { Card, GhostButton, IconButton } from "@/components/adboard/macros/fields";
 
@@ -61,8 +61,8 @@ export function QueueCard({ tabs, activeTab }: { tabs: MacroTab[]; activeTab: Ma
                 <span className="w-5 font-mono text-[11px] text-[var(--pc-muted)]">{index + 1}</span>
                 <span className="min-w-0 flex-1 truncate text-sm text-[var(--pc-ink)]">{name(item.tabId)}</span>
                 {state && (
-                  <span className={cn("font-mono text-[11px] uppercase text-[var(--pc-muted)]", STATE_TONE[state.state])} title={state.detail}>
-                    {state.state}
+ <span className={cn("font-mono text-[11px] text-[var(--pc-muted)]", STATE_TONE[state.state])} title={state.detail}>
+                    {sentenceCase(state.state)}
                   </span>
                 )}
                 <IconButton label="Move up" onClick={() => moveInQueue(item.id, -1)} disabled={running || index === 0}>

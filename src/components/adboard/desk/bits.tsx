@@ -3,7 +3,7 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useEffect, useId, useRef, useState } from "react";
 import type { Device, DeviceOpResult } from "@/lib/devices/types";
-import { cn } from "@/lib/utils";
+import { cn, sentenceCase } from "@/lib/utils";
 
 /** Shown instead of an empty list: what the list is for, and the next step. */
 export function EmptyState({
@@ -69,7 +69,7 @@ export function TargetChecks({
 }) {
   return (
     <fieldset className="flex flex-col gap-1">
-      <legend className="mb-1 font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">
+ <legend className="mb-1 font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
         Target devices
       </legend>
       {devices.map((device) => (
@@ -84,8 +84,8 @@ export function TargetChecks({
             }}
           />
           <span className="font-medium">{device.name}</span>
-          <span className="ml-auto font-mono text-[11px] uppercase text-[var(--pc-muted)]">
-            {device.status}
+ <span className="ml-auto font-mono text-[11px] text-[var(--pc-muted)]">
+            {sentenceCase(device.status)}
           </span>
         </label>
       ))}

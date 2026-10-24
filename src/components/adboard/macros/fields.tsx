@@ -65,7 +65,7 @@ export function NumField({
   };
   return (
     <div className={cn("flex min-w-0 flex-col gap-1", className)}>
-      <label htmlFor={id} className={cn("text-[var(--pc-muted)]", compact ? "text-[11px] uppercase tracking-wider" : "text-xs")}>
+ <label htmlFor={id} className={cn("text-[var(--pc-muted)]", compact ? "text-[11px] tracking-wider" : "text-xs")}>
         {label}
       </label>
       <div className="relative flex items-center">

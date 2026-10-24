@@ -1132,7 +1132,7 @@ export function PhoneScreen({
               Pop out
             </Toggle>
           )}
-          <span className={cn("font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]", sideDock ? "mt-1 px-0.5" : "mx-1")}>Device actions</span>
+ <span className={cn("font-mono text-[11px] tracking-wider text-[var(--pc-muted)]", sideDock ? "mt-1 px-0.5" : "mx-1")}>Device actions</span>
           {QUICK_ACTIONS.map((item) => (
             <button
               key={item.op}
@@ -1166,7 +1166,7 @@ export function PhoneScreen({
       )}
     >
       {!fillWindow && !gridView && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
-        <p className="truncate text-center font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">
+ <p className="truncate text-center font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
           {videoError || streamLabel}
         </p>
       )}
@@ -1282,7 +1282,7 @@ export function PhoneScreen({
             {device && <MacroRipples deviceId={device.id} />}
 
             {awaitingPicture && (
-              <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 font-mono text-[11px] uppercase tracking-wider text-white/70">
+ <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 font-mono text-[11px] tracking-wider text-white/70">
                 {videoError || status?.note || "Waiting for keyframe…"}
               </p>
             )}
@@ -1318,7 +1318,7 @@ export function PhoneScreen({
                       {device.name}
                     </p>
                     <p className="text-sm text-white/70">{device.model}</p>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/50">
+ <p className="font-mono text-[11px] tracking-[0.2em] text-white/50">
                       {!configured && "Mock preview (no agent)"}
                       {configured && decodeState === "connecting" && "Connecting video…"}
                       {configured && decodeState === "waiting" && (videoError || "Waiting for H264…")}

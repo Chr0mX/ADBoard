@@ -1,4 +1,5 @@
 "use client";
+import { sentenceCase } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
@@ -42,13 +43,13 @@ export function HostsPanel() {
               <h3 className="font-display text-sm font-semibold">
                 {host.os.toLowerCase().includes("win") ? "🖥" : "🐧"} {host.name}
               </h3>
-              <p className="font-mono text-[11px] uppercase text-[var(--pc-muted)]">
-                {host.os} · {host.status} · {host.local ? "this controller" : "remote agent"}
+ <p className="font-mono text-[11px] text-[var(--pc-muted)]">
+                {sentenceCase(host.os)} · {sentenceCase(host.status)} · {host.local ? "this controller" : "remote agent"}
               </p>
               <ul className="mt-2 text-sm">
                 {devices.map((device) => (
                   <li key={device.id}>
-                    {device.name} · {device.status} · {device.connection}
+                    {device.name} · {sentenceCase(device.status)} · {sentenceCase(device.connection)}
                   </li>
                 ))}
                 {devices.length === 0 && <li className="text-[var(--pc-muted)]">No devices reported.</li>}

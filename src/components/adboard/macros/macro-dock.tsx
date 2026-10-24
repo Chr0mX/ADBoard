@@ -19,7 +19,7 @@ import {
 } from "@/lib/macro/runs";
 import { assignMacro, useAssignments } from "@/lib/macro/assignments";
 import type { Device } from "@/lib/devices/types";
-import { cn } from "@/lib/utils";
+import { cn, sentenceCase } from "@/lib/utils";
 import { useDeskOptional } from "@/components/adboard/desk/desk-context";
 import { IconButton, Segmented, formatMs, stepColor } from "@/components/adboard/macros/fields";
 import { LivePreview } from "@/components/adboard/macros/preview";
@@ -95,8 +95,8 @@ export function MacroDock({
       {phone && (
         <div className="flex items-center gap-2" data-macro-dock-header>
           <span className="font-display text-sm font-semibold text-[var(--pc-ink)]">Macros · {phone.name}</span>
-          <span className={cn("font-mono text-[11px] uppercase", phone.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
-            {phone.status}
+ <span className={cn("font-mono text-[11px] ", phone.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
+            {sentenceCase(phone.status)}
           </span>
         </div>
       )}
@@ -218,7 +218,7 @@ export function MacroDock({
       {phoneMode ? (
         run && (
           <p className="flex flex-wrap gap-x-3 font-mono text-[11px]" data-macro-dock-status={run.status} aria-live="polite">
-            <span className={cn("font-semibold uppercase", STATUS_TONE[run.status] ?? "text-[var(--pc-muted)]")}>{run.status}</span>
+ <span className={cn("font-semibold ", STATUS_TONE[run.status] ?? "text-[var(--pc-muted)]")}>{sentenceCase(run.status)}</span>
             <span className="truncate">“{run.tabName}”</span>
             <span>cycle {run.cycle}</span>
             <span>

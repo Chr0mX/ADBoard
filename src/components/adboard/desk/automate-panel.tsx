@@ -261,7 +261,7 @@ function JobLibrary({
         )}
         {folders.map((folder) => (
           <div key={folder} className="flex flex-col gap-1" data-shell-folder={folder}>
-            <h4 className="font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">{folder}</h4>
+ <h4 className="font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">{folder}</h4>
             <ul className="flex flex-col gap-1">
               {library.macros
                 .filter((macro) => (macro.folder || "Custom") === folder)
@@ -335,7 +335,7 @@ function JobLibrary({
         </div>
         {CATEGORIES.map((category) => (
           <div key={category} className="flex flex-col gap-1.5" data-shell-category={category}>
-            <h4 className="font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">{category}</h4>
+ <h4 className="font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">{category}</h4>
             <ul className="grid gap-2 @xl:grid-cols-2 @5xl:grid-cols-3">
               {ACTIONS.filter((a) => a.category === category).map((action) => (
                 <li key={action.kind} className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-2.5" data-shell-action={action.kind}>

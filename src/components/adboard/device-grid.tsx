@@ -71,7 +71,7 @@ export function DeviceGrid({
             <div key={group.key} className="flex flex-col gap-2">
               {multiHost && (
                 <div className="flex items-baseline justify-between gap-2">
-                  <h3 className="font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--pc-muted)]">
+ <h3 className="font-mono text-[11px] tracking-[0.14em] text-[var(--pc-muted)]">
                     {group.label}
                   </h3>
                   <span className="font-mono text-[11px] text-[var(--pc-muted)]">

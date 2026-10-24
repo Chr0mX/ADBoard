@@ -275,7 +275,7 @@ export function useLiveScreen(device: Device, live: boolean) {
     <span
       data-macro-live={state.key}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider",
+ "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold tracking-wider",
         playing ? "bg-[var(--pc-signal)] text-[#04140c]" : "bg-[var(--pc-panel)]/90 text-[var(--pc-muted)]",
       )}
     >

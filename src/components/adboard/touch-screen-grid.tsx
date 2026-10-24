@@ -297,7 +297,7 @@ export function TouchScreenGrid({
             </h2>
           )}
           <p
-            className="hidden shrink-0 whitespace-nowrap font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)] xl:block"
+ className="hidden shrink-0 whitespace-nowrap font-mono text-[11px] tracking-wider text-[var(--pc-muted)] xl:block"
             title={`${listed.length} devices · ${onlineCount} online`}
           >
             {onlineCount}/{listed.length} online
@@ -340,7 +340,7 @@ export function TouchScreenGrid({
                 </div>
               )}
               <p
-                className="hidden min-w-0 truncate font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)] 2xl:block"
+ className="hidden min-w-0 truncate font-mono text-[11px] tracking-wider text-[var(--pc-muted)] 2xl:block"
                 data-grid-touch-note
               >
                 {touchNote}
@@ -454,7 +454,7 @@ export function TouchScreenGrid({
           aria-label="Arrangement options"
           className="flex shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1.5"
         >
-          <span className="font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">Arrangement</span>
+ <span className="font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">Arrangement</span>
           <button
             type="button"
             aria-pressed={!fixed}
@@ -503,7 +503,7 @@ export function TouchScreenGrid({
         className={cn("min-h-0 flex-1 overflow-auto", barHidden && "mr-7")}
       >
         {listed.length === 0 ? (
-          <p className="px-1 font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">
+ <p className="px-1 font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
             No devices
           </p>
         ) : desktop ? (
@@ -583,7 +583,7 @@ function Stepper({
         )}
         aria-live="polite"
       >
-        <span className="block text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">{label}</span>
+ <span className="block text-[11px] tracking-wider text-[var(--pc-muted)]">{label}</span>
         <span data-grid-value>{value}</span>
       </span>
       <button

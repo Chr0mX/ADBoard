@@ -37,7 +37,7 @@ export function MechanismBadge({ mechanism }: { mechanism: Mechanism }) {
       title={info.hint}
       data-mechanism={mechanism}
       className={cn(
-        "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider",
+ "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wider",
         mechanism === "touch" && "bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
         mechanism === "shell" && "bg-[color-mix(in_srgb,#ffb86b_18%,transparent)] text-[#ffb86b]",
         mechanism === "key" && "bg-[color-mix(in_srgb,#c3a6ff_18%,transparent)] text-[#c3a6ff]",
@@ -637,7 +637,7 @@ function StepRow({
               {status && (
                 <span
                   className={cn(
-                    "font-mono text-[11px] uppercase",
+ "font-mono text-[11px] ",
                     status.status === "ok" && "text-[var(--pc-signal)]",
                     status.status === "failed" && "text-[var(--pc-warn)]",
                     (status.status === "skipped" || status.status === "stopped") && "text-[var(--pc-muted)]",

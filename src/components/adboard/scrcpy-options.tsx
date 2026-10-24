@@ -202,7 +202,7 @@ export function ScrcpyOptions({
         )}
       >
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
-          <span className="hidden font-mono text-[11px] uppercase tracking-wide text-[var(--pc-muted)] lg:inline">
+ <span className="hidden font-mono text-[11px] tracking-wide text-[var(--pc-muted)] lg:inline">
             Quality
           </span>
           <select
@@ -223,7 +223,7 @@ export function ScrcpyOptions({
           </select>
         </label>
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
-          <span className="hidden font-mono text-[11px] uppercase tracking-wide text-[var(--pc-muted)] lg:inline">
+ <span className="hidden font-mono text-[11px] tracking-wide text-[var(--pc-muted)] lg:inline">
             Size
           </span>
           <select
@@ -399,7 +399,7 @@ function CustomQualityFields({
         submit();
       }}
     >
-      <label className="flex flex-col gap-0.5 font-mono text-[11px] uppercase text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 font-mono text-[11px] text-[var(--pc-muted)]">
         Max size px
         <input
           type="number"
@@ -416,7 +416,7 @@ function CustomQualityFields({
           className={field}
         />
       </label>
-      <label className="flex flex-col gap-0.5 font-mono text-[11px] uppercase text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 font-mono text-[11px] text-[var(--pc-muted)]">
         Bitrate Mbps
         <input
           type="number"
@@ -432,7 +432,7 @@ function CustomQualityFields({
           className={field}
         />
       </label>
-      <label className="flex flex-col gap-0.5 font-mono text-[11px] uppercase text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 font-mono text-[11px] text-[var(--pc-muted)]">
         FPS
         <input
           type="number"

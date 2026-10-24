@@ -29,7 +29,7 @@ export function ScreenGrid({
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {online.length === 0 ? (
-          <p className="px-1 font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">
+ <p className="px-1 font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
             No online screens
           </p>
         ) : (

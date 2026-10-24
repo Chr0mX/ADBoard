@@ -103,7 +103,7 @@ export function MultiDeviceToolbar({
       </div>
       {library.groups.length > 0 && (
         <div className="flex flex-col gap-1" data-device-groups>
-          <p className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-[var(--pc-muted)]">
+ <p className="flex items-center gap-1.5 font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
             <Users className="size-3" aria-hidden />
             Group control
           </p>

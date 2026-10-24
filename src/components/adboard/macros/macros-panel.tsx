@@ -64,7 +64,7 @@ import {
   useRunVersion,
 } from "@/lib/macro/runs";
 import type { Device } from "@/lib/devices/types";
-import { cn } from "@/lib/utils";
+import { cn, sentenceCase } from "@/lib/utils";
 import { useDesk } from "@/components/adboard/desk/desk-context";
 import { ConfirmDialog, PanelFrame } from "@/components/adboard/desk/bits";
 import { Card, GhostButton, IconButton, NumField, Segmented, formatMs } from "@/components/adboard/macros/fields";
@@ -750,7 +750,7 @@ function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; 
               </span>
               <span
                 className={cn(
-                  "ml-auto font-mono text-[11px] uppercase",
+ "ml-auto font-mono text-[11px] ",
                   device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]",
                 )}
               >
@@ -925,7 +925,7 @@ function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
       </summary>
       {open && (
         <div className="absolute right-0 z-30 mt-1 flex max-h-80 w-72 flex-col overflow-y-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg">
-          <p className="px-2 py-1 font-mono text-[11px] uppercase text-[var(--pc-muted)]">Saved on ADBoard</p>
+ <p className="px-2 py-1 font-mono text-[11px] text-[var(--pc-muted)]">Saved on ADBoard</p>
           {error && <p className="px-2 py-1 text-xs text-[var(--pc-warn)]">{error}</p>}
           {agent?.length === 0 && <p className="px-2 py-1 text-xs text-[var(--pc-muted)]">No earlier versions yet.</p>}
           {agent?.map((entry) => (
@@ -953,7 +953,7 @@ function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
               <span className="font-mono text-[11px] text-[var(--pc-muted)]">{entry.items} tabs · restore</span>
             </button>
           ))}
-          <p className="mt-1 px-2 py-1 font-mono text-[11px] uppercase text-[var(--pc-muted)]">Kept in this browser</p>
+ <p className="mt-1 px-2 py-1 font-mono text-[11px] text-[var(--pc-muted)]">Kept in this browser</p>
           {backups.length === 0 && <p className="px-2 py-1 text-xs text-[var(--pc-muted)]">None.</p>}
           {backups.map((backup) => (
             <button
@@ -1034,7 +1034,7 @@ export function RunStatus({ tab }: { tab: MacroTab }) {
     <>
         <div className="flex flex-col gap-2" data-macro-status={snapshot.status} aria-live="polite">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--pc-ink)]">
-            <span className="font-semibold uppercase">{snapshot.status}</span>
+ <span className="font-semibold ">{sentenceCase(snapshot.status)}</span>
             <span>cycle {cycles}</span>
             <span>
               step {Math.min(snapshot.stepIndex + 1, snapshot.stepCount)}/{snapshot.stepCount}

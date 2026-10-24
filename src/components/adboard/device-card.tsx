@@ -89,7 +89,7 @@ export function DeviceCard({
         <span className="mt-1 flex min-w-0 flex-col items-start gap-0.5 text-xs leading-4 text-[var(--pc-muted)]">
           <span
             className={cn(
-              "inline-flex items-center gap-1 font-mono text-[11px] uppercase",
+ "inline-flex items-center gap-1 font-mono text-[11px] ",
               device.status === "online"
                 ? "text-[var(--pc-signal)]"
                 : device.status === "unauthorized"
