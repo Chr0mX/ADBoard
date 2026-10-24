@@ -980,11 +980,8 @@ function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
 /** Where macros are kept: shared through the agent, or only in this browser. */
 export function MacroSyncNote() {
   const status = useSyncStatus("macros");
-  if (status.state === "pending") return null;
-  const text =
-    status.state === "shared"
-      ? "Shared with every browser on this ADBoard · runs keep going on the phones when a browser closes"
-      : status.message ?? "Saved in this browser only";
+  if (status.state === "pending" || status.state === "shared") return null;
+  const text = status.message ?? "Saved in this browser only";
   return (
     <p
       data-macro-sync={status.state}

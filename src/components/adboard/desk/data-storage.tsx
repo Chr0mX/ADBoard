@@ -211,7 +211,7 @@ export function DataStorageCard() {
             <span className="break-all font-mono text-[var(--pc-ink)]" data-settings-data-dir>
               {info.dataDir}
             </span>
-            {info.source === "override" ? " (set by ADBOARD_DATA_DIR — portable mode)." : ". Updating, reinstalling or a Git pull never touches it."}
+            {info.source === "override" ? " (set by ADBOARD_DATA_DIR — portable mode)." : "."}
           </p>
         </>
       )}

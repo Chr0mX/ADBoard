@@ -42,7 +42,7 @@ If a job needs both, build each part where it fits. Shell Automation can start t
 - Macros run on the **ADBoard agent**, the program on the computer that holds the phones. They do not run in your browser.
 - A run **keeps going when you close the browser**. Any browser that opens ADBoard later sees the run and can pause or stop it.
 - Runs **stop when ADBoard itself is closed**. Your macros and your phone choices are kept, but you have to start the runs again.
-- Macros are saved on ADBoard and shared by every browser that opens it. The line under the page title says so: "Shared with every browser on this ADBoard". If it says "Saved in this browser only", ADBoard could not be reached and your edits are only in this browser for now.
+- Macros are saved on ADBoard and shared by every browser that opens it. If the line under the page title says "Saved in this browser only", ADBoard could not be reached and your edits are only in this browser for now. When macros are shared, no line is shown.
 - If ADBoard is not connected at all (the in-browser demo), runs happen inside the browser page and end when you close it.
 
 ## The tab bar

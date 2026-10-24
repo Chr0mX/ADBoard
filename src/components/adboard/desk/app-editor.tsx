@@ -309,7 +309,7 @@ export function AppEditor({
           </p>
         ) : (
           <details open={selected.length === 0 || !!initial} className="flex flex-col gap-2" data-app-details>
-            <summary className="cursor-pointer text-sm">Details{selected.length === 0 ? " (enter a package by hand)" : ""}</summary>
+            <summary className="cursor-pointer text-sm">Details</summary>
             <div className="mt-2 flex flex-col gap-2">
               <TextField label="Package" value={packageName} onChange={(v) => { setPackageName(v); setError(null); }} placeholder="com.example.app" />
               <TextField label="Name" value={name} onChange={setName} />
