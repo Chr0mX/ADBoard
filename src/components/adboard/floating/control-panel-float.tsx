@@ -708,11 +708,11 @@ export function ControlPanelFloat({
                 }
                 aria-pressed={taskbarEdit ? pins.includes("macro") : undefined}
                 data-open-macros
-                className="pc-toggle pc-toggle-lg gap-1.5 px-3"
+                className={cn(HIT, "gap-1.5 lg:w-auto lg:px-3")}
                 onClick={onOpenMacros}
               >
                 <Zap className="size-5" />
-                <span data-macro-label>Macro</span>
+                <span data-macro-label className="max-lg:hidden">Macro</span>
               </Button>
             </PinableTool>
           )}
