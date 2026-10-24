@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { FolderOpen } from "lucide-react";
 import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 import { ConfirmDialog, PanelFrame } from "@/components/adboard/desk/bits";
 import { DataStorageCard, openFolder, refreshStorageInfo, useStorageInfo } from "@/components/adboard/desk/data-storage";
@@ -126,14 +125,11 @@ export function StoragePanel() {
       {info && (
         <>
           <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-storage-current>
-            <div className="flex min-w-0 items-center gap-3">
-              <FolderOpen className="size-6 shrink-0 text-[var(--pc-ink)]" aria-hidden />
-              <h3 className="font-display text-lg font-semibold text-[var(--pc-ink)]">Current Storage Location</h3>
-            </div>
+            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Current Storage Location</h3>
             <p className="text-sm text-[var(--pc-muted)]">Your data is currently stored in {currentLabel}.</p>
             <div className="flex min-w-0 flex-col gap-2">
               <p className="text-sm font-semibold text-[var(--pc-ink)]">{inApp ? "App folder" : inUser ? "User folder" : "Custom folder"}</p>
-              <p className="break-all rounded-md bg-[var(--pc-paper)] px-2 py-1 font-mono text-sm text-[var(--pc-ink)]" data-storage-path>
+              <p className="break-all font-mono text-xs text-[var(--pc-ink)]" data-storage-path>
                 {dataDir}
               </p>
             </div>
@@ -144,10 +140,10 @@ export function StoragePanel() {
               </p>
             )}
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <button type="button" className="pc-toggle pc-toggle-md" onClick={() => void navigator.clipboard?.writeText(info.dataDir)}>
+              <button type="button" className="pc-toggle pc-toggle-sm" onClick={() => void navigator.clipboard?.writeText(info.dataDir)}>
                 Copy path
               </button>
-              <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent} onClick={() => void run(async () => `Opened ${await openFolder("root")}`)}>
+              <button type="button" className="pc-toggle pc-toggle-sm" disabled={!viaAgent} onClick={() => void run(async () => `Opened ${await openFolder("root")}`)}>
                 Open folder
               </button>
             </div>
@@ -156,15 +152,15 @@ export function StoragePanel() {
           {(targets?.app || targets?.user) && (
             <section className="flex min-w-0 flex-col gap-3" data-storage-switch>
               <div className="flex min-w-0 flex-col gap-1">
-                <h3 className="font-display text-lg font-semibold text-[var(--pc-ink)]">Switch Storage Location</h3>
+                <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Switch Storage Location</h3>
                 <p className="text-sm text-[var(--pc-muted)]">Choose between the app folder and your Windows user folder.</p>
               </div>
               {(["app", "user"] as StandardKey[]).map((key) => {
                 const option = standard[key];
                 const body = (
                   <>
-                    <h4 className="font-display text-base font-semibold text-[var(--pc-ink)]">{option.title}</h4>
-                    <p className="break-all rounded-md bg-[var(--pc-paper)] px-2 py-1 font-mono text-sm text-[var(--pc-ink)]">{option.path ?? "not available"}</p>
+                    <h4 className="font-display text-sm font-semibold text-[var(--pc-ink)]">{option.title}</h4>
+                    <p className="break-all font-mono text-xs text-[var(--pc-ink)]">{option.path ?? "not available"}</p>
                     <p className="text-sm text-[var(--pc-muted)]">{option.what}</p>
                   </>
                 );
@@ -203,10 +199,10 @@ export function StoragePanel() {
 
           <section className="flex min-w-0 flex-col gap-3" data-storage-change>
             <div className="flex min-w-0 flex-col gap-1">
-              <h3 className="font-display text-lg font-semibold text-[var(--pc-ink)]">Custom Storage Location</h3>
+              <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Custom Storage Location</h3>
               <p className="text-sm text-[var(--pc-muted)]">Enter a full folder path to use an existing data folder or choose a new location.</p>
               <p className="text-sm text-[var(--pc-muted)]">
-                Example: <span className="break-all rounded-md bg-[var(--pc-paper)] px-1.5 py-0.5 font-mono text-[var(--pc-ink)]">D:\adboard-data</span>
+                Example: <span className="break-all font-mono text-xs text-[var(--pc-ink)]">D:\adboard-data</span>
               </p>
             </div>
             <input
@@ -218,10 +214,10 @@ export function StoragePanel() {
               className="w-full min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 py-2.5 font-mono text-sm text-[var(--pc-ink)]"
             />
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent || busy || !customPath} onClick={() => void saveFolder()}>
+              <button type="button" className="pc-toggle pc-toggle-sm" disabled={!viaAgent || busy || !customPath} onClick={() => void saveFolder()}>
                 Use this folder
               </button>
-              <button type="button" className="pc-toggle pc-toggle-md" disabled={!viaAgent || busy || !customPath} onClick={() => setConfirmMove(true)}>
+              <button type="button" className="pc-toggle pc-toggle-sm" disabled={!viaAgent || busy || !customPath} onClick={() => setConfirmMove(true)}>
                 Move data
               </button>
             </div>
