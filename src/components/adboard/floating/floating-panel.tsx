@@ -642,12 +642,12 @@ export function FloatingPanel({
             aria-hidden
             className={cn(
               "pointer-events-none flex flex-col items-center justify-center gap-1 bg-[var(--pc-accent-fill)] text-white shadow-md",
-              tabStyle === "icons" ? "w-8 py-2.5" : "w-9 py-2",
+              tabStyle === "icons" ? "w-8 py-2.5" : tabStyle === "text" ? "w-9 py-2.5" : "w-9 py-2",
               edge === "right" ? "rounded-l-xl" : "rounded-r-xl",
             )}
           >
-            <PeekIcon className="size-4" />
-            {tabStyle === "words" && <span className="font-mono text-[10px] font-semibold leading-none tracking-wide">{label}</span>}
+            {tabStyle !== "text" && <PeekIcon className="size-4" />}
+            {tabStyle !== "icons" && <span className="font-mono text-[10px] font-semibold leading-none tracking-wide">{label}</span>}
           </span>
         </button>
       ) : (

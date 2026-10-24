@@ -81,22 +81,17 @@ export function SettingsPanel() {
               <p className="text-xs text-[var(--pc-muted)]">Shown on the screen edge when the panel is hidden</p>
             </div>
             <div className="flex gap-2">
-              <button
-                type="button"
-                className="pc-toggle pc-toggle-sm"
-                aria-pressed={edgeTabStyle === "words"}
-                onClick={() => setEdgeTabStyle("words")}
-              >
-                Words
-              </button>
-              <button
-                type="button"
-                className="pc-toggle pc-toggle-sm"
-                aria-pressed={edgeTabStyle === "icons"}
-                onClick={() => setEdgeTabStyle("icons")}
-              >
-                Icons
-              </button>
+              {(["text", "icons", "both"] as const).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  className="pc-toggle pc-toggle-sm"
+                  aria-pressed={edgeTabStyle === style}
+                  onClick={() => setEdgeTabStyle(style)}
+                >
+                  {style === "text" ? "Text" : style === "icons" ? "Icons" : "Both"}
+                </button>
+              ))}
             </div>
           </div>
           <SwitchRow
