@@ -18,6 +18,8 @@ export interface StorageInfo {
   source: "override" | "chosen" | "appFolder" | "platform" | "fallback";
   platform: string;
   folders: Record<string, string>;
+  /** Whether each folder exists yet on the ADBoard computer. */
+  folderExists?: Record<string, boolean>;
   /** Files and bytes per folder (scratch space included). */
   sizes?: Record<string, { files: number; bytes: number }>;
   location?: { appFolder: string | null; file: string | null; saved: string | null; restartRequired: boolean };
@@ -336,7 +338,15 @@ export function FolderRows({ info, onNotice }: { info: StorageInfo; onNotice: (n
       <ul className="flex flex-col gap-1">
         {FOLDERS.map((f) => (
           <li key={f.id}>
-            <PathRow label={f.label} what={f.what} path={info.folders[f.id] ?? ""} which={f.id} size={info.sizes?.[f.id]} onNotice={onNotice} />
+            <PathRow
+              label={f.label}
+              what={f.what}
+              path={info.folders[f.id] ?? ""}
+              which={f.id}
+              size={info.sizes?.[f.id]}
+              missing={info.folderExists?.[f.id] === false}
+              onNotice={onNotice}
+            />
           </li>
         ))}
       </ul>
@@ -350,6 +360,7 @@ function PathRow({
   path,
   which,
   size,
+  missing = false,
   onNotice,
 }: {
   label: string;
@@ -357,6 +368,7 @@ function PathRow({
   path: string;
   which: Folder;
   size?: { files: number; bytes: number };
+  missing?: boolean;
   onNotice: (n: { tone: "ok" | "error"; text: string }) => void;
 }) {
   return (
@@ -365,7 +377,9 @@ function PathRow({
         <span className="text-xs font-semibold text-[var(--pc-ink)]">{label}</span>
         <span className="text-[11px] text-[var(--pc-muted)]">
           {what}
-          {size && ` · ${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`}
+          {missing
+            ? " · Not created yet"
+            : size && ` · ${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`}
         </span>
         <span className="break-all font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
       </div>

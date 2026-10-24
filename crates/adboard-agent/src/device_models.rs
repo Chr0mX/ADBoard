@@ -270,6 +270,12 @@ async fn refresh_if_due(path: &Path) {
 /// startup, inside the Tokio runtime.
 pub fn start(data_dir: PathBuf) {
     let path = cache_path(&data_dir);
+    // The folder exists from the start, even before the first download succeeds.
+    if let Some(folder) = path.parent() {
+        if let Err(error) = std::fs::create_dir_all(folder) {
+            warn!(%error, path = %folder.display(), "cannot create the device folder; model names are unavailable");
+        }
+    }
     let now = now_secs();
     match read_cache(&path) {
         Ok(file) => {

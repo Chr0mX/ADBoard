@@ -51,12 +51,17 @@ pub async fn storage() -> Response {
         .iter()
         .map(|name| (name.to_string(), json!(root.path.join(name).display().to_string())))
         .collect();
+    let folder_exists: serde_json::Map<String, serde_json::Value> = ["macros", "shell_scripts", "config", "logs", "backups", "files", "device", "temp"]
+        .iter()
+        .map(|name| (name.to_string(), json!(root.path.join(name).is_dir())))
+        .collect();
     let saved = data_dir::app_dir().and_then(|dir| data_dir::read_location(&dir));
     Json(json!({
         "dataDir": root.path.display().to_string(),
         "source": root.source,
         "platform": std::env::consts::OS,
         "folders": folders,
+        "folderExists": folder_exists,
         "sizes": sizes,
         "targets": {
             "app": data_dir::app_data_folder().map(|p| p.display().to_string()),
