@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 import { ConfirmDialog, PanelFrame } from "@/components/adboard/desk/bits";
-import { DataStorageCard, openFolder, refreshStorageInfo, useStorageInfo } from "@/components/adboard/desk/data-storage";
+import { DataStorageCard, FolderRows, openFolder, refreshStorageInfo, useStorageInfo } from "@/components/adboard/desk/data-storage";
 
 /*
  * Settings-free home for "where is my data": the current folder, the two
@@ -231,6 +231,15 @@ export function StoragePanel() {
             )}
           </section>
         </>
+      )}
+      {info && (
+        <section className="flex min-w-0 flex-col gap-3" data-storage-folders>
+          <div className="flex min-w-0 flex-col gap-1">
+            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Folders</h3>
+            <p className="text-sm text-[var(--pc-muted)]">Everything in your data folder. Open shows the folder on the ADBoard computer.</p>
+          </div>
+          <FolderRows info={info} onNotice={setNotice} />
+        </section>
       )}
       {/* Export, import, backup and the folder rows: the same card that used to be in Settings. */}
       <DataStorageCard />

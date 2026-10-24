@@ -30,7 +30,7 @@ export interface StorageInfo {
   doNotEdit: string[];
 }
 
-type Folder = "root" | "macros" | "shell_scripts" | "config" | "logs" | "backups" | "files";
+type Folder = "root" | "macros" | "shell_scripts" | "config" | "logs" | "backups" | "files" | "device";
 
 const FOLDERS: { id: Folder; label: string; what: string }[] = [
   { id: "macros", label: "macros", what: "Touch macros, one .json file each" },
@@ -39,6 +39,7 @@ const FOLDERS: { id: Folder; label: string; what: string }[] = [
   { id: "logs", label: "logs", what: "adboard.log and the Shell Automation run history" },
   { id: "backups", label: "backups", what: "Earlier versions, deleted items, unreadable files, Back up copies, data moved from older versions" },
   { id: "files", label: "files", what: "Files area: screenshots, recordings, APKs, downloads" },
+  { id: "device", label: "device", what: "Phone model names cached from the device-models database" },
 ];
 
 /* --------------------------- shared fetch --------------------------- */
@@ -212,14 +213,6 @@ export function DataStorageCard() {
             </span>
             {info.source === "override" ? " (set by ADBOARD_DATA_DIR — portable mode)." : ". Updating, reinstalling or a Git pull never touches it."}
           </p>
-          <PathRow label="Data folder" what="Everything below" path={info.dataDir} which="root" onNotice={setNotice} />
-          <ul className="flex flex-col gap-1">
-            {FOLDERS.map((f) => (
-              <li key={f.id}>
-                <PathRow label={f.label} what={f.what} path={info.folders[f.id] ?? ""} which={f.id} size={info.sizes?.[f.id]} onNotice={setNotice} />
-              </li>
-            ))}
-          </ul>
         </>
       )}
 
@@ -332,6 +325,22 @@ export function DataStorageCard() {
         </details>
       )}
     </section>
+  );
+}
+
+/** The data folder and each folder inside it, with size and Open / Copy path. */
+export function FolderRows({ info, onNotice }: { info: StorageInfo; onNotice: (n: { tone: "ok" | "error"; text: string }) => void }) {
+  return (
+    <>
+      <PathRow label="Data folder" what="Everything below" path={info.dataDir} which="root" onNotice={onNotice} />
+      <ul className="flex flex-col gap-1">
+        {FOLDERS.map((f) => (
+          <li key={f.id}>
+            <PathRow label={f.label} what={f.what} path={info.folders[f.id] ?? ""} which={f.id} size={info.sizes?.[f.id]} onNotice={onNotice} />
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

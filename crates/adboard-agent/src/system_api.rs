@@ -23,7 +23,7 @@ fn folder(which: &str) -> Option<PathBuf> {
     let root = data_dir::root().path.clone();
     Some(match which {
         "root" => root,
-        "macros" | "shell_scripts" | "config" | "logs" | "backups" | "files" => root.join(which),
+        "macros" | "shell_scripts" | "config" | "logs" | "backups" | "files" | "device" => root.join(which),
         _ => return None,
     })
 }
@@ -37,7 +37,7 @@ pub async fn storage() -> Response {
     let s = store();
     let root_path = root.path.clone();
     let sizes = tokio::task::spawn_blocking(move || {
-        ["macros", "shell_scripts", "config", "logs", "backups", "files", "temp"]
+        ["macros", "shell_scripts", "config", "logs", "backups", "files", "device", "temp"]
             .iter()
             .map(|name| {
                 let (files, bytes) = data_dir::tree_stats(&root_path.join(name));
@@ -47,7 +47,7 @@ pub async fn storage() -> Response {
     })
     .await
     .unwrap_or_default();
-    let folders: serde_json::Map<String, serde_json::Value> = ["macros", "shell_scripts", "config", "logs", "backups", "files", "temp"]
+    let folders: serde_json::Map<String, serde_json::Value> = ["macros", "shell_scripts", "config", "logs", "backups", "files", "device", "temp"]
         .iter()
         .map(|name| (name.to_string(), json!(root.path.join(name).display().to_string())))
         .collect();
