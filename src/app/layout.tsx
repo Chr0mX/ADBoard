@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Syne, Figtree, JetBrains_Mono } from "next/font/google";
+import { Geist, Figtree, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RegisterSw } from "@/components/pwa/register-sw";
 import "./globals.css";
 
-const syne = Syne({
+const geist = Geist({
   variable: "--font-display",
   subsets: ["latin"],
   weight: ["500", "600", "700", "800"],
@@ -62,7 +62,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${syne.variable} ${figtree.variable} ${jetbrains.variable} dark h-full antialiased`}
+      className={`${geist.variable} ${figtree.variable} ${jetbrains.variable} dark h-full antialiased`}
     >
       <body className="flex min-h-dvh flex-col font-sans">
         <TooltipProvider>
