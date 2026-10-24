@@ -79,6 +79,8 @@ The row of switches:
 
 Below the row is **Sync clipboard**: text a phone copies lands on your computer, and Ctrl/Cmd+V pastes your computer's clipboard on the target phones. Under the switches a short note may show the latest result.
 
+**Tools and Stats tab at the edge** chooses how the tab looks when the Tools or Stats panel is hidden at the side of the screen: **Text** (the word only, the default), **Icons**, or **Both**.
+
 ## Control
 
 Four switches:
@@ -112,19 +114,20 @@ A password is required to reach ADBoard from outside your home network. See [Rem
 
 ## Data & storage
 
-Data & storage now lives in the **Storage** tab. The Settings page has a short card that opens it. The Storage tab shows where ADBoard keeps your macros, scripts and settings, and gives you tools to back them up and move them. In the demo without the ADBoard agent it says "In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy." and some buttons are missing.
+Data & storage lives in the **Storage** tab, a tab of its own at the top of the window; Settings has no card for it. The Storage tab shows where ADBoard keeps your macros, scripts and settings, and gives you tools to back them up and move them. In the demo without the ADBoard agent it says "In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy." and some buttons are missing.
 
-**Folders.** First comes the **data folder** (on the Windows pack, the `ADBoard` folder in the repository root; other installs use `adboard-data` next to `ADBoard.exe`. The **Storage** tab shows the folder and lets you choose another one). A line says that updating, reinstalling or a Git pull never touches it, or, in portable mode, that the folder was set with `ADBOARD_DATA_DIR`. Then one row per folder, each with its full path:
+**Folders.** First comes the **data folder** (on the Windows pack, the `ADBoard` folder in the repository root; other installs use `adboard-data` next to `ADBoard.exe`. The **Storage** tab shows the folder and lets you choose another one). In portable mode a line says the folder was set with `ADBOARD_DATA_DIR`. Then one row per folder: its name, a short description with its file count and size, and its full path:
 
 | Folder | What is in it |
 |---|---|
 | **Data folder** | Everything below |
-| **macros** | Touch macros, one `.json` file each |
-| **shell_scripts** | Shell Automation jobs, one `.json` file each, and `_library.json` (apps, variables, groups, profiles) |
-| **config** | Settings, layout per browser, editor state, queue, schedules, phone choices and the sign-in account |
-| **logs** | `adboard.log` and the Shell Automation run history |
-| **backups** | Earlier versions, deleted items, unreadable files, **Back up** copies and data moved from older versions |
-| **files** | The Files area: screenshots, recordings, APKs and downloads |
+| **Macros** | Touch macros, one `.json` file each |
+| **Shell scripts** | Shell Automation jobs, one `.json` file each, and `_library.json` (apps, variables, groups, profiles) |
+| **Config** | Settings, layout per browser, editor state, queue, schedules, phone choices and the sign-in account |
+| **Logs** | `adboard.log` and the Shell Automation run history |
+| **Backups** | Earlier versions, deleted items, unreadable files, **Back up** copies and data moved from older versions |
+| **Files** | The Files area: screenshots, recordings, APKs and downloads |
+| **Phone Models** (folder `device`) | Phone model names, from the device-model list ADBoard downloads (at most once a day) |
 
 Each row has two buttons:
 

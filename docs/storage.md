@@ -15,13 +15,15 @@ The **Storage** tab shows where the folder is, how big each part is, and lets yo
 
 In the **Storage** tab:
 
-- **Switch to app folder** / **Switch to user folder** changes the location between the app folder and your user folder. If the other folder already has data, ADBoard only saves the location and copies nothing. If it is empty, the data is copied there and checked first. Both copies are kept, so you can switch back at any time.
+- Under **Switch Storage Location**, click **App Folder (Default)** or **User Folder** to change the location between the app folder and your user folder. If the other folder already has data, ADBoard only saves the location and copies nothing. If it is empty, the data is copied there and checked first. Both copies are kept, so you can switch back at any time.
 - **Use this folder** saves a folder that already has data, or an empty one. Nothing is copied.
-- **Move data here** copies everything into a new folder, then checks the copy before saving the location. A folder that already has files is refused. A folder that holds only `temp` counts as empty. Temporary files (`temp`) are never copied. The old folder is never deleted.
+- **Move data** copies everything into a new folder, then checks the copy before saving the location. A folder that already has files is refused. A folder that holds only `temp` counts as empty. Temporary files (`temp`) are never copied. The old folder is never deleted.
 
 Restart ADBoard to use the new folder. Stop changing things while a move runs.
 
 ## Folders
+
+ADBoard creates every folder below when it starts, so they exist even when empty.
 
 ```
 ADBoard\
@@ -44,6 +46,7 @@ ADBoard\
 │                    backup-<date>\   made by Back up and before a library import
 │                    legacy-<date>\   originals moved in from older versions
 ├── cache\           app-icons\<package>.png and .json: the icon and name read from your phone the first time an app is shown in a scan or without an icon (the phone must be connected; safe to delete)
+├── device\          device-models.json            phone model names (Phone Models), downloaded at most once a day; safe to delete (it downloads again)
 ├── files\           Files area: Screenshots, Recordings, APKs, Downloads
 └── temp\            staged uploads and installs (runtime only)
 ```

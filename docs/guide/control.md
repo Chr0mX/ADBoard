@@ -318,7 +318,7 @@ After a thin divider come any tools you have pinned (below). The bar scrolls sid
 
 ### Tools panel
 
-The panel floats over the picture. Drag its grip bar to move it. The arrow button folds it to a small chip labelled **Tools** (tap the chip's arrow to open it again), and the pin button keeps it from being dragged. Drag the chip to a screen edge to tuck it away; tap or swipe the edge tab to bring it back. On a very short screen it starts folded.
+The panel floats over the picture. Drag its grip bar to move it. The arrow button folds it to a small tab at the edge of the screen (tap the tab to open it again). The tab shows the word **Tools**, an icon, or both, as chosen under Settings → Control, and the pin button keeps it from being dragged. Drag the chip to a screen edge to tuck it away; tap or swipe the edge tab to bring it back. On a very short screen it starts folded.
 
 ![The Tools panel folded to a chip, with the Stats button pinned to the taskbar.](images/control-phone-tools.jpg)
 
@@ -353,7 +353,7 @@ Then a grid of tool buttons (icons only):
 | Device information | Opens the info page for the phone. |
 | Device actions (three dots) | Menu with **Reconnect video**, **Restart ADB link** and **Power off**. |
 | Screen tools | Opens a small group with **Rotate**, **Fullscreen** and **Pop out**. |
-| **Macro** | Opens the Macro sheet. |
+| **Macro** | Opens the Macro sheet. On a phone it is an icon only; a computer also shows the word. |
 | **Manage** | Opens the Manage tab. In the Tools panel the same button lists the other tabs (Manage, Apps, Files, Macros, Shell Automation, Developer, Hosts, Settings) so you can switch. |
 
 If the Pop out or Fullscreen features are not supported by your browser, those buttons do not appear.

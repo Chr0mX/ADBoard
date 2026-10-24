@@ -25,9 +25,15 @@ Each computer gets a card with:
 
 - Its name, with a computer symbol for Windows or a penguin for Linux.
 - A line with the system (windows or linux), its state (for example online), and either "this controller" (the computer your browser is connected to) or "remote agent" (another computer that joined the controller).
-- A list of its phones, each as `name . state . connection` (connection is usb or network). A computer with no phones says "No devices reported."
+- A list of its phones. Each shows its name (or model code) on the left and its state on the right; **Online** is shown in green. A computer with no phones says "No devices reported."
 
 If the list of hosts cannot be fetched, a red message shows the reason and the page falls back to grouping your phones by the host name each phone reports.
+
+### Phone names
+
+Each phone shows its marketing name (for example **Samsung Galaxy S24**), with the model code underneath, such as `SM-S921B`. If ADBoard does not recognise the model, only the model code is shown.
+
+The names come from a public device list. ADBoard downloads it at most once a day and keeps it in the **Phone Models** folder of the data folder (`device\device-models.json`). If a download fails, the last good copy is kept, so names still show when the computer is offline.
 
 ## Adding a second computer
 
