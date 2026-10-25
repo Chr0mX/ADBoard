@@ -16,6 +16,7 @@
 //! what the screen shows. Runs are per phone, so every phone branches on its
 //! own screen.
 
+use crate::events::{Event, Severity};
 use crate::ocr::{self, Area, ReadError, ScreenText, TextMatch, TextQuery};
 use adboard_protocol::{GestureStroke, NormalizedPoint};
 use serde::{Deserialize, Serialize};
@@ -320,6 +321,8 @@ pub struct DeviceRunStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunSnapshot {
+    /// This run, in the event history (`run-…`).
+    pub run_id: String,
     /// The phone this run drives.
     pub device_id: String,
     pub device_name: String,
@@ -1108,6 +1111,42 @@ pub struct StartReport {
     pub skipped: BTreeMap<String, DeviceRunStatus>,
 }
 
+fn run_event(s: &RunSnapshot, kind: &str, severity: Severity, summary: String) -> Event {
+    Event::new("macro", kind, severity, summary)
+        .source("macros")
+        .device(&s.device_id, &s.device_name)
+        .run(&s.run_id)
+        .meta("macro", s.tab_name.clone())
+        .meta("tabId", s.tab_id.clone())
+}
+
+/// The end of a run in the event history: result, reason, failing step,
+/// cycles, touches and duration.
+fn record_run_end(s: &RunSnapshot) {
+    let message = s.message.clone().unwrap_or_default();
+    let (kind, severity, summary) = match s.status.as_str() {
+        "done" => ("macro.completed", Severity::Info, format!("{} finished on {}", s.tab_name, s.device_name)),
+        "stopped" => ("macro.stopped", Severity::Info, format!("{} was stopped on {}", s.tab_name, s.device_name)),
+        _ => ("macro.failed", Severity::Error, format!("{} failed on {}", s.tab_name, s.device_name)),
+    };
+    let seconds = s.finished_at.unwrap_or_else(now_ms).saturating_sub(s.started_at) / 1000;
+    let mut event = run_event(s, kind, severity, summary)
+        .detail(message)
+        .meta("status", s.status.clone())
+        .meta("cycles", s.cycle)
+        .meta("touches", s.touches)
+        .meta("durationSeconds", seconds);
+    if s.status == "failed" && s.step_count > 0 {
+        event = event.meta("step", s.step_index + 1).meta("steps", s.step_count);
+    }
+    if let Some(text) = &s.text {
+        if s.status == "failed" && text.state != "met" {
+            event = event.meta("textStep", text.detail.clone().unwrap_or_default());
+        }
+    }
+    crate::events::record(event);
+}
+
 pub fn runs() -> &'static MacroRuns {
     static RUNS: OnceLock<MacroRuns> = OnceLock::new();
     RUNS.get_or_init(MacroRuns::default)
@@ -1115,6 +1154,7 @@ pub fn runs() -> &'static MacroRuns {
 
 fn new_snapshot(tab: &MacroTab, device: &RunDevice) -> RunSnapshot {
     RunSnapshot {
+        run_id: format!("run-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]),
         device_id: device.id.clone(),
         device_name: device.name.clone(),
         tab_id: tab.id.clone(),
@@ -1180,9 +1220,15 @@ impl MacroRuns {
             );
         }
         self.bump();
+        // Testing one step is routine; whole runs go in the event history.
+        let recorded = only_step_id.is_none();
+        if recorded {
+            let s = snapshot.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            crate::events::record(run_event(&s, "macro.started", Severity::Info, format!("{} started on {}", s.tab_name, s.device_name)));
+        }
         tokio::spawn(async move {
             // Clean up even if the run panics, so the phone is never left locked.
-            struct Release(&'static MacroRuns, String, Arc<Mutex<RunSnapshot>>);
+            struct Release(&'static MacroRuns, String, Arc<Mutex<RunSnapshot>>, bool);
             impl Drop for Release {
                 fn drop(&mut self) {
                     let mut last = self.2.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -1191,13 +1237,16 @@ impl MacroRuns {
                         last.finished_at = Some(now_ms());
                         last.message = Some("The run ended unexpectedly".into());
                     }
+                    if self.3 {
+                        record_run_end(&last);
+                    }
                     self.0.finished.lock().unwrap_or_else(|e| e.into_inner()).insert(self.1.clone(), last);
                     self.0.live().remove(&self.1);
                     self.0.bump();
                     self.0.ended.notify_waiters();
                 }
             }
-            let _release = Release(self, device_id, snapshot.clone());
+            let _release = Release(self, device_id, snapshot.clone(), recorded);
             run_tab(RunOptions {
                 tab,
                 devices: vec![device],
@@ -1957,6 +2006,41 @@ mod tests {
         assert_eq!(by("s23").message.as_deref(), Some("Finished 1 cycle"));
         let touched: Vec<String> = log.lock().unwrap().iter().map(|(d, _, _)| d.clone()).collect();
         assert_eq!(touched, vec!["s23".to_string()]);
+    }
+
+    /// Each run's start and end are in the event history, tied by its run id.
+    #[tokio::test]
+    async fn runs_are_recorded_in_the_event_history() {
+        let reg = leak();
+        let ok = named(tab_with(("cycles", 0.0, 2.0), 2, 0.0), "History OK");
+        let bad = named(tab_with(("cycles", 0.0, 1.0), 1, 0.0), "History Bad");
+        reg.start_device(ok, phone("hist-a"), None, counting_sender(Arc::default(), None), None, None).unwrap();
+        reg.start_device(bad, phone("hist-b"), None, counting_sender(Arc::default(), Some("hist-b")), None, None).unwrap();
+        let done = reg.wait_devices(&["hist-a".to_string(), "hist-b".to_string()]).await;
+        for run in &done {
+            let page = crate::events::log().query(&crate::events::Query { run: Some(run.run_id.clone()), ..Default::default() });
+            let kinds: Vec<&str> = page.events.iter().map(|e| e.kind.as_str()).collect();
+            let end = if run.device_id == "hist-a" { "macro.completed" } else { "macro.failed" };
+            assert_eq!(kinds, vec![end, "macro.started"], "{}", run.device_id);
+            let last = &page.events[0];
+            assert_eq!(last.device_id.as_deref(), Some(run.device_id.as_str()));
+            assert_eq!(last.meta["macro"], run.tab_name.as_str());
+            if end == "macro.failed" {
+                assert_eq!(last.severity, Severity::Error);
+                assert_eq!(last.meta["step"], 1);
+                assert_eq!(last.detail.as_deref(), Some("Phone failed"));
+            } else {
+                assert_eq!(last.meta["cycles"], 2);
+                assert_eq!(last.meta["touches"], 4);
+            }
+        }
+        // Testing one step is not a run worth recording.
+        let quiet = named(tab_with(("cycles", 0.0, 1.0), 1, 0.0), "History Step");
+        let step = quiet.steps[0].id.clone();
+        reg.start_device(quiet, phone("hist-c"), Some(step), counting_sender(Arc::default(), None), None, None).unwrap();
+        reg.wait_devices(&["hist-c".to_string()]).await;
+        let page = crate::events::log().query(&crate::events::Query { device: Some("hist-c".into()), ..Default::default() });
+        assert_eq!(page.total, 0);
     }
 
     /// Tabs saved before text steps existed still load and play the same.

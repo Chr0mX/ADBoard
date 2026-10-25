@@ -26,6 +26,7 @@ import {
 import { DeveloperPanel } from "@/components/adboard/desk/developer-panel";
 import { FilesPanel } from "@/components/adboard/desk/files-panel";
 import { HostsPanel } from "@/components/adboard/desk/hosts-panel";
+import { EventsPanel } from "@/components/adboard/desk/events-panel";
 import { ManagePanel } from "@/components/adboard/desk/manage-panel";
 import { Button } from "@/components/ui/button";
 import { useADBoard } from "@/hooks/use-adboard";
@@ -251,6 +252,7 @@ export function ADBoardApp() {
             {section === "automate" && <AutomatePanel />}
             {section === "developer" && <DeveloperPanel />}
             {section === "hosts" && <HostsPanel />}
+            {section === "events" && <EventsPanel />}
             {section === "storage" && <StoragePanel />}
             {section === "settings" && <SettingsPanel />}
           </div>

@@ -22,6 +22,7 @@ import { ScrcpyOptions } from "@/components/adboard/scrcpy-options";
 import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
 import { TOUCH_DIAGNOSTICS_KEY } from "@/components/adboard/touch-diagnostics";
 import { InstallOnIphone } from "@/components/adboard/desk/install-on-iphone";
+import { NotificationsCard } from "@/components/adboard/desk/notifications-card";
 
 /**
  * One place for the app's existing settings. Nothing here has its own
@@ -48,7 +49,7 @@ export function SettingsPanel() {
   const target = desk.activeDevice ?? desk.targets[0] ?? null;
 
   return (
-    <PanelFrame title="Settings" panel="settings" clean description="Stream quality, keyboard, grid, account and taskbar.">
+    <PanelFrame title="Settings" panel="settings" clean description="Stream quality, keyboard, grid, notifications, account and taskbar.">
       <div className="grid gap-3 lg:grid-cols-2">
         <InstallOnIphone />
         <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-stream>
@@ -204,6 +205,8 @@ export function SettingsPanel() {
             </div>
           )}
         </section>
+
+        <NotificationsCard />
 
         {(session.authRequired || session.canSetPassword) && (
           <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-account>

@@ -37,9 +37,12 @@ ADBoard\
 │                    macro_queue.json, macro_schedules.json, macro_assignments.json
 │                    wireless_devices.json        saved Wi-Fi ADB phones
 │                    auth.json                    sign-in account (salted PBKDF2 hash only)
+│                    monitoring.json              Discord webhook and notification rules, history limits (agent only, never sent to browsers)
 │                    migration.json               what was moved in from older versions
 │                    .revisions.json              internal (revision numbers)
 ├── logs\            adboard.log (rotated at 5 MB, 3 kept), shell_run_history.json
+│                    events.jsonl                 event history (Events tab), one event per line, bounded by its limits
+│                    .adboard-running             present while ADBoard runs; tells a crash from a clean stop
 ├── backups\         history\     the last 20 saved versions of each store (Macros → Versions)
 │                    deleted\     files of deleted or renamed macros and scripts
 │                    corrupt\     copies of files that could not be read

@@ -7,12 +7,14 @@ mod device_models;
 mod data_dir;
 mod device_ops;
 mod env;
+mod events;
 mod gesture;
 mod host_files;
 mod mesh;
 mod migrate;
 mod mesh_client;
 mod mock;
+mod notify;
 mod ocr;
 mod paths;
 mod scrcpy_control;
@@ -64,6 +66,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Before anything reads the store or the account: bring older data over.
     migrate::run_at_startup();
+    // Event history (logs/events.jsonl) and Discord settings (config/monitoring.json).
+    let monitoring = notify::init();
+    events::init(monitoring.history);
 
     let role = parse_role();
     let port: u16 = crate::env::var("PORT")
@@ -93,6 +98,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Macro schedules run on the agent, with or without a browser open.
     macro_automation::spawn_scheduler(state.clone());
+    // Record phone and stream changes; send chosen events to Discord.
+    notify::start(host_name.clone());
+    events::spawn_watch(state.clone());
     // Every data folder exists from the start, even when empty.
     data_dir::ensure_folders(&data_dir::root().path);
     // Phone model names: cached in the data folder, refreshed in the background.
@@ -137,8 +145,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("  WS   /ws/agent   (controller: agent registration)");
     info!("  WS   /ws/devices/{{serial}}/video");
 
-    axum::serve(listener, app).await?;
+    // Ctrl+C, closing the window (Windows) or SIGTERM (Linux service) is a
+    // clean stop: the history notes it, so the next start can tell a crash
+    // from a normal exit.
+    tokio::select! {
+        served = axum::serve(listener, app) => served?,
+        _ = stop_signal() => info!("stopping"),
+    }
+    events::shutdown();
     Ok(())
+}
+
+async fn stop_signal() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = async { match term.as_mut() { Some(t) => { t.recv().await; } None => std::future::pending().await } } => {}
+        }
+    }
+    #[cfg(windows)]
+    {
+        let mut close = tokio::signal::windows::ctrl_close().ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = async { match close.as_mut() { Some(c) => { c.recv().await; } None => std::future::pending().await } } => {}
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// `ADBOARD_BIND` — IP to listen on.

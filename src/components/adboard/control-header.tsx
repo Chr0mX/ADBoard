@@ -2,6 +2,7 @@
 
 import { DESK_SECTIONS, type DeskSection } from "@/components/adboard/desk/desk-context";
 import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
+import { useEventAlerts } from "@/lib/events/client";
 
 interface ControlHeaderProps {
   onlineCount: number;
@@ -12,6 +13,8 @@ interface ControlHeaderProps {
 
 export function ControlHeader({ onlineCount, totalCount, section, onSection }: ControlHeaderProps) {
   const session = useAgentSessionInfo();
+  const alerts = useEventAlerts();
+  const badge = section !== "events" && alerts.unseen > 0 ? alerts.unseen : 0;
   return (
     <header className="relative z-10 flex shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1.5 sm:px-4">
       <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]">
@@ -31,6 +34,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
           {DESK_SECTIONS.map((item) => (
             <option key={item.id} value={item.id}>
               {item.label}
+              {item.id === "events" && badge > 0 ? ` (${badge} new)` : ""}
             </option>
           ))}
         </select>
@@ -54,6 +58,17 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
             onClick={() => onSection(item.id)}
           >
             {item.label}
+            {item.id === "events" && badge > 0 && (
+              <span
+                data-events-badge={badge}
+                title={`${badge} new warning${badge === 1 ? "" : "s"} or error${badge === 1 ? "" : "s"}`}
+                className={`ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1 font-mono text-[11px] font-bold text-[#1a0f08] ${
+                  alerts.worst === "warning" ? "bg-[#f1c40f]" : "bg-[var(--pc-warn)]"
+                }`}
+              >
+                {badge}
+              </span>
+            )}
           </button>
         ))}
       </nav>

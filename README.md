@@ -349,6 +349,10 @@ The tabs across the top, left to right (each has a full page in the [user guide]
 
 See [docs/macros.md](docs/macros.md).
 
+## Events and Discord
+
+**Events** in the desk header keeps the history of phones connecting and dropping, macro runs (with the failing step and reason), installs, stream and ADB failures and ADBoard crashes, across restarts, with search, filters and a 24-hour summary. **Settings → Discord notifications** posts the categories you choose to a Discord channel through a webhook, with cooldowns and retries. The webhook stays on the ADBoard computer. See [docs/monitoring.md](docs/monitoring.md).
+
 ## Your data
 
 Macros, Shell Automation scripts, settings, logs, backups and the phone model list (`device`) live in one folder outside the app, so Git pulls, updates and reinstalls never touch them:
@@ -422,6 +426,8 @@ Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set;
 | POST | `/api/input/tap` | Normalized 0–1 → pixels; local inject + remote proxy |
 | POST | `/api/input/nav` | `back`/`home`/`recent` → keyevent (proxied) |
 | POST | `/api/input/gesture` | Timed single/multi-touch strokes (finger slots 0–9), played on the agent; every finger released (proxied) |
+| GET | `/api/events` · `/api/events/summary` | Event history (filters, paging) and 24-hour counts; `POST /api/events/clear` deletes it |
+| GET / PUT | `/api/notifications` | Discord settings and delivery status (the webhook URL is never returned); `POST /api/notifications/test` sends a test |
 | GET | `/api/ocr/status` | Whether text steps can read screens here (models installed) |
 | POST | `/api/ocr/read` | Text on a phone's screen now: `{deviceId, area?, query?}` → lines with 0–1 boxes, and the query's matches (proxied) |
 | GET / PUT | `/api/store/{name}` | Shared macros, scripts, queue, schedules and settings (revisions; a stale save gets 409 with the current copy) |

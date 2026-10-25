@@ -122,6 +122,11 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/macro/runs/{tab_id}/{action}", post(macro_run_action))
         .route("/api/macro/devices/{device_id}/{action}", post(macro_device_action))
         .route("/api/macro/queue/{action}", post(macro_queue_action))
+        .route("/api/events", get(events_list))
+        .route("/api/events/summary", get(events_summary))
+        .route("/api/events/clear", post(events_clear))
+        .route("/api/notifications", get(notifications_get).put(notifications_put))
+        .route("/api/notifications/test", post(notifications_test))
         .route("/api/ocr/status", get(ocr_status))
         .route("/api/ocr/read", post(ocr_read))
         .route("/api/system/storage", get(crate::system_api::storage))
@@ -940,6 +945,72 @@ async fn macro_device_action(
     Json(serde_json::json!({ "ok": ok })).into_response()
 }
 
+/// GET /api/events — the event history, newest first (filters: q, severity,
+/// category, device, run, since, until; paging: before, limit).
+async fn events_list(Query(query): Query<crate::events::Query>) -> Response {
+    Json(crate::events::log().query(&query)).into_response()
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct SummaryQuery {
+    since: Option<u64>,
+}
+
+/// GET /api/events/summary — counts since `since` (default: the last 24 h).
+async fn events_summary(Query(query): Query<SummaryQuery>) -> Response {
+    let since = query.since.unwrap_or_else(|| crate::events::now_ms().saturating_sub(86_400_000));
+    Json(crate::events::log().summary(since)).into_response()
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClearBody {
+    /// Only events older than this (ms); everything when missing.
+    #[serde(default)]
+    before: Option<u64>,
+}
+
+/// POST /api/events/clear — delete history (all, or older than `before`).
+async fn events_clear(body: Option<Json<ClearBody>>) -> Response {
+    let before = body.and_then(|Json(b)| b.before);
+    let removed = crate::events::log().clear(before);
+    crate::events::record(
+        crate::events::Event::new("system", "system.history_cleared", crate::events::Severity::Info, format!("Event history cleared ({removed} removed)"))
+            .source("settings"),
+    );
+    Json(serde_json::json!({ "removed": removed })).into_response()
+}
+
+/// GET /api/notifications — Discord settings and delivery status (never the URL).
+async fn notifications_get() -> Response {
+    Json(crate::notify::public_settings()).into_response()
+}
+
+/// PUT /api/notifications — change some settings (missing fields stay).
+async fn notifications_put(Json(update): Json<crate::notify::Update>) -> Response {
+    match crate::notify::update(update) {
+        Ok(settings) => Json(settings).into_response(),
+        Err(error) => auth_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TestBody {
+    /// Try this URL before saving it; the saved one when missing.
+    #[serde(default)]
+    webhook_url: Option<String>,
+}
+
+/// POST /api/notifications/test — send a test message to Discord now.
+async fn notifications_test(State(state): State<AppState>, body: Option<Json<TestBody>>) -> Response {
+    let url = body.and_then(|Json(b)| b.webhook_url);
+    match crate::notify::send_test(url, &state.inner.host_name).await {
+        Ok(message) => Json(serde_json::json!({ "ok": true, "message": message })).into_response(),
+        Err(error) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({ "ok": false, "error": error }))).into_response(),
+    }
+}
+
 /// GET /api/ocr/status — can this ADBoard read text (models installed)?
 async fn ocr_status(State(state): State<AppState>) -> Response {
     Json(crate::ocr::status(&state).await).into_response()
@@ -1180,11 +1251,11 @@ async fn input_install(
     if target_ids.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "no install targets".into()));
     }
-    state
-        .handle_install(mode, &target_ids, filename.trim(), &body)
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+    let result = state.handle_install(mode, &target_ids, filename.trim(), &body).await;
+    if let Ok(broadcast) = &result {
+        crate::events::record_install(filename.trim(), &broadcast.targets);
+    }
+    result.map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
@@ -1218,11 +1289,12 @@ async fn device_command(
     State(state): State<AppState>,
     Json(body): Json<DeviceCommandRequest>,
 ) -> Result<Json<adboard_protocol::DeviceCommandResponse>, (StatusCode, String)> {
-    state
-        .handle_command(body)
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+    let (op, arg) = (body.op.clone(), body.arg.clone());
+    let result = state.handle_command(body).await;
+    if let Ok(response) = &result {
+        crate::events::record_command(&op, arg.as_deref(), &response.results);
+    }
+    result.map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 async fn device_push(
@@ -2099,6 +2171,46 @@ mod tests {
             .header(TOKEN_HEADER, token)
             .body(Body::from(body.to_string()))
             .unwrap()
+    }
+
+    /// Notification settings never show the webhook, bad input is refused,
+    /// and device commands and macro runs land in the event history.
+    #[tokio::test]
+    async fn events_and_notifications_api() {
+        let state = AppState::new(Role::Controller, "events-test".into(), "events-test".into(), 0, None);
+        let token = state.api_token().to_string();
+        let id = state.list_devices().await.into_iter().find(|d| d.status == adboard_protocol::DeviceStatus::Online).expect("online").id;
+        let app = router_with_auth(state, WebAuth::new(None, false));
+        let call = |method: &str, uri: &str, body: serde_json::Value| json_request(method, uri, &token, body);
+
+        let response = app.clone().oneshot(call("GET", "/api/notifications", serde_json::Value::Null)).await.unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&body_text(response).await).unwrap();
+        assert!(settings.get("webhookUrl").is_none());
+        assert!(settings["categories"]["device"].is_string());
+
+        let bad = call("PUT", "/api/notifications", serde_json::json!({ "webhookUrl": "https://evil.example/api/webhooks/1/abcdefghijklmnopqrstuvwxyz" }));
+        let response = app.clone().oneshot(bad).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(!body_text(response).await.contains("evil.example"), "errors never echo the URL");
+        let level = call("PUT", "/api/notifications", serde_json::json!({ "categories": { "scrcpy": "error" } }));
+        let response = app.clone().oneshot(level).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bad_level = call("PUT", "/api/notifications", serde_json::json!({ "categories": { "scrcpy": "loud" } }));
+        assert_eq!(app.clone().oneshot(bad_level).await.unwrap().status(), StatusCode::BAD_REQUEST);
+
+        // A command that changes the phone is recorded.
+        let reboot = call("POST", "/api/device/command", serde_json::json!({ "targetIds": [id], "op": "reboot" }));
+        assert_eq!(app.clone().oneshot(reboot).await.unwrap().status(), StatusCode::OK);
+        let list = call("GET", &format!("/api/events?device={id}&category=device,app"), serde_json::Value::Null);
+        let page: serde_json::Value = serde_json::from_str(&body_text(app.clone().oneshot(list).await.unwrap()).await).unwrap();
+        assert!(page["events"].as_array().unwrap().iter().any(|e| e["kind"].as_str().is_some_and(|k| k.starts_with("device.reboot"))), "{page}");
+
+        let summary = call("GET", "/api/events/summary", serde_json::Value::Null);
+        let summary: serde_json::Value = serde_json::from_str(&body_text(app.clone().oneshot(summary).await.unwrap()).await).unwrap();
+        assert!(summary["total"].as_u64().unwrap() >= 1);
+        let filtered = call("GET", "/api/events?severity=critical&q=zzz-nothing", serde_json::Value::Null);
+        let page: serde_json::Value = serde_json::from_str(&body_text(app.clone().oneshot(filtered).await.unwrap()).await).unwrap();
+        assert_eq!(page["total"], 0);
     }
 
     /// The mock fleet has a sample screen, so text steps run end to end
