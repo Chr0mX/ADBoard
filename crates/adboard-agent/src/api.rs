@@ -124,6 +124,7 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/macro/queue/{action}", post(macro_queue_action))
         .route("/api/events", get(events_list))
         .route("/api/events/summary", get(events_summary))
+        .route("/api/events/macros", get(events_macros))
         .route("/api/events/clear", post(events_clear))
         .route("/api/notifications", get(notifications_get).put(notifications_put))
         .route("/api/notifications/test", post(notifications_test))
@@ -960,6 +961,12 @@ struct SummaryQuery {
 async fn events_summary(Query(query): Query<SummaryQuery>) -> Response {
     let since = query.since.unwrap_or_else(|| crate::events::now_ms().saturating_sub(86_400_000));
     Json(crate::events::log().summary(since)).into_response()
+}
+
+/// GET /api/events/macros — per-macro run results since `since` (default 7 days).
+async fn events_macros(Query(query): Query<SummaryQuery>) -> Response {
+    let since = query.since.unwrap_or_else(|| crate::events::now_ms().saturating_sub(7 * 86_400_000));
+    Json(crate::events::log().macro_stats(since)).into_response()
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -2208,6 +2215,14 @@ mod tests {
         let summary = call("GET", "/api/events/summary", serde_json::Value::Null);
         let summary: serde_json::Value = serde_json::from_str(&body_text(app.clone().oneshot(summary).await.unwrap()).await).unwrap();
         assert!(summary["total"].as_u64().unwrap() >= 1);
+        let macros = call("GET", "/api/events/macros?since=0", serde_json::Value::Null);
+        let response = app.clone().oneshot(macros).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(serde_json::from_str::<serde_json::Value>(&body_text(response).await).unwrap().is_array());
+        // (Valid values are covered by notify's tests; changing the shared
+        // settings here would race them.)
+        let offline = call("PUT", "/api/notifications", serde_json::json!({ "offlineAlertMins": 99_999 }));
+        assert_eq!(app.clone().oneshot(offline).await.unwrap().status(), StatusCode::BAD_REQUEST);
         let filtered = call("GET", "/api/events?severity=critical&q=zzz-nothing", serde_json::Value::Null);
         let page: serde_json::Value = serde_json::from_str(&body_text(app.clone().oneshot(filtered).await.unwrap()).await).unwrap();
         assert_eq!(page["total"], 0);

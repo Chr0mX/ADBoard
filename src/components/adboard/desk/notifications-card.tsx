@@ -190,6 +190,30 @@ export function NotificationsCard() {
               </label>
             ))}
           </div>
+          <label className="flex flex-wrap items-center justify-between gap-2 py-1" data-notify-offline>
+            <span className="flex min-w-0 flex-col">
+              <span className="text-sm text-[var(--pc-ink)]">Phone offline alerts</span>
+              <span className="text-[11px] text-[var(--pc-muted)]">
+                {settings.offlineAlertMins
+                  ? `Only when a phone stays offline ${settings.offlineAlertMins} min, then again when it is back. Short drops stay in Events.`
+                  : "Every time a phone drops, as the Phones level allows"}
+              </span>
+            </span>
+            <select
+              value={String(settings.offlineAlertMins)}
+              disabled={busy}
+              onChange={(e) => void save({ offlineAlertMins: Number(e.target.value) })}
+              className={cn(fieldClass, "w-48")}
+              data-notify-offline-mins
+            >
+              {[0, 2, 5, 10, 30, 60].map((m) => (
+                <option key={m} value={m}>
+                  {m === 0 ? "Every drop" : `Offline for ${m} min`}
+                </option>
+              ))}
+              {![0, 2, 5, 10, 30, 60].includes(settings.offlineAlertMins) && <option value={settings.offlineAlertMins}>Offline for {settings.offlineAlertMins} min</option>}
+            </select>
+          </label>
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1 text-xs text-[var(--pc-muted)]">
               Message detail

@@ -476,6 +476,114 @@ impl EventLog {
     }
 }
 
+impl EventLog {
+    /// Per-macro results since `since`, from the run events in the history:
+    /// runs, outcomes, average duration and the steps that fail most.
+    pub fn macro_stats(&self, since: u64) -> Vec<MacroStats> {
+        let inner = self.lock();
+        let mut by: Vec<MacroStats> = Vec::new();
+        let mut durations: HashMap<String, (u64, u64)> = HashMap::new();
+        for event in inner.events.iter().filter(|e| e.at >= since && e.category == "macro") {
+            let status = match event.kind.as_str() {
+                "macro.completed" => "done",
+                "macro.failed" => "failed",
+                "macro.stopped" => "stopped",
+                _ => continue,
+            };
+            let name = event.meta.get("macro").and_then(Value::as_str).unwrap_or("?").to_string();
+            let tab_id = event.meta.get("tabId").and_then(Value::as_str).map(str::to_string);
+            let key = tab_id.clone().unwrap_or_else(|| name.clone());
+            let at = match by.iter().position(|m| m.key == key) {
+                Some(at) => at,
+                None => {
+                    by.push(MacroStats { key: key.clone(), name: name.clone(), tab_id, ..Default::default() });
+                    by.len() - 1
+                }
+            };
+            let stats = &mut by[at];
+            // Events are oldest first: the last one seen is the latest run.
+            stats.name = name;
+            stats.runs += 1;
+            stats.last_at = event.at;
+            stats.last_status = status.into();
+            match status {
+                "done" => {
+                    stats.done += 1;
+                    // Milliseconds when recorded (newer runs), else whole seconds.
+                    let ms = event
+                        .meta
+                        .get("durationMs")
+                        .and_then(Value::as_u64)
+                        .or_else(|| event.meta.get("durationSeconds").and_then(Value::as_u64).map(|s| s * 1000));
+                    if let Some(ms) = ms {
+                        let d = durations.entry(key).or_default();
+                        d.0 += ms;
+                        d.1 += 1;
+                    }
+                }
+                "stopped" => stats.stopped += 1,
+                _ => {
+                    stats.failed += 1;
+                    if let Some(phone) = &event.device_name {
+                        *stats.failed_phones.entry(phone.clone()).or_default() += 1;
+                    }
+                    let step = event.meta.get("step").and_then(Value::as_u64);
+                    let reason = event.detail.clone().unwrap_or_default();
+                    match stats.failing_steps.iter_mut().find(|f| f.step == step) {
+                        Some(f) => {
+                            f.count += 1;
+                            f.last_reason = reason;
+                        }
+                        None => stats.failing_steps.push(StepFailures { step, count: 1, last_reason: reason }),
+                    }
+                }
+            }
+        }
+        for stats in &mut by {
+            stats.success_rate = if stats.runs > 0 { stats.done as f64 / stats.runs as f64 } else { 0.0 };
+            stats.avg_seconds = durations.get(&stats.key).filter(|d| d.1 > 0).map(|d| d.0 as f64 / d.1 as f64 / 1000.0);
+            stats.failing_steps.sort_by_key(|f| std::cmp::Reverse(f.count));
+            stats.failing_steps.truncate(3);
+        }
+        // Most failures first, then busiest.
+        by.sort_by(|a, b| b.failed.cmp(&a.failed).then(b.runs.cmp(&a.runs)));
+        by
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StepFailures {
+    /// 1-based step that failed (None when the run failed before a step).
+    pub step: Option<u64>,
+    pub count: usize,
+    pub last_reason: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroStats {
+    #[serde(skip)]
+    key: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
+    pub runs: usize,
+    pub done: usize,
+    pub failed: usize,
+    pub stopped: usize,
+    /// done / runs.
+    pub success_rate: f64,
+    /// Average length of finished runs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_seconds: Option<f64>,
+    pub last_at: u64,
+    pub last_status: String,
+    /// The steps that fail most (up to 3).
+    pub failing_steps: Vec<StepFailures>,
+    pub failed_phones: std::collections::BTreeMap<String, usize>,
+}
+
 fn append_line(path: &Path, event: &Event) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -716,7 +824,7 @@ pub fn duration_label(seconds: u64) -> String {
 }
 
 fn snapshot(devices: &[Device], previous: &HashMap<String, Seen>, now: u64) -> HashMap<String, Seen> {
-    devices
+    let mut next: HashMap<String, Seen> = devices
         .iter()
         .map(|d| {
             let since = match previous.get(&d.id) {
@@ -725,7 +833,40 @@ fn snapshot(devices: &[Device], previous: &HashMap<String, Seen>, now: u64) -> H
             };
             (d.id.clone(), Seen { status: d.status, since, name: d.name.clone() })
         })
-        .collect()
+        .collect();
+    // An unplugged phone leaves ADB's list; remember it as offline so the
+    // outage keeps its start time and its return counts as "back online".
+    for (id, seen) in previous {
+        if !next.contains_key(id) {
+            let since = if seen.status == DeviceStatus::Online { now } else { seen.since };
+            next.insert(id.clone(), Seen { status: DeviceStatus::Offline, since, name: seen.name.clone() });
+        }
+    }
+    next
+}
+
+/// Phones offline for at least `mins` minutes that were not alerted yet
+/// (`alerted` remembers them until they come back).
+fn long_outages(seen: &HashMap<String, Seen>, alerted: &mut std::collections::HashSet<String>, now: u64, mins: u64) -> Vec<Event> {
+    alerted.retain(|id| seen.get(id).is_some_and(|s| s.status != DeviceStatus::Online));
+    if mins == 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (id, s) in seen {
+        let away = now.saturating_sub(s.since);
+        if s.status != DeviceStatus::Online && away >= mins * 60_000 && alerted.insert(id.clone()) {
+            let what = if s.status == DeviceStatus::Unauthorized { "has been waiting for USB approval" } else { "has been offline" };
+            out.push(
+                Event::new("device", "device.offline_long", Severity::Warning, format!("{} {what} for {}", s.name, duration_label(away / 1000)))
+                    .device(id, &s.name)
+                    .detail(format!("Offline since {}. You will get a message when it is back.", crate::notify::iso_time(s.since)))
+                    .meta("offlineSeconds", away / 1000),
+            );
+        }
+    }
+    out.sort_by(|a, b| a.device_name.cmp(&b.device_name));
+    out
 }
 
 /// Watch the fleet and the video sessions and record what changes. Reads the
@@ -741,6 +882,7 @@ pub fn spawn_watch(state: AppState) {
                 .meta("version", env!("CARGO_PKG_VERSION")),
         );
         let mut seen = snapshot(&devices, &HashMap::new(), now_ms());
+        let mut alerted = std::collections::HashSet::new();
         let mut streams: HashMap<String, StreamState> = HashMap::new();
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -770,10 +912,17 @@ pub fn spawn_watch(state: AppState) {
             if fleet_changed {
                 let devices = state.list_devices().await;
                 let now = now_ms();
-                for event in fleet_changes(&seen, &devices, now) {
+                for mut event in fleet_changes(&seen, &devices, now) {
+                    // The end of an outage that was alerted.
+                    if event.kind == "device.reconnected" && event.device_id.as_ref().is_some_and(|id| alerted.contains(id)) {
+                        event = event.meta("alerted", true);
+                    }
                     record(event.source("devices"));
                 }
                 seen = snapshot(&devices, &seen, now);
+                for event in long_outages(&seen, &mut alerted, now, crate::notify::settings().offline_alert_mins) {
+                    record(event.source("devices"));
+                }
             }
         }
     });
@@ -1032,6 +1181,59 @@ mod tests {
         let back = fleet_changes(&seen, &next, 121_000).into_iter().find(|e| e.kind == "device.reconnected").unwrap();
         assert_eq!(back.detail.as_deref(), Some("Away for 2 min"));
         assert_eq!(back.meta["model"], "Galaxy S24");
+    }
+
+    #[test]
+    fn long_outages_are_alerted_once_and_unplugged_phones_are_remembered() {
+        let mut alerted = std::collections::HashSet::new();
+        let start = vec![phone("s24", DeviceStatus::Online), phone("s23", DeviceStatus::Online)];
+        let seen = snapshot(&start, &HashMap::new(), 0);
+        // s24 drops, s23 is unplugged (leaves the list) at 60 s.
+        let seen = snapshot(&[phone("s24", DeviceStatus::Offline)], &seen, 60_000);
+        assert_eq!(seen["s23"].status, DeviceStatus::Offline, "kept after leaving the list");
+        assert!(long_outages(&seen, &mut alerted, 60_000 + 4 * 60_000, 5).is_empty(), "4 min < 5 min");
+        let alerts = long_outages(&seen, &mut alerted, 60_000 + 5 * 60_000, 5);
+        assert_eq!(alerts.iter().map(|e| e.summary.as_str()).collect::<Vec<_>>(), vec!["S23 has been offline for 5 min", "S24 has been offline for 5 min"]);
+        assert!(long_outages(&seen, &mut alerted, 60_000 + 50 * 60_000, 5).is_empty(), "once per outage");
+        // s24 comes back: it is forgotten, so its next outage alerts again.
+        let back = snapshot(&[phone("s24", DeviceStatus::Online)], &seen, 4_000_000);
+        let changes = fleet_changes(&seen, &[phone("s24", DeviceStatus::Online)], 4_000_000);
+        assert!(changes.iter().any(|e| e.kind == "device.reconnected" && e.device_id.as_deref() == Some("s24")));
+        assert!(long_outages(&back, &mut alerted, 4_000_000, 5).is_empty());
+        assert!(!alerted.contains("s24") && alerted.contains("s23"));
+        assert!(long_outages(&seen, &mut std::collections::HashSet::new(), 10_000_000, 0).is_empty(), "0 turns it off");
+    }
+
+    #[test]
+    fn macro_stats_from_run_events() {
+        let log = EventLog::in_memory(Retention::default());
+        let run = |kind: &str, tab: &str, device: &str, seconds: u64, step: Option<u64>, reason: &str| {
+            let severity = if kind == "macro.failed" { Severity::Error } else { Severity::Info };
+            let mut e = event(kind, severity, Some(device), &format!("{tab} {kind}")).meta("macro", tab).meta("tabId", format!("tab-{tab}")).meta("durationSeconds", seconds).detail(reason);
+            if let Some(step) = step {
+                e = e.meta("step", step);
+            }
+            e
+        };
+        for (i, seconds) in [60u64, 120, 90].into_iter().enumerate() {
+            log.record(run("macro.completed", "Farm", "s24", seconds, None, &format!("Finished {i}")).run(&format!("r{i}")));
+        }
+        log.record(run("macro.failed", "Farm", "s23", 5, Some(3), "Step 3: “OK” not found").run("r3"));
+        log.record(run("macro.failed", "Farm", "s23", 5, Some(3), "Step 3: “OK” not found after 10 s").run("r4"));
+        log.record(run("macro.failed", "Farm", "s24", 5, Some(1), "Phone disconnected").run("r5"));
+        log.record(run("macro.stopped", "Login", "s24", 5, None, "Stopped").run("r6"));
+        log.record(event("macro.started", Severity::Info, Some("s24"), "Farm started").meta("macro", "Farm").meta("tabId", "tab-Farm").run("r7"));
+        let stats = log.macro_stats(0);
+        assert_eq!(stats.len(), 2);
+        let farm = &stats[0];
+        assert_eq!((farm.name.as_str(), farm.runs, farm.done, farm.failed, farm.stopped), ("Farm", 6, 3, 3, 0));
+        assert!((farm.success_rate - 0.5).abs() < 1e-9);
+        assert_eq!(farm.avg_seconds, Some(90.0), "only finished runs count");
+        assert_eq!(farm.failing_steps[0], StepFailures { step: Some(3), count: 2, last_reason: "Step 3: “OK” not found after 10 s".into() });
+        assert_eq!(farm.failed_phones["S23"], 2);
+        assert_eq!(farm.last_status, "failed");
+        assert_eq!((stats[1].name.as_str(), stats[1].stopped, stats[1].avg_seconds), ("Login", 1, None));
+        assert!(log.macro_stats(now_ms() + 1000).is_empty());
     }
 
     #[test]

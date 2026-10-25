@@ -35,6 +35,7 @@ const EMBED_BUDGET: usize = 5500;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_ATTEMPTS: u32 = 4;
 pub const MAX_COOLDOWN_SECS: u64 = 86_400;
+pub const MAX_OFFLINE_ALERT_MINS: u64 = 1440;
 /// A failing webhook is reported in the history at most this often.
 const FAILURE_EVENT_EVERY_MS: u64 = 10 * 60_000;
 
@@ -62,13 +63,17 @@ pub struct Settings {
     pub detail: String,
     /// The same kind of event for the same phone is sent at most once per cooldown.
     pub cooldown_secs: u64,
+    /// 0 sends every drop. Otherwise a phone going offline is only sent once
+    /// it has stayed offline this long (`device.offline_long`), and its return
+    /// after such an alert is sent too.
+    pub offline_alert_mins: u64,
     /// How much event history is kept.
     pub history: Retention,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { enabled: true, webhook_url: String::new(), categories: default_levels(), detail: "full".into(), cooldown_secs: 120, history: Retention::default() }
+        Self { enabled: true, webhook_url: String::new(), categories: default_levels(), detail: "full".into(), cooldown_secs: 120, offline_alert_mins: 0, history: Retention::default() }
     }
 }
 
@@ -86,10 +91,19 @@ impl Settings {
 
     /// Would `event` be sent (before the cooldown)?
     pub fn wants(&self, event: &Event) -> bool {
-        self.enabled
-            && !self.webhook_url.is_empty()
-            && event.category != "notification"
-            && self.level(&event.category).is_some_and(|min| event.severity >= min)
+        if !self.enabled || self.webhook_url.is_empty() || event.category == "notification" {
+            return false;
+        }
+        if self.offline_alert_mins > 0 {
+            match event.kind.as_str() {
+                // Short drops stay in the history only.
+                "device.disconnected" => return false,
+                // "Back online" closes an outage that was alerted.
+                "device.reconnected" if event.meta.get("alerted") == Some(&Value::Bool(true)) => return self.level("device").is_some(),
+                _ => {}
+            }
+        }
+        self.level(&event.category).is_some_and(|min| event.severity >= min)
     }
 }
 
@@ -135,6 +149,7 @@ pub struct PublicSettings {
     pub categories: BTreeMap<String, String>,
     pub detail: String,
     pub cooldown_secs: u64,
+    pub offline_alert_mins: u64,
     pub history: Retention,
     pub status: Status,
 }
@@ -149,6 +164,7 @@ pub struct Update {
     pub categories: Option<BTreeMap<String, String>>,
     pub detail: Option<String>,
     pub cooldown_secs: Option<u64>,
+    pub offline_alert_mins: Option<u64>,
     pub history: Option<Retention>,
 }
 
@@ -187,6 +203,12 @@ impl Settings {
                 return Err("The cooldown is at most 24 hours".into());
             }
             next.cooldown_secs = cooldown;
+        }
+        if let Some(mins) = update.offline_alert_mins {
+            if mins > MAX_OFFLINE_ALERT_MINS {
+                return Err("Offline alerts wait at most 24 hours".into());
+            }
+            next.offline_alert_mins = mins;
         }
         if let Some(history) = update.history {
             next.history = history.clamped();
@@ -309,6 +331,7 @@ pub fn public_settings() -> PublicSettings {
         categories: s.categories,
         detail: s.detail,
         cooldown_secs: s.cooldown_secs,
+        offline_alert_mins: s.offline_alert_mins,
         history: s.history,
         status,
     }
@@ -914,6 +937,13 @@ mod tests {
         assert!(!s.wants(&sample("notification.failed", Severity::Critical)), "never about itself");
         s.categories.insert("macro".into(), "info".into());
         assert!(s.wants(&sample("macro.completed", Severity::Info)));
+        // Offline rule: drops wait for the long-outage event; its end is sent.
+        s.offline_alert_mins = 10;
+        assert!(!s.wants(&sample("device.disconnected", Severity::Warning)));
+        assert!(s.wants(&sample("device.offline_long", Severity::Warning)));
+        assert!(!s.wants(&sample("device.reconnected", Severity::Info)), "a short drop's return stays quiet");
+        assert!(s.wants(&sample("device.reconnected", Severity::Info).meta("alerted", true)));
+        assert!(s.apply(Update { offline_alert_mins: Some(MAX_OFFLINE_ALERT_MINS + 1), ..Default::default() }).is_err());
         s.enabled = false;
         assert!(!s.wants(&sample("macro.failed", Severity::Error)));
     }

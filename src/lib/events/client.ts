@@ -101,8 +101,28 @@ export interface NotificationSettings {
   categories: Partial<Record<EventCategory, NotifyLevel>>;
   detail: "brief" | "full";
   cooldownSecs: number;
+  /** 0 sends every drop; else only phones offline this long (and their return). */
+  offlineAlertMins: number;
   history: Retention;
   status: DeliveryStatus;
+}
+
+export interface MacroStats {
+  name: string;
+  tabId?: string;
+  runs: number;
+  done: number;
+  failed: number;
+  stopped: number;
+  /** done / runs, 0–1. */
+  successRate: number;
+  /** Average length of finished runs. */
+  avgSeconds?: number;
+  lastAt: number;
+  lastStatus: "done" | "failed" | "stopped";
+  /** The steps that fail most (up to 3). */
+  failingSteps: Array<{ step?: number; count: number; lastReason: string }>;
+  failedPhones: Record<string, number>;
 }
 
 export type NotificationUpdate = Partial<Omit<NotificationSettings, "webhookSet" | "webhookHint" | "status">> & {
@@ -146,6 +166,11 @@ export async function fetchEvents(query: EventQuery): Promise<EventPage> {
 
 export async function fetchSummary(since: number): Promise<EventSummary> {
   return json(await agentFetch(`${base()}/api/events/summary?since=${since}`, { cache: "no-store" }));
+}
+
+/** Per-macro run results since `since`, worst first. */
+export async function fetchMacroStats(since: number): Promise<MacroStats[]> {
+  return json(await agentFetch(`${base()}/api/events/macros?since=${since}`, { cache: "no-store" }));
 }
 
 export async function clearEvents(before?: number): Promise<{ removed: number }> {

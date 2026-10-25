@@ -9,6 +9,7 @@ ADBoard records what happens to your phones, macro runs and ADBoard itself, keep
 - **Last 24 hours:** warnings and errors, macro runs (done / failed / stopped and the success rate), phone connection changes, and whether Discord is delivering. Click a count to filter on it; click a phone under *Phones with problems* to see only its events.
 - **Filters:** search (every word must appear in the summary, details, phone, macro name or run id), severity (*Warnings and errors*, *Errors only*…), category, phone, and time (last hour to 30 days, any time, or dates).
 - **Details:** click an event for its reason, the macro, run id, step, cycles, touches and duration. **Only this phone**, **Whole run** (every event of that macro run), **Open phone** and **Open macro** jump to what it is about.
+- **Macro runs:** for each macro over the last 24 hours, 7 or 30 days: runs, done / failed / stopped, success rate (bar), average length of finished runs, the last run, the steps that fail most (with the latest reason) and the phones they fail on. Click a macro's name to list its events, or **Open macro** to edit it. Figures come from the run events in the history, so they reach back as far as the history is kept.
 - **Older events** loads the next 50. New events appear on their own while the tab is open.
 - A number on the **Events** tab counts new warnings and errors since you last opened it.
 
@@ -18,7 +19,7 @@ Identical events close together (same kind, phone and text within 5 minutes) are
 
 | Category | Events |
 |---|---|
-| Phones | connected, went offline / disconnected, back online (with how long it was away), waiting for USB debugging approval, restart / power off / screen size results, screenshot and recording failures |
+| Phones | connected, went offline / disconnected, back online (with how long it was away), offline for longer than the alert time (when set), waiting for USB debugging approval, restart / power off / screen size results, screenshot and recording failures |
 | Macros | started, finished, stopped, failed — with the run id, macro, phone, failing step and reason (for text steps: what was not found), cycles, touches and duration. Testing a single step is not recorded |
 | Apps & installs | APK installed / failed per phone, uninstall, clear data, app launch and force-stop failures |
 | Live screen | the scrcpy stream stopped (with its reason) and recovered |
@@ -49,6 +50,7 @@ The defaults send only what needs attention: phones going offline or waiting for
 | Send notifications | Pause Discord without removing the webhook. Events are still recorded |
 | Message detail | **Full**: reason, run id, duration, host. **Brief**: title, phone and severity |
 | Cooldown | The same kind of event for the same phone is sent at most once per cooldown (default 2 min). The next message says how many were held back |
+| Phone offline alerts | **Every drop** (default) sends each disconnect, as the Phones level allows. **Offline for N min** (2–60) sends a phone only once it has stayed offline (or waiting for USB approval) that long — "S24 has been offline for 10 min" — and sends "back online" when it returns. Short drops are still recorded in Events but not sent |
 
 Each message is an embed coloured by severity, with the phone (and model), macro, severity and time; the footer names the ADBoard host and event kind. Events arriving within about 1.5 s go in one message (up to 10 embeds). Mentions are turned off, so text such as `@everyone` in a macro name never pings anyone.
 
@@ -74,9 +76,10 @@ Below the settings, ADBoard shows when it last delivered, how many were sent, fa
 |---|---|
 | `GET /api/events` | History, newest first. Query: `q`, `severity` (lowest shown), `category` (comma list), `device`, `run`, `since`, `until` (ms), `before` (paging cursor), `limit` (≤ 200). Returns `events`, `total`, `hasMore`, `nextBefore` |
 | `GET /api/events/summary?since=` | Counts by severity and category, macro results, phones with problems, recent problems |
+| `GET /api/events/macros?since=` | Per macro: runs, done / failed / stopped, success rate, average duration, last run, most failing steps, phones with failures (default: 7 days) |
 | `POST /api/events/clear` `{before?}` | Delete all history, or events older than `before` (ms) |
 | `GET /api/notifications` | Discord settings and delivery status (`webhookSet`, never the URL) |
-| `PUT /api/notifications` | Change some of `enabled`, `webhookUrl` (`""` removes it), `categories`, `detail`, `cooldownSecs`, `history` |
+| `PUT /api/notifications` | Change some of `enabled`, `webhookUrl` (`""` removes it), `categories`, `detail`, `cooldownSecs`, `offlineAlertMins` (0–1440, 0 = every drop), `history` |
 | `POST /api/notifications/test` `{webhookUrl?}` | Send a test message now |
 
 ## Adding another destination

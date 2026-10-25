@@ -11,6 +11,7 @@ import {
   NO_AGENT,
   clearEvents,
   fetchEvents,
+  fetchMacroStats,
   fetchNotifications,
   fetchSummary,
   hasAgent,
@@ -21,6 +22,7 @@ import {
   type EventPage,
   type EventQuery,
   type EventSummary,
+  type MacroStats,
   type NotificationSettings,
   type Severity,
 } from "@/lib/events/client";
@@ -196,6 +198,21 @@ export function EventsPanel() {
           reset();
           setCategory("macro");
           setSeverity("error");
+        }}
+      />
+
+      <MacroStatsCard
+        refresh={refresh}
+        onMacro={(name) => {
+          reset();
+          setCategory("macro");
+          setSearch(name);
+          setQ(name);
+          setRange("30d");
+        }}
+        onOpenMacro={(tabId) => {
+          setActiveTab(tabId);
+          desk.open("macros");
         }}
       />
 
@@ -458,6 +475,102 @@ function SummaryCard({
             </button>
           ))}
         </div>
+      )}
+    </Card>
+  );
+}
+
+const STAT_RANGES = [
+  { id: "1", label: "24 hours", days: 1 },
+  { id: "7", label: "7 days", days: 7 },
+  { id: "30", label: "30 days", days: 30 },
+] as const;
+
+const duration = (seconds?: number) => {
+  if (seconds === undefined) return "—";
+  if (seconds < 10) return `${seconds.toFixed(1)} s`;
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  return `${(seconds / 3600).toFixed(1)} h`;
+};
+
+/** Success rate, length and most failing steps per macro, from run events. */
+function MacroStatsCard({
+  refresh,
+  onMacro,
+  onOpenMacro,
+}: {
+  refresh: number;
+  onMacro: (name: string) => void;
+  onOpenMacro: (tabId: string) => void;
+}) {
+  const [days, setDays] = useState<number>(7);
+  const [stats, setStats] = useState<{ days: number; list: MacroStats[] } | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchMacroStats(Date.now() - days * 86_400_000).then((list) => live && setStats({ days, list }), () => {});
+    return () => {
+      live = false;
+    };
+  }, [days, refresh]);
+  if (!stats) return null;
+  return (
+    <Card
+      title="Macro runs"
+      data-events-macros
+      action={
+        <select aria-label="Period" value={String(days)} onChange={(e) => setDays(Number(e.target.value))} className={cn(fieldClass, "h-9 min-h-9")}>
+          {STAT_RANGES.map((r) => (
+            <option key={r.id} value={r.days}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      }
+    >
+      {stats.list.length === 0 ? (
+        <p className="text-xs text-[var(--pc-muted)]">No macro runs finished in this period.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {stats.list.map((m) => {
+            const pct = Math.round(m.successRate * 100);
+            const worst = m.failingSteps[0];
+            return (
+              <li key={m.tabId ?? m.name} className="flex flex-col gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-2" data-macro-stats={m.name}>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <button type="button" className="min-w-0 truncate font-medium text-[var(--pc-ink)] hover:text-[var(--pc-accent)]" onClick={() => onMacro(m.name)} title="Show this macro's events">
+                    {m.name}
+                  </button>
+                  <span className="font-mono text-[11px] text-[var(--pc-muted)]">
+                    {m.runs} run{m.runs === 1 ? "" : "s"} · {m.done} done · {m.failed} failed · {m.stopped} stopped · avg {duration(m.avgSeconds)} · last {when(m.lastAt)} ({m.lastStatus})
+                  </span>
+                  {m.tabId && (
+                    <button type="button" className="ml-auto text-[11px] text-[var(--pc-accent)]" onClick={() => onOpenMacro(m.tabId!)}>
+                      Open macro
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2" aria-label={`${pct}% of runs finished`}>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--pc-line)]">
+                    <div className={cn("h-full", pct >= 90 ? "bg-[var(--pc-signal)]" : pct >= 50 ? "bg-[#f1c40f]" : "bg-[var(--pc-warn)]")} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-10 text-right font-mono text-[11px] text-[var(--pc-ink)]">{pct}%</span>
+                </div>
+                {worst && (
+                  <p className="text-[11px] text-[var(--pc-muted)]">
+                    Fails most at <span className="text-[var(--pc-ink)]">{worst.step ? `step ${worst.step}` : "the start"}</span> ({worst.count}×): {worst.lastReason || "no reason given"}
+                    {m.failingSteps.length > 1 && ` · also ${m.failingSteps.slice(1).map((f) => `${f.step ? `step ${f.step}` : "start"} (${f.count}×)`).join(", ")}`}
+                    {Object.keys(m.failedPhones).length > 0 &&
+                      ` · on ${Object.entries(m.failedPhones)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([phone, n]) => `${phone} ${n}×`)
+                        .join(", ")}`}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </Card>
   );

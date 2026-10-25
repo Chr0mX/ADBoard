@@ -1129,13 +1129,15 @@ fn record_run_end(s: &RunSnapshot) {
         "stopped" => ("macro.stopped", Severity::Info, format!("{} was stopped on {}", s.tab_name, s.device_name)),
         _ => ("macro.failed", Severity::Error, format!("{} failed on {}", s.tab_name, s.device_name)),
     };
-    let seconds = s.finished_at.unwrap_or_else(now_ms).saturating_sub(s.started_at) / 1000;
+    let ms = s.finished_at.unwrap_or_else(now_ms).saturating_sub(s.started_at);
+    let seconds = ms / 1000;
     let mut event = run_event(s, kind, severity, summary)
         .detail(message)
         .meta("status", s.status.clone())
         .meta("cycles", s.cycle)
         .meta("touches", s.touches)
-        .meta("durationSeconds", seconds);
+        .meta("durationSeconds", seconds)
+        .meta("durationMs", ms);
     if s.status == "failed" && s.step_count > 0 {
         event = event.meta("step", s.step_index + 1).meta("steps", s.step_count);
     }
