@@ -39,6 +39,8 @@ rten = { version = "0.26", default-features = false }
 rten-imageproc = "0.26"
 png = "0.18"
 regex = "1"
+# Cron schedules run on the ADBoard computer's wall clock (time zone + DST).
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

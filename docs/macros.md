@@ -34,7 +34,21 @@ A step is 1–10 fingers played together, then a wait.
 | Starts after | Multi-touch only: delay for this finger from the step start, so fingers can overlap |
 | Then wait | Pause after the step, before the next one |
 
-**Add** has quick presets: Tap, Hold, Swipe, 2-finger tap, Pinch, and the text steps below. **Add finger** turns any step into multi-touch. ▶ on a step plays just that step once on the tab's phones.
+**Add** has quick presets: Tap, Hold, Swipe, 2-finger tap, Pinch, **Open app**, and the text steps below. **Add finger** turns any step into multi-touch. ▶ on a step plays just that step once on the tab's phones.
+
+## Open app steps
+
+**Open app** starts an app on the phone, so a macro can begin from a known place instead of assuming the app is already open.
+
+| Field | Meaning |
+|---|---|
+| Saved app | Pick one of the apps saved in **Apps**; its package, activity and `am start` arguments are filled in |
+| Package | e.g. `com.example.game` (letters, digits, dots and `_`) |
+| Activity | Optional: `.MainActivity` or `pkg/.Activity`, optionally followed by `am start` arguments. Empty opens the app's launcher screen |
+| Restart the app | Force-stop it first, so it opens from its start screen rather than where it was left |
+| Then wait | Time for the app to open before the next step (3 s by default). A **Wait for text** step after it is more reliable than a long fixed wait |
+
+The agent opens the app through the same command as **Apps → Launch** (`monkey`, or `am start` with an activity). A phone where it fails (app not installed, bad activity) drops out of the run like a failed touch; on a one-phone run the run fails with the reason. The mock fleet pretends to open apps.
 
 ## Text steps (OCR)
 
@@ -198,6 +212,26 @@ The dialog shows what will be imported and any notes before anything is saved. *
 
 Exporting back to Auto Clicker writes the same structure. A multi-touch step becomes one target per finger, because Auto Clicker plays one target at a time. Text steps are left out, with a note. An imported Auto Clicker file exports back unchanged.
 
+## Queue and schedules
+
+The **Queue** plays tabs one after another, each on its own ticked phones. **Schedule** starts a tab (on its ticked phones) or the queue by itself. Both run on the agent, with no browser open.
+
+| Repeat | Runs |
+|---|---|
+| Once | At the date and time given |
+| Every… | Every N minutes (1–1440) from a start time |
+| Cron expression | Whenever a cron expression matches, e.g. `0 8 * * 1-5` (weekdays at 08:00). **Preset** fills in common ones |
+
+Cron expressions have five fields: minute (0–59), hour (0–23), day of month (1–31), month (1–12 or `jan`–`dec`), day of week (0–7 or `sun`–`sat`; 0 and 7 are Sunday). Each field takes `*`, a value, a list (`1,15`), a range (`mon-fri`), or a step (`*/15`, `8-18/2`, `5/20`). The shortcuts `@hourly`, `@daily`, `@weekly`, `@monthly` and `@yearly` work too. When both day fields are set, a day matches if either does: `0 9 1 * mon` is the 1st of the month and every Monday.
+
+- Cron times are **wall-clock times on the ADBoard computer**: `0 8 * * *` is 08:00 there, summer and winter. On the night clocks go forward, a time that doesn't exist (02:30) is skipped; on the night they go back, a time that happens twice runs once.
+- While you type, the editor checks the expression, says what is wrong (*Hour: 25 is out of range (0–23)*) and lists the next three runs. If the ADBoard computer is in another time zone than your browser, it says so; the times shown are in yours.
+- A missed **Once** or **Every** slot runs once when ADBoard is back. A missed **cron** time is skipped unless it was under 5 minutes ago, so a daily 08:00 job doesn't start at 15:00 because ADBoard was off in the morning.
+- A schedule whose tab is already running, or has no online phone, is skipped and says why under it.
+- **Edit** (pencil) loads a schedule into the form; **Save** changes it and starts it over.
+
+`GET /api/macro/cron?expr=…&count=3` checks an expression and returns its next runs on the agent's clock.
+
 ## Sharing and versions
 
 Macros, the queue, schedules and phone choices are shared through ADBoard (`/api/store/{name}`). Writes carry a revision number, so a stale browser never overwrites a newer copy.
@@ -219,5 +253,5 @@ Macros lost before this protection existed were browser data, not code. Bring th
 - The orientation check in runs uses the phone's reported size. The live preview warns using the real video size.
 - Live video needs a browser with H.264 WebCodecs (Chrome, Edge, Safari). Headless test browsers show the markers without the picture.
 - Mock fleet (`ADBOARD_FORCE_MOCK=1`): gestures keep their timing and report *Mock (not sent)*.
-- Text steps run on the agent only. Without an agent (the in-browser preview), a run stops at the first text step and says so.
+- Text and app steps run on the agent only. Without an agent (the in-browser preview), a run stops at the first text step and says so.
 - Text steps read with a screenshot each time (about 0.2–1 s per read, more over Wi-Fi ADB). For text that changes many times a second, use a touch step with a delay.

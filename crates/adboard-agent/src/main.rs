@@ -2,6 +2,7 @@ mod adb;
 mod api;
 mod app_icon;
 mod audio;
+mod cron;
 mod device_manager;
 mod device_models;
 mod data_dir;

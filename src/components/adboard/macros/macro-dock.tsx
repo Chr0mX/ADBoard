@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ExternalLink, Pause, Play, Square } from "lucide-react";
-import { isTextStep, stepTouchMs, type MacroTab } from "@/lib/macro/core";
+import { isAppStep, isTextStep, stepTouchMs, type MacroTab } from "@/lib/macro/core";
 import { setActiveTab, useMacroWorkspace } from "@/lib/macro/store";
 import {
   isRunning,
@@ -25,6 +25,7 @@ import { IconButton, Segmented, formatMs, stepColor } from "@/components/adboard
 import { LivePreview } from "@/components/adboard/macros/preview";
 import { stepTitle } from "@/components/adboard/macros/step-list";
 import { textStepSummary } from "@/components/adboard/macros/text-step";
+import { appStepSummary } from "@/components/adboard/macros/app-step";
 import { PhoneRunsCard } from "@/components/adboard/macros/phone-runs-card";
 import {
   LoopControl,
@@ -327,7 +328,9 @@ function DockSteps({
               <span className="min-w-0 truncate text-xs text-[var(--pc-ink)]">
                 {stepTitle(step)}
                 <span className="ml-1.5 font-mono text-[11px] text-[var(--pc-muted)]">
-                  {isTextStep(step) ? (
+                  {isAppStep(step) ? (
+                    appStepSummary(step.app, step.delayMs)
+                  ) : isTextStep(step) ? (
                     textStepSummary(step.text, tab.steps)
                   ) : (
                     <>

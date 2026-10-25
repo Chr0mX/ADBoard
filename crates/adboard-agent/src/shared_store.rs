@@ -54,9 +54,9 @@ pub const SHELL_EXT: &str = ".json";
 pub const MACRO_FORMAT: &str = "adboard-macros";
 pub const SHELL_FORMAT: &str = "adboard-shell-script";
 
-/// Format 2 added text steps; touch-only macros stay 1 (as the browser's export).
+/// Format 2 added text and app steps; touch-only macros stay 1 (as the browser's export).
 fn macro_file_version(tab: &Value) -> u64 {
-    let text = tab.get("steps").and_then(Value::as_array).is_some_and(|steps| steps.iter().any(|s| s.get("kind").and_then(Value::as_str) == Some("text")));
+    let text = tab.get("steps").and_then(Value::as_array).is_some_and(|steps| steps.iter().any(|s| matches!(s.get("kind").and_then(Value::as_str), Some("text" | "app"))));
     if text { 2 } else { 1 }
 }
 

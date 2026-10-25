@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, ListOrdered, Play, Square, Trash2, CalendarClock } from "lucide-react";
-import { nextRunAt, type MacroSchedule } from "@/lib/macro/automation";
+import { ArrowDown, ArrowUp, ListOrdered, Pencil, Play, Square, Trash2, CalendarClock } from "lucide-react";
+import { CRON_PRESETS, cronError, nextCronRuns, nextRunAt, type MacroSchedule } from "@/lib/macro/automation";
+import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
 import {
   addSchedule,
   addToQueue,
@@ -117,91 +118,230 @@ function toLocalInput(ms: number) {
   return d.toISOString().slice(0, 16);
 }
 
+const fmt = (ms: number) => new Date(ms).toLocaleString([], { weekday: "short", dateStyle: undefined, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
 function describeNext(schedule: MacroSchedule, now: number) {
-  const next = nextRunAt(schedule, now);
   if (!schedule.enabled) return "Off";
+  if (schedule.kind === "cron" && cronError(schedule.cron ?? "")) return "Invalid cron";
+  const next = nextRunAt(schedule, now);
   if (next === null) return "Done";
   return `Next ${new Date(next).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`;
 }
 
-/** Scheduler: start a tab or the queue at a time, once or every N minutes. */
+function describeRepeat(s: MacroSchedule) {
+  if (s.kind === "cron") return `cron ${s.cron ?? ""}`;
+  return s.kind === "every" ? `every ${s.everyMinutes} min` : "once";
+}
+
+type Kind = MacroSchedule["kind"];
+const fieldClass = "h-10 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 text-sm text-[var(--pc-ink)]";
+
+/**
+ * The next runs of a cron expression. With the agent they come from it, on
+ * the clock schedules really run on; otherwise from this browser's clock.
+ */
+function useCronPreview(expr: string, active: boolean) {
+  const [preview, setPreview] = useState<{ expr: string; next: number[]; error?: string; agentOffset?: number } | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      const local = () => {
+        const error = cronError(expr);
+        return { expr, next: error ? [] : nextCronRuns(expr, Date.now(), 3), error: error ?? undefined };
+      };
+      const base = agentBaseUrl();
+      if (base === null) {
+        setPreview(local());
+        return;
+      }
+      agentFetch(`${base}/api/macro/cron?expr=${encodeURIComponent(expr)}&count=3`, { cache: "no-store" })
+        .then(async (res) => {
+          const body = (await res.json()) as { next?: number[]; utcOffsetMinutes?: number; error?: string };
+          if (!live) return;
+          setPreview(res.ok ? { expr, next: body.next ?? [], agentOffset: body.utcOffsetMinutes } : { expr, next: [], error: body.error ?? "Not a cron expression" });
+        })
+        .catch(() => live && setPreview(local()));
+    }, 250);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [expr, active]);
+  return preview && preview.expr === expr ? preview : null;
+}
+
+/** Scheduler: start a tab or the queue once, every N minutes, or on a cron expression. */
 export function ScheduleCard({ tabs, activeTab }: { tabs: MacroTab[]; activeTab: MacroTab | null }) {
   const { schedules } = useAutomation();
-  const [target, setTarget] = useState<string>(activeTab ? `tab:${activeTab.id}` : "queue");
-  const [kind, setKind] = useState<"once" | "every">("once");
+  const [chosenTarget, setTarget] = useState<string>(activeTab ? `tab:${activeTab.id}` : "queue");
+  // Tabs can arrive (sync) or go after the choice was made: fall back to the open tab.
+  const target =
+    chosenTarget === "queue" || tabs.some((t) => `tab:${t.id}` === chosenTarget) ? chosenTarget : activeTab ? `tab:${activeTab.id}` : "queue";
+  const [kind, setKind] = useState<Kind>("once");
   const [at, setAt] = useState(() => toLocalInput(Date.now() + 5 * 60_000));
   const [every, setEvery] = useState(30);
+  const [cron, setCron] = useState("0 8 * * 1-5");
+  const [editing, setEditing] = useState<string | null>(null);
   // Re-read "next run" times as the clock moves.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15_000);
     return () => window.clearInterval(timer);
   }, []);
+  const preview = useCronPreview(cron.trim(), kind === "cron");
+  const cronProblem = kind === "cron" ? (preview?.error ?? cronError(cron)) : null;
+  const browserOffset = -new Date().getTimezoneOffset();
   const label = (s: MacroSchedule) =>
     s.target.kind === "queue" ? "Queue" : (tabs.find((t) => t.id === (s.target as { tabId: string }).tabId)?.name ?? "(deleted tab)");
+
+  const reset = () => {
+    setEditing(null);
+    setKind("once");
+    setAt(toLocalInput(Date.now() + 5 * 60_000));
+  };
+  const edit = (s: MacroSchedule) => {
+    setEditing(s.id);
+    setTarget(s.target.kind === "queue" ? "queue" : `tab:${s.target.tabId}`);
+    setKind(s.kind);
+    setAt(toLocalInput(s.kind === "cron" ? Date.now() : s.at));
+    setEvery(s.everyMinutes);
+    if (s.cron) setCron(s.cron);
+  };
 
   return (
     <Card title={`Schedule (${schedules.length})`} data-macro-schedule>
       <p className="text-xs text-[var(--pc-muted)]">
-        Schedules run on the ADBoard agent, even with no browser open. A slot missed while the agent was off runs once
-        when it is back.
+        Schedules run on the ADBoard agent, even with no browser open. A missed <em>Once</em> or <em>Every</em> slot runs once when the agent is back;
+        a missed cron time is skipped unless it was under 5 minutes ago.
       </p>
       <form
-        className="flex flex-wrap items-end gap-2"
+        className="flex flex-col gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          const atMs = new Date(at).getTime();
-          if (!Number.isFinite(atMs)) return;
-          addSchedule({
-            target: target === "queue" ? { kind: "queue" } : { kind: "tab", tabId: target.slice(4) },
+          const atMs = kind === "cron" ? Date.now() : new Date(at).getTime();
+          if (!Number.isFinite(atMs) || cronProblem) return;
+          const fields = {
+            target: target === "queue" ? ({ kind: "queue" } as const) : ({ kind: "tab", tabId: target.slice(4) } as const),
             kind,
             at: atMs,
-            everyMinutes: Math.max(1, Math.round(every)),
-          });
+            everyMinutes: Math.min(1440, Math.max(1, Math.round(every))),
+            ...(kind === "cron" ? { cron: cron.trim() } : {}),
+          };
+          if (editing) {
+            // New timing: forget the last run so the schedule starts over.
+            patchSchedule(editing, { ...fields, cron: kind === "cron" ? cron.trim() : undefined, lastRunAt: undefined, lastResult: undefined });
+            reset();
+          } else addSchedule(fields);
         }}
       >
-        <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
-          Play
-          <select value={target} onChange={(e) => setTarget(e.target.value)} className="h-10 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 text-sm text-[var(--pc-ink)]" data-macro-schedule-target>
-            {tabs.map((t) => (
-              <option key={t.id} value={`tab:${t.id}`}>
-                {t.name}
-              </option>
-            ))}
-            <option value="queue">The queue</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
-          Repeat
-          <select value={kind} onChange={(e) => setKind(e.target.value === "every" ? "every" : "once")} className="h-10 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 text-sm text-[var(--pc-ink)]" data-macro-schedule-kind>
-            <option value="once">Once</option>
-            <option value="every">Every…</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
-          {kind === "once" ? "At" : "Starting"}
-          <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} className="h-10 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 text-sm text-[var(--pc-ink)]" data-macro-schedule-at />
-        </label>
-        {kind === "every" && (
+        <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
-            Minutes
-            <input type="number" min={1} max={1440} value={every} onChange={(e) => setEvery(Number(e.target.value))} className="h-10 w-20 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 text-sm text-[var(--pc-ink)]" data-macro-schedule-every />
+            Play
+            <select value={target} onChange={(e) => setTarget(e.target.value)} className={fieldClass} data-macro-schedule-target>
+              {tabs.map((t) => (
+                <option key={t.id} value={`tab:${t.id}`}>
+                  {t.name}
+                </option>
+              ))}
+              <option value="queue">The queue</option>
+            </select>
           </label>
+          <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
+            Repeat
+            <select value={kind} onChange={(e) => setKind(e.target.value as Kind)} className={fieldClass} data-macro-schedule-kind>
+              <option value="once">Once</option>
+              <option value="every">Every…</option>
+              <option value="cron">Cron expression</option>
+            </select>
+          </label>
+          {kind !== "cron" && (
+            <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
+              {kind === "once" ? "At" : "Starting"}
+              <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} className={fieldClass} data-macro-schedule-at />
+            </label>
+          )}
+          {kind === "every" && (
+            <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
+              Minutes
+              <input type="number" min={1} max={1440} value={every} onChange={(e) => setEvery(Number(e.target.value))} className={cn(fieldClass, "w-20")} data-macro-schedule-every />
+            </label>
+          )}
+          {kind === "cron" && (
+            <>
+              <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
+                Expression
+                <input
+                  value={cron}
+                  onChange={(e) => setCron(e.target.value)}
+                  spellCheck={false}
+                  placeholder="min hour day month weekday"
+                  aria-invalid={Boolean(cronProblem) || undefined}
+                  className={cn(fieldClass, "w-60 font-mono", cronProblem && "border-[var(--pc-warn)]")}
+                  data-macro-schedule-cron
+                />
+              </label>
+              <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
+                Preset
+                <select
+                  value={CRON_PRESETS.find((p) => p.cron === cron.trim())?.cron ?? ""}
+                  onChange={(e) => e.target.value && setCron(e.target.value)}
+                  className={fieldClass}
+                  data-macro-schedule-preset
+                >
+                  <option value="">Custom</option>
+                  {CRON_PRESETS.map((p) => (
+                    <option key={p.cron} value={p.cron}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+          <button type="submit" className="pc-toggle pc-toggle-md" disabled={Boolean(cronProblem)} data-macro-schedule-add>
+            <CalendarClock className="size-4" aria-hidden />
+            {editing ? "Save" : "Add"}
+          </button>
+          {editing && (
+            <GhostButton onClick={reset} data-macro-schedule-cancel>
+              Cancel
+            </GhostButton>
+          )}
+        </div>
+        {kind === "cron" && (
+          <div className="font-mono text-[11px]" data-macro-schedule-preview>
+            {cronProblem ? (
+              <p className="text-[var(--pc-warn)]">{cronProblem}</p>
+            ) : preview ? (
+              <p className="text-[var(--pc-muted)]">
+                Next: {preview.next.length ? preview.next.map(fmt).join(" · ") : "never (no such date)"}
+                {preview.agentOffset !== undefined && preview.agentOffset !== browserOffset && (
+                  <span className="block text-[var(--pc-warn)]">
+                    ADBoard&apos;s computer is at UTC{preview.agentOffset >= 0 ? "+" : "−"}
+                    {Math.abs(preview.agentOffset / 60)}, this browser at UTC{browserOffset >= 0 ? "+" : "−"}
+                    {Math.abs(browserOffset / 60)}: cron times use ADBoard&apos;s clock (shown here in your time).
+                  </span>
+                )}
+              </p>
+            ) : null}
+            <p className="text-[var(--pc-muted)]">minute hour day-of-month month day-of-week · e.g. */15, 8-18/2, 1,15, mon-fri, @daily</p>
+          </div>
         )}
-        <button type="submit" className="pc-toggle pc-toggle-md" data-macro-schedule-add>
-          <CalendarClock className="size-4" aria-hidden />
-          Add
-        </button>
       </form>
       {schedules.length > 0 && (
         <ul className="flex flex-col gap-1" data-macro-schedule-list>
           {schedules.map((s) => (
-            <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--pc-line)] px-2 py-1" data-macro-schedule-item={label(s)}>
+            <li
+              key={s.id}
+              className={cn("flex flex-wrap items-center gap-2 rounded-xl border px-2 py-1", editing === s.id ? "border-[var(--pc-accent)]" : "border-[var(--pc-line)]")}
+              data-macro-schedule-item={label(s)}
+            >
               <Switch checked={s.enabled} onChange={() => patchSchedule(s.id, { enabled: !s.enabled })} aria-label={`Enable schedule for ${label(s)}`} />
               <span className="min-w-0 flex-1 text-sm text-[var(--pc-ink)]">
                 {label(s)}
                 <span className="ml-2 font-mono text-[11px] text-[var(--pc-muted)]">
-                  {s.kind === "every" ? `every ${s.everyMinutes} min` : "once"} · {describeNext(s, now)}
+                  {describeRepeat(s)} · {describeNext(s, now)}
                 </span>
                 {s.lastResult && (
                   <span className="block font-mono text-[11px] text-[var(--pc-muted)]" data-macro-schedule-last>
@@ -209,7 +349,17 @@ export function ScheduleCard({ tabs, activeTab }: { tabs: MacroTab[]; activeTab:
                   </span>
                 )}
               </span>
-              <IconButton label="Delete schedule" onClick={() => removeSchedule(s.id)} tone="danger">
+              <IconButton label="Edit schedule" onClick={() => edit(s)} data-macro-schedule-edit>
+                <Pencil className="size-4" />
+              </IconButton>
+              <IconButton
+                label="Delete schedule"
+                onClick={() => {
+                  if (editing === s.id) reset();
+                  removeSchedule(s.id);
+                }}
+                tone="danger"
+              >
                 <Trash2 className="size-4" />
               </IconButton>
             </li>

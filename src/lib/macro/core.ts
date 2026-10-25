@@ -15,7 +15,7 @@
 export const MACRO_FORMAT = "adboard-macros";
 /** Newest file format this ADBoard reads. Files without text steps are still written as 1. */
 export const MACRO_VERSION = 2;
-/** Format 2 added text steps. */
+/** Format 2 added text and app steps. */
 const TEXT_STEPS_VERSION = 2;
 export const MAX_FINGERS = 10;
 export const MAX_STEPS = 500;
@@ -58,8 +58,18 @@ export interface MacroStep {
   /** Wait after the step, before the next one. */
   delayMs: number;
   /** Missing (older macros) means touch. */
-  kind?: "touch" | "text";
+  kind?: "touch" | "text" | "app";
   text?: TextStep;
+  app?: AppStep;
+}
+
+/** Open an app on the phone (`kind: "app"`). */
+export interface AppStep {
+  packageName: string;
+  /** Optional `.MainActivity` (or `pkg/.Activity`), optionally followed by `am start` arguments. */
+  activity: string;
+  /** Force-stop it first, so it opens from its start screen. */
+  restart: boolean;
 }
 
 /**
@@ -251,11 +261,24 @@ export function cloneStep(step: MacroStep): MacroStep {
           },
         }
       : {}),
+    ...(step.app ? { app: { ...step.app } } : {}),
   };
 }
 
 export function isTextStep(step: MacroStep): step is MacroStep & { kind: "text"; text: TextStep } {
   return step.kind === "text" && step.text !== undefined;
+}
+
+export function isAppStep(step: MacroStep): step is MacroStep & { kind: "app"; app: AppStep } {
+  return step.kind === "app" && step.app !== undefined;
+}
+
+/** Steps that are not touches: older ADBoards can't play them. */
+const isNonTouch = (step: MacroStep) => isTextStep(step) || isAppStep(step);
+
+/** An app step; the wait after it gives the app time to open. */
+export function newAppStep(patch: Partial<AppStep> = {}, step: Partial<MacroStep> = {}): MacroStep {
+  return newStep([], { kind: "app", app: { packageName: "", activity: "", restart: false, ...patch }, delayMs: 3000, ...step });
 }
 
 const TEXT_DEFAULTS: Record<TextAction, Pick<TextStep, "timeoutMs" | "onSuccess" | "onFailure">> = {
@@ -292,10 +315,11 @@ export function newTextStep(action: TextAction, patch: Partial<TextStep> = {}, s
   });
 }
 
-export type StepKind = "tap" | "hold" | "swipe" | "multi" | "text";
+export type StepKind = "tap" | "hold" | "swipe" | "multi" | "text" | "app";
 
 export function stepKind(step: MacroStep): StepKind {
   if (isTextStep(step)) return "text";
+  if (isAppStep(step)) return "app";
   if (step.fingers.length > 1) return "multi";
   const f = step.fingers[0];
   if (f && f.toX !== undefined && f.toY !== undefined && (f.toX !== f.x || f.toY !== f.y)) return "swipe";
@@ -581,6 +605,24 @@ function sanitizeStep(raw: unknown, ref: Size, where: string, warnings: string[]
     warnings.push(`${where}: step is not an object, skipped`);
     return null;
   }
+  if (raw.kind === "app") {
+    const app = isObject(raw.app) ? raw.app : {};
+    const packageName = str(app.packageName, "", 200).trim();
+    if (packageName && !/^[A-Za-z0-9_.]+$/.test(packageName)) {
+      warnings.push(`${where}: “${packageName}” is not a package name, skipped`);
+      return null;
+    }
+    if (!packageName) warnings.push(`${where}: app step has no app chosen`);
+    return {
+      id: str(raw.id, "", 64) || macroId("s"),
+      label: str(raw.label, "", 80),
+      enabled: raw.enabled !== false,
+      fingers: [],
+      delayMs: clamp(round(num(raw.delayMs, 3000)), 0, MAX_DELAY_MS),
+      kind: "app",
+      app: { packageName, activity: str(app.activity, "", 300).trim(), restart: app.restart === true },
+    };
+  }
   if (raw.kind === "text") {
     const text = sanitizeTextStep(raw.text, ref, where, warnings);
     if (!text) return null;
@@ -814,12 +856,12 @@ function fromAutoClicker(configs: unknown[], reference: Size | undefined, file: 
 export function toAutoClicker(tabs: MacroTab[], warnings: string[] = []): AutoClickerConfig[] {
   return tabs.map((tab, index) => {
     const targets: AutoClickerTarget[] = [];
-    const textSteps = tab.steps.filter((s) => s.enabled && isTextStep(s)).length;
-    if (textSteps > 0) {
-      warnings.push(`"${tab.name}": ${textSteps} text step${textSteps === 1 ? " was" : "s were"} left out (Auto Clicker only plays touches)`);
+    const other = tab.steps.filter((s) => s.enabled && isNonTouch(s)).length;
+    if (other > 0) {
+      warnings.push(`"${tab.name}": ${other} text or app step${other === 1 ? " was" : "s were"} left out (Auto Clicker only plays touches)`);
     }
     for (const step of tab.steps) {
-      if (!step.enabled || isTextStep(step)) continue;
+      if (!step.enabled || isNonTouch(step)) continue;
       if (step.fingers.length > 1) {
         warnings.push(`"${tab.name}": a ${step.fingers.length}-finger step was split into separate targets (Auto Clicker has no multi-touch)`);
       }
@@ -1015,7 +1057,7 @@ export function exportMacroFile(tabs: MacroTab[], now = new Date()): string {
   const file: MacroFile = {
     format: MACRO_FORMAT,
     // Touch-only files stay at 1, so older ADBoards still read them.
-    version: tabs.some((t) => t.steps.some(isTextStep)) ? TEXT_STEPS_VERSION : 1,
+    version: tabs.some((t) => t.steps.some(isNonTouch)) ? TEXT_STEPS_VERSION : 1,
     app: "ADBoard",
     exportedAt: now.toISOString(),
     tabs,
@@ -1238,6 +1280,7 @@ export async function runMacroTab(options: RunOptions): Promise<RunSnapshot> {
       const step = steps[index];
       // OCR runs on the agent; this in-browser runner only plays touches.
       if (isTextStep(step)) return finish("failed", `Step ${index + 1}: text steps need the ADBoard agent`);
+      if (isAppStep(step)) return finish("failed", `Step ${index + 1}: app steps need the ADBoard agent`);
       snap.stepIndex = index;
       emit();
 

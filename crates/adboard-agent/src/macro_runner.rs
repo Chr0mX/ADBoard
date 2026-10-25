@@ -82,6 +82,22 @@ pub struct MacroStep {
     pub kind: String,
     #[serde(default)]
     pub text: Option<TextStep>,
+    #[serde(default)]
+    pub app: Option<AppStep>,
+}
+
+/// An app step: open an app (`kind: "app"`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppStep {
+    pub package_name: String,
+    /// Optional activity (`.MainActivity` or `pkg/.Activity`), optionally
+    /// followed by `am start` arguments, as saved apps keep it.
+    #[serde(default)]
+    pub activity: String,
+    /// Force-stop first, so the app opens from its start screen.
+    #[serde(default)]
+    pub restart: bool,
 }
 
 impl MacroStep {
@@ -407,6 +423,22 @@ pub type Sender = Arc<dyn Fn(Vec<RunDevice>, Vec<GestureStroke>) -> SendFuture +
 /// Is this phone still connected? Asked before every step.
 pub type OnlineCheck = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
 pub type ReadFuture = Pin<Box<dyn Future<Output = Result<ScreenText, ReadError>> + Send>>;
+pub type CommandFuture = Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
+/// A device command (`launch`, `forceStop`…) on one phone, as POST
+/// /api/device/command runs it: `(phone, op, arg, arg2)`.
+pub type CommandRunner = Arc<dyn Fn(RunDevice, &'static str, Option<String>, Option<String>) -> CommandFuture + Send + Sync>;
+
+/// What a run uses to reach its phones.
+#[derive(Clone)]
+pub struct RunTools {
+    pub send: Sender,
+    /// None skips the connection check (tests).
+    pub is_online: Option<OnlineCheck>,
+    /// None fails text steps (no OCR on this path).
+    pub read: Option<ScreenReader>,
+    /// None fails app steps.
+    pub command: Option<CommandRunner>,
+}
 /// The text in an area (0–1) of a phone's screen, for text steps.
 pub type ScreenReader = Arc<dyn Fn(RunDevice, Area) -> ReadFuture + Send + Sync>;
 
@@ -492,6 +524,8 @@ pub struct RunOptions {
     pub is_online: Option<OnlineCheck>,
     /// None fails text steps (no OCR on this path).
     pub read: Option<ScreenReader>,
+    /// None fails app steps.
+    pub command: Option<CommandRunner>,
     pub control: Arc<RunControl>,
     pub snapshot: Arc<Mutex<RunSnapshot>>,
 }
@@ -503,7 +537,7 @@ fn update(snapshot: &Arc<Mutex<RunSnapshot>>, change: impl FnOnce(&mut RunSnapsh
 
 /// Play a tab on its phones until its stop condition (port of `runMacroTab`).
 pub async fn run_tab(options: RunOptions) -> RunSnapshot {
-    let RunOptions { tab, devices, busy, only_step_id, send, is_online, read, control, snapshot } = options;
+    let RunOptions { tab, devices, busy, only_step_id, send, is_online, read, command, control, snapshot } = options;
     let solo = devices.len() == 1;
     let steps: Vec<MacroStep> = match &only_step_id {
         Some(id) => tab.steps.iter().filter(|s| &s.id == id).cloned().collect(),
@@ -617,7 +651,14 @@ pub async fn run_tab(options: RunOptions) -> RunSnapshot {
             }
 
             let mut next = index + 1;
-            if step.kind == "text" {
+            if step.kind == "app" {
+                let Some(app) = step.app.as_ref() else {
+                    return finish("failed", &format!("Step {}: the app step has no settings", index + 1));
+                };
+                if let Some(message) = play_app_step(app, index + 1, &mut active, solo, command.as_ref(), &snapshot).await {
+                    return finish("failed", &message);
+                }
+            } else if step.kind == "text" {
                 let Some(text) = step.text_step() else {
                     return finish("failed", &format!("Step {}: the text step has no settings", index + 1));
                 };
@@ -708,6 +749,54 @@ pub async fn run_tab(options: RunOptions) -> RunSnapshot {
     } else {
         finish("done", &format!("Finished {max_cycles} cycle{}", if max_cycles == 1 { "" } else { "s" }))
     }
+}
+
+/* ----------------------------- app steps ----------------------------- */
+
+/// Open an app on the run's phones. A phone where it fails drops out like a
+/// failed gesture; returns the run's failure message when none is left.
+async fn play_app_step(app: &AppStep, n: usize, active: &mut Vec<RunDevice>, solo: bool, command: Option<&CommandRunner>, snapshot: &Arc<Mutex<RunSnapshot>>) -> Option<String> {
+    let Some(command) = command else { return Some(format!("Step {n}: app steps need the ADBoard agent")) };
+    let package = app.package_name.trim().to_string();
+    if package.is_empty() {
+        return Some(format!("Step {n}: choose the app to open"));
+    }
+    let activity = Some(app.activity.trim().to_string()).filter(|a| !a.is_empty());
+    let runs = active.iter().map(|device| {
+        let (device, package, activity) = (device.clone(), package.clone(), activity.clone());
+        async move {
+            if app.restart {
+                // Not running is fine: launching is what matters.
+                let _ = command(device.clone(), "forceStop", Some(package.clone()), None).await;
+            }
+            let result = command(device.clone(), "launch", Some(package), activity).await;
+            (device.id, result)
+        }
+    });
+    let results = futures_util::future::join_all(runs).await;
+    let mut failed: Vec<(String, String)> = Vec::new();
+    update(snapshot, |s| {
+        for (id, result) in &results {
+            let Some(row) = s.devices.get_mut(id) else { continue };
+            match result {
+                Ok(output) => {
+                    row.state = "ok".into();
+                    row.detail = Some(if output.is_empty() { format!("opened {package}") } else { output.clone() });
+                }
+                Err(error) => {
+                    row.state = "error".into();
+                    row.detail = Some(format!("Opening {package} failed: {error}"));
+                    failed.push((id.clone(), error.clone()));
+                }
+            }
+        }
+    });
+    active.retain(|d| !failed.iter().any(|(id, _)| id == &d.id));
+    if !active.is_empty() {
+        return None;
+    }
+    let reason = failed.first().map(|(_, e)| e.clone()).unwrap_or_default();
+    Some(if solo { format!("Step {n}: opening {package} failed: {reason}") } else { format!("Every phone failed: step {n}: opening {package} failed: {reason}") })
 }
 
 /* ---------------------------- text steps ---------------------------- */
@@ -1204,9 +1293,7 @@ impl MacroRuns {
         tab: MacroTab,
         device: RunDevice,
         only_step_id: Option<String>,
-        send: Sender,
-        is_online: Option<OnlineCheck>,
-        read: Option<ScreenReader>,
+        tools: RunTools,
     ) -> Result<(), String> {
         let device_id = device.id.clone();
         let control = Arc::new(RunControl::default());
@@ -1254,9 +1341,10 @@ impl MacroRuns {
                 devices: vec![device],
                 busy: HashMap::new(),
                 only_step_id,
-                send,
-                is_online,
-                read,
+                send: tools.send,
+                is_online: tools.is_online,
+                read: tools.read,
+                command: tools.command,
                 control,
                 snapshot,
             })
@@ -1273,9 +1361,7 @@ impl MacroRuns {
         tab: MacroTab,
         devices: Vec<RunDevice>,
         only_step_id: Option<String>,
-        send: Sender,
-        is_online: Option<OnlineCheck>,
-        read: Option<ScreenReader>,
+        tools: RunTools,
     ) -> Result<StartReport, String> {
         let mut report = StartReport::default();
         for device in devices {
@@ -1286,7 +1372,7 @@ impl MacroRuns {
                 continue;
             }
             let other = self.live().get(&id).map(|r| r.tab_name.clone());
-            match self.start_device(tab.clone(), device, only_step_id.clone(), send.clone(), is_online.clone(), read.clone()) {
+            match self.start_device(tab.clone(), device, only_step_id.clone(), tools.clone()) {
                 Ok(()) => report.started.push(id),
                 Err(error) => {
                     let detail = other.map(|t| format!("running \"{t}\"")).unwrap_or(error);
@@ -1410,6 +1496,7 @@ mod tests {
                     delay_ms: delay,
                     kind: String::new(),
                     text: None,
+                    app: None,
                 })
                 .collect(),
             target_ids: vec![],
@@ -1439,7 +1526,7 @@ mod tests {
     fn opts(tab: MacroTab, devices: Vec<RunDevice>, send: Sender, control: Arc<RunControl>) -> RunOptions {
         let first = devices.first().cloned().unwrap_or_else(|| phone("none"));
         let snapshot = Arc::new(Mutex::new(new_snapshot(&tab, &first)));
-        RunOptions { tab, devices, busy: HashMap::new(), only_step_id: None, send, is_online: None, read: None, control, snapshot }
+        RunOptions { tab, devices, busy: HashMap::new(), only_step_id: None, send, is_online: None, read: None, command: None, control, snapshot }
     }
 
     fn named(mut tab: MacroTab, name: &str) -> MacroTab {
@@ -1577,8 +1664,8 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::new()));
         let a = named(tab_with(("infinite", 0.0, 1.0), 1, 15.0), "Farm");
         let b = named(tab_with(("infinite", 0.0, 1.0), 2, 15.0), "Collect");
-        reg.start_device(a.clone(), phone("s24"), None, recording_sender(log.clone(), None), None, None).unwrap();
-        reg.start_device(b.clone(), phone("s23"), None, recording_sender(log.clone(), None), None, None).unwrap();
+        reg.start_device(a.clone(), phone("s24"), None, RunTools { send: recording_sender(log.clone(), None), is_online: None, read: None, command: None }).unwrap();
+        reg.start_device(b.clone(), phone("s23"), None, RunTools { send: recording_sender(log.clone(), None), is_online: None, read: None, command: None }).unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         let view = reg.view();
         let by = |id: &str| view.runs.iter().find(|r| r.device_id == id).cloned().unwrap();
@@ -1587,7 +1674,7 @@ mod tests {
         assert!(reg.is_running(&a.id) && reg.is_running(&b.id));
 
         // A second start on a busy phone is refused; the first run is untouched.
-        let dup = reg.start_device(b.clone(), phone("s24"), None, recording_sender(log.clone(), None), None, None);
+        let dup = reg.start_device(b.clone(), phone("s24"), None, RunTools { send: recording_sender(log.clone(), None), is_online: None, read: None, command: None });
         assert!(dup.unwrap_err().contains("already running \"Farm\""));
 
         // Stopping one phone leaves the other running.
@@ -1614,7 +1701,7 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::new()));
         let tab = tab_with(("infinite", 0.0, 1.0), 1, 15.0);
         // Same macro on both phones = two runs; s23's gestures fail.
-        let started = reg.start(tab.clone(), vec![phone("s24"), phone("s23")], None, recording_sender(log.clone(), Some("s23")), None, None).unwrap().started;
+        let started = reg.start(tab.clone(), vec![phone("s24"), phone("s23")], None, RunTools { send: recording_sender(log.clone(), Some("s23")), is_online: None, read: None, command: None }).unwrap().started;
         assert_eq!(started.len(), 2);
         let failed = reg.wait_devices(&["s23".to_string()]).await;
         assert_eq!(failed[0].status, "failed");
@@ -1622,9 +1709,9 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(touches(&log, "s24") > before);
         // A tab-level start skips the busy phone and reports when none is free.
-        assert!(reg.start(tab.clone(), vec![phone("s24")], None, recording_sender(log.clone(), None), None, None).is_err());
+        assert!(reg.start(tab.clone(), vec![phone("s24")], None, RunTools { send: recording_sender(log.clone(), None), is_online: None, read: None, command: None }).is_err());
         let other = tab_with(("cycles", 0.0, 1.0), 1, 0.0);
-        let report = reg.start(other, vec![phone("s24"), phone("p3")], None, recording_sender(log.clone(), None), None, None).unwrap();
+        let report = reg.start(other, vec![phone("s24"), phone("p3")], None, RunTools { send: recording_sender(log.clone(), None), is_online: None, read: None, command: None }).unwrap();
         assert_eq!(report.started, vec!["p3".to_string()]);
         assert_eq!(report.skipped["s24"].state, "busy");
         assert_eq!(report.skipped["s24"].detail.as_deref(), Some("running \"Tab\""));
@@ -1647,7 +1734,7 @@ mod tests {
             Box::pin(async move { !gone })
         });
         let tab = tab_with(("infinite", 0.0, 1.0), 1, 15.0);
-        reg.start(tab.clone(), vec![phone("s24"), phone("s23")], None, recording_sender(log.clone(), None), Some(online), None).unwrap();
+        reg.start(tab.clone(), vec![phone("s24"), phone("s23")], None, RunTools { send: recording_sender(log.clone(), None), is_online: Some(online), read: None, command: None }).unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(60)).await;
         unplugged.store(true, Ordering::SeqCst);
         let ended = reg.wait_devices(&["s24".to_string()]).await;
@@ -1665,7 +1752,7 @@ mod tests {
         let reg = leak();
         let mut off = phone("a52");
         off.online = false;
-        let err = reg.start(tab_with(("cycles", 0.0, 1.0), 1, 0.0), vec![off], None, counting_sender(Arc::default(), None), None, None).unwrap_err();
+        let err = reg.start(tab_with(("cycles", 0.0, 1.0), 1, 0.0), vec![off], None, RunTools { send: counting_sender(Arc::default(), None), is_online: None, read: None, command: None }).unwrap_err();
         assert!(err.contains("offline"));
         assert!(reg.view().runs.is_empty());
     }
@@ -1715,6 +1802,7 @@ mod tests {
             fingers: vec![],
             delay_ms: 0.0,
             kind: "text".into(),
+            app: None,
             text: Some(TextStep {
                 action: action.into(),
                 query: TextQuery { texts: texts.iter().map(|t| t.to_string()).collect(), mode: "contains".into(), case_sensitive: false },
@@ -1738,6 +1826,7 @@ mod tests {
             delay_ms: 0.0,
             kind: String::new(),
             text: None,
+            app: None,
         }
     }
 
@@ -2001,7 +2090,7 @@ mod tests {
             t.on_failure = Outcome::next();
         });
         let tab = tab_of(vec![check, touch_step("go", 540.0)]);
-        let report = reg.start(tab, vec![phone("s24"), phone("s23")], None, point_sender(log.clone()), None, Some(reader)).unwrap();
+        let report = reg.start(tab, vec![phone("s24"), phone("s23")], None, RunTools { send: point_sender(log.clone()), is_online: None, read: Some(reader), command: None }).unwrap();
         let done = reg.wait_devices(&report.started).await;
         let by = |id: &str| done.iter().find(|r| r.device_id == id).unwrap().clone();
         assert_eq!(by("s24").message.as_deref(), Some("Ended at step 1: Found “Error”"));
@@ -2016,8 +2105,8 @@ mod tests {
         let reg = leak();
         let ok = named(tab_with(("cycles", 0.0, 2.0), 2, 0.0), "History OK");
         let bad = named(tab_with(("cycles", 0.0, 1.0), 1, 0.0), "History Bad");
-        reg.start_device(ok, phone("hist-a"), None, counting_sender(Arc::default(), None), None, None).unwrap();
-        reg.start_device(bad, phone("hist-b"), None, counting_sender(Arc::default(), Some("hist-b")), None, None).unwrap();
+        reg.start_device(ok, phone("hist-a"), None, RunTools { send: counting_sender(Arc::default(), None), is_online: None, read: None, command: None }).unwrap();
+        reg.start_device(bad, phone("hist-b"), None, RunTools { send: counting_sender(Arc::default(), Some("hist-b")), is_online: None, read: None, command: None }).unwrap();
         let done = reg.wait_devices(&["hist-a".to_string(), "hist-b".to_string()]).await;
         for run in &done {
             let page = crate::events::log().query(&crate::events::Query { run: Some(run.run_id.clone()), ..Default::default() });
@@ -2039,10 +2128,75 @@ mod tests {
         // Testing one step is not a run worth recording.
         let quiet = named(tab_with(("cycles", 0.0, 1.0), 1, 0.0), "History Step");
         let step = quiet.steps[0].id.clone();
-        reg.start_device(quiet, phone("hist-c"), Some(step), counting_sender(Arc::default(), None), None, None).unwrap();
+        reg.start_device(quiet, phone("hist-c"), Some(step), RunTools { send: counting_sender(Arc::default(), None), is_online: None, read: None, command: None }).unwrap();
         reg.wait_devices(&["hist-c".to_string()]).await;
         let page = crate::events::log().query(&crate::events::Query { device: Some("hist-c".into()), ..Default::default() });
         assert_eq!(page.total, 0);
+    }
+
+    /// Records each command (`phone op arg arg2`); launches fail on `fail`.
+    fn command_log(log: Arc<Mutex<Vec<String>>>, fail: Option<&'static str>) -> CommandRunner {
+        Arc::new(move |device: RunDevice, op, arg, arg2| {
+            let log = log.clone();
+            Box::pin(async move {
+                log.lock().unwrap().push(format!("{} {op} {} {}", device.id, arg.unwrap_or_default(), arg2.unwrap_or_default()).trim().to_string());
+                if op == "launch" && Some(device.id.as_str()) == fail {
+                    Err("Error: Activity not started".into())
+                } else {
+                    Ok(format!("launched on {}", device.id))
+                }
+            })
+        })
+    }
+
+    fn app_step(id: &str, package: &str, activity: &str, restart: bool) -> MacroStep {
+        MacroStep {
+            id: id.into(),
+            enabled: true,
+            fingers: vec![],
+            delay_ms: 0.0,
+            kind: "app".into(),
+            text: None,
+            app: Some(AppStep { package_name: package.into(), activity: activity.into(), restart }),
+        }
+    }
+
+    #[tokio::test]
+    async fn app_steps_open_the_app_then_the_macro_goes_on() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let touches = Arc::new(Mutex::new(Vec::new()));
+        let tab = tab_of(vec![app_step("a", "com.game", ".Main --ez fresh true", true), touch_step("t", 540.0)]);
+        let mut options = opts(tab, vec![phone("s24"), phone("s23")], point_sender(touches.clone()), Arc::default());
+        options.command = Some(command_log(calls.clone(), None));
+        let result = run_tab(options).await;
+        assert_eq!(result.status, "done", "{:?}", result.message);
+        let mut log = calls.lock().unwrap().clone();
+        log.sort();
+        assert_eq!(log, vec!["s23 forceStop com.game", "s23 launch com.game .Main --ez fresh true", "s24 forceStop com.game", "s24 launch com.game .Main --ez fresh true"]);
+        assert_eq!(touches.lock().unwrap().len(), 2, "the touch after it played on both phones");
+        assert_eq!(result.devices["s24"].state, "ok");
+    }
+
+    #[tokio::test]
+    async fn a_failed_launch_drops_that_phone_or_fails_the_run() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let tab = tab_of(vec![app_step("a", "com.game", "", false), touch_step("t", 540.0)]);
+        let touches = Arc::new(Mutex::new(Vec::new()));
+        let mut options = opts(tab.clone(), vec![phone("s24"), phone("s23")], point_sender(touches.clone()), Arc::default());
+        options.command = Some(command_log(calls.clone(), Some("s23")));
+        let result = run_tab(options).await;
+        assert_eq!(result.status, "done");
+        assert_eq!(result.devices["s23"].state, "error");
+        assert_eq!(touches.lock().unwrap().iter().map(|(d, _, _)| d.as_str()).collect::<Vec<_>>(), vec!["s24"]);
+        assert!(!calls.lock().unwrap().iter().any(|c| c.contains("forceStop")), "no restart unless asked");
+
+        let mut solo = opts(tab, vec![phone("s23")], counting_sender(Arc::default(), None), Arc::default());
+        solo.command = Some(command_log(calls, Some("s23")));
+        let failed = run_tab(solo).await;
+        assert_eq!((failed.status.as_str(), failed.message.as_deref()), ("failed", Some("Step 1: opening com.game failed: Error: Activity not started")));
+
+        let empty = run_tab(opts(tab_of(vec![app_step("a", " ", "", false)]), vec![phone("a")], counting_sender(Arc::default(), None), Arc::default())).await;
+        assert_eq!(empty.message.as_deref(), Some("Step 1: app steps need the ADBoard agent"));
     }
 
     /// Tabs saved before text steps existed still load and play the same.

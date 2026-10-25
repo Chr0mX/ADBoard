@@ -635,7 +635,7 @@ describe("text steps", () => {
     const warnings: string[] = [];
     const [config] = toAutoClicker([login()], warnings);
     assert.equal(config.targets.length, 2);
-    assert.match(warnings[0], /2 text steps were left out/);
+    assert.match(warnings[0], /2 text or app steps were left out/);
   });
 
   it("need the agent: the in-browser runner fails them with a reason", async () => {

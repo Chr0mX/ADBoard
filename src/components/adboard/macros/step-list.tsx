@@ -2,7 +2,7 @@
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
-import { ArrowDown, ArrowUp, Copy, Hand, MousePointerClick, Move, Play, Plus, ScanText, Trash2, X } from "lucide-react";
+import { AppWindow, ArrowDown, ArrowUp, Copy, Hand, MousePointerClick, Move, Play, Plus, ScanText, Trash2, X } from "lucide-react";
 import {
   MAX_DELAY_MS,
   MAX_FINGERS,
@@ -10,7 +10,9 @@ import {
   MAX_TOUCH_MS,
   MIN_TOUCH_MS,
   cloneStep,
+  isAppStep,
   isTextStep,
+  newAppStep,
   newFinger,
   newStep,
   newTextStep,
@@ -25,6 +27,8 @@ import { cn } from "@/lib/utils";
 import type { Device } from "@/lib/devices/types";
 import { GhostButton, IconButton, NumField, formatMs, stepColor } from "@/components/adboard/macros/fields";
 import { TEXT_ACTION_LABEL, TextStepEditor, textStepSummary } from "@/components/adboard/macros/text-step";
+import { AppStepEditor, appStepSummary } from "@/components/adboard/macros/app-step";
+import { useLibrary, type AppShortcut } from "@/lib/desk/store";
 
 const KIND_LABEL: Record<StepKind, string> = {
   tap: "Tap",
@@ -32,9 +36,10 @@ const KIND_LABEL: Record<StepKind, string> = {
   swipe: "Swipe",
   multi: "Multi-touch",
   text: "Text",
+  app: "Open app",
 };
 
-export type NewStepKind = "tap" | "hold" | "swipe" | "multi" | "pinch" | "text-tap" | "text-wait" | "text-check" | "text-read";
+export type NewStepKind = "tap" | "hold" | "swipe" | "multi" | "pinch" | "app" | "text-tap" | "text-wait" | "text-check" | "text-read";
 
 /** The step's name, else what it does. */
 export function stepTitle(step: MacroStep) {
@@ -43,6 +48,7 @@ export function stepTitle(step: MacroStep) {
 
 /** A new step centered on the reference screen. */
 export function makeStep(kind: NewStepKind, tab: MacroTab, at?: { x: number; y: number }): MacroStep {
+  if (kind === "app") return newAppStep();
   if (kind === "text-tap") return newTextStep("tap");
   if (kind === "text-wait") return newTextStep("wait");
   if (kind === "text-check") return newTextStep("check");
@@ -75,7 +81,8 @@ export function makeStep(kind: NewStepKind, tab: MacroTab, at?: { x: number; y: 
   }
 }
 
-export function stepSummary(step: MacroStep, steps: MacroStep[]) {
+export function stepSummary(step: MacroStep, steps: MacroStep[], apps: AppShortcut[] = []) {
+  if (isAppStep(step)) return appStepSummary(step.app, step.delayMs, apps);
   if (isTextStep(step)) return `${textStepSummary(step.text, steps)} · wait ${formatMs(step.delayMs)}`;
   return `${touchSummary(step)} · ${formatMs(stepTouchMs(step))} · wait ${formatMs(step.delayMs)}`;
 }
@@ -95,6 +102,7 @@ export function AddStepBar({ disabled, onAdd }: { disabled?: boolean; onAdd: (ki
     { kind: "swipe", label: "Swipe", icon: <Move className="size-3.5" aria-hidden /> },
     { kind: "multi", label: "2-finger tap", icon: <Plus className="size-3.5" aria-hidden /> },
     { kind: "pinch", label: "Pinch", icon: <Plus className="size-3.5" aria-hidden /> },
+    { kind: "app", label: "Open app", icon: <AppWindow className="size-3.5" aria-hidden /> },
     { kind: "text-tap", label: "Tap text", icon: <ScanText className="size-3.5" aria-hidden /> },
     { kind: "text-wait", label: "Wait for text", icon: <ScanText className="size-3.5" aria-hidden /> },
     { kind: "text-check", label: "If text", icon: <ScanText className="size-3.5" aria-hidden /> },
@@ -131,6 +139,7 @@ export function StepList({
   onTest: (stepId: string) => void;
 }) {
   const steps = tab.steps;
+  const { apps } = useLibrary();
   const patchStep = (id: string, change: (step: MacroStep) => MacroStep) =>
     onChange(steps.map((s) => (s.id === id ? change(s) : s)));
   const move = (index: number, delta: number) => {
@@ -192,7 +201,7 @@ export function StepList({
                       </span>
                     )}
                   </span>
-                  <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{stepSummary(step, steps)}</span>
+                  <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{stepSummary(step, steps, apps)}</span>
                 </span>
               </button>
               <IconButton label={`Test step ${index + 1}`} disabled={!canTest} onClick={() => onTest(step.id)} tone="accent">
@@ -302,7 +311,9 @@ function StepEditor({
         />
       </div>
 
-      {isTextStep(step) ? (
+      {isAppStep(step) ? (
+        <AppStepEditor step={step} onChange={onChange} />
+      ) : isTextStep(step) ? (
         <TextStepEditor step={step} tab={tab} readDevice={readDevice} onChange={onChange} />
       ) : (
         <div className="flex flex-col gap-2">
@@ -405,7 +416,7 @@ function StepEditor({
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        {!isTextStep(step) && (
+        {!isTextStep(step) && !isAppStep(step) && (
           <GhostButton
             disabled={step.fingers.length >= MAX_FINGERS}
             onClick={() => {

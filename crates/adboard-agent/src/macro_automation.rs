@@ -5,7 +5,7 @@
 //! several browsers are open.
 
 use crate::device_manager::AppState;
-use crate::macro_runner::{self, now_ms, MacroTab, OnlineCheck, RunDevice, RunSnapshot, ScreenReader, SendResult, Sender, Size};
+use crate::macro_runner::{self, now_ms, CommandRunner, MacroTab, OnlineCheck, RunDevice, RunSnapshot, RunTools, ScreenReader, SendResult, Sender, Size};
 use crate::shared_store;
 use adboard_protocol::{ControlMode, DeviceStatus, GestureRequest, InjectStatus};
 use serde::{Deserialize, Serialize};
@@ -79,6 +79,34 @@ pub fn screen_reader(state: AppState) -> ScreenReader {
     })
 }
 
+/// Runs device commands for app steps through the same path as
+/// POST /api/device/command.
+pub fn command_runner(state: AppState) -> CommandRunner {
+    Arc::new(move |device: RunDevice, op, arg, arg2| {
+        let state = state.clone();
+        Box::pin(async move {
+            let request = adboard_protocol::DeviceCommandRequest { target_ids: vec![device.id.clone()], op: op.to_string(), arg, arg2 };
+            let response = state.handle_command(request).await?;
+            let result = response.results.into_iter().find(|r| r.device_id == device.id).ok_or("no result from agent")?;
+            if result.ok {
+                Ok(result.output.unwrap_or_default())
+            } else {
+                Err(result.error.unwrap_or_else(|| format!("{op} failed")))
+            }
+        })
+    })
+}
+
+/// Everything a run on this agent uses to reach phones.
+pub fn run_tools(state: &AppState) -> RunTools {
+    RunTools {
+        send: gesture_sender(state.clone()),
+        is_online: Some(online_check(state.clone())),
+        read: Some(screen_reader(state.clone())),
+        command: Some(command_runner(state.clone())),
+    }
+}
+
 /// Start `tab` on `device_ids` (the tab's own phones when empty): one run per
 /// phone, skipping phones that are offline or already running. Returns the
 /// phones started.
@@ -89,9 +117,7 @@ pub async fn start_tab(state: &AppState, tab: MacroTab, device_ids: Vec<String>,
         tab,
         devices,
         only_step_id,
-        gesture_sender(state.clone()),
-        Some(online_check(state.clone())),
-        Some(screen_reader(state.clone())),
+        run_tools(state),
     )
 }
 
@@ -136,9 +162,7 @@ pub async fn start_device(state: &AppState, device_id: &str, tab: Option<MacroTa
         tab,
         device,
         only_step_id,
-        gesture_sender(state.clone()),
-        Some(online_check(state.clone())),
-        Some(screen_reader(state.clone())),
+        run_tools(state),
     )
     .map_err(DeviceStartError::Busy)?;
     Ok(runs.view().runs.into_iter().find(|r| r.device_id == device_id).expect("just started"))
@@ -314,6 +338,11 @@ pub fn next_run_at(schedule: &Value, now: u64) -> Option<u64> {
     let at = schedule.get("at").and_then(Value::as_f64)? as u64;
     let last = schedule.get("lastRunAt").and_then(Value::as_f64).map(|n| n as u64);
     let kind = schedule.get("kind").and_then(Value::as_str).unwrap_or("once");
+    if kind == "cron" {
+        // A bad expression never fires (the editor refuses to save one).
+        let cron = crate::cron::parse(schedule.get("cron").and_then(Value::as_str)?).ok()?;
+        return cron_next_run(at, last, now, |after| crate::cron::next_local(&cron, after));
+    }
     if kind != "every" {
         return if last.is_some() { None } else { Some(at) };
     }
@@ -324,6 +353,21 @@ pub fn next_run_at(schedule: &Value, now: u64) -> Option<u64> {
     // Slots missed while nothing was running collapse into one run.
     if next + every <= now {
         return Some(at + ((now - at) / every) * every);
+    }
+    Some(next)
+}
+
+/// A cron time missed by more than this (ADBoard was off) is skipped.
+pub const CRON_GRACE_MS: u64 = 5 * 60_000;
+
+/// Next run of a cron schedule created at `at`. Unlike `every`, missed
+/// times are not caught up: a daily 08:00 job does not run at 15:00 when
+/// ADBoard starts, unless it was missed by under `CRON_GRACE_MS`.
+pub fn cron_next_run(at: u64, last: Option<u64>, now: u64, next_after: impl Fn(u64) -> Option<u64>) -> Option<u64> {
+    let after = last.filter(|l| *l >= at).unwrap_or_else(|| at.saturating_sub(1));
+    let next = next_after(after)?;
+    if next + CRON_GRACE_MS < now {
+        return next_after(now - CRON_GRACE_MS);
     }
     Some(next)
 }
@@ -365,9 +409,7 @@ pub async fn tick(state: &AppState, now: u64) -> usize {
                             tab,
                             devices,
                             None,
-                            gesture_sender(state.clone()),
-                            Some(online_check(state.clone())),
-                            Some(screen_reader(state.clone())),
+                            run_tools(state),
                         ) {
                             Ok(_) => format!("Started “{name}”"),
                             Err(error) => format!("Skipped: {error}"),
@@ -439,5 +481,28 @@ mod tests {
         assert_eq!(next_run_at(&every, 1_000_600), Some(1_000_000 + ten));
         // Closed for an hour: one run at the latest slot.
         assert_eq!(next_run_at(&every, 1_000_000 + 6 * ten + 1000), Some(1_000_000 + 6 * ten));
+    }
+
+    #[test]
+    fn cron_schedules_skip_times_missed_while_off() {
+        use chrono::TimeZone;
+        let cron = crate::cron::parse("0 8 * * *").unwrap();
+        let utc = |ms: u64| chrono::Utc.timestamp_millis_opt(ms as i64).unwrap();
+        let next = |after: u64| cron.next_after(&utc(after)).map(|t| t.timestamp_millis() as u64);
+        let ms = |d: u32, h: u32, m: u32| chrono::Utc.with_ymd_and_hms(2026, 10, d, h, m, 0).unwrap().timestamp_millis() as u64;
+        let created = ms(24, 7, 0);
+        // First run: 08:00 the same day; due exactly then.
+        assert_eq!(cron_next_run(created, None, ms(24, 7, 30), next), Some(ms(24, 8, 0)));
+        // Ran at 08:00 → tomorrow.
+        assert_eq!(cron_next_run(created, Some(ms(24, 8, 0)), ms(24, 9, 0), next), Some(ms(25, 8, 0)));
+        // ADBoard came back at 08:03: still within the grace, runs now.
+        assert_eq!(cron_next_run(created, Some(ms(24, 8, 0)), ms(25, 8, 3), next), Some(ms(25, 8, 0)));
+        // Came back at 15:00: today's 08:00 is skipped, next is tomorrow.
+        assert_eq!(cron_next_run(created, Some(ms(24, 8, 0)), ms(25, 15, 0), next), Some(ms(26, 8, 0)));
+        // Through the JSON the browser saves; a bad expression never fires.
+        let schedule = json!({ "id": "c", "kind": "cron", "cron": "*/5 * * * *", "at": 0, "enabled": true });
+        assert!(next_run_at(&schedule, 10 * 60_000).is_some());
+        let bad = json!({ "id": "c", "kind": "cron", "cron": "nope", "at": 0, "enabled": true });
+        assert_eq!(next_run_at(&bad, 0), None);
     }
 }

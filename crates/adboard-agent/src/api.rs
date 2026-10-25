@@ -122,6 +122,7 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/macro/runs/{tab_id}/{action}", post(macro_run_action))
         .route("/api/macro/devices/{device_id}/{action}", post(macro_device_action))
         .route("/api/macro/queue/{action}", post(macro_queue_action))
+        .route("/api/macro/cron", get(macro_cron_preview))
         .route("/api/events", get(events_list))
         .route("/api/events/summary", get(events_summary))
         .route("/api/events/macros", get(events_macros))
@@ -1015,6 +1016,35 @@ async fn notifications_test(State(state): State<AppState>, body: Option<Json<Tes
     match crate::notify::send_test(url, &state.inner.host_name).await {
         Ok(message) => Json(serde_json::json!({ "ok": true, "message": message })).into_response(),
         Err(error) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({ "ok": false, "error": error }))).into_response(),
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct CronQuery {
+    expr: String,
+    #[serde(default)]
+    count: Option<usize>,
+}
+
+/// GET /api/macro/cron?expr=…&count=3 — check a cron expression and list its
+/// next runs on this computer's clock (the clock schedules run on).
+async fn macro_cron_preview(Query(query): Query<CronQuery>) -> Response {
+    match crate::cron::parse(&query.expr) {
+        Ok(cron) => {
+            let mut next = Vec::new();
+            let mut after = crate::macro_runner::now_ms();
+            for _ in 0..query.count.unwrap_or(3).clamp(1, 10) {
+                match crate::cron::next_local(&cron, after) {
+                    Some(t) => {
+                        next.push(t);
+                        after = t;
+                    }
+                    None => break,
+                }
+            }
+            Json(serde_json::json!({ "next": next, "utcOffsetMinutes": crate::cron::local_offset_minutes() })).into_response()
+        }
+        Err(error) => auth_error(StatusCode::BAD_REQUEST, &error),
     }
 }
 

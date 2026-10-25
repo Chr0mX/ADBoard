@@ -1262,6 +1262,10 @@ impl AppState {
                     device,
                     "Download/\nDCIM/\nPictures/\nMovies/\nAndroid/\nScreenshot_2026-09-28-14-08-00-very-long-camera-roll-name.png\n".into(),
                 ),
+                // Mock phones "open" apps so macros with app steps can be tried.
+                "launch" | "forceStop" if arg.is_some_and(crate::device_ops::valid_package) => {
+                    op_ok(device, format!("{} {} (mock phone)", if op == "launch" { "opened" } else { "stopped" }, arg.unwrap_or_default()))
+                }
                 "screenshot" if arg != Some("device") => {
                     match crate::device_ops::write_placeholder_screenshot(
                         &crate::device_ops::files_root(),
