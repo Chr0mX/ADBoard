@@ -35,7 +35,8 @@ export class MseH264Player {
   private painted = false;
 
   constructor(
-    private canvas: () => HTMLCanvasElement | null,
+    /** Called on every animation frame with the playing video. */
+    private paint: (source: HTMLVideoElement, width: number, height: number) => void,
     private onSize: (
       size: { width: number; height: number },
       source: "sps" | "frame",
@@ -239,16 +240,10 @@ export class MseH264Player {
 
   private draw = () => {
     if (this.closed) return;
-    const canvas = this.canvas();
     const width = this.video.videoWidth;
     const height = this.video.videoHeight;
-    if (canvas && width > 0 && height > 0) {
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(this.video, 0, 0, width, height);
+    if (width > 0 && height > 0) {
+      this.paint(this.video, width, height);
       this.catchUp();
       this.onSize({ width, height }, "frame");
       if (!this.painted) {

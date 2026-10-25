@@ -33,7 +33,7 @@ Application
 │   ├── adboard-app.tsx
 │   ├── phone-screen.tsx
 │   ├── desk/*
-│   ├── hooks/use-device-video.ts
+│   ├── hooks/use-device-video.ts   one shared stream per phone (lib/video/hub.ts)
 │   └── lib/api/{client,auth}.ts
 └── Data (data_dir.rs, shared_store.rs, migrate.rs; see docs/storage.md)
     ├── %LOCALAPPDATA%\ADBoard\macros         one .json per touch macro

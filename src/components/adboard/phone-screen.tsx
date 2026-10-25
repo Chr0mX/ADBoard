@@ -44,7 +44,6 @@ import type {
   PointerPhase,
   PointerTool,
   SessionStatus,
-  StreamStats,
   TapBroadcast,
 } from "@/lib/devices/types";
 import { devicesClient } from "@/lib/api/client";
@@ -112,7 +111,6 @@ interface PhoneScreenProps {
     tool: PointerTool;
     replay?: boolean;
   }) => void | Promise<unknown>;
-  onStats?: (stats: StreamStats) => void;
   /** Grid view: who receives touches (Selected / Multi / All) and per-tile toggles. */
   controlMode?: ControlMode;
   onControlModeChange?: (mode: ControlMode) => void;
@@ -154,7 +152,6 @@ export function PhoneScreen({
   cursorMode = false,
   onCursorModeChange,
   onPointer,
-  onStats,
   controlsDock = "bottom",
   controlMode,
   onControlModeChange,
@@ -197,12 +194,10 @@ export function PhoneScreen({
   const [capturing, setCapturing] = useState(false);
   const [screenRecording, setScreenRecording] = useState(false);
 
-  const { canvasRef, status, decodeState, error: videoError, configured, frameSize, frameSizeRef, stats } =
-    useDeviceVideo(device?.serial, refreshToken);
-
-  useEffect(() => {
-    onStats?.(stats);
-  }, [onStats, stats]);
+  // Grid view shows its own tiles; decoding the big screen too would run a
+  // second decoder for the same phone.
+  const { canvasRef, status, decodeState, error: videoError, configured, frameSize, frameSizeRef } =
+    useDeviceVideo(gridView ? null : device?.serial, refreshToken);
 
   const offline = !device || device.status !== "online";
   const offlineCopy = offlineOverlayCopy(device);
@@ -1520,7 +1515,6 @@ export function PhoneScreen({
               <StatusBar
                 device={device}
                 session={session}
-                stats={stats}
                 safeBottom={false}
                 compact
                 marquee
@@ -1546,7 +1540,6 @@ export function PhoneScreen({
         <FloatingLayer
           device={device}
           session={session}
-          stats={stats}
           statsMode={statsMode}
           onStatsModeChange={onStatsModeChange}
           targetIds={targetIds}

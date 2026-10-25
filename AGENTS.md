@@ -24,6 +24,6 @@ Checks:
 
 - `cargo test --workspace` is the Rust suite.
 - `npx next typegen && npx tsc --noEmit` typechecks the UI. `next typegen` (also run by `next dev` / `next build`) generates `LayoutProps` and `next-env.d.ts`.
-- `npm run lint` currently fails on a pre-existing `react-hooks/set-state-in-effect` error in `src/hooks/use-device-video.ts`.
+- `npm run lint` currently fails on pre-existing `react-hooks/refs` errors in `src/components/adboard/phone-screen.tsx` (and lints `dist/windows/ui`); lint changed files with `npx eslint <files>`.
 
 `make fetch-deps` downloads ADB and scrcpy into `./temp/` for real-device work. It is not required for the mock fleet.

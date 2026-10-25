@@ -2,11 +2,13 @@
 
 import type { Device, SessionStatus, StreamStats } from "@/lib/devices/types";
 import { streamStatFields } from "@/lib/ui/stream-stats-format";
+import { useVideoStats } from "@/lib/video/hub";
 import { cn } from "@/lib/utils";
 
 interface StatusBarProps {
   device: Device | null;
   session?: SessionStatus | null;
+  /** Overrides the live stream's own stats (read from the video hub). */
   stats?: StreamStats | null;
   /** Pad for the home indicator when this bar is the bottommost chrome. */
   safeBottom?: boolean;
@@ -54,7 +56,9 @@ export function StatsLine({
   className?: string;
   marquee?: boolean;
 }) {
-  const fields = streamStatFields(device, session, stats);
+  // Only this line re-renders on each stats tick, not the screen around it.
+  const live = useVideoStats(device.serial);
+  const fields = streamStatFields(device, session, stats === undefined ? live : stats);
 
   return (
     <p

@@ -25,7 +25,13 @@ function createPipVideo(setActive: (on: boolean) => void) {
   video.dataset.pipVideo = "1";
   video.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none";
   video.addEventListener("enterpictureinpicture", () => setActive(true));
-  video.addEventListener("leavepictureinpicture", () => setActive(false));
+  video.addEventListener("leavepictureinpicture", () => {
+    setActive(false);
+    // The capture keeps copying the canvas 30 times a second until stopped.
+    (video.srcObject as MediaStream | null)?.getTracks().forEach((track) => track.stop());
+    video.srcObject = null;
+    video.pause();
+  });
   document.body.appendChild(video);
   return video;
 }

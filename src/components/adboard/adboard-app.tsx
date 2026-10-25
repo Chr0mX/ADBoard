@@ -3,7 +3,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { StreamStats } from "@/lib/devices/types";
 import { ControlHeader } from "@/components/adboard/control-header";
 import { ControlModes } from "@/components/adboard/control-modes";
 import { DeviceGrid } from "@/components/adboard/device-grid";
@@ -109,7 +108,6 @@ export function ADBoardApp() {
   const mobileStatsMode = parseMobileStatsMode(storedStatsMode);
   const setMobileStatsMode = (mode: MobileStatsMode) => setStoredStatsMode(mode);
 
-  const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
   const [storedSection, setStoredSection] = useStoredString("adboard-section");
   const section = asSection(storedSection);
   const [focusTool, setFocusTool] = useState<string | null>(null);
@@ -326,7 +324,6 @@ export function ADBoardApp() {
                 cursorMode={cursorMode}
                 onCursorModeChange={setCursorMode}
                 onPointer={onPointer}
-                onStats={setStreamStats}
                 controlsDock={
                   dockedScreens && devicesCollapsed && !macroDockSide
                     ? "right"
@@ -505,7 +502,6 @@ export function ADBoardApp() {
         <StatusBar
           device={activeDevice}
           session={activeSession}
-          stats={streamStats}
           safeBottom
           className="justify-start"
         />

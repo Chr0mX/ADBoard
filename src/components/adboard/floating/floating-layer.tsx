@@ -6,12 +6,11 @@ import { ControlPanelFloat } from "@/components/adboard/floating/control-panel-f
 import type { MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import { repairEdgeDockedFloatPrefs } from "@/lib/ui/floating-prefs-repair";
 import type { DeskSection } from "@/components/adboard/desk/desk-context";
-import type { Device, SessionStatus, StreamStats } from "@/lib/devices/types";
+import type { Device, SessionStatus } from "@/lib/devices/types";
 
 export interface FloatingLayerProps {
   device: Device | null;
   session?: SessionStatus | null;
-  stats?: StreamStats | null;
   statsMode?: MobileStatsMode;
   onStatsModeChange?: (mode: MobileStatsMode) => void;
   targetIds: string[];

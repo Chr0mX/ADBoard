@@ -7,7 +7,9 @@ Architecture: [architecture.md](./architecture.md). Run instructions and video f
 `src/lib/api/client.ts` exports `DevicesClient` (list / tap / nav / sessions / subscribe).
 Auth for the agent lives in `src/lib/api/auth.ts` (`x-adboard-token` from `/api/bootstrap`).
 
-Video is a separate WS: `src/hooks/use-device-video.ts` → `/ws/devices/{serial}/video` (Annex-B H264 + WebCodecs).
+Video is a separate WS: `src/lib/video/hub.ts` → `/ws/devices/{serial}/video` (Annex-B H264 + WebCodecs, MSE on plain-http LAN).
+Each phone has one socket and one decoder per page, shared by every view of it (main screen, grid tile, macro preview) through `src/hooks/use-device-video.ts`; live fps/bitrate come from `useVideoStats`, which re-renders only the stats line.
+The decoder holds at most 3 frames (`src/lib/video/backpressure.ts`). Past that, or while the page is hidden, frames are dropped until the next keyframe, and the agent is asked for one so the picture comes back quickly.
 
 ## Toggle design system
 

@@ -667,8 +667,7 @@ function TouchScreenTile({
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(
     null,
   );
-  const { canvasRef, configured, decodeState, frameSize, frameSizeRef, stats } =
-    useDeviceVideo(device.serial);
+  const { canvasRef, configured, decodeState, frameSize, frameSizeRef } = useDeviceVideo(device.serial);
   const width = frameSize?.width || 9;
   const height = frameSize?.height || 16;
   const live = configured && decodeState === "decoding";
@@ -801,7 +800,7 @@ function TouchScreenTile({
             {device.name}
           </span>
           <div data-tile-stats={device.id} className="min-w-0 flex-1 overflow-hidden">
-            <StatsLine device={device} stats={stats} className="truncate text-[11px] text-[var(--pc-muted)]" />
+            <StatsLine device={device} className="truncate text-[11px] text-[var(--pc-muted)]" />
           </div>
           <Button
             type="button"
@@ -917,7 +916,6 @@ function TouchScreenTile({
       <div data-tile-stats={device.id} className="shrink-0 border-t border-[var(--pc-line)] px-1.5 py-0.5">
         <StatsLine
           device={device}
-          stats={stats}
           className="text-[11px] text-[var(--pc-muted)]"
         />
       </div>
