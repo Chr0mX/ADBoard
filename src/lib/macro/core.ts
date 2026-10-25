@@ -6,11 +6,17 @@
  * format reads Auto Clicker (com.truedevelopersstudio.automatictap) config
  * exports and ADBoard's older Automate macros.
  *
+ * Text steps (`kind: "text"`) find text on the screen (OCR on the agent)
+ * instead of touching a fixed point, and can branch on what they find.
+ *
  * Pure module: no React, no browser APIs, so it runs under `node --test`.
  */
 
 export const MACRO_FORMAT = "adboard-macros";
-export const MACRO_VERSION = 1;
+/** Newest file format this ADBoard reads. Files without text steps are still written as 1. */
+export const MACRO_VERSION = 2;
+/** Format 2 added text steps. */
+const TEXT_STEPS_VERSION = 2;
 export const MAX_FINGERS = 10;
 export const MAX_STEPS = 500;
 export const MAX_TABS = 50;
@@ -19,6 +25,11 @@ export const MAX_TOUCH_MS = 60_000;
 export const MAX_DELAY_MS = 3_600_000;
 export const MIN_REFERENCE = 100;
 export const MAX_REFERENCE = 8192;
+export const MAX_TEXT_WAIT_MS = 600_000;
+export const MIN_TEXT_INTERVAL_MS = 250;
+export const MAX_TEXT_INTERVAL_MS = 60_000;
+export const MAX_TEXTS = 10;
+export const MAX_TEXT_LENGTH = 200;
 
 export interface Size {
   width: number;
@@ -42,10 +53,59 @@ export interface MacroStep {
   id: string;
   label: string;
   enabled: boolean;
-  /** One finger is single-touch; more play at the same time. */
+  /** One finger is single-touch; more play at the same time. Empty for text steps. */
   fingers: MacroFinger[];
   /** Wait after the step, before the next one. */
   delayMs: number;
+  /** Missing (older macros) means touch. */
+  kind?: "touch" | "text";
+  text?: TextStep;
+}
+
+/**
+ * tap: tap the text · wait: until it shows · gone: until it is gone ·
+ * check: look and branch · read: store the text in a variable.
+ */
+export type TextAction = "tap" | "wait" | "gone" | "check" | "read";
+/** contains: anywhere in a line · exact: whole words · regex: a regular expression. */
+export type TextMatchMode = "contains" | "exact" | "regex";
+
+/** Where a text step goes next. */
+export interface StepOutcome {
+  go: "next" | "step" | "end" | "fail";
+  /** For `step`. */
+  stepId?: string;
+}
+
+/** A rectangle in reference pixels. */
+export interface RefArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface TextStep {
+  action: TextAction;
+  /** Any of these matches. `{name}` is replaced by a value a Read step stored. */
+  texts: string[];
+  match: TextMatchMode;
+  caseSensitive: boolean;
+  /** Look only here. Missing is the whole screen. */
+  area?: RefArea;
+  /** How long to keep looking; 0 looks once. */
+  timeoutMs: number;
+  /** Time between looks. */
+  intervalMs: number;
+  /** Tap: from the text's center, in reference pixels. */
+  offsetX: number;
+  offsetY: number;
+  /** Read: variable to store the text in. */
+  variable: string;
+  /** When the step's condition is met (found, gone, read). */
+  onSuccess: StepOutcome;
+  /** When it is not met in time. */
+  onFailure: StepOutcome;
 }
 
 export type StopMode = "infinite" | "time" | "cycles";
@@ -157,6 +217,10 @@ export function newTab(name: string, patch: Partial<MacroTab> = {}): MacroTab {
 /** Copy with fresh ids so it never shares state with the original. */
 export function cloneTab(tab: MacroTab, name = tab.name): MacroTab {
   const now = Date.now();
+  const steps = tab.steps.map(cloneStep);
+  // "Go to step" points at the copies, not the original tab's steps.
+  const ids = new Map(tab.steps.map((s, i) => [s.id, steps[i].id]));
+  const remap = (o: StepOutcome): StepOutcome => (o.go === "step" && o.stepId && ids.has(o.stepId) ? { ...o, stepId: ids.get(o.stepId) } : o);
   return {
     ...tab,
     id: macroId("tab"),
@@ -165,19 +229,73 @@ export function cloneTab(tab: MacroTab, name = tab.name): MacroTab {
     stop: { ...tab.stop },
     targetIds: [...tab.targetIds],
     source: tab.source ? { ...tab.source } : undefined,
-    steps: tab.steps.map(cloneStep),
+    steps: steps.map((s) => (s.text ? { ...s, text: { ...s.text, onSuccess: remap(s.text.onSuccess), onFailure: remap(s.text.onFailure) } } : s)),
     createdAt: now,
     updatedAt: now,
   };
 }
 
 export function cloneStep(step: MacroStep): MacroStep {
-  return { ...step, id: macroId("s"), fingers: step.fingers.map((f) => ({ ...f, id: macroId("f") })) };
+  return {
+    ...step,
+    id: macroId("s"),
+    fingers: step.fingers.map((f) => ({ ...f, id: macroId("f") })),
+    ...(step.text
+      ? {
+          text: {
+            ...step.text,
+            texts: [...step.text.texts],
+            ...(step.text.area ? { area: { ...step.text.area } } : {}),
+            onSuccess: { ...step.text.onSuccess },
+            onFailure: { ...step.text.onFailure },
+          },
+        }
+      : {}),
+  };
 }
 
-export type StepKind = "tap" | "hold" | "swipe" | "multi";
+export function isTextStep(step: MacroStep): step is MacroStep & { kind: "text"; text: TextStep } {
+  return step.kind === "text" && step.text !== undefined;
+}
+
+const TEXT_DEFAULTS: Record<TextAction, Pick<TextStep, "timeoutMs" | "onSuccess" | "onFailure">> = {
+  tap: { timeoutMs: 10_000, onSuccess: { go: "next" }, onFailure: { go: "fail" } },
+  wait: { timeoutMs: 30_000, onSuccess: { go: "next" }, onFailure: { go: "fail" } },
+  gone: { timeoutMs: 30_000, onSuccess: { go: "next" }, onFailure: { go: "fail" } },
+  // Look once; the user picks where each answer goes.
+  check: { timeoutMs: 0, onSuccess: { go: "next" }, onFailure: { go: "next" } },
+  read: { timeoutMs: 0, onSuccess: { go: "next" }, onFailure: { go: "next" } },
+};
+
+/** The defaults a step gets when it switches to `action`. */
+export function textDefaults(action: TextAction) {
+  const d = TEXT_DEFAULTS[action];
+  return { timeoutMs: d.timeoutMs, onSuccess: { ...d.onSuccess }, onFailure: { ...d.onFailure } };
+}
+
+export function newTextStep(action: TextAction, patch: Partial<TextStep> = {}, step: Partial<MacroStep> = {}): MacroStep {
+  return newStep([], {
+    kind: "text",
+    text: {
+      action,
+      texts: [],
+      match: "contains",
+      caseSensitive: false,
+      intervalMs: 1000,
+      offsetX: 0,
+      offsetY: 0,
+      variable: action === "read" ? "text" : "",
+      ...textDefaults(action),
+      ...patch,
+    },
+    ...step,
+  });
+}
+
+export type StepKind = "tap" | "hold" | "swipe" | "multi" | "text";
 
 export function stepKind(step: MacroStep): StepKind {
+  if (isTextStep(step)) return "text";
   if (step.fingers.length > 1) return "multi";
   const f = step.fingers[0];
   if (f && f.toX !== undefined && f.toY !== undefined && (f.toX !== f.x || f.toY !== f.y)) return "swipe";
@@ -275,6 +393,25 @@ export function rescaleTab(tab: MacroTab, next: Size): MacroTab {
     jitterPx: round(tab.jitterPx * Math.min(sx, sy)),
     steps: tab.steps.map((step) => ({
       ...step,
+      ...(step.text
+        ? {
+            text: {
+              ...step.text,
+              offsetX: round(step.text.offsetX * sx),
+              offsetY: round(step.text.offsetY * sy),
+              ...(step.text.area
+                ? {
+                    area: {
+                      x: fx(step.text.area.x),
+                      y: fy(step.text.area.y),
+                      width: Math.max(1, fx(step.text.area.width)),
+                      height: Math.max(1, fy(step.text.area.height)),
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
       fingers: step.fingers.map((f) => ({
         ...f,
         x: fx(f.x),
@@ -389,10 +526,73 @@ function sanitizeFinger(raw: unknown, ref: Size, where: string, warnings: string
   return finger;
 }
 
+const TEXT_ACTIONS: TextAction[] = ["tap", "wait", "gone", "check", "read"];
+
+function sanitizeOutcome(raw: unknown, fallback: StepOutcome): StepOutcome {
+  if (!isObject(raw)) return { ...fallback };
+  const go = raw.go === "next" || raw.go === "step" || raw.go === "end" || raw.go === "fail" ? raw.go : fallback.go;
+  if (go !== "step") return { go };
+  const stepId = str(raw.stepId, "", 64);
+  return stepId ? { go, stepId } : { ...fallback };
+}
+
+function sanitizeTextStep(raw: unknown, ref: Size, where: string, warnings: string[]): TextStep | null {
+  if (!isObject(raw)) {
+    warnings.push(`${where}: text step has no settings, skipped`);
+    return null;
+  }
+  const action = TEXT_ACTIONS.includes(raw.action as TextAction) ? (raw.action as TextAction) : null;
+  if (!action) {
+    warnings.push(`${where}: unknown text action ${String(raw.action)}, skipped`);
+    return null;
+  }
+  const texts = (Array.isArray(raw.texts) ? raw.texts : [])
+    .filter((t): t is string => typeof t === "string")
+    .map((t) => t.slice(0, MAX_TEXT_LENGTH))
+    .filter((t) => t.trim() !== "")
+    .slice(0, MAX_TEXTS);
+  const defaults = TEXT_DEFAULTS[action];
+  const step: TextStep = {
+    action,
+    texts,
+    match: raw.match === "exact" || raw.match === "regex" ? raw.match : "contains",
+    caseSensitive: raw.caseSensitive === true,
+    timeoutMs: clamp(round(num(raw.timeoutMs, defaults.timeoutMs)), 0, MAX_TEXT_WAIT_MS),
+    intervalMs: clamp(round(num(raw.intervalMs, 1000)), MIN_TEXT_INTERVAL_MS, MAX_TEXT_INTERVAL_MS),
+    offsetX: clamp(round(num(raw.offsetX, 0)), -ref.width, ref.width),
+    offsetY: clamp(round(num(raw.offsetY, 0)), -ref.height, ref.height),
+    variable: /^[A-Za-z_][A-Za-z0-9_]{0,31}$/.test(String(raw.variable ?? "")) ? String(raw.variable) : "",
+    onSuccess: sanitizeOutcome(raw.onSuccess, defaults.onSuccess),
+    onFailure: sanitizeOutcome(raw.onFailure, defaults.onFailure),
+  };
+  if (isObject(raw.area)) {
+    const x = clamp(round(num(raw.area.x, 0)), 0, ref.width);
+    const y = clamp(round(num(raw.area.y, 0)), 0, ref.height);
+    const width = clamp(round(num(raw.area.width, ref.width)), 1, ref.width - x || 1);
+    const height = clamp(round(num(raw.area.height, ref.height)), 1, ref.height - y || 1);
+    step.area = { x, y, width, height };
+  }
+  if (texts.length === 0 && action !== "read") warnings.push(`${where}: text step has no text to look for`);
+  return step;
+}
+
 function sanitizeStep(raw: unknown, ref: Size, where: string, warnings: string[]): MacroStep | null {
   if (!isObject(raw)) {
     warnings.push(`${where}: step is not an object, skipped`);
     return null;
+  }
+  if (raw.kind === "text") {
+    const text = sanitizeTextStep(raw.text, ref, where, warnings);
+    if (!text) return null;
+    return {
+      id: str(raw.id, "", 64) || macroId("s"),
+      label: str(raw.label, "", 80),
+      enabled: raw.enabled !== false,
+      fingers: [],
+      delayMs: clamp(round(num(raw.delayMs, 300)), 0, MAX_DELAY_MS),
+      kind: "text",
+      text,
+    };
   }
   const rawFingers = Array.isArray(raw.fingers) ? raw.fingers : [];
   if (rawFingers.length > MAX_FINGERS) {
@@ -614,8 +814,12 @@ function fromAutoClicker(configs: unknown[], reference: Size | undefined, file: 
 export function toAutoClicker(tabs: MacroTab[], warnings: string[] = []): AutoClickerConfig[] {
   return tabs.map((tab, index) => {
     const targets: AutoClickerTarget[] = [];
+    const textSteps = tab.steps.filter((s) => s.enabled && isTextStep(s)).length;
+    if (textSteps > 0) {
+      warnings.push(`"${tab.name}": ${textSteps} text step${textSteps === 1 ? " was" : "s were"} left out (Auto Clicker only plays touches)`);
+    }
     for (const step of tab.steps) {
-      if (!step.enabled) continue;
+      if (!step.enabled || isTextStep(step)) continue;
       if (step.fingers.length > 1) {
         warnings.push(`"${tab.name}": a ${step.fingers.length}-finger step was split into separate targets (Auto Clicker has no multi-touch)`);
       }
@@ -810,7 +1014,8 @@ export function parseMacroFile(text: string, options: ImportOptions = {}): Impor
 export function exportMacroFile(tabs: MacroTab[], now = new Date()): string {
   const file: MacroFile = {
     format: MACRO_FORMAT,
-    version: MACRO_VERSION,
+    // Touch-only files stay at 1, so older ADBoards still read them.
+    version: tabs.some((t) => t.steps.some(isTextStep)) ? TEXT_STEPS_VERSION : 1,
     app: "ADBoard",
     exportedAt: now.toISOString(),
     tabs,
@@ -833,7 +1038,7 @@ export interface RunDevice {
   resolution: Size;
 }
 
-export type DeviceRunState = "waiting" | "ok" | "stub" | "error" | "skipped" | "busy";
+export type DeviceRunState = "waiting" | "ok" | "stub" | "error" | "skipped" | "busy" | "reading" | "found" | "missing";
 
 export interface DeviceRunStatus {
   name: string;
@@ -857,6 +1062,26 @@ export interface RunSnapshot {
   deadline?: number;
   message?: string;
   devices: Record<string, DeviceRunStatus>;
+  /** Agent runs: the text step looking now, or the last one decided. */
+  text?: TextRunStatus;
+  /** Agent runs: values stored by Read text steps. */
+  vars?: Record<string, string>;
+}
+
+export interface TextRunStatus {
+  stepId: string;
+  deviceId: string;
+  action: TextAction;
+  state: "looking" | "met" | "missed" | "failed";
+  /** Screen reads in this step so far. */
+  looks: number;
+  detail?: string;
+  matched?: string;
+  /** Where the text was found, 0–1 of that phone's screen. */
+  box?: { x: number; y: number; width: number; height: number };
+  readMs?: number;
+  /** The picture had not changed, so the last read's text was reused. */
+  cached: boolean;
 }
 
 export interface SendResult {
@@ -1011,6 +1236,8 @@ export async function runMacroTab(options: RunOptions): Promise<RunSnapshot> {
       }
       if (timeUp()) return finish("done", "Time is up");
       const step = steps[index];
+      // OCR runs on the agent; this in-browser runner only plays touches.
+      if (isTextStep(step)) return finish("failed", `Step ${index + 1}: text steps need the ADBoard agent`);
       snap.stepIndex = index;
       emit();
 

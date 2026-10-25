@@ -11,6 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # Lets the OCR test read a real screenshot with the real models.
+      - name: OCR models
+        run: FETCH_ONLY=ocr FETCH_TARGET=linux bash scripts/fetch-deps.sh
       - name: Cargo test
         run: cargo test --workspace
 

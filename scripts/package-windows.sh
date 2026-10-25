@@ -33,12 +33,12 @@ if [[ ! -f "$EXE_SRC" ]]; then
   exit 1
 fi
 
-mkdir -p "$DIST/vendor/adb" "$DIST/vendor/scrcpy"
+mkdir -p "$DIST/vendor/adb" "$DIST/vendor/scrcpy" "$DIST/vendor/ocr"
 cp -f "$EXE_SRC" "$DIST/ADBoard.exe"
 
 # Ensure placeholder docs exist (fresh clone / zip)
 for f in README.md Start-ADBoard.ps1 run.bat .env.example \
-         vendor/adb/README.md vendor/scrcpy/README.md; do
+         vendor/adb/README.md vendor/scrcpy/README.md vendor/ocr/README.md; do
   if [[ ! -f "$DIST/$f" ]]; then
     echo "error: missing committed pack file: $DIST/$f" >&2
     exit 1

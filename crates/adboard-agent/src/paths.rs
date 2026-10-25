@@ -3,6 +3,7 @@
 //! Layout (populated by `make fetch-deps` / `scripts/fetch-deps.*`):
 //! - Linux: `tools/linux/adb/adb`, `tools/linux/scrcpy/scrcpy` (+ `scrcpy-server`)
 //! - Windows pack: `dist/windows/vendor/adb/adb.exe`, `dist/windows/vendor/scrcpy/scrcpy.exe`
+//! - OCR models (text steps): `tools/ocr/`, `dist/windows/vendor/ocr/`
 //!
 //! Also checks next to the running executable (for a copied `dist/windows/` folder).
 
@@ -110,6 +111,17 @@ pub fn vendored_scrcpy() -> Option<PathBuf> {
     first_existing(&candidates)
 }
 
+/// Folder with the OCR models (`text-detection.rten` + `text-recognition.rten`).
+pub fn vendored_ocr_models() -> Option<PathBuf> {
+    let mut dirs = Vec::new();
+    for root in project_roots() {
+        dirs.push(root.join("tools/ocr"));
+        dirs.push(root.join("dist/windows/vendor/ocr"));
+        dirs.push(root.join("vendor/ocr"));
+    }
+    dirs.into_iter().find(|d| d.join(crate::ocr::DETECTION_MODEL).is_file() && d.join(crate::ocr::RECOGNITION_MODEL).is_file())
+}
+
 /// Vendored scrcpy-server jar/blob.
 pub fn vendored_scrcpy_server() -> Option<PathBuf> {
     let mut dirs = Vec::new();
@@ -151,6 +163,7 @@ mod tests {
         let _ = vendored_adb();
         let _ = vendored_scrcpy();
         let _ = vendored_scrcpy_server();
+        let _ = vendored_ocr_models();
     }
 }
 

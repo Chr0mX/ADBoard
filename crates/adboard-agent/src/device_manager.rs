@@ -944,7 +944,7 @@ impl AppState {
         Ok(broadcast)
     }
 
-    async fn local_serial_set(&self) -> std::collections::HashSet<String> {
+    pub(crate) async fn local_serial_set(&self) -> std::collections::HashSet<String> {
         self.inner
             .devices
             .read()
@@ -2702,7 +2702,7 @@ fn install_error(device: &Device, detail: String) -> NavTargetResult {
     }
 }
 
-async fn http_post_bytes(
+pub(crate) async fn http_post_bytes(
     url: &str,
     headers: &[(&str, &str)],
     body: &[u8],

@@ -531,6 +531,7 @@ function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: 
               tab={tab}
               selectedStepId={selectedStepId}
               canTest={!running && targets.some((d) => d.status === "online")}
+              readDevice={previewDevice ?? targets.find((d) => d.status === "online") ?? null}
               onSelect={setSelectedStepId}
               onChange={setSteps}
               onTest={(stepId) => void startRun(tab, targets, stepId)}
@@ -688,7 +689,41 @@ const STATE_LABEL: Record<string, string> = {
   error: "Failed",
   skipped: "Skipped",
   busy: "Busy",
+  reading: "Reading screen",
+  found: "Found text",
+  missing: "Text not found",
 };
+
+const TEXT_STATE_TONE: Record<string, string> = {
+  met: "text-[var(--pc-signal)]",
+  missed: "text-[var(--pc-warn)]",
+  failed: "text-[var(--pc-warn)]",
+};
+
+/** The text step looking now (or last decided), and the values Read steps stored. */
+export function TextRunLine({ snapshot, steps }: { snapshot: RunSnapshot; steps: MacroStep[] }) {
+  const text = snapshot.text;
+  const vars = Object.entries(snapshot.vars ?? {});
+  if (!text && vars.length === 0) return null;
+  const at = text ? steps.findIndex((s) => s.id === text.stepId) : -1;
+  return (
+    <div className="flex flex-col gap-0.5 font-mono text-[11px]" data-macro-text={text?.state}>
+      {text && (
+        <p className={cn("text-[var(--pc-muted)]", TEXT_STATE_TONE[text.state])}>
+          {at >= 0 ? `Step ${at + 1} · ` : ""}
+          {text.state === "looking" ? `looking (${text.looks})` : text.detail}
+          {text.state === "looking" && text.detail ? ` · ${text.detail}` : ""}
+          {text.readMs !== undefined ? ` · ${text.readMs} ms${text.cached ? " (unchanged)" : ""}` : ""}
+        </p>
+      )}
+      {vars.length > 0 && (
+        <p className="truncate text-[var(--pc-ink)]" data-macro-vars>
+          {vars.map(([name, value]) => `${name} = “${value.length > 40 ? `${value.slice(0, 40)}…` : value}”`).join(" · ")}
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** Wall clock that ticks while `active`, for elapsed / remaining time. */
 function useNow(active: boolean) {
@@ -1049,14 +1084,15 @@ export function RunStatus({ tab }: { tab: MacroTab }) {
             </div>
           )}
           {snapshot.message && <p className="text-xs text-[var(--pc-muted)]">{snapshot.message}</p>}
+          <TextRunLine snapshot={snapshot} steps={tab.steps.filter((s) => s.enabled)} />
           <ul className="flex flex-col gap-0.5 font-mono text-[11px]" data-macro-devices>
             {Object.entries(snapshot.devices).map(([id, row]) => (
               <li key={id} className="flex items-baseline gap-2" data-macro-device={row.name} data-state={row.state}>
                 <span className="w-24 shrink-0 truncate text-[var(--pc-ink)]">{row.name}</span>
                 <span
                   className={cn(
-                    row.state === "ok" && "text-[var(--pc-signal)]",
-                    row.state === "error" && "text-[var(--pc-warn)]",
+                    (row.state === "ok" || row.state === "found") && "text-[var(--pc-signal)]",
+                    (row.state === "error" || row.state === "missing") && "text-[var(--pc-warn)]",
                     (row.state === "skipped" || row.state === "busy" || row.state === "stub") && "text-[var(--pc-muted)]",
                   )}
                 >

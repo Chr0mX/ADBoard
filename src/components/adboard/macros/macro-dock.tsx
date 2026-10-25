@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ExternalLink, Pause, Play, Square } from "lucide-react";
-import { stepKind, stepTouchMs, type MacroTab } from "@/lib/macro/core";
+import { isTextStep, stepTouchMs, type MacroTab } from "@/lib/macro/core";
 import { setActiveTab, useMacroWorkspace } from "@/lib/macro/store";
 import {
   isRunning,
@@ -23,12 +23,15 @@ import { cn, sentenceCase } from "@/lib/utils";
 import { useDeskOptional } from "@/components/adboard/desk/desk-context";
 import { IconButton, Segmented, formatMs, stepColor } from "@/components/adboard/macros/fields";
 import { LivePreview } from "@/components/adboard/macros/preview";
+import { stepTitle } from "@/components/adboard/macros/step-list";
+import { textStepSummary } from "@/components/adboard/macros/text-step";
 import { PhoneRunsCard } from "@/components/adboard/macros/phone-runs-card";
 import {
   LoopControl,
   MacroSyncNote,
   PauseButton,
   RunStatus,
+  TextRunLine,
   focusMacroPreview,
   runLabel,
 } from "@/components/adboard/macros/macros-panel";
@@ -217,16 +220,19 @@ export function MacroDock({
 
       {phoneMode ? (
         run && (
-          <p className="flex flex-wrap gap-x-3 font-mono text-[11px]" data-macro-dock-status={run.status} aria-live="polite">
- <span className={cn("font-semibold ", STATUS_TONE[run.status] ?? "text-[var(--pc-muted)]")}>{sentenceCase(run.status)}</span>
-            <span className="truncate">“{run.tabName}”</span>
-            <span>cycle {run.cycle}</span>
-            <span>
-              step {Math.min(run.stepIndex + 1, run.stepCount)}/{run.stepCount}
-            </span>
-            <span data-macro-dock-touches={run.touches}>{run.touches} touches</span>
-            {run.message && !phoneLive && <span className="text-[var(--pc-muted)]">{run.message}</span>}
-          </p>
+          <>
+            <p className="flex flex-wrap gap-x-3 font-mono text-[11px]" data-macro-dock-status={run.status} aria-live="polite">
+   <span className={cn("font-semibold ", STATUS_TONE[run.status] ?? "text-[var(--pc-muted)]")}>{sentenceCase(run.status)}</span>
+              <span className="truncate">“{run.tabName}”</span>
+              <span>cycle {run.cycle}</span>
+              <span>
+                step {Math.min(run.stepIndex + 1, run.stepCount)}/{run.stepCount}
+              </span>
+              <span data-macro-dock-touches={run.touches}>{run.touches} touches</span>
+              {run.message && !phoneLive && <span className="text-[var(--pc-muted)]">{run.message}</span>}
+            </p>
+            <TextRunLine snapshot={run} steps={(workspace.tabs.find((t) => t.id === run.tabId) ?? tab).steps.filter((s) => s.enabled)} />
+          </>
         )
       ) : (
         <RunStatus tab={tab} />
@@ -293,7 +299,6 @@ function DockSteps({
   onTest: (id: string) => void;
 }) {
   if (tab.steps.length === 0) return null;
-  const KIND = { tap: "Tap", hold: "Hold", swipe: "Swipe", multi: "Multi-touch" } as const;
   return (
     <ol className="flex flex-col gap-1" aria-label="Steps" data-macro-dock-steps>
       {tab.steps.map((step, index) => {
@@ -320,10 +325,16 @@ function DockSteps({
                 {index + 1}
               </span>
               <span className="min-w-0 truncate text-xs text-[var(--pc-ink)]">
-                {step.label || KIND[stepKind(step)]}
+                {stepTitle(step)}
                 <span className="ml-1.5 font-mono text-[11px] text-[var(--pc-muted)]">
-                  {step.fingers.length > 1 ? `${step.fingers.length}f · ` : ""}
-                  {formatMs(stepTouchMs(step))} · {formatMs(step.delayMs)}
+                  {isTextStep(step) ? (
+                    textStepSummary(step.text, tab.steps)
+                  ) : (
+                    <>
+                      {step.fingers.length > 1 ? `${step.fingers.length}f · ` : ""}
+                      {formatMs(stepTouchMs(step))} · {formatMs(step.delayMs)}
+                    </>
+                  )}
                 </span>
               </span>
             </button>

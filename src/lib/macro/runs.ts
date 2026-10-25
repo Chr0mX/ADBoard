@@ -314,6 +314,8 @@ function combine(list: AgentRun[]): RunSnapshot | null {
     deadline: lead.deadline,
     message: notes.length > 0 ? notes.join(" · ") : lead.message,
     devices,
+    text: lead.text,
+    vars: Object.assign({}, ...list.map((r) => r.vars ?? {})),
   };
 }
 

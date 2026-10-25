@@ -1,4 +1,5 @@
-# Download ADB + scrcpy into ./temp/, install into dist/windows/vendor/.
+# Download ADB + scrcpy + the OCR models (macro text steps) into ./temp/,
+# install into dist/windows/vendor/.
 # Usage (PowerShell, from repo root):
 #   .\scripts\fetch-deps.ps1
 #   .\scripts\fetch-deps.ps1 -Force
@@ -100,6 +101,33 @@ function Install-WindowsScrcpy {
     Write-Step "installed windows scrcpy $ver → $destDir"
 }
 
+# ocrs models (https://github.com/robertknight/ocrs-models, Apache-2.0), pinned by checksum.
+$OcrModels = @{
+    "text-detection.rten"   = "f15cfb56bd02c4bf478a20343986504a1f01e1665c2b3a0ad66340f054b1b5ca"
+    "text-recognition.rten" = "e484866d4cce403175bd8d00b128feb08ab42e208de30e42cd9889d8f1735a6e"
+}
+
+function Install-OcrModels {
+    $destDir = Join-Path $Root "dist\windows\vendor\ocr"
+    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+    foreach ($name in $OcrModels.Keys) {
+        $sum = $OcrModels[$name]
+        $dest = Join-Path $destDir $name
+        if ((Test-FileOk $dest) -and ((Get-FileHash -Algorithm SHA256 $dest).Hash.ToLower() -eq $sum) -and -not $Force) {
+            Write-Step "skip ocr model (present): $dest"
+            continue
+        }
+        $file = Join-Path $TempDir "downloads\$name"
+        Get-Download "https://ocrs-models.s3-accelerate.amazonaws.com/$name" $file
+        if ((Get-FileHash -Algorithm SHA256 $file).Hash.ToLower() -ne $sum) {
+            Remove-Item -Force $file
+            throw "checksum mismatch for $name (download removed; run again)"
+        }
+        Copy-Item -Force $file $dest
+        Write-Step "installed ocr model → $dest"
+    }
+}
+
 New-Item -ItemType Directory -Force -Path (Join-Path $TempDir "downloads") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $TempDir "extract") | Out-Null
 Write-Step "temp cache: $TempDir"
@@ -115,6 +143,7 @@ foreach ($t in $targets) {
     if ($t -eq "windows") {
         Install-WindowsAdb
         Install-WindowsScrcpy
+        Install-OcrModels
     }
 }
 

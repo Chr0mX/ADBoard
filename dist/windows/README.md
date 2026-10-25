@@ -17,6 +17,7 @@ README.md                  # this file
 vendor/
   adb/                     # put adb.exe (+ AdbWinApi.dll, AdbWinUsbApi.dll) here
   scrcpy/                  # put scrcpy.exe + scrcpy-server here
+  ocr/                     # OCR models for macro text steps (optional)
 ```
 
 Your macros, scripts, settings and logs are **not** in this folder: they live in
@@ -36,7 +37,7 @@ See [docs/storage.md](../../docs/storage.md).
 # or from WSL/Linux: make fetch-deps FETCH_TARGET=windows
 ```
 
-Caches under `./temp/`; installs into `vendor/adb/` and `vendor/scrcpy/`. See those READMEs for a manual download fallback.
+Caches under `./temp/`; installs into `vendor/adb/`, `vendor/scrcpy/` and `vendor/ocr/` (the models macro text steps read the screen with; touch macros work without them). See those READMEs for a manual download fallback.
 
 2. Enable **USB debugging** on each phone and accept the RSA prompt.
 

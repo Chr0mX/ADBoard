@@ -122,6 +122,8 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/macro/runs/{tab_id}/{action}", post(macro_run_action))
         .route("/api/macro/devices/{device_id}/{action}", post(macro_device_action))
         .route("/api/macro/queue/{action}", post(macro_queue_action))
+        .route("/api/ocr/status", get(ocr_status))
+        .route("/api/ocr/read", post(ocr_read))
         .route("/api/system/storage", get(crate::system_api::storage))
         .route("/api/system/open-folder", post(crate::system_api::open_folder))
         .route("/api/system/backup", post(crate::system_api::backup))
@@ -936,6 +938,58 @@ async fn macro_device_action(
         _ => return auth_error(StatusCode::NOT_FOUND, "unknown action"),
     };
     Json(serde_json::json!({ "ok": ok })).into_response()
+}
+
+/// GET /api/ocr/status — can this ADBoard read text (models installed)?
+async fn ocr_status(State(state): State<AppState>) -> Response {
+    Json(crate::ocr::status(&state).await).into_response()
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OcrReadBody {
+    device_id: String,
+    /// 0–1 of the screen; whole screen when missing.
+    #[serde(default)]
+    area: Option<crate::ocr::Area>,
+    /// Also report where these texts are (the step editor's highlight).
+    #[serde(default)]
+    query: Option<crate::ocr::TextQuery>,
+    /// Keep per-character boxes (a controller reading a phone on this host).
+    #[serde(default)]
+    with_chars: bool,
+}
+
+/// POST /api/ocr/read — the text on a phone's screen now, with boxes as 0–1
+/// of the screen (and the query's matches when one is given).
+async fn ocr_read(State(state): State<AppState>, Json(body): Json<OcrReadBody>) -> Response {
+    use crate::ocr::ReadErrorKind;
+    let mut screen = match crate::ocr::read_screen(&state, &body.device_id, body.area).await {
+        Ok(screen) => screen,
+        Err(error) => {
+            let status = match error.kind {
+                ReadErrorKind::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+                ReadErrorKind::UnknownDevice => StatusCode::NOT_FOUND,
+                ReadErrorKind::Failed => StatusCode::BAD_GATEWAY,
+            };
+            return auth_error(status, &error.message);
+        }
+    };
+    let matches = match &body.query {
+        Some(query) => match crate::ocr::find_matches(&screen.lines, query) {
+            Ok(found) => found,
+            Err(error) => return auth_error(StatusCode::BAD_REQUEST, &error),
+        },
+        None => Vec::new(),
+    };
+    if !body.with_chars {
+        screen.lines.iter_mut().for_each(|line| line.chars.clear());
+    }
+    let mut value = serde_json::to_value(&screen).unwrap_or_default();
+    if body.query.is_some() {
+        value["matches"] = serde_json::to_value(matches).unwrap_or_default();
+    }
+    Json(value).into_response()
 }
 
 /// POST /api/macro/runs/{tabId}/stop|pause|resume|forget
@@ -2035,6 +2089,65 @@ mod tests {
             "missing adb should be a clear error, got {text}"
         );
         assert!(text.contains("\"inject\":\"error\""), "{text}");
+    }
+
+    fn json_request(method: &str, uri: &str, token: &str, body: serde_json::Value) -> Request<Body> {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .header(TOKEN_HEADER, token)
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    /// The mock fleet has a sample screen, so text steps run end to end
+    /// without phones: read, match, and a macro that taps found text.
+    #[tokio::test]
+    async fn ocr_reads_the_mock_screen_and_a_macro_taps_found_text() {
+        let state = AppState::new(Role::Controller, "ocr-test".into(), "ocr-test".into(), 0, None);
+        let token = state.api_token().to_string();
+        let id = state.list_devices().await.into_iter().find(|d| d.status == adboard_protocol::DeviceStatus::Online).expect("online").id;
+        let app = router_with_auth(state, WebAuth::new(None, false));
+
+        let status = app.clone().oneshot(json_request("GET", "/api/ocr/status", &token, serde_json::Value::Null)).await.unwrap();
+        let status: serde_json::Value = serde_json::from_str(&body_text(status).await).unwrap();
+        assert_eq!((status["available"].as_bool(), status["engine"].as_str()), (Some(true), Some("mock")));
+
+        let read = json_request("POST", "/api/ocr/read", &token, serde_json::json!({ "deviceId": id, "query": { "texts": ["sign IN"] } }));
+        let response = app.clone().oneshot(read).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let screen: serde_json::Value = serde_json::from_str(&body_text(response).await).unwrap();
+        assert_eq!(screen["matches"].as_array().map(Vec::len), Some(1));
+        assert_eq!(screen["matches"][0]["text"], "Sign in");
+        assert!(screen["lines"][0].get("chars").is_none(), "char boxes only when asked");
+
+        let area = json_request("POST", "/api/ocr/read", &token, serde_json::json!({ "deviceId": id, "area": {"x": 0, "y": 0.8, "width": 1, "height": 0.2} }));
+        let screen: serde_json::Value = serde_json::from_str(&body_text(app.clone().oneshot(area).await.unwrap()).await).unwrap();
+        assert_eq!(screen["lines"].as_array().map(Vec::len), Some(1));
+
+        let unknown = json_request("POST", "/api/ocr/read", &token, serde_json::json!({ "deviceId": "nope" }));
+        assert_eq!(app.clone().oneshot(unknown).await.unwrap().status(), StatusCode::NOT_FOUND);
+        let bad = json_request("POST", "/api/ocr/read", &token, serde_json::json!({ "deviceId": id, "query": { "texts": ["("], "match": "regex" } }));
+        assert_eq!(app.clone().oneshot(bad).await.unwrap().status(), StatusCode::BAD_REQUEST);
+
+        let tab = serde_json::json!({
+            "id": "tab-ocr-api", "name": "OCR", "reference": {"width": 1080, "height": 2400},
+            "stop": {"mode": "cycles", "cycles": 1},
+            "steps": [{"id": "s1", "enabled": true, "fingers": [], "delayMs": 0, "kind": "text",
+                       "text": {"action": "tap", "texts": ["continue"], "match": "exact", "timeoutMs": 0}}]
+        });
+        let start = json_request("POST", &format!("/api/macro/devices/{id}/start"), &token, serde_json::json!({ "tab": tab }));
+        let response = app.clone().oneshot(start).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{}", body_text(response).await);
+        let done = crate::macro_runner::runs().wait_devices(std::slice::from_ref(&id)).await;
+        assert_eq!(done[0].status, "done", "{:?}", done[0].message);
+        assert_eq!(done[0].touches, 1);
+        let text = done[0].text.clone().unwrap();
+        assert_eq!(text.detail.as_deref(), Some("Tapped “Continue”"));
+        // Mock "Continue" is centered at x 0.5, y 0.715.
+        assert!((done[0].last_points[0].x - 0.5).abs() < 1e-6 && (done[0].last_points[0].y - 0.715).abs() < 1e-6);
+        assert_eq!(done[0].devices[&id].state, "stub", "the mock fleet does not send touches");
     }
 
     #[tokio::test]

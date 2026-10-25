@@ -8,6 +8,9 @@ import {
   exportAutoClickerFile,
   exportMacroFile,
   fromNormalized,
+  isTextStep,
+  newTextStep,
+  sanitizeTab,
   guessReference,
   newFinger,
   newStep,
@@ -17,6 +20,7 @@ import {
   placement,
   rescaleTab,
   runMacroTab,
+  toAutoClicker,
   createPauseGate,
   stepKind,
   toDevicePixels,
@@ -550,5 +554,105 @@ describe("runner", () => {
     });
     assert.equal(r.status, "failed");
     assert.match(r.message ?? "", /No enabled steps/);
+  });
+});
+
+describe("text steps", () => {
+  const login = () => {
+    const tab = newTab("Login", { reference: { width: 1080, height: 2400 } });
+    const tapSignIn = newTextStep("tap", { texts: ["Sign in"], area: { x: 0, y: 1200, width: 1080, height: 1200 }, offsetY: -40 });
+    const retry = newStep([newFinger(540, 600)]);
+    const check = newTextStep("check", { texts: ["Wrong password"], onSuccess: { go: "step", stepId: retry.id } });
+    tab.steps = [tapSignIn, check, newStep([newFinger(100, 100)]), retry];
+    return tab;
+  };
+
+  it("have defaults that fit each action", () => {
+    const tap = newTextStep("tap");
+    assert.equal(isTextStep(tap), true);
+    assert.equal(stepKind(tap), "text");
+    assert.deepEqual(tap.fingers, []);
+    assert.deepEqual([tap.text?.timeoutMs, tap.text?.onFailure.go], [10_000, "fail"]);
+    const check = newTextStep("check");
+    assert.deepEqual([check.text?.timeoutMs, check.text?.onSuccess.go, check.text?.onFailure.go], [0, "next", "next"]);
+    assert.equal(newTextStep("read").text?.variable, "text");
+    assert.equal(isTextStep(newStep([newFinger(1, 1)])), false, "touch steps without kind stay touch steps");
+  });
+
+  it("round-trip through an export as format 2; touch-only files stay format 1", () => {
+    const tab = login();
+    const text = exportMacroFile([tab]);
+    assert.equal(JSON.parse(text).version, 2);
+    const back = parseMacroFile(text);
+    assert.deepEqual(back.warnings, []);
+    assert.deepEqual(strip(back.tabs[0].steps), strip(tab.steps));
+    assert.equal(back.tabs[0].steps[1].text?.onSuccess.stepId, tab.steps[3].id, "jump targets keep their ids");
+    const touchOnly = newTab("Farm", { steps: [newStep([newFinger(10, 10)])] });
+    assert.equal(JSON.parse(exportMacroFile([touchOnly])).version, 1);
+    assert.throws(() => parseMacroFile('{"format":"adboard-macros","version":3,"tabs":[]}'), /reads up to 2/);
+  });
+
+  it("are repaired, not dropped, when values are out of range", () => {
+    const warnings: string[] = [];
+    const tab = sanitizeTab(
+      {
+        name: "Bad",
+        reference: { width: 1000, height: 2000 },
+        steps: [
+          { kind: "text", fingers: [{ x: 1, y: 1 }], text: { action: "wait", texts: ["ok", "", 7], timeoutMs: 9e9, intervalMs: 1, match: "glob", area: { x: -5, y: 1900, width: 5000, height: 500 }, variable: "1bad", onSuccess: { go: "warp" }, onFailure: { go: "step" } } },
+          { kind: "text", text: { action: "dance" } },
+          { kind: "text" },
+        ],
+      },
+      0,
+      warnings,
+    );
+    assert.equal(tab.steps.length, 1);
+    const text = tab.steps[0].text;
+    assert.deepEqual(tab.steps[0].fingers, []);
+    assert.deepEqual(text?.texts, ["ok"]);
+    assert.deepEqual([text?.timeoutMs, text?.intervalMs, text?.match, text?.variable], [600_000, 250, "contains", ""]);
+    assert.deepEqual(text?.area, { x: 0, y: 1900, width: 1000, height: 100 });
+    assert.deepEqual([text?.onSuccess, text?.onFailure], [{ go: "next" }, { go: "fail" }]);
+    assert.equal(warnings.length, 2, warnings.join("; "));
+  });
+
+  it("duplicate tabs jump to their own copies", () => {
+    const tab = login();
+    const copy = cloneTab(tab);
+    assert.notEqual(copy.steps[3].id, tab.steps[3].id);
+    assert.equal(copy.steps[1].text?.onSuccess.stepId, copy.steps[3].id);
+    assert.equal(tab.steps[1].text?.onSuccess.stepId, tab.steps[3].id, "the original is untouched");
+  });
+
+  it("scale their area and tap offset with the reference", () => {
+    const half = rescaleTab(login(), { width: 540, height: 1200 });
+    assert.deepEqual(half.steps[0].text?.area, { x: 0, y: 600, width: 540, height: 600 });
+    assert.equal(half.steps[0].text?.offsetY, -20);
+  });
+
+  it("are left out of Auto Clicker exports with a note", () => {
+    const warnings: string[] = [];
+    const [config] = toAutoClicker([login()], warnings);
+    assert.equal(config.targets.length, 2);
+    assert.match(warnings[0], /2 text steps were left out/);
+  });
+
+  it("need the agent: the in-browser runner fails them with a reason", async () => {
+    let sent = 0;
+    const r = await runMacroTab({
+      tab: login(),
+      devices: [{ id: "a", name: "A", status: "online", resolution: { width: 1080, height: 2400 } }],
+      signal: new AbortController().signal,
+      sleep: async () => {},
+      onUpdate: () => {},
+      send: async (targets) => {
+        sent += 1;
+        return targets.map((t) => ({ deviceId: t.id, inject: "ok" as const }));
+      },
+    });
+    assert.equal(r.status, "failed");
+    assert.equal(r.message, "Step 1: text steps need the ADBoard agent");
+    assert.equal(sent, 0);
   });
 });

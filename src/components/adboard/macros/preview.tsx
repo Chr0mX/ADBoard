@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   fromNormalized,
+  isTextStep,
   orientationMismatch,
   orientationOf,
   placement,
@@ -12,11 +13,19 @@ import {
 } from "@/lib/macro/core";
 import { cn } from "@/lib/utils";
 import { useDeviceVideo } from "@/hooks/use-device-video";
-import { useMacroTouches, type MacroTouch } from "@/lib/macro/runs";
+import { phoneRun, useMacroTouches, useRunVersion, type MacroTouch } from "@/lib/macro/runs";
+import { areaOnScreen, useTextPreview, type TextBox } from "@/lib/macro/ocr";
 import type { Device } from "@/lib/devices/types";
 import { stepColor } from "@/components/adboard/macros/fields";
 
 export type FingerEnd = "start" | "end";
+
+/** Text drawn over the screen: lines a read found, the step's matches, a run's find. */
+export interface TextMark {
+  box: TextBox;
+  tone: "line" | "match" | "found";
+  label?: string;
+}
 
 /**
  * The tab's touches drawn on a screen of `frame` size — the reference screen,
@@ -30,6 +39,7 @@ export function MacroPreview({
   backdrop,
   badge,
   ripples,
+  textMarks,
   readOnly = false,
   selectedStepId,
   placing,
@@ -46,6 +56,8 @@ export function MacroPreview({
   badge?: React.ReactNode;
   /** Recent macro touches, 0–1 of this screen. */
   ripples?: MacroTouch[];
+  /** Text boxes, 0–1 of this screen. */
+  textMarks?: TextMark[];
   /** Show markers only (Control dock); no dragging. */
   readOnly?: boolean;
   selectedStepId: string | null;
@@ -74,6 +86,8 @@ export function MacroPreview({
   };
 
   const aspect = screen.width / screen.height;
+  const selected = tab.steps.find((s) => s.id === selectedStepId);
+  const lookArea = selected && isTextStep(selected) && selected.text.area ? areaOnScreen(selected.text.area, tab, device) : null;
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -142,6 +156,29 @@ export function MacroPreview({
               }),
             )}
           </svg>
+          {lookArea && (
+            <div
+              aria-hidden
+              data-text-look-area
+              className="pointer-events-none absolute z-[4] rounded-md border-2 border-dashed border-[var(--pc-accent)]"
+              style={{ left: `${lookArea.x * 100}%`, top: `${lookArea.y * 100}%`, width: `${lookArea.width * 100}%`, height: `${lookArea.height * 100}%` }}
+            />
+          )}
+          {(textMarks ?? []).map((mark, i) => (
+            <div
+              key={`${mark.tone}-${i}`}
+              aria-hidden
+              title={mark.label}
+              data-text-mark={mark.tone}
+              className={cn(
+                "pointer-events-none absolute z-[5] rounded-sm border",
+                mark.tone === "line" && "border-[var(--pc-accent)]/60",
+                mark.tone === "match" && "border-2 border-[var(--pc-signal)] bg-[var(--pc-signal)]/15",
+                mark.tone === "found" && "border-2 border-[var(--pc-signal)] bg-[var(--pc-signal)]/25",
+              )}
+              style={{ left: `${mark.box.x * 100}%`, top: `${mark.box.y * 100}%`, width: `${mark.box.width * 100}%`, height: `${mark.box.height * 100}%` }}
+            />
+          ))}
           <TouchRipples touches={ripples ?? []} />
           {badge && <div className="pointer-events-none absolute left-2 top-2 z-30">{badge}</div>}
           {tab.steps.map((step, index) =>
@@ -308,9 +345,20 @@ export function LivePreview({
 }: {
   device: Device;
   live: boolean;
-} & Omit<Parameters<typeof MacroPreview>[0], "frame" | "frameLabel" | "backdrop" | "badge" | "ripples">) {
+} & Omit<Parameters<typeof MacroPreview>[0], "frame" | "frameLabel" | "backdrop" | "badge" | "ripples" | "textMarks">) {
+  useRunVersion();
   const { frame, streaming, badge, backdrop } = useLiveScreen(device, live);
   const touches = useMacroTouches(device.id);
+  const read = useTextPreview(device.id);
+  const run = phoneRun(device.id);
+  const textMarks: TextMark[] = [];
+  if (read) {
+    const hits = new Set((read.screen.matches ?? []).map((m) => m.line));
+    read.screen.lines.forEach((line, i) => !hits.has(i) && textMarks.push({ box: line.box, tone: "line", label: line.text }));
+    (read.screen.matches ?? []).forEach((m) => textMarks.push({ box: m.box, tone: "match", label: m.text }));
+  }
+  // While this phone's run is on a text step, show what it found.
+  if (run?.live && run.text?.box && run.text.state === "met") textMarks.push({ box: run.text.box, tone: "found", label: run.text.matched });
   const mismatch = rest.tab.orientation === "match" && orientationMismatch(rest.tab.reference, frame);
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -325,6 +373,7 @@ export function LivePreview({
         frameLabel={`${device.name}${streaming ? " · live" : ""}`}
         badge={badge}
         ripples={touches}
+        textMarks={textMarks}
         backdrop={backdrop}
       />
     </div>

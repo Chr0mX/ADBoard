@@ -13,6 +13,7 @@ mod mesh;
 mod migrate;
 mod mesh_client;
 mod mock;
+mod ocr;
 mod paths;
 mod scrcpy_control;
 mod scrcpy_video;

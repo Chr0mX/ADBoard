@@ -54,6 +54,12 @@ pub const SHELL_EXT: &str = ".json";
 pub const MACRO_FORMAT: &str = "adboard-macros";
 pub const SHELL_FORMAT: &str = "adboard-shell-script";
 
+/// Format 2 added text steps; touch-only macros stay 1 (as the browser's export).
+fn macro_file_version(tab: &Value) -> u64 {
+    let text = tab.get("steps").and_then(Value::as_array).is_some_and(|steps| steps.iter().any(|s| s.get("kind").and_then(Value::as_str) == Some("text")));
+    if text { 2 } else { 1 }
+}
+
 /// One kept revision (listed without its value).
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -156,7 +162,7 @@ impl ItemsKind {
     /// The file body for one item (the same format as its export).
     fn wrap(self, item: &Value) -> Value {
         match self {
-            ItemsKind::Macros => json!({ "format": MACRO_FORMAT, "version": 1, "app": "ADBoard", "tabs": [item] }),
+            ItemsKind::Macros => json!({ "format": MACRO_FORMAT, "version": macro_file_version(item), "app": "ADBoard", "tabs": [item] }),
             ItemsKind::Desk => json!({ "format": SHELL_FORMAT, "version": 1, "app": "ADBoard", "script": item }),
         }
     }
@@ -840,6 +846,8 @@ mod tests {
         // Each file is a normal macro export (importable as is).
         let body: Value = serde_json::from_slice(&std::fs::read(mdir.join("Daily_Login.json")).unwrap()).unwrap();
         assert_eq!(body["format"], MACRO_FORMAT);
+        assert_eq!(body["version"], 1, "touch-only macros stay format 1");
+        assert_eq!(ItemsKind::Macros.wrap(&json!({ "id": "t", "steps": [{ "kind": "text" }] }))["version"], 2);
         assert_eq!(body["tabs"][0]["name"], "Daily Login");
         // Same name twice → _2; rename moves the file, keeps the id.
         store.put("macros", workspace(vec![tab("t1", "Morning"), tab("t2", "Collect:Rewards?"), tab("t3", "Morning")]), 1).unwrap();

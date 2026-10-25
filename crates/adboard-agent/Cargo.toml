@@ -29,6 +29,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { workspace = true }
 qrcode = "0.14"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Text steps (OCR): ocrs is pure Rust (no Tesseract/ONNX DLLs), so it builds the
+# same for Linux and the MinGW Windows pack. Its models come from fetch-deps.
+ocrs = { version = "0.13", default-features = false, features = ["rten"] }
+rten = { version = "0.26", default-features = false }
+rten-imageproc = "0.26"
+png = "0.18"
+regex = "1"
 
 [dev-dependencies]
 http-body-util = "0.1"

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Download ADB (platform-tools) + scrcpy into ./temp/, then install into
-# tools/linux/{adb,scrcpy}/ and/or dist/windows/vendor/{adb,scrcpy}/.
+# Download ADB (platform-tools) + scrcpy + the OCR models (macro text steps)
+# into ./temp/, then install into tools/linux/{adb,scrcpy}/ + tools/ocr/ and/or
+# dist/windows/vendor/{adb,scrcpy,ocr}/.
 #
 # Usage:
 #   ./scripts/fetch-deps.sh
@@ -11,6 +12,7 @@
 #   FETCH_TARGET   linux | windows | all   (default: host OS → linux|windows)
 #   FETCH_FORCE    1 to re-download / re-install even if binaries exist
 #   SCRCPY_VERSION optional pin (default: latest GitHub release tag without 'v')
+#   FETCH_ONLY     ocr to fetch only the OCR models (CI)
 
 set -euo pipefail
 
@@ -222,6 +224,38 @@ install_windows_scrcpy() {
   log "installed windows scrcpy ${ver} → ${dest_dir}"
 }
 
+# ocrs models (https://github.com/robertknight/ocrs-models, Apache-2.0), pinned by checksum.
+OCR_MODELS_URL="https://ocrs-models.s3-accelerate.amazonaws.com"
+OCR_MODELS=(
+  "text-detection.rten f15cfb56bd02c4bf478a20343986504a1f01e1665c2b3a0ad66340f054b1b5ca"
+  "text-recognition.rten e484866d4cce403175bd8d00b128feb08ab42e208de30e42cd9889d8f1735a6e"
+)
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+install_ocr_models() {
+  local dest_dir="$1" entry name sum file
+  for entry in "${OCR_MODELS[@]}"; do
+    name="${entry%% *}"
+    sum="${entry##* }"
+    if file_ok "${dest_dir}/${name}" && [[ "$(sha256_of "${dest_dir}/${name}")" == "$sum" ]] && ! force_mode; then
+      log "skip ocr model (present): ${dest_dir}/${name}"
+      continue
+    fi
+    file="${TEMP_DIR}/downloads/${name}"
+    download "${OCR_MODELS_URL}/${name}" "$file"
+    if [[ "$(sha256_of "$file")" != "$sum" ]]; then
+      rm -f "$file"
+      die "checksum mismatch for ${name} (download removed; run again)"
+    fi
+    mkdir -p "$dest_dir"
+    cp -f "$file" "${dest_dir}/${name}"
+    log "installed ocr model → ${dest_dir}/${name}"
+  done
+}
+
 main() {
   need_cmd curl
   need_cmd unzip
@@ -236,18 +270,24 @@ main() {
   for t in $(resolve_targets); do
     case "$t" in
       linux)
-        install_linux_adb
-        install_linux_scrcpy
+        if [[ "${FETCH_ONLY:-}" != "ocr" ]]; then
+          install_linux_adb
+          install_linux_scrcpy
+        fi
+        install_ocr_models "${ROOT}/tools/ocr"
         ;;
       windows)
-        install_windows_adb
-        install_windows_scrcpy
+        if [[ "${FETCH_ONLY:-}" != "ocr" ]]; then
+          install_windows_adb
+          install_windows_scrcpy
+        fi
+        install_ocr_models "${ROOT}/dist/windows/vendor/ocr"
         ;;
     esac
   done
 
   log "done. Downloads stay under ./temp/; binaries installed under tools/ and dist/windows/vendor/."
-  log "Agent auto-discovers vendored paths (or set ADB_PATH / SCRCPY_PATH / SCRCPY_SERVER_PATH)."
+  log "Agent auto-discovers vendored paths (or set ADB_PATH / SCRCPY_PATH / SCRCPY_SERVER_PATH / ADBOARD_OCR_MODELS)."
 }
 
 main "$@"

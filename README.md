@@ -345,6 +345,7 @@ The tabs across the top, left to right (each has a full page in the [user guide]
 
 - **Shared:** macros are kept on ADBoard and shared by every browser. Differing copies are merged, never replaced, and **Versions** restores earlier copies.
 - **Per phone:** **Phones** gives each phone its own macro, with its own Start / Pause / Stop and live status. Runs live in ADBoard, so they keep going when the browser closes, and stopping or disconnecting one phone leaves the others running. Runs stop when ADBoard itself is closed.
+- **Text steps (OCR):** **Tap text**, **Wait for text**, **Wait until gone**, **If text is shown** and **Read text** read the phone's screen instead of using a fixed point, and can jump to another step, end or fail the run depending on what they find. Recognition runs on the ADBoard computer, offline, with [ocrs](https://github.com/robertknight/ocrs); `make fetch-deps` downloads its models (12 MB).
 
 See [docs/macros.md](docs/macros.md).
 
@@ -405,6 +406,7 @@ Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set;
 | `ADBOARD_SCRCPY_FIXTURE` | unset | `1` → mock scrcpy backend with embedded H264 (no USB) |
 | `ADBOARD_FORCE_MOCK` | unset | `1`/`true` → ignore ADB, use mock fleet |
 | `ADBOARD_AUTO_SESSION` | unset | Auto-start session when a device comes online |
+| `ADBOARD_OCR_MODELS` | vendored `tools/ocr` / `vendor/ocr` | Folder with `text-detection.rten` and `text-recognition.rten` for macro text steps |
 | `NEXT_PUBLIC_AGENT_URL` | unset | UI → **controller** base URL |
 
 ## API surface
@@ -420,6 +422,8 @@ Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set;
 | POST | `/api/input/tap` | Normalized 0–1 → pixels; local inject + remote proxy |
 | POST | `/api/input/nav` | `back`/`home`/`recent` → keyevent (proxied) |
 | POST | `/api/input/gesture` | Timed single/multi-touch strokes (finger slots 0–9), played on the agent; every finger released (proxied) |
+| GET | `/api/ocr/status` | Whether text steps can read screens here (models installed) |
+| POST | `/api/ocr/read` | Text on a phone's screen now: `{deviceId, area?, query?}` → lines with 0–1 boxes, and the query's matches (proxied) |
 | GET / PUT | `/api/store/{name}` | Shared macros, scripts, queue, schedules and settings (revisions; a stale save gets 409 with the current copy) |
 | GET / POST | `/api/store/{name}/history` · `/restore` | Earlier saved versions, and restoring one |
 | GET | `/api/system/storage` | Data folder paths, saved files, migration result |

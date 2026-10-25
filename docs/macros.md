@@ -34,7 +34,58 @@ A step is 1–10 fingers played together, then a wait.
 | Starts after | Multi-touch only: delay for this finger from the step start, so fingers can overlap |
 | Then wait | Pause after the step, before the next one |
 
-**Add** has quick presets: Tap, Hold, Swipe, 2-finger tap, Pinch. **Add finger** turns any step into multi-touch. ▶ on a step plays just that step once on the tab's phones.
+**Add** has quick presets: Tap, Hold, Swipe, 2-finger tap, Pinch, and the text steps below. **Add finger** turns any step into multi-touch. ▶ on a step plays just that step once on the tab's phones.
+
+## Text steps (OCR)
+
+A text step reads the phone's screen instead of touching a fixed point, so a macro can react to what the app shows: wait for a login screen, tap **Sign in** wherever it is, branch when **Wrong password** shows up.
+
+| Do | Succeeds when | Default if it doesn't |
+|---|---|---|
+| **Tap text** | the text is found; it is tapped at its center (plus **Offset X / Y**) | fail the run after 10 s |
+| **Wait for text** | the text shows | fail the run after 30 s |
+| **Wait until gone** | the text is not on screen (loading spinners, "Please wait") | fail the run after 30 s |
+| **If text is shown** | the text is on screen (looks once) | next step |
+| **Read text** | the text is found, or anything is in the area when **Text** is empty; it is stored in **Store in** | next step |
+
+Each step has:
+
+| Field | Meaning |
+|---|---|
+| Text | One per line; any of them matches. `{name}` puts in a value a Read step stored |
+| Match | **Contains** (anywhere in a line), **Exact words** (whole words: "OK" matches "Cancel OK", not "Bookmark") or **Regex**. A Read step with a regex stores its first group, e.g. `Coins: (\d+)` → `1250` |
+| Match case | Off by default |
+| Keep looking for / Wait up to | How long to keep reading the screen; 0 looks once. Up to 10 min |
+| Look every | Time between reads (250 ms – 60 s) |
+| Look only in an area | X, Y, width, height in reference pixels, scaled to each phone like touches. Text outside is ignored, and a smaller area reads faster |
+| When found / If not found … | **Next step**, **Go to step N**, **End the run (done)** or **Fail the run**. The labels follow the action (After tapping, If still shown…) |
+| Then wait | Pause after the step, as for touches |
+
+**Go to step** is how a macro branches and loops: a check that jumps back to an earlier step repeats until the screen changes. A jump to a step that was turned off or deleted fails the run with that reason. Jumps don't count as cycles; the tab's **Repeat** setting still ends the run.
+
+**Read screen** in the step editor reads the previewed phone (or the first ticked online phone) now. The Preview draws a box round every line it read, green for lines the step's text matches, and lists the lines; tap one to look for it. The step's area is drawn dashed. While a run waits on a text step, the run status shows the step, the number of reads, what it saw and how long a read took, plus the values Read steps stored. While a run is on a text step that found its text, the text is outlined in green on the live preview.
+
+### How it reads
+
+- The agent takes a screenshot over ADB (`screencap`, as the Screenshot tool does), crops it to the area and recognizes the text on the ADBoard computer with [ocrs](https://github.com/robertknight/ocrs): offline, CPU only, no extra program to install. A full 1080×2400 screen takes about half a second on a 4-core PC; an area is faster.
+- Boxes are 0–1 of the screen in its current rotation, the same space touches use, so a found text is tapped in the right place on any resolution, density or orientation.
+- One recognition runs at a time (it already uses every core); phones queue for it. A screen that has not changed since that phone's last read reuses that read's text instead of recognizing it again.
+- **Stop** ends a wait at once, even in the middle of a read. **Pause** holds a wait too, and paused time does not count against its timeout or the tab's time limit.
+- The connection check runs before every read. An unplugged phone ends its own run with "Phone disconnected". Up to 3 failed screenshots in a row are retried; then the step fails with the reason.
+- Several phones running the same tab each read their own screen and branch on their own: runs are per phone.
+- Phones on another host are read by that host (its ADB and models).
+
+### Setup
+
+The two model files (12 MB) are not part of the source or the build. `make fetch-deps` (Windows: `scripts\fetch-deps.ps1`) downloads them, checks their checksums and puts them in `tools/ocr/` (Linux) and `dist/windows/vendor/ocr/` (Windows pack). To keep them elsewhere, set `ADBOARD_OCR_MODELS` to their folder. Without them, text steps fail with a note that says how to install them, and the step editor shows the same note. Touch steps never need them.
+
+The models read Latin letters, digits and common punctuation (English and most Western languages without accents). Text in other scripts, very small text and stylized game fonts may not be read; try **Read screen** first, and prefer **Contains** with a short, distinctive part of the text.
+
+The mock fleet (`ADBOARD_FORCE_MOCK=1`) has no screens: every mock phone "shows" the same sample lines (Settings, Wi-Fi Connected, Sign in, Continue, Cancel OK…), so text steps can be tried without phones.
+
+### Adding another engine
+
+`crates/adboard-agent/src/ocr.rs` has a small `TextEngine` trait (`recognize(image) → lines with boxes`). The capture, cropping, caching and matching around it, and the macro runner, don't depend on the engine, so another engine or other models only need a new implementation of that trait. Lines carry an optional confidence for engines that report one (ocrs does not).
 
 ## Live view
 
@@ -99,6 +150,8 @@ Agent API (the UI uses these; all need the session token):
 | `POST /api/macro/runs/{tabId}/stop\|pause\|resume\|forget` | Act on every phone running that tab |
 | `POST /api/macro/devices/{deviceId}/start` `{tab? \| tabId?}` | Start one phone. No body plays its saved choice. 409 if it is busy, 400 if offline |
 | `POST /api/macro/devices/{deviceId}/stop\|pause\|resume` | Act on one phone only |
+| `GET /api/ocr/status` | Whether text steps can read screens (models found) |
+| `POST /api/ocr/read` `{deviceId, area?, query?}` | The text on a phone's screen now, as lines with 0–1 boxes, and the query's matches |
 
 **Repeat** sits next to the Run button, in the Macros editor and in the Control panel:
 
@@ -126,7 +179,7 @@ Positions are stored in the tab's **reference screen**, the resolution the macro
 
 | File | Notes |
 |---|---|
-| ADBoard macros (`"format": "adboard-macros"`) | Full fidelity. Bad values are repaired with a note; newer format versions are refused |
+| ADBoard macros (`"format": "adboard-macros"`) | Full fidelity. Bad values are repaired with a note; newer format versions are refused. Files with text steps are format 2; files with only touches are still written as format 1, so older ADBoards read them |
 | Auto Clicker config (`config.txt`, JSON array) | Each configuration becomes a tab. Auto Clicker does not store the screen size, so the dialog guesses one from the furthest point (for example 900×1600) and lets you pick a preset or a connected phone's size |
 | Older ADBoard Shell Automation macro or desk export | Tap / double tap / long press / swipe / scroll / drag / pinch / recorded gesture / wait are converted from percent coordinates. App, file and shell steps stay in Automate |
 
@@ -143,7 +196,7 @@ The dialog shows what will be imported and any notes before anything is saved. *
 | `stopConditionChecked` 0 / 1 / 2 | When stopped / After time (`timeValue` s) / After cycles (`numberOfCycles`) |
 | `antiDetection` | Random offset 12 px |
 
-Exporting back to Auto Clicker writes the same structure. A multi-touch step becomes one target per finger, because Auto Clicker plays one target at a time. An imported Auto Clicker file exports back unchanged.
+Exporting back to Auto Clicker writes the same structure. A multi-touch step becomes one target per finger, because Auto Clicker plays one target at a time. Text steps are left out, with a note. An imported Auto Clicker file exports back unchanged.
 
 ## Sharing and versions
 
@@ -166,3 +219,5 @@ Macros lost before this protection existed were browser data, not code. Bring th
 - The orientation check in runs uses the phone's reported size. The live preview warns using the real video size.
 - Live video needs a browser with H.264 WebCodecs (Chrome, Edge, Safari). Headless test browsers show the markers without the picture.
 - Mock fleet (`ADBOARD_FORCE_MOCK=1`): gestures keep their timing and report *Mock (not sent)*.
+- Text steps run on the agent only. Without an agent (the in-browser preview), a run stops at the first text step and says so.
+- Text steps read with a screenshot each time (about 0.2–1 s per read, more over Wi-Fi ADB). For text that changes many times a second, use a touch step with a delay.

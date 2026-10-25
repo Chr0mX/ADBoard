@@ -67,6 +67,13 @@ next-env.d.ts
 /dist/windows/vendor/scrcpy/**
 !/dist/windows/vendor/scrcpy/README.md
 !/dist/windows/vendor/scrcpy/.gitkeep
+# OCR models for macro text steps (downloaded, not committed)
+/tools/ocr/**
+!/tools/ocr/README.md
+!/tools/ocr/.gitkeep
+/dist/windows/vendor/ocr/**
+!/dist/windows/vendor/ocr/README.md
+!/dist/windows/vendor/ocr/.gitkeep
 dist/windows/data/wireless-adb.json
 
 # ADBoard sign-in account (password hash; rasiel-auth.json is the pre-rename name)

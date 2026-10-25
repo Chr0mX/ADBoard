@@ -5,7 +5,7 @@
 //! several browsers are open.
 
 use crate::device_manager::AppState;
-use crate::macro_runner::{self, now_ms, MacroTab, OnlineCheck, RunDevice, RunSnapshot, SendResult, Sender, Size};
+use crate::macro_runner::{self, now_ms, MacroTab, OnlineCheck, RunDevice, RunSnapshot, ScreenReader, SendResult, Sender, Size};
 use crate::shared_store;
 use adboard_protocol::{ControlMode, DeviceStatus, GestureRequest, InjectStatus};
 use serde::{Deserialize, Serialize};
@@ -71,13 +71,28 @@ pub fn online_check(state: AppState) -> OnlineCheck {
     })
 }
 
+/// Reads a phone's screen for text steps (OCR on the host that has the phone).
+pub fn screen_reader(state: AppState) -> ScreenReader {
+    Arc::new(move |device: RunDevice, area| {
+        let state = state.clone();
+        Box::pin(async move { crate::ocr::read_screen(&state, &device.id, Some(area)).await })
+    })
+}
+
 /// Start `tab` on `device_ids` (the tab's own phones when empty): one run per
 /// phone, skipping phones that are offline or already running. Returns the
 /// phones started.
 pub async fn start_tab(state: &AppState, tab: MacroTab, device_ids: Vec<String>, only_step_id: Option<String>) -> Result<macro_runner::StartReport, String> {
     let ids = if device_ids.is_empty() { tab.target_ids.clone() } else { device_ids };
     let devices = run_devices(state, &ids).await;
-    macro_runner::runs().start(tab, devices, only_step_id, gesture_sender(state.clone()), Some(online_check(state.clone())))
+    macro_runner::runs().start(
+        tab,
+        devices,
+        only_step_id,
+        gesture_sender(state.clone()),
+        Some(online_check(state.clone())),
+        Some(screen_reader(state.clone())),
+    )
 }
 
 /// Phone → tab id chosen in the Phones card (shared store `macro-assignments`).
@@ -117,8 +132,15 @@ pub async fn start_device(state: &AppState, device_id: &str, tab: Option<MacroTa
         }
     };
     let runs = macro_runner::runs();
-    runs.start_device(tab, device, only_step_id, gesture_sender(state.clone()), Some(online_check(state.clone())))
-        .map_err(DeviceStartError::Busy)?;
+    runs.start_device(
+        tab,
+        device,
+        only_step_id,
+        gesture_sender(state.clone()),
+        Some(online_check(state.clone())),
+        Some(screen_reader(state.clone())),
+    )
+    .map_err(DeviceStartError::Busy)?;
     Ok(runs.view().runs.into_iter().find(|r| r.device_id == device_id).expect("just started"))
 }
 
@@ -339,7 +361,14 @@ pub async fn tick(state: &AppState, now: u64) -> usize {
                         format!("Skipped: no online phone ticked in “{}”", tab.name)
                     } else {
                         let name = tab.name.clone();
-                        match macro_runner::runs().start(tab, devices, None, gesture_sender(state.clone()), Some(online_check(state.clone()))) {
+                        match macro_runner::runs().start(
+                            tab,
+                            devices,
+                            None,
+                            gesture_sender(state.clone()),
+                            Some(online_check(state.clone())),
+                            Some(screen_reader(state.clone())),
+                        ) {
                             Ok(_) => format!("Started “{name}”"),
                             Err(error) => format!("Skipped: {error}"),
                         }
