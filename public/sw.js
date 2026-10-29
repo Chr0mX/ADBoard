@@ -1,5 +1,5 @@
 /* ADBoard app-shell service worker. Version bump to refresh caches. */
-const CACHE_VERSION = "pc-shell-v66";
+const CACHE_VERSION = "pc-shell-v67";
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {

@@ -37,6 +37,11 @@ const CATEGORY_HINT: Partial<Record<EventCategory, string>> = {
 
 const fieldClass =
   "h-11 min-h-11 min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-xs text-[var(--pc-ink)] outline-none focus-visible:border-[var(--pc-accent)]";
+/* Narrow card: label above a full-width dropdown. Wide card (@md): label
+   beside a fixed-width dropdown. The card is the container, so the layout
+   follows its width, not the screen's. */
+const rowClass = "flex flex-col gap-2 py-1 @md:flex-row @md:items-center @md:justify-between";
+const dropdownClass = cn(fieldClass, "w-full @md:w-48 @md:shrink-0");
 const when = (ms?: number) => (ms ? new Date(ms).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "never");
 
 /**
@@ -97,7 +102,7 @@ export function NotificationsCard() {
   };
 
   return (
-    <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-notifications>
+    <section className="@container flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-notifications>
       <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Discord notifications</h3>
       {!agent && <p className="text-xs text-[var(--pc-muted)]">{NO_AGENT}.</p>}
       {agent && !settings && <p className="text-xs text-[var(--pc-muted)]">{error ?? "Loading…"}</p>}
@@ -170,7 +175,7 @@ export function NotificationsCard() {
           <div className="flex flex-col gap-1" data-notifications-categories>
             <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">What to send</h4>
             {(Object.keys(CATEGORY_HINT) as EventCategory[]).map((category) => (
-              <label key={category} className="flex flex-wrap items-center justify-between gap-2 py-1">
+              <label key={category} className={rowClass}>
                 <span className="flex min-w-0 flex-col">
                   <span className="text-sm text-[var(--pc-ink)]">{CATEGORY_LABEL[category]}</span>
                   <span className="text-[11px] text-[var(--pc-muted)]">{CATEGORY_HINT[category]}</span>
@@ -179,7 +184,7 @@ export function NotificationsCard() {
                   value={settings.categories[category] ?? "off"}
                   disabled={busy}
                   onChange={(e) => void save({ categories: { [category]: e.target.value as NotifyLevel } })}
-                  className={cn(fieldClass, "w-48")}
+                  className={dropdownClass}
                   data-notify-level={category}
                 >
                   {LEVELS.map((level) => (
@@ -191,7 +196,7 @@ export function NotificationsCard() {
               </label>
             ))}
           </div>
-          <label className="flex flex-wrap items-center justify-between gap-2 py-1" data-notify-offline>
+          <label className={rowClass} data-notify-offline>
             <span className="flex min-w-0 flex-col">
               <span className="text-sm text-[var(--pc-ink)]">Phone offline alerts</span>
               <span className="text-[11px] text-[var(--pc-muted)]">
@@ -204,7 +209,7 @@ export function NotificationsCard() {
               value={String(settings.offlineAlertMins)}
               disabled={busy}
               onChange={(e) => void save({ offlineAlertMins: Number(e.target.value) })}
-              className={cn(fieldClass, "w-48")}
+              className={dropdownClass}
               data-notify-offline-mins
             >
               {[0, 2, 5, 10, 30, 60].map((m) => (
@@ -215,33 +220,31 @@ export function NotificationsCard() {
               {![0, 2, 5, 10, 30, 60].includes(settings.offlineAlertMins) && <option value={settings.offlineAlertMins}>Offline for {settings.offlineAlertMins} min</option>}
             </select>
           </label>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-xs text-[var(--pc-muted)]">
-              Message detail
-              <select value={settings.detail} disabled={busy} onChange={(e) => void save({ detail: e.target.value as "brief" | "full" })} className={cn(fieldClass, "w-48")} data-notify-detail>
-                <option value="full">Full (reason, run, duration)</option>
-                <option value="brief">Brief (title and phone)</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-[var(--pc-muted)]">
-              Cooldown
-              <select
-                value={String(settings.cooldownSecs)}
-                disabled={busy}
-                onChange={(e) => void save({ cooldownSecs: Number(e.target.value) })}
-                className={cn(fieldClass, "w-48")}
-                title="The same kind of event for the same phone is sent at most once per cooldown"
-                data-notify-cooldown
-              >
-                {[0, 30, 120, 300, 900, 3600].map((s) => (
-                  <option key={s} value={s}>
-                    {s === 0 ? "None" : s < 60 ? `${s} s` : `${s / 60} min`} per phone and event
-                  </option>
-                ))}
-                {![0, 30, 120, 300, 900, 3600].includes(settings.cooldownSecs) && <option value={settings.cooldownSecs}>{settings.cooldownSecs} s</option>}
-              </select>
-            </label>
-          </div>
+          <label className={rowClass}>
+            <span className="text-sm text-[var(--pc-ink)]">Message detail</span>
+            <select value={settings.detail} disabled={busy} onChange={(e) => void save({ detail: e.target.value as "brief" | "full" })} className={dropdownClass} data-notify-detail>
+              <option value="full">Full (reason, run, duration)</option>
+              <option value="brief">Brief (title and phone)</option>
+            </select>
+          </label>
+          <label className={rowClass}>
+            <span className="text-sm text-[var(--pc-ink)]">Cooldown</span>
+            <select
+              value={String(settings.cooldownSecs)}
+              disabled={busy}
+              onChange={(e) => void save({ cooldownSecs: Number(e.target.value) })}
+              className={dropdownClass}
+              title="The same kind of event for the same phone is sent at most once per cooldown"
+              data-notify-cooldown
+            >
+              {[0, 30, 120, 300, 900, 3600].map((s) => (
+                <option key={s} value={s}>
+                  {s === 0 ? "None" : s < 60 ? `${s} s` : `${s / 60} min`} per phone and event
+                </option>
+              ))}
+              {![0, 30, 120, 300, 900, 3600].includes(settings.cooldownSecs) && <option value={settings.cooldownSecs}>{settings.cooldownSecs} s</option>}
+            </select>
+          </label>
           {settings.webhookSet && (
             <p className="font-mono text-[11px] text-[var(--pc-muted)]" data-notify-status>
               Last delivered {when(settings.status.lastOkAt)} · {settings.status.sent} sent
