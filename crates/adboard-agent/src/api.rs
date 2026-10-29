@@ -344,6 +344,32 @@ fn origin_allowed_for_bootstrap(headers: &HeaderMap) -> bool {
         .any(|allowed| allowed.as_bytes() == origin.as_bytes())
 }
 
+/// The host name from a `Host` header value, without the port or brackets.
+fn host_name(host: &str) -> &str {
+    if let Some(rest) = host.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or("");
+    }
+    match host.rsplit_once(':') {
+        Some((name, port)) if !name.contains(':') && port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    }
+}
+
+/// True when the `Host` header is `localhost`, an IP address, or listed in
+/// `ADBOARD_ALLOWED_HOSTS`. Rebinding attacks send a domain name here.
+fn host_is_direct(headers: &HeaderMap) -> bool {
+    let Some(host) = headers.get(header::HOST).and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
+    let name = host_name(host.trim());
+    if name.eq_ignore_ascii_case("localhost") || name.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+    crate::env::var("ALLOWED_HOSTS")
+        .map(|list| list.split(',').any(|allowed| allowed.trim().eq_ignore_ascii_case(name)))
+        .unwrap_or(false)
+}
+
 fn origin_matches_host(origin: &str, headers: &HeaderMap) -> bool {
     let Some(host) = headers
         .get(header::HOST)
@@ -408,6 +434,14 @@ async fn bootstrap(
         }
     } else if auth.proxy_blocked(&headers) {
         return auth_error(StatusCode::FORBIDDEN, PROXY_NEEDS_PASSWORD);
+    } else if !host_is_direct(&headers) {
+        // DNS rebinding: a page on another domain can point its name at this
+        // agent and read the token here. Without a password, only addresses
+        // and names listed in ADBOARD_ALLOWED_HOSTS may read it.
+        return auth_error(
+            StatusCode::FORBIDDEN,
+            "Use this computer's IP address, or add the name to ADBOARD_ALLOWED_HOSTS.",
+        );
     }
     Json(BootstrapBody {
         token: state.api_token().to_string(),
@@ -465,7 +499,7 @@ async fn login(
         .as_deref()
         .filter(|u| !u.trim().is_empty())
         .unwrap_or(web_auth::DEFAULT_USERNAME);
-    if !auth.check_login(username, &body.password) {
+    if !auth.verify_login(username, &body.password).await {
         // Slow down guessing.
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         warn!(proxied = web_auth::is_proxied(&headers), "failed sign-in");
@@ -506,7 +540,7 @@ async fn change_password(
             if !auth.session_valid(&headers) {
                 return auth_error(StatusCode::UNAUTHORIZED, "Sign in to ADBoard.");
             }
-            if !auth.check_login(user, &body.current_password) {
+            if !auth.verify_login(user, &body.current_password).await {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 return auth_error(StatusCode::UNAUTHORIZED, "Current password is wrong.");
             }
@@ -2900,3 +2934,34 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod host_check_tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn with_host(host: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_str(host).unwrap());
+        headers
+    }
+
+    #[test]
+    fn host_name_strips_port_and_brackets() {
+        assert_eq!(host_name("attacker.example:3848"), "attacker.example");
+        assert_eq!(host_name("192.168.69.174:3848"), "192.168.69.174");
+        assert_eq!(host_name("[::1]:3848"), "::1");
+        assert_eq!(host_name("::1"), "::1");
+        assert_eq!(host_name("localhost"), "localhost");
+    }
+
+    #[test]
+    fn direct_addresses_are_allowed_and_rebinding_names_are_not() {
+        assert!(host_is_direct(&with_host("127.0.0.1:3848")));
+        assert!(host_is_direct(&with_host("192.168.69.174:3848")));
+        assert!(host_is_direct(&with_host("[::1]:3848")));
+        assert!(host_is_direct(&with_host("localhost:3848")));
+        assert!(!host_is_direct(&with_host("attacker.example:3848")));
+        assert!(!host_is_direct(&HeaderMap::new()));
+    }
+}

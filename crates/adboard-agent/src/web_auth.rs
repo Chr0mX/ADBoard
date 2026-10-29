@@ -18,7 +18,7 @@ use ring::rand::SecureRandom;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 pub const SESSION_COOKIE: &str = "adboard_session";
@@ -87,7 +87,12 @@ pub struct WebAuth {
     file: Option<PathBuf>,
     allow_proxy_without_password: bool,
     sessions: Mutex<HashMap<String, Instant>>,
+    /// Bounds concurrent password checks: each one costs ~210k PBKDF2 rounds.
+    login_slots: tokio::sync::Semaphore,
 }
+
+/// Password checks that may run at once. Extra sign-ins wait their turn.
+const LOGIN_SLOTS: usize = 4;
 
 impl WebAuth {
     /// In-memory account (tests, or no writable location).
@@ -100,6 +105,7 @@ impl WebAuth {
             file: None,
             allow_proxy_without_password,
             sessions: Mutex::new(HashMap::new()),
+            login_slots: tokio::sync::Semaphore::new(LOGIN_SLOTS),
         }
     }
 
@@ -144,6 +150,7 @@ impl WebAuth {
             file: Some(file),
             allow_proxy_without_password,
             sessions: Mutex::new(HashMap::new()),
+            login_slots: tokio::sync::Semaphore::new(LOGIN_SLOTS),
         }
     }
 
@@ -183,6 +190,19 @@ impl WebAuth {
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .map(|c| c.username.clone())
+    }
+
+    /// `check_login` off the async workers: PBKDF2 takes tens of milliseconds
+    /// and would otherwise stall HTTP, video and input traffic.
+    pub async fn verify_login(self: &Arc<Self>, username: &str, password: &str) -> bool {
+        let Ok(_slot) = self.login_slots.acquire().await else {
+            return false;
+        };
+        let auth = Arc::clone(self);
+        let (user, pass) = (username.to_string(), password.to_string());
+        tokio::task::spawn_blocking(move || auth.check_login(&user, &pass))
+            .await
+            .unwrap_or(false)
     }
 
     pub fn check_login(&self, username: &str, password: &str) -> bool {

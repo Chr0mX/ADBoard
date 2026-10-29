@@ -54,6 +54,12 @@ pub async fn delete_file(
     if query.path.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "path is required".into()));
     }
+    if crate::device_ops::is_root_rel(&query.path) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "refusing to delete the file root".into(),
+        ));
+    }
     let root = crate::device_ops::files_root();
     let path = crate::device_ops::host_path(&root, &query.path)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;

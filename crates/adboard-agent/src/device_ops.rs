@@ -606,9 +606,21 @@ pub fn apply_host_op(root: &Path, op: &str, path: &str, dest: &str) -> Result<St
     }
 }
 
+/// True when a relative path names the file root itself ("", "/", ".", "\\").
+/// Checked on the text, not with `==` on the resolved path: on Windows the
+/// canonical root carries a `\\?\` prefix and never equals the plain root.
+pub fn is_root_rel(rel: &str) -> bool {
+    rel.trim()
+        .trim_matches(|c| c == '/' || c == '\\' || c == '.')
+        .is_empty()
+}
+
 fn require_child(root: &Path, rel: &str) -> Result<PathBuf, String> {
     if rel.trim().is_empty() {
         return Err("path is required".into());
+    }
+    if is_root_rel(rel) {
+        return Err("refusing to change the file root".into());
     }
     let path = host_path(root, rel)?;
     if path == root {
@@ -774,5 +786,20 @@ mod tests {
         assert!(host_path(&root, "leak/secret.txt").is_err());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+}
+
+#[cfg(test)]
+mod root_request_tests {
+    use super::is_root_rel;
+
+    #[test]
+    fn root_spellings_are_recognised() {
+        for rel in ["", " ", "/", "\\", ".", "/./", "\\/."] {
+            assert!(is_root_rel(rel), "{rel:?} should name the root");
+        }
+        for rel in ["Downloads", "/Downloads/", "a/../b", "./x"] {
+            assert!(!is_root_rel(rel), "{rel:?} should not name the root");
+        }
     }
 }

@@ -497,7 +497,7 @@ async fn read_remote(state: &AppState, device: &Device, area: Area) -> Result<Sc
     let url = format!("{}/api/ocr/read", base.trim_end_matches('/'));
     let body = serde_json::json!({ "deviceId": device.id, "area": area, "withChars": true });
     let body = serde_json::to_vec(&body).map_err(|e| ReadError::failed(e.to_string()))?;
-    let (status, text) = crate::device_manager::http_post_bytes(&url, &[("Content-Type", "application/json")], &body)
+    let (status, text) = crate::device_manager::http_post_bytes(&url, &[("Content-Type", "application/json"), ("x-adboard-token", state.api_token())], &body)
         .await
         .map_err(ReadError::failed)?;
     if !(200..300).contains(&status) {

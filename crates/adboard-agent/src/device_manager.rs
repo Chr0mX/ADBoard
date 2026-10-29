@@ -858,7 +858,7 @@ impl AppState {
         let url = format!("{}/api/input/gesture", base.trim_end_matches('/'));
         let body = serde_json::to_vec(request).map_err(|e| e.to_string())?;
         let (status, text) =
-            http_post_bytes(&url, &[("Content-Type", "application/json")], &body).await?;
+            http_post_bytes(&url, &[("Content-Type", "application/json"), ("x-adboard-token", self.api_token())], &body).await?;
         if !(200..300).contains(&status) {
             return Err(if text.trim().is_empty() {
                 format!("gesture proxy HTTP {status}")
@@ -1084,6 +1084,7 @@ impl AppState {
             &url,
             &[
                 ("Content-Type", "application/vnd.android.package-archive"),
+                ("x-adboard-token", self.api_token()),
                 ("X-Adboard-Mode", mode_name),
                 ("X-Adboard-Targets", &targets_joined),
                 ("X-Adboard-Filename", filename),
@@ -1506,7 +1507,7 @@ impl AppState {
         let url = format!("{}/api/device/command", base.trim_end_matches('/'));
         let body = serde_json::to_vec(request).map_err(|e| e.to_string())?;
         let (status, text) =
-            http_post_bytes(&url, &[("Content-Type", "application/json")], &body).await?;
+            http_post_bytes(&url, &[("Content-Type", "application/json"), ("x-adboard-token", self.api_token())], &body).await?;
         if !(200..300).contains(&status) {
             return Err(if text.trim().is_empty() {
                 format!("command proxy HTTP {status}")
@@ -2025,7 +2026,7 @@ impl AppState {
         );
         let bytes = serde_json::to_vec(body).map_err(|e| e.to_string())?;
         let (status, text) =
-            http_post_bytes(&url, &[("Content-Type", "application/json")], &bytes).await?;
+            http_post_bytes(&url, &[("Content-Type", "application/json"), ("x-adboard-token", self.api_token())], &bytes).await?;
         if status != 200 {
             return Err(if text.trim().is_empty() {
                 format!("remote {path} returned {status}")
