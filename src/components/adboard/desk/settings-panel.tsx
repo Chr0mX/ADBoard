@@ -50,7 +50,7 @@ export function SettingsPanel() {
 
   return (
     <PanelFrame title="Settings" panel="settings" clean description="Stream quality, keyboard, grid, notifications, account and taskbar.">
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="pc-settings grid gap-3 lg:grid-cols-2">
         <InstallOnIphone />
         <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-stream>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Stream</h3>
@@ -162,7 +162,7 @@ export function SettingsPanel() {
             Back, Home, Recent, Volume, Power and Minimize always stay. They are the phone&apos;s own controls and the Tools panel&apos;s fold button, so they can&apos;t be moved or removed.
           </p>
           <div className="flex flex-col gap-1" data-settings-hide-nav>
-            <h4 className="text-xs font-semibold text-[var(--pc-ink)]">Show on the bar</h4>
+            <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">Show on the bar</h4>
             {HIDEABLE_NAV_IDS.map((id) => (
               <label key={id} className="pc-choice-row justify-between">
                 <span>{HIDEABLE_NAV_LABELS[id]}</span>
@@ -176,7 +176,7 @@ export function SettingsPanel() {
           </div>
           {pins.length > 1 && (
             <div className="flex flex-col gap-1" data-settings-pin-order>
-              <h4 className="text-xs font-semibold text-[var(--pc-ink)]">Order (left to right)</h4>
+              <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">Order (left to right)</h4>
               {pins.map((id, index) => (
                 <div key={id} className="flex items-center justify-between gap-2 text-sm text-[var(--pc-ink)]" data-pin-order-row={id}>
                   <span>{index + 1}. {TASKBAR_TOOL_LABELS[id]}</span>

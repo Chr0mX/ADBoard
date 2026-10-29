@@ -126,6 +126,7 @@ export function NotificationsCard() {
                 onChange={(e) => setUrl(e.target.value)}
                 className={cn(fieldClass, "min-w-48 flex-1 font-mono")}
                 data-webhook-input
+                data-keep-mono
               />
               <button
                 type="button"
@@ -167,7 +168,7 @@ export function NotificationsCard() {
             data-notifications-enabled
           />
           <div className="flex flex-col gap-1" data-notifications-categories>
-            <h4 className="text-xs font-semibold text-[var(--pc-ink)]">What to send</h4>
+            <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">What to send</h4>
             {(Object.keys(CATEGORY_HINT) as EventCategory[]).map((category) => (
               <label key={category} className="flex flex-wrap items-center justify-between gap-2 py-1">
                 <span className="flex min-w-0 flex-col">

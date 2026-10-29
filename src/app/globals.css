@@ -885,3 +885,17 @@ html::-webkit-scrollbar-thumb,
 .pc-clean textarea {
   border-radius: 12px;
 }
+
+/* Settings tab: buttons, fields and labels use the body font, so the card
+   reads as one typeface. Headings keep font-display. Mono stays only where
+   a field opts in with data-keep-mono (the Discord webhook URL). */
+.pc-settings .pc-toggle,
+.pc-settings input,
+.pc-settings select,
+.pc-settings textarea,
+.pc-settings .font-mono {
+  font-family: var(--font-body), ui-sans-serif, sans-serif;
+}
+.pc-settings [data-keep-mono] {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
