@@ -9,12 +9,13 @@ The Developer tab is for people who want to look under the bonnet. **ADB Shell**
 ## Contents
 
 - [ADB Shell](#adb-shell)
+- [Logcat](#logcat)
 - [Logs](#logs)
 - [Device Information](#device-information)
 - [How to](#how-to)
 - [Good to know](#good-to-know)
 
-The page title is **Developer**, with three buttons: **ADB Shell**, **Logs** and **Device Information**.
+The page title is **Developer**, with four buttons: **ADB Shell**, **Logcat**, **Logs** and **Device Information**.
 
 ## ADB Shell
 
@@ -41,6 +42,15 @@ Below RUN you see two things:
 - The command runs exactly as typed in the phone's shell, so normal shell features such as pipes work. There is no list of blocked commands and no confirmation, so commands that delete or change things will do so. Take care.
 - ADBoard waits for the command to finish and then shows the whole answer. Commands that never end (or that expect you to type back, like a live view) are not suited to this box.
 - Recent commands keeps the last 40 different commands, newest first. They are remembered in this browser only.
+
+## Logcat
+
+A phone's live log (Android's `logcat`). Choose the **Phone**, optionally an **App** (its package id, so only that app's lines show) and a minimum **Level**, then press **Start**. Lines are coloured by level and the view follows the newest line unless you scroll up.
+
+- **Search lines** filters what is shown. **Pause** stops adding lines, **Clear** empties the view and **Save .txt** downloads what is in it (the last 3,000 lines).
+- **Restart** applies a new phone, app or level. **Stop** ends the log.
+- A very busy log is thinned to 2,000 lines a second; the line count says how many were skipped.
+- App crashes are also recorded in **Events** for every phone, whether or not this tab is open.
 
 ## Logs
 

@@ -11,6 +11,10 @@ Video is a separate WS: `src/lib/video/hub.ts` → `/ws/devices/{serial}/video` 
 Each phone has one socket and one decoder per page, shared by every view of it (main screen, grid tile, macro preview) through `src/hooks/use-device-video.ts`; live fps/bitrate come from `useVideoStats`, which re-renders only the stats line.
 The decoder holds at most 3 frames (`src/lib/video/backpressure.ts`). Past that, or while the page is hidden, frames are dropped until the next keyframe, and the agent is asked for one so the picture comes back quickly.
 
+## Phone controls
+
+App controls (permissions, app ops, battery, network, state, screens, intents), phone tweaks, Shizuku start, live logcat and app-crash events: [phone-controls.md](./phone-controls.md). All plain `adb shell` commands from the agent (`app_controls.rs`, `logcat.rs`).
+
 ## Toggle design system
 
 Every on/off control uses one of four shared looks, defined in `src/app/globals.css` with React wrappers in `src/components/ui/`:

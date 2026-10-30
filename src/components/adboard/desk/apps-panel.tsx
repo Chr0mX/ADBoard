@@ -7,6 +7,7 @@ import type { Device } from "@/lib/devices/types";
 import { updateLibrary, useLibrary, type AppShortcut } from "@/lib/desk/store";
 import { categoriesOf } from "@/lib/desk/apps";
 import { AppEditor } from "@/components/adboard/desk/app-editor";
+import { AppControls } from "@/components/adboard/desk/app-controls";
 import { useDesk } from "@/components/adboard/desk/desk-context";
 import {
   ConfirmDialog,
@@ -25,7 +26,8 @@ import {
 export function AppsPanel() {
   const desk = useDesk();
   const library = useLibrary();
-  const initial = desk.focusTool === "install" || desk.focusTool === "packages" ? desk.focusTool : "launcher";
+  const initial =
+    desk.focusTool === "install" || desk.focusTool === "packages" || desk.focusTool === "controls" ? desk.focusTool : "launcher";
   const [tab, setTab] = useState(initial);
   const [checked, setChecked] = useChecked(desk.devices, desk.targets);
   const [rows, setRows] = useState<ResultRow[]>([]);
@@ -34,7 +36,7 @@ export function AppsPanel() {
   const [editing, setEditing] = useState<AppShortcut | null>(null);
 
   useEffect(() => {
-    if (desk.focusTool === "install" || desk.focusTool === "packages" || desk.focusTool === "launcher") {
+    if (desk.focusTool === "install" || desk.focusTool === "packages" || desk.focusTool === "launcher" || desk.focusTool === "controls") {
       setTab(desk.focusTool);
     }
   }, [desk.focusTool]);
@@ -80,6 +82,7 @@ export function AppsPanel() {
             ["launcher", "Launcher"],
             ["install", "Install APK"],
             ["packages", "Packages"],
+            ["controls", "Controls"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -181,6 +184,8 @@ export function AppsPanel() {
           rows={rows}
         />
       )}
+
+      {tab === "controls" && <AppControls devices={desk.devices} checked={checked} onChecked={setChecked} />}
 
       {(adding || editing) && (
         <AppEditor

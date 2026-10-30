@@ -55,7 +55,10 @@ export type FieldKey =
   | "dest"
   | "ms"
   | "bitrate"
-  | "size";
+  | "size"
+  | "intentVerb"
+  | "tweak"
+  | "tweakState";
 
 export interface FieldDef {
   key: FieldKey;
@@ -140,6 +143,70 @@ export const ACTIONS: ActionDef[] = [
   },
 
   /* Device Control */
+  {
+    kind: "intent",
+    label: "Send intent",
+    category: "App Control",
+    mechanism: "shell",
+    description: "Sends a broadcast or starts an activity with am, e.g. to trigger an app's automation receiver. Only intent flags are allowed.",
+    fields: [
+      {
+        key: "intentVerb",
+        label: "Type",
+        type: "select",
+        options: [
+          { value: "broadcast", label: "Broadcast" },
+          { value: "start", label: "Start activity" },
+        ],
+      },
+      {
+        key: "command",
+        label: "Arguments",
+        type: "text",
+        placeholder: "-a com.app.START -n com.app/.Receiver --es mode fast",
+        help: "-a -c -d -t -n -p -f and extras --es --ez --ei --el --ef --ed",
+      },
+    ],
+    defaults: { intentVerb: "broadcast", command: "" },
+  },
+  {
+    kind: "startShizuku",
+    label: "Start Shizuku",
+    category: "Device Control",
+    mechanism: "shell",
+    description: "Starts the Shizuku server over adb (Shizuku, its forks and Shizuku-Next). Useful after a reboot. Does nothing when it is already running.",
+    fields: [],
+    defaults: {},
+  },
+  {
+    kind: "tweak",
+    label: "Phone tweak",
+    category: "Device Control",
+    mechanism: "shell",
+    description: "Turns a phone-wide setting on or off (Device management → Tweaks).",
+    fields: [
+      {
+        key: "tweak",
+        label: "Setting",
+        type: "select",
+        options: [
+          { value: "devOptionsHidden", label: "Hide Developer options" },
+          { value: "phantomKillerOff", label: "Phantom process killer off" },
+          { value: "forceDark", label: "Force dark" },
+        ],
+      },
+      {
+        key: "tweakState",
+        label: "State",
+        type: "select",
+        options: [
+          { value: "on", label: "On" },
+          { value: "off", label: "Off" },
+        ],
+      },
+    ],
+    defaults: { tweak: "phantomKillerOff", tweakState: "on" },
+  },
   {
     kind: "shell",
     label: "Shell command",
@@ -486,6 +553,9 @@ export function validateStep(step: MacroStep): Partial<Record<FieldKey | "step",
   if (step.kind === "text" && step.text && UNSAFE_TEXT.test(withoutVariables(step.text))) {
     errors.text = "input text can't type ; | & ` $ ( ) < > ' \" \\";
   }
+  if (step.kind === "intent" && step.command && /[;|&`$<>\n]/.test(withoutVariables(step.command))) {
+    errors.command = "Only intent flags and values (no ; | & ` $ < >)";
+  }
   if (step.kind === "shell" && step.command && (step.command.includes("\n") || step.command.length > 2000)) {
     errors.command = "One line, up to 2000 characters";
   }
@@ -603,6 +673,12 @@ export function summarizeStep(step: MacroStep): string {
       return step.text ? `“${step.text}”` : "(no text)";
     case "shell":
       return step.command || step.text || "(no command)";
+    case "intent":
+      return `${step.intentVerb === "start" ? "start" : "broadcast"} ${step.command || "(no arguments)"}`;
+    case "startShizuku":
+      return "start the Shizuku server";
+    case "tweak":
+      return `${actionOf("tweak")?.fields[0].options?.find((o) => o.value === step.tweak)?.label ?? "(no tweak)"} ${step.tweakState === "off" ? "off" : "on"}`;
     case "nav":
       return actionOf("nav")?.fields[0].options?.find((o) => o.value === (step.nav ?? "home"))?.label ?? "Home";
     case "launch":

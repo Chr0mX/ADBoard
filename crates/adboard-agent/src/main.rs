@@ -1,5 +1,6 @@
 mod adb;
 mod api;
+mod app_controls;
 mod app_icon;
 mod audio;
 mod cron;
@@ -9,6 +10,7 @@ mod data_dir;
 mod device_ops;
 mod env;
 mod events;
+mod logcat;
 mod gesture;
 mod host_files;
 mod mesh;
@@ -102,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Record phone and stream changes; send chosen events to Discord.
     notify::start(host_name.clone());
     events::spawn_watch(state.clone());
+    logcat::spawn_crash_watch(state.clone());
     // Every data folder exists from the start, even when empty.
     data_dir::ensure_folders(&data_dir::root().path);
     // Phone model names: cached in the data folder, refreshed in the background.

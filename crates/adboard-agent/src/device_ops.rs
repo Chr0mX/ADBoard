@@ -25,7 +25,7 @@ pub fn device_path(path: &str) -> Result<&str, String> {
     Ok(path)
 }
 
-fn sh_quote(value: &str) -> String {
+pub(crate) fn sh_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
@@ -375,7 +375,10 @@ pub async fn run_adb_op(
         "info" => device_info(adb, serial).await,
         "displaySize" => set_display_size(adb, serial, arg.unwrap_or("")).await,
         "push" => Err("use the file upload".into()),
-        other => Err(format!("unknown device operation: {other}")),
+        other => match crate::app_controls::run(adb, serial, other, arg, arg2).await {
+            Some(result) => result,
+            None => Err(format!("unknown device operation: {other}")),
+        },
     }
 }
 

@@ -46,7 +46,10 @@ export type MacroStepKind =
   | "download"
   | "deleteFile"
   | "install"
-  | "gesture";
+  | "gesture"
+  | "intent"
+  | "startShizuku"
+  | "tweak";
 
 export interface MacroStep {
   id: string;
@@ -73,6 +76,11 @@ export interface MacroStep {
   nav?: "back" | "home" | "recent" | "volume_up" | "volume_down" | "power";
   command?: string;
   bitrate?: string;
+  /** Intent: `broadcast` or `start` (the arguments are in `command`). */
+  intentVerb?: "broadcast" | "start";
+  /** Phone tweak: which one, and `on` / `off`. */
+  tweak?: "devOptionsHidden" | "phantomKillerOff" | "forceDark";
+  tweakState?: "on" | "off";
   size?: string;
   dest?: string;
   hostPath?: string;
@@ -310,6 +318,9 @@ export const MACRO_KINDS = new Set<string>([
   "deleteFile",
   "install",
   "gesture",
+  "intent",
+  "startShizuku",
+  "tweak",
 ]);
 
 /** Parse a desk export. Rejects junk so a bad import does not wipe the library. */

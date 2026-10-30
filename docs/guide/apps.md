@@ -11,10 +11,11 @@ Two terms: an **APK** is an Android app file (its name ends in .apk). A **packag
 - [Launcher](#launcher)
 - [Install APK](#install-apk)
 - [Packages](#packages)
+- [Controls](#controls)
 - [How to](#how-to)
 - [Good to know](#good-to-know)
 
-The page title is **Apps**, with three buttons: **Launcher**, **Install APK** and **Packages**. The phones you ticked on the Control tab are ticked here to begin with. Every sub-tab has a **Target devices** list with tick boxes, and a result list that shows one line per phone.
+The page title is **Apps**, with four buttons: **Launcher**, **Install APK**, **Packages** and **Controls**. The phones you ticked on the Control tab are ticked here to begin with. Every sub-tab has a **Target devices** list with tick boxes, and a result list that shows one line per phone.
 
 ## Launcher
 
@@ -101,6 +102,21 @@ Big files: files over 64 MB are sent to ADBoard in 32 MB pieces automatically, s
 Clear Data shows a box titled "Clear application data?" with the package id and the text "This will remove the application's local data." Press **Clear Data** to go ahead, or **Cancel** to back out. Uninstall has no such box, so check the package id before you press it.
 
 The package id may only contain letters, numbers, dots and underscores, and must have at least one dot. Anything else is refused with "package name is not valid".
+
+## Controls
+
+Everything about one app, on all the ticked phones at once. Type a package id (your saved apps are suggested) and press **Read app**. ADBoard reads the app from the first ticked phone that is online.
+
+| Part | What you can do |
+|---|---|
+| App card | Version, uid and target SDK. **Suspend** (the app can't be opened), **Disable** (hidden from the launcher), **Uninstall for user** (keeps its data), **Restore** (brings back a removed system app). The first three ask first. |
+| Battery and network | **Standby bucket** (Active … Restricted), **Not battery optimised** (Doze leaves it running) and **Network access** (off blocks Wi-Fi and mobile data; needs Android 13 or newer, otherwise greyed out). |
+| Permissions | A switch per runtime permission (camera, notifications, microphone…). |
+| App ops | Every app op with its mode. Setting `RUN_ANY_IN_BACKGROUND` to `ignore` is how Android stops an app in the background; set it to `allow` to keep a game running. **Other op** sets one that isn't listed. |
+| Screens | **List screens** shows every screen the app declares. **Open** starts one; **Open hidden** reaches a screen the app doesn't export. |
+| Send intent | Sends a broadcast or starts an activity, e.g. `-a com.app.START --es mode fast`. |
+
+Each change shows a result line per phone, then the app is read again. The commands behind each part are in [phone-controls.md](../phone-controls.md).
 
 ## How to
 

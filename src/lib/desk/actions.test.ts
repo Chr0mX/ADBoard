@@ -16,6 +16,16 @@ describe("action registry", () => {
     }
   });
 
+  it("intent, Shizuku and tweak steps", () => {
+    assert.deepEqual(validateStep(newStep("startShizuku")), {});
+    assert.deepEqual(validateStep(newStep("tweak")), {});
+    assert.ok(validateStep(newStep("intent")).command);
+    assert.deepEqual(validateStep(step({ kind: "intent", intentVerb: "broadcast", command: "-a com.app.GO --ez on true" })), {});
+    assert.ok(validateStep(step({ kind: "intent", command: "-a x.y; reboot" })).command);
+    assert.equal(summarizeStep(step({ kind: "tweak", tweak: "forceDark", tweakState: "off" })), "Force dark off");
+    assert.equal(summarizeStep(step({ kind: "intent", intentVerb: "start", command: "-n a.b/.C" })), "start -n a.b/.C");
+  });
+
   it("new steps start valid except for fields the user must fill", () => {
     assert.deepEqual(validateStep(newStep("tap")), {});
     assert.deepEqual(validateStep(newStep("swipe")), {});

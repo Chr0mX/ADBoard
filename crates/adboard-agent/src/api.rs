@@ -149,7 +149,8 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/ws/events", get(ws_upgrade))
         .route("/ws/agent", get(ws_agent_upgrade))
         .route("/ws/devices/{serial}/video", get(ws_video_upgrade))
-        .route("/ws/devices/{serial}/audio", get(ws_audio_upgrade));
+        .route("/ws/devices/{serial}/audio", get(ws_audio_upgrade))
+        .route("/ws/devices/{serial}/logcat", get(ws_logcat_upgrade));
 
     if let Some(dir) = ui_dir() {
         info!(path = %dir.display(), "serving control UI at /");
@@ -1327,8 +1328,14 @@ async fn device_command(
     Json(body): Json<DeviceCommandRequest>,
 ) -> Result<Json<adboard_protocol::DeviceCommandResponse>, (StatusCode, String)> {
     let (op, arg) = (body.op.clone(), body.arg.clone());
+    // Status reads of Shizuku and the phone tweaks change nothing.
+    let read_only = match op.as_str() {
+        "shizuku" => !matches!(body.arg.as_deref(), Some("start")),
+        "tweak" => matches!(body.arg2.as_deref(), None | Some("status")),
+        _ => false,
+    };
     let result = state.handle_command(body).await;
-    if let Ok(response) = &result {
+    if let (Ok(response), false) = (&result, read_only) {
         crate::events::record_command(&op, arg.as_deref(), &response.results);
     }
     result.map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
@@ -1438,6 +1445,77 @@ async fn ws_audio_upgrade(
     Path(serial): Path<String>,
 ) -> impl IntoResponse {
     ws.protocols([WS_PROTOCOL, LEGACY_WS_PROTOCOL]).on_upgrade(move |socket| handle_audio_socket(socket, state, serial))
+}
+
+async fn ws_logcat_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    Path(serial): Path<String>,
+) -> impl IntoResponse {
+    ws.protocols([WS_PROTOCOL, LEGACY_WS_PROTOCOL]).on_upgrade(move |socket| handle_logcat_socket(socket, state, serial))
+}
+
+/// Live logcat: the first client message is the filter (`{package, level}`).
+async fn handle_logcat_socket(socket: WebSocket, state: AppState, serial: String) {
+    let (mut sender, mut receiver) = socket.split();
+    let note = |text: String| Message::Text(serde_json::json!({ "note": text }).to_string().into());
+    let serial = match state.resolve_serial(&serial).await {
+        Ok(serial) => serial,
+        Err(e) => {
+            let _ = sender.send(note(e)).await;
+            return;
+        }
+    };
+    if let Some(host_id) = state.remote_owner(&serial).await {
+        match state.remote_http_base(&host_id).await {
+            // The filter message is relayed like any other client message.
+            Some(base) => proxy_remote_stream(sender, receiver, &base, &serial, "logcat", state.api_token()).await,
+            None => {
+                let _ = sender.send(note(format!("agent {host_id} did not advertise http_base — cannot proxy logcat"))).await;
+            }
+        }
+        return;
+    }
+    let filter = match tokio::time::timeout(std::time::Duration::from_secs(5), receiver.next()).await {
+        Ok(Some(Ok(Message::Text(text)))) => serde_json::from_str(text.as_str()).unwrap_or_default(),
+        _ => crate::logcat::Filter::default(),
+    };
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
+    let producer = tokio::spawn(crate::logcat::stream(state.inner.adb_path.clone(), serial.clone(), filter, tx));
+    let mut send_task = tokio::spawn(async move {
+        let mut keepalive = ws_keepalive();
+        loop {
+            tokio::select! {
+                frame = rx.recv() => match frame {
+                    Some(text) => {
+                        if sender.send(Message::Text(text.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    None => break,
+                },
+                _ = keepalive.tick() => {
+                    if sender.send(ws_ping()).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    let mut recv_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = receiver.next().await {
+            if matches!(msg, Message::Close(_)) {
+                break;
+            }
+        }
+    });
+    tokio::select! {
+        _ = &mut send_task => recv_task.abort(),
+        _ = &mut recv_task => send_task.abort(),
+    }
+    // Dropping the producer kills its adb logcat process.
+    producer.abort();
+    info!(%serial, "logcat websocket disconnected");
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
@@ -2343,6 +2421,63 @@ mod tests {
         let text = body_text(response).await;
         assert!(text.contains("adb is not available"), "{text}");
         assert!(text.contains("\"ok\":false"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn app_controls_and_tweaks_run_on_the_mock_fleet() {
+        let state = AppState::new(Role::Controller, "controls-test".into(), "controls-test".into(), 0, None);
+        let token = state.api_token().to_string();
+        let devices = state.list_devices().await;
+        let ids: Vec<String> = devices.iter().filter(|d| d.status == adboard_protocol::DeviceStatus::Online).take(2).map(|d| d.id.clone()).collect();
+        assert_eq!(ids.len(), 2);
+        let app = router_with_auth(state, WebAuth::new(None, false));
+        let run = |op: &str, arg: Option<&str>, arg2: Option<&str>| {
+            let body = serde_json::json!({ "targetIds": ids, "op": op, "arg": arg, "arg2": arg2 }).to_string();
+            let app = app.clone();
+            let token = token.clone();
+            async move {
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .method("POST")
+                            .uri("/api/device/command")
+                            .header("content-type", "application/json")
+                            .header(TOKEN_HEADER, &token)
+                            .body(Body::from(body))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                serde_json::from_str::<serde_json::Value>(&body_text(response).await).unwrap()
+            }
+        };
+        let ok = |v: &serde_json::Value| v["results"].as_array().unwrap().iter().all(|r| r["ok"] == true);
+        let out = run("appop", Some("com.game"), Some("RUN_ANY_IN_BACKGROUND=ignore")).await;
+        assert!(ok(&out), "{out}");
+        let detail = run("appDetail", Some("com.game"), None).await;
+        let parsed: serde_json::Value = serde_json::from_str(detail["results"][0]["output"].as_str().unwrap()).unwrap();
+        assert_eq!(parsed["ops"]["RUN_ANY_IN_BACKGROUND"], "ignore");
+        for (op, arg, arg2) in [
+            ("permission", "com.game", "grant:android.permission.RECORD_AUDIO"),
+            ("standby", "com.game", "active"),
+            ("batteryExempt", "com.game", "on"),
+            ("netBlock", "com.game", "on"),
+            ("appState", "com.game", "suspend"),
+            ("assistLaunch", "com.game", ".Hidden"),
+            ("intent", "broadcast", "-a com.game.PING --ez on true"),
+            ("shizuku", "start", ""),
+            ("tweak", "phantomKillerOff", "on"),
+        ] {
+            let out = run(op, Some(arg), Some(arg2).filter(|a| !a.is_empty())).await;
+            assert!(ok(&out), "{op}: {out}");
+        }
+        let tweaks = run("tweak", None, Some("status")).await;
+        assert!(tweaks["results"][0]["output"].as_str().unwrap().contains("\"phantomKillerOff\":true"), "{tweaks}");
+        let bad = run("intent", Some("broadcast"), Some("-a x.y; reboot")).await;
+        assert_eq!(bad["results"][0]["ok"], false);
+        let bad = run("appop", Some("com.game"), Some("CAMERA=always")).await;
+        assert_eq!(bad["results"][0]["ok"], false);
     }
 
     #[tokio::test]

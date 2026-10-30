@@ -1275,7 +1275,11 @@ impl AppState {
                         Err(error) => op_error(device, error),
                     }
                 }
-                _ => op_error(device, "adb is not available"),
+                _ => match crate::app_controls::mock::run(&device.serial, op, arg, arg2) {
+                    Some(Ok(output)) => op_ok(device, output),
+                    Some(Err(error)) => op_error(device, error),
+                    None => op_error(device, "adb is not available"),
+                },
             };
         };
         match crate::device_ops::run_adb_op(

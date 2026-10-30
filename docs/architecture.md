@@ -25,7 +25,7 @@ Application
 │   ├── scrcpy_video.rs / video.rs
 │   ├── scrcpy_control.rs
 │   ├── audio.rs            second scrcpy server (does not restart H264)
-│   └── adb.rs / device_ops.rs / host_files.rs
+│   └── adb.rs / device_ops.rs / host_files.rs / app_controls.rs / logcat.rs
 ├── Services
 │   ├── api.rs              HTTP + WS router, CORS, API token
 │   └── mesh.rs / mesh_client.rs
