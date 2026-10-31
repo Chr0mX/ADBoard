@@ -961,6 +961,16 @@ fn command_label(op: &str) -> Option<(&'static str, &'static str)> {
         "recordStart" => ("device", "Start recording"),
         "recordStop" => ("device", "Stop recording"),
         "displaySize" => ("device", "Screen size"),
+        "appop" => ("app", "App op"),
+        "permission" => ("app", "Permission"),
+        "standby" => ("app", "Standby bucket"),
+        "batteryExempt" => ("app", "Battery optimisation"),
+        "netBlock" => ("app", "Network access"),
+        "appState" => ("app", "App state"),
+        "assistLaunch" => ("app", "Open hidden screen"),
+        "intent" => ("app", "Send intent"),
+        "shizuku" => ("device", "Start Shizuku"),
+        "tweak" => ("device", "Phone tweak"),
         _ => return None,
     })
 }
@@ -972,7 +982,10 @@ pub fn record_command(op: &str, arg: Option<&str>, results: &[adboard_protocol::
     let routine = matches!(op, "screenshot" | "launch" | "forceStop" | "recordStart" | "recordStop");
     for result in results {
         let what = match (op, arg) {
-            ("uninstall" | "launch" | "forceStop" | "clearData", Some(package)) => format!("{label} {package}"),
+            ("uninstall" | "launch" | "forceStop" | "clearData" | "appop" | "permission" | "standby" | "batteryExempt" | "netBlock" | "appState" | "assistLaunch", Some(package)) => {
+                format!("{label} {package}")
+            }
+            ("tweak", Some(name)) => format!("{label} {name}"),
             _ => label.to_string(),
         };
         let event = if result.ok {

@@ -113,6 +113,8 @@ struct Attr {
     reference: Option<u32>,
     /// The value when it is a plain string.
     string: Option<String>,
+    /// The value when it is a boolean (`android:exported`).
+    boolean: Option<bool>,
 }
 
 struct Element {
@@ -153,6 +155,7 @@ fn axml_elements(b: &[u8]) -> Option<Vec<Element>> {
                         name: attr_name,
                         reference: (data_type == 0x01).then_some(data),
                         string: if data_type == 0x03 { pool.get(raw).map(str::to_string) } else { None },
+                        boolean: (data_type == 0x12).then_some(data != 0),
                     });
                 }
                 out.push(Element { name, attrs });
@@ -188,6 +191,87 @@ fn manifest_label(manifest: &[u8]) -> Option<Attr> {
         }
     }
     None
+}
+
+/// One screen an app declares (`<activity>` or `<activity-alias>`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestActivity {
+    /// Full class name (`com.app.MainActivity`).
+    pub name: String,
+    /// Other apps (and `am start`) may open it. Unset `exported` counts as
+    /// exported when the activity has an intent filter (the pre-Android-12 rule).
+    pub exported: bool,
+    /// Shown in the launcher (MAIN + LAUNCHER filter).
+    pub launcher: bool,
+}
+
+/// Activities in manifest order. A compiled manifest is a flat list, so an
+/// element belongs to the last activity seen until another component starts.
+fn group_activities(elements: &[Element]) -> Vec<ManifestActivity> {
+    let attr = |e: &Element, name: &str| e.attrs.iter().find(|a| a.name == name).cloned();
+    let package = elements
+        .iter()
+        .find(|e| e.name == "manifest")
+        .and_then(|e| attr(e, "package"))
+        .and_then(|a| a.string)
+        .unwrap_or_default();
+    let mut out: Vec<ManifestActivity> = Vec::new();
+    let mut explicit: Vec<Option<bool>> = Vec::new();
+    let mut filtered: Vec<bool> = Vec::new();
+    let mut current: Option<usize> = None;
+    let mut main_action = false;
+    for element in elements {
+        match element.name.as_str() {
+            "activity" | "activity-alias" => {
+                let Some(raw) = attr(element, "name").and_then(|a| a.string) else {
+                    current = None;
+                    continue;
+                };
+                let name = if raw.starts_with('.') {
+                    format!("{package}{raw}")
+                } else if !raw.contains('.') && !package.is_empty() {
+                    format!("{package}.{raw}")
+                } else {
+                    raw
+                };
+                out.push(ManifestActivity { name, exported: false, launcher: false });
+                explicit.push(attr(element, "exported").and_then(|a| a.boolean));
+                filtered.push(false);
+                current = Some(out.len() - 1);
+            }
+            "service" | "receiver" | "provider" | "uses-library" | "application" => current = None,
+            "intent-filter" => {
+                main_action = false;
+                if let Some(i) = current {
+                    filtered[i] = true;
+                }
+            }
+            "action" => {
+                main_action |= attr(element, "name").and_then(|a| a.string).as_deref() == Some("android.intent.action.MAIN");
+            }
+            "category" => {
+                let launcher = attr(element, "name").and_then(|a| a.string).as_deref() == Some("android.intent.category.LAUNCHER");
+                if let (Some(i), true, true) = (current, launcher, main_action) {
+                    out[i].launcher = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    for (i, activity) in out.iter_mut().enumerate() {
+        activity.exported = explicit[i].unwrap_or(filtered[i]);
+    }
+    out
+}
+
+/// Every activity the APK's manifest declares.
+pub fn activities_from_apk(path: &Path) -> Result<Vec<ManifestActivity>, String> {
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    let manifest = read_entry(&mut zip, "AndroidManifest.xml")?;
+    let elements = axml_elements(&manifest).ok_or("the manifest could not be read")?;
+    Ok(group_activities(&elements))
 }
 
 /// The foreground picture an adaptive-icon XML points at.
@@ -610,6 +694,64 @@ mod tests {
         let label = label_from_apk(&apk).expect("label");
         assert!(label.len() >= 3 && !label.contains('\u{0}'), "{label:?}");
         eprintln!("label: {label}");
+    }
+
+    fn element(name: &str, attrs: &[(&str, &str)]) -> Element {
+        Element {
+            name: name.into(),
+            attrs: attrs
+                .iter()
+                .map(|(k, v)| Attr {
+                    name: (*k).into(),
+                    reference: None,
+                    string: (!matches!(*v, "true" | "false")).then(|| (*v).to_string()),
+                    boolean: match *v {
+                        "true" => Some(true),
+                        "false" => Some(false),
+                        _ => None,
+                    },
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn lists_activities_with_launcher_and_exported() {
+        let elements = vec![
+            element("manifest", &[("package", "com.game")]),
+            element("application", &[]),
+            element("activity", &[("name", ".Main")]),
+            element("intent-filter", &[]),
+            element("action", &[("name", "android.intent.action.MAIN")]),
+            element("category", &[("name", "android.intent.category.LAUNCHER")]),
+            element("activity", &[("name", "com.game.Settings"), ("exported", "false")]),
+            element("meta-data", &[("name", "x")]),
+            element("activity", &[("name", "Debug")]),
+            element("service", &[("name", ".Sync")]),
+            element("intent-filter", &[]),
+            element("activity-alias", &[("name", ".Alias"), ("exported", "true")]),
+        ];
+        let got = group_activities(&elements);
+        let names: Vec<_> = got.iter().map(|a| (a.name.as_str(), a.exported, a.launcher)).collect();
+        assert_eq!(
+            names,
+            vec![
+                ("com.game.Main", true, true),
+                ("com.game.Settings", false, false),
+                ("com.game.Debug", false, false),
+                ("com.game.Alias", true, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn lists_the_activities_of_a_real_apk() {
+        let Some(apk) = sample_apk() else {
+            eprintln!("no sample APK here; skipping");
+            return;
+        };
+        let activities = activities_from_apk(&apk).expect("activities");
+        assert!(activities.iter().any(|a| a.launcher), "{activities:?}");
     }
 
     #[test]

@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useLibrary, type AppShortcut } from "@/lib/desk/store";
+import { devicesClient } from "@/lib/api/client";
+import { parseActivities, shortActivity, type AppActivity } from "@/lib/devices/app-controls";
+import type { Device } from "@/lib/devices/types";
 import { formatMs } from "@/components/adboard/macros/fields";
 import { SwitchRow } from "@/components/ui/switch";
 import type { AppStep, MacroStep } from "@/lib/macro/core";
@@ -26,8 +30,19 @@ export function appStepSummary(step: AppStep, delayMs: number, apps: AppShortcut
   return `Open ${what}${step.activity ? ` · ${step.activity}` : ""}${step.restart ? " · restart" : ""} · wait ${formatMs(delayMs)}`;
 }
 
-export function AppStepEditor({ step, onChange }: { step: MacroStep & { app: AppStep }; onChange: (step: MacroStep) => void }) {
+export function AppStepEditor({
+  step,
+  readDevice,
+  onChange,
+}: {
+  step: MacroStep & { app: AppStep };
+  /** The phone "List screens" reads the app from: the previewed one, else a ticked online one. */
+  readDevice?: Device | null;
+  onChange: (step: MacroStep) => void;
+}) {
   const { apps } = useLibrary();
+  const [screens, setScreens] = useState<{ pkg: string; list: AppActivity[]; error?: string } | null>(null);
+  const [listing, setListing] = useState(false);
   const app = step.app;
   const patch = (change: Partial<AppStep>) => onChange({ ...step, app: { ...app, ...change } });
   const saved = savedAppFor(app, apps);
@@ -91,6 +106,49 @@ export function AppStepEditor({ step, onChange }: { step: MacroStep & { app: App
         </label>
       </div>
       {!validPackage && <p className="text-xs text-[var(--pc-warn)]">A package name has only letters, digits, dots and _.</p>}
+      {readDevice && app.packageName && validPackage && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="h-11 rounded-lg border border-[var(--pc-line)] px-3 text-xs disabled:opacity-50"
+            disabled={listing}
+            data-app-step-screens
+            onClick={async () => {
+              setListing(true);
+              try {
+                const response = await devicesClient.runCommand([readDevice], "activities", app.packageName);
+                const result = response.results[0];
+                setScreens({ pkg: app.packageName, list: result?.ok ? parseActivities(result.output) : [], error: result?.ok ? undefined : result?.error || "Failed" });
+              } finally {
+                setListing(false);
+              }
+            }}
+          >
+            {listing ? "Reading…" : `List screens on ${readDevice.name}`}
+          </button>
+          {screens?.pkg === app.packageName && screens.list.length > 0 && (
+            <select
+              className={cn(fieldClass, "min-w-0 flex-1 font-mono")}
+              value=""
+              aria-label="Pick a screen"
+              data-app-step-screen-pick
+              onChange={(event) => {
+                if (event.target.value) patch({ activity: event.target.value });
+              }}
+            >
+              <option value="">Pick a screen…</option>
+              {screens.list.map((screen) => (
+                <option key={screen.name} value={shortActivity(screen.name, app.packageName)} disabled={!screen.exported}>
+                  {shortActivity(screen.name, app.packageName)}
+                  {screen.launcher ? " (launcher)" : ""}
+                  {screen.exported ? "" : " (not exported)"}
+                </option>
+              ))}
+            </select>
+          )}
+          {screens?.pkg === app.packageName && screens.error && <span className="text-xs text-[var(--pc-warn)]">{screens.error}</span>}
+        </div>
+      )}
       <p className="text-[11px] leading-snug text-[var(--pc-muted)]">
         Empty activity opens the app&apos;s launcher screen. Saved apps come from Apps; their activity and arguments are filled in.
         &ldquo;Then wait&rdquo; gives the app time to open before the next step.

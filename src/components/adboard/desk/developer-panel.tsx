@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
 import { useDesk } from "@/components/adboard/desk/desk-context";
+import { LogcatView } from "@/components/adboard/desk/logcat-view";
 import {
   PanelFrame,
   PrimaryButton,
@@ -29,7 +30,9 @@ function readHistory(): string[] {
 
 export function DeveloperPanel() {
   const desk = useDesk();
-  const [tab, setTab] = useState(desk.focusTool === "logs" || desk.focusTool === "info" ? desk.focusTool : "shell");
+  const [tab, setTab] = useState(
+    desk.focusTool === "logs" || desk.focusTool === "info" || desk.focusTool === "logcat" ? desk.focusTool : "shell",
+  );
   const [checked, setChecked] = useChecked(desk.devices, desk.targets);
   const [command, setCommand] = useState("pm list packages");
   const [history, setHistory] = useState<string[]>([]);
@@ -42,7 +45,7 @@ export function DeveloperPanel() {
   }, []);
 
   useEffect(() => {
-    if (desk.focusTool === "logs" || desk.focusTool === "shell" || desk.focusTool === "info") {
+    if (desk.focusTool === "logs" || desk.focusTool === "shell" || desk.focusTool === "info" || desk.focusTool === "logcat") {
       setTab(desk.focusTool);
     }
   }, [desk.focusTool]);
@@ -78,11 +81,12 @@ export function DeveloperPanel() {
   }
 
   return (
-    <PanelFrame title="Developer" panel="developer" clean description="Run an ADB shell command, read logs, device information.">
-      <div className="flex gap-2">
+    <PanelFrame title="Developer" panel="developer" clean description="Run an ADB shell command, follow logcat, read session logs and device information.">
+      <div className="flex flex-wrap gap-2">
         {(
           [
             ["shell", "ADB Shell"],
+            ["logcat", "Logcat"],
             ["logs", "Logs"],
             ["info", "Device Information"],
           ] as const
@@ -135,6 +139,7 @@ export function DeveloperPanel() {
           </pre>
         </form>
       )}
+      {tab === "logcat" && <LogcatView devices={desk.devices} preferred={desk.activeDevice} />}
       {tab === "logs" && (
         <ul data-session-logs className="flex flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4 font-mono text-xs">
           {desk.devices.map((device) => {

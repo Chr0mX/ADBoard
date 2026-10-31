@@ -192,6 +192,12 @@ async function runStep(
       return command(device, "shutdown");
     case "shell":
       return command(device, "shell", text(step.command || step.text));
+    case "intent":
+      return command(device, "intent", step.intentVerb === "start" ? "start" : "broadcast", text(step.command));
+    case "startShizuku":
+      return command(device, "shizuku", "start");
+    case "tweak":
+      return command(device, "tweak", step.tweak ?? "phantomKillerOff", step.tweakState === "off" ? "off" : "on");
     case "screenshot":
       return command(device, "screenshot");
     case "recordStart": {

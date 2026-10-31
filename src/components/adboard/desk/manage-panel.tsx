@@ -5,6 +5,7 @@ import { saveBlob } from "@/lib/api/download";
 import { useEffect, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
 import { WirelessAdb } from "@/components/adboard/wireless-adb";
+import { PhoneTweaksPanel } from "@/components/adboard/desk/phone-tweaks";
 import type { Device } from "@/lib/devices/types";
 import { downloadScreenshots } from "@/lib/desk/capture";
 import { useDesk } from "@/components/adboard/desk/desk-context";
@@ -26,6 +27,7 @@ const TABS = [
   { id: "record", label: "Record" },
   { id: "info", label: "Information" },
   { id: "wireless", label: "Wireless" },
+  { id: "tweaks", label: "Tweaks" },
 ] as const;
 
 export function ManagePanel() {
@@ -97,6 +99,7 @@ export function ManagePanel() {
           {tab === "record" && <RecordTools busy={busy} onRun={run} />}
           {tab === "info" && <InfoPanel device={targets[0] ?? desk.activeDevice} />}
           {tab === "wireless" && <WirelessAdb initialOpen />}
+          {tab === "tweaks" && <PhoneTweaksPanel devices={targets} />}
           <ResultList rows={rows} />
           <RecoveryList />
         </div>

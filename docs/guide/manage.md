@@ -15,13 +15,14 @@ The Manage tab is where you look after your phones as devices. You can reconnect
 - [Record](#record)
 - [Information](#information)
 - [Wireless](#wireless)
+- [Tweaks](#tweaks)
 - [Recovery list](#recovery-list)
 - [How to](#how-to)
 - [Good to know](#good-to-know)
 
 ## The common layout
 
-The page title is **Device management**. Under it are five buttons: **Actions**, **Screenshot**, **Record**, **Information** and **Wireless**. The button for the open sub-tab is filled in.
+The page title is **Device management**. Under it are six buttons: **Actions**, **Screenshot**, **Record**, **Information**, **Wireless** and **Tweaks**. The button for the open sub-tab is filled in.
 
 Below that, the page has two columns:
 
@@ -121,6 +122,18 @@ First, on the phone: open Developer options and turn on Wireless debugging. (Dev
 | Remove (next to a saved address) | Disconnects that phone and forgets the address. |
 
 Messages appear under the form: grey for normal news, orange for errors. Successfully added phones are remembered in a saved list at the bottom of the form, so ADBoard can reconnect to them later.
+
+## Tweaks
+
+One card per ticked, online phone, with three switches. Each switch shows what the phone reports, so a switch that won't stay on means the phone refused the change (the reason shows under the card).
+
+| Switch | What it does |
+|---|---|
+| Hide Developer options | Apps see Developer options as off. USB and wireless debugging stay on, so ADBoard keeps the phone. A few phones still drop the connection: try one phone first. |
+| Phantom process killer off | Stops Android 12 and newer from killing long-running background processes (Termux, Shizuku). |
+| Force dark | Dark rendering for apps without a dark theme. Resets when the phone restarts and does little on Android 16. |
+
+The card also shows whether **Shizuku** is running, with **Start** when it isn't. **Start Shizuku on all** starts it on every phone listed, which you need after a reboot. Open the Shizuku app once on each phone first. **Refresh** reads everything again.
 
 ## Recovery list
 

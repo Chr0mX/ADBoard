@@ -19,9 +19,9 @@ Identical events close together (same kind, phone and text within 5 minutes) are
 
 | Category | Events |
 |---|---|
-| Phones | connected, went offline / disconnected, back online (with how long it was away), offline for longer than the alert time (when set), waiting for USB debugging approval, restart / power off / screen size results, screenshot and recording failures |
+| Phones | phone tweaks and Shizuku starts, connected, went offline / disconnected, back online (with how long it was away), offline for longer than the alert time (when set), waiting for USB debugging approval, restart / power off / screen size results, screenshot and recording failures |
 | Macros | started, finished, stopped, failed — with the run id, macro, phone, failing step and reason (for text steps: what was not found), cycles, touches and duration. Testing a single step is not recorded |
-| Apps & installs | APK installed / failed per phone, uninstall, clear data, app launch and force-stop failures |
+| Apps & installs | APK installed / failed per phone, uninstall, clear data, app launch and force-stop failures, **app crashed** (Java or native, read from each phone's crash buffer, with the first lines of the report), changes made in Apps → Controls (app ops, permissions, bucket, battery, network, state, intents) |
 | Live screen | the scrcpy stream stopped (with its reason) and recovered |
 | ADB | `adb devices` failures and other ADB notices |
 | ADBoard | started (phones online), stopped, **did not shut down cleanly last time** (crash, closed window, power loss), internal errors, history problems |

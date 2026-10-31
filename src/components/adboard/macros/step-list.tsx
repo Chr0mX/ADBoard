@@ -312,7 +312,7 @@ function StepEditor({
       </div>
 
       {isAppStep(step) ? (
-        <AppStepEditor step={step} onChange={onChange} />
+        <AppStepEditor step={step} readDevice={readDevice} onChange={onChange} />
       ) : isTextStep(step) ? (
         <TextStepEditor step={step} tab={tab} readDevice={readDevice} onChange={onChange} />
       ) : (
