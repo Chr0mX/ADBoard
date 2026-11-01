@@ -19,7 +19,43 @@ pub const MIN_DPI: u32 = 72;
 pub const MAX_DPI: u32 = 640;
 /// More displays than this per phone means more phone-side encodes than a
 /// phone sustains; the API refuses beyond it.
-pub const MAX_PER_PHONE: u32 = 2;
+pub const DEFAULT_PER_PHONE: u32 = 1;
+/// Highest value `ADBOARD_MAX_VIRTUAL_DISPLAYS` can raise the limit to.
+pub const CEILING_PER_PHONE: u32 = 4;
+/// Virtual displays need Android 13 (API 33) or newer.
+pub const MIN_SDK: u32 = 33;
+
+/// The per-phone limit from the value of `ADBOARD_MAX_VIRTUAL_DISPLAYS`: the
+/// default when unset or not a number, clamped to `1..=CEILING_PER_PHONE`.
+pub fn limit_from(value: Option<&str>) -> u32 {
+    value
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(DEFAULT_PER_PHONE)
+        .clamp(1, CEILING_PER_PHONE)
+}
+
+pub fn max_per_phone() -> u32 {
+    limit_from(
+        std::env::var("ADBOARD_MAX_VIRTUAL_DISPLAYS")
+            .ok()
+            .as_deref(),
+    )
+}
+
+/// Display `index` (1-based) is allowed when it is within `limit`.
+pub fn check_index(index: u32, limit: u32) -> Result<(), SpecError> {
+    if index == 0 || index > limit {
+        Err(SpecError::Index(index, limit))
+    } else {
+        Ok(())
+    }
+}
+
+/// `ro.build.version.sdk` of the phone, as text. Anything below `MIN_SDK`, or
+/// not a number, is refused.
+pub fn sdk_supported(sdk: &str) -> bool {
+    sdk.trim().parse::<u32>().is_ok_and(|n| n >= MIN_SDK)
+}
 
 /// First forward port for virtual displays: clear of video (27183..29183) and
 /// audio (31183..33183).
@@ -56,7 +92,8 @@ pub enum SpecError {
     Size(u32, u32),
     Dpi(u32),
     StartApp(String),
-    Index(u32),
+    Index(u32, u32),
+    Sdk(String),
 }
 
 impl fmt::Display for SpecError {
@@ -68,9 +105,13 @@ impl fmt::Display for SpecError {
             ),
             SpecError::Dpi(d) => write!(f, "density {d} is outside {MIN_DPI}..={MAX_DPI}"),
             SpecError::StartApp(s) => write!(f, "{s:?} is not a package name to start"),
-            SpecError::Index(n) => write!(
+            SpecError::Index(n, limit) => write!(
                 f,
-                "virtual display {n} is past the limit of {MAX_PER_PHONE} per phone"
+                "virtual display {n} is past the limit of {limit} per phone"
+            ),
+            SpecError::Sdk(s) => write!(
+                f,
+                "Android API {s:?} is too old: virtual displays need API {MIN_SDK} (Android 13) or newer"
             ),
         }
     }
@@ -251,6 +292,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn limit_defaults_to_one_and_is_clamped() {
+        assert_eq!(limit_from(None), 1);
+        assert_eq!(limit_from(Some("")), 1);
+        assert_eq!(limit_from(Some("abc")), 1);
+        assert_eq!(limit_from(Some("0")), 1);
+        assert_eq!(limit_from(Some(" 2 ")), 2);
+        assert_eq!(limit_from(Some("99")), CEILING_PER_PHONE);
+        assert_eq!(check_index(1, 1), Ok(()));
+        assert_eq!(check_index(2, 1), Err(SpecError::Index(2, 1)));
+        assert_eq!(check_index(0, 2), Err(SpecError::Index(0, 2)));
+        assert_eq!(check_index(2, 2), Ok(()));
+    }
+
+    #[test]
+    fn android_13_or_newer_only() {
+        assert!(sdk_supported("33"));
+        assert!(sdk_supported("35\n"));
+        assert!(!sdk_supported("32"));
+        assert!(!sdk_supported(""));
+        assert!(!sdk_supported("tiramisu"));
+    }
+
+    #[test]
     fn default_spec_is_valid() {
         assert_eq!(VirtualDisplaySpec::default().validate(), Ok(()));
     }
@@ -314,7 +378,7 @@ mod tests {
 
     #[test]
     fn scid_is_valid_and_distinct() {
-        for index in 1..=MAX_PER_PHONE {
+        for index in 1..=CEILING_PER_PHONE {
             let id = scid("R5CW90ABC1", index);
             assert_ne!(id, 0);
             assert_eq!(id & 1, 0, "bit 0 is kept clear like the audio scid");
@@ -328,7 +392,7 @@ mod tests {
     #[test]
     fn port_is_clear_of_video_and_audio_ranges() {
         for serial in ["R5CW90ABC1", "R3CT50XYZ9", "192.168.1.5:5555", "x"] {
-            for index in 1..=MAX_PER_PHONE {
+            for index in 1..=CEILING_PER_PHONE {
                 let p = local_port(serial, index);
                 assert!((34183..36183).contains(&p), "{p}");
             }

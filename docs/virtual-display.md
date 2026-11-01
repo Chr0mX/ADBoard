@@ -10,7 +10,7 @@ scrcpy-server 3.x creates a `VirtualDisplay` itself when started with `new_displ
 - **Key.** `<serial>#vd<N>` (`display_key`). The hub, the Grid tile and `/ws/devices/{key}/video` use it; adb commands use the real serial.
 - **Display id.** Read from the server log (`parse_display_id`). Needed for `am start --display <id>` and `input -d <id>` (`am_start_args`, `input_args`).
 - **Input.** Touch and keys over the scrcpy control socket already reach that display. Shell `input` needs `-d`.
-- **Lifecycle.** The display lives as long as the server process; stopping the session ends it. Limit of 2 per phone (`MAX_PER_PHONE`).
+- **Lifecycle.** The display lives as long as the server process; stopping the session ends it. One extra display per phone by default; `ADBOARD_MAX_VIRTUAL_DISPLAYS` raises it (1-4, `max_per_phone`).
 - **Safety.** The command is one shell string, so `validate` rejects anything but package-name characters and bounded numbers; it does not escape.
 
 ## Still to build
@@ -20,5 +20,10 @@ scrcpy-server 3.x creates a `VirtualDisplay` itself when started with `new_displ
 4. Route macro and typed input through `input_args`.
 5. Pin the scrcpy version in `fetch-deps` (it downloads "latest").
 
+## Decisions
+- Target phones: **Android 13+** (API 33, `sdk_supported`; read `ro.build.version.sdk` before creating).
+- **No audio** for now (`audio=false`).
+- Size and density are chosen per display at creation; changing them means restarting that display.
+
 ## Risks
-Android 10+ needed (11-13+ more reliable); some vendors restrict secondary displays; apps that cannot resize or block capture may fail; the on-screen keyboard may stay on the main display; no audio from the virtual display yet; each display is another phone-side encode and stream.
+Some vendors restrict secondary displays; apps that cannot resize or block capture may fail; the on-screen keyboard may stay on the main display; no audio from the virtual display yet; each display is another phone-side encode and stream.
