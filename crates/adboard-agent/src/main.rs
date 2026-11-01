@@ -29,6 +29,9 @@ mod shared_store;
 mod system_api;
 mod uploads;
 mod video;
+// Not wired into sessions yet; see docs/virtual-display.md.
+#[allow(dead_code)]
+mod virtual_display;
 mod web_auth;
 
 use crate::adb::adb_binary;
