@@ -369,9 +369,14 @@ fn host_name(host: &str) -> &str {
 }
 
 /// True when the `Host` header is `localhost`, an IP address, or listed in
-/// `ADBOARD_ALLOWED_HOSTS`. Rebinding attacks send a domain name here.
+/// `ADBOARD_ALLOWED_HOSTS`. Rebinding attacks send a domain name here. A
+/// request with no `Host` at all names no domain, and browsers always send
+/// one, so that is allowed; an unreadable `Host` is not.
 fn host_is_direct(headers: &HeaderMap) -> bool {
-    let Some(host) = headers.get(header::HOST).and_then(|v| v.to_str().ok()) else {
+    let Some(value) = headers.get(header::HOST) else {
+        return true;
+    };
+    let Ok(host) = value.to_str() else {
         return false;
     };
     let name = host_name(host.trim());
@@ -3211,6 +3216,7 @@ mod host_check_tests {
         assert!(host_is_direct(&with_host("[::1]:3848")));
         assert!(host_is_direct(&with_host("localhost:3848")));
         assert!(!host_is_direct(&with_host("attacker.example:3848")));
-        assert!(!host_is_direct(&HeaderMap::new()));
+        // No Host names no domain to rebind to; browsers always send one.
+        assert!(host_is_direct(&HeaderMap::new()));
     }
 }
