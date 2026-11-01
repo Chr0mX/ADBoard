@@ -23,6 +23,7 @@ import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
 import { TOUCH_DIAGNOSTICS_KEY } from "@/components/adboard/touch-diagnostics";
 import { InstallOnIphone } from "@/components/adboard/desk/install-on-iphone";
 import { NotificationsCard } from "@/components/adboard/desk/notifications-card";
+import { VirtualDisplayCard } from "@/components/adboard/desk/virtual-display-card";
 
 /**
  * One place for the app's existing settings. Nothing here has its own
@@ -205,6 +206,8 @@ export function SettingsPanel() {
             </div>
           )}
         </section>
+
+        <VirtualDisplayCard />
 
         <NotificationsCard />
 

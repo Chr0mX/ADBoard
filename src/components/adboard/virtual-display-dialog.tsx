@@ -2,10 +2,14 @@
 
 import { useEffect, useId, useState } from "react";
 import type { Device } from "@/lib/devices/types";
+import { useStoredString } from "@/hooks/use-stored-flag";
 import {
-  DEFAULT_SPEC,
+  DEFAULTS_KEY,
   SIZE_PRESETS,
   isVirtualKey,
+  parseDefaults,
+  presetIdFor,
+  serializeDefaults,
   specError,
   validComponent,
   type VirtualDisplaySpec,
@@ -23,8 +27,9 @@ const FIELD =
 export function VirtualDisplayDialog({ device, onClose }: { device: Device; onClose: () => void }) {
   const virtual = isVirtualKey(device.serial);
   const titleId = useId();
-  const [spec, setSpec] = useState<VirtualDisplaySpec>({ ...DEFAULT_SPEC });
-  const [preset, setPreset] = useState("phone");
+  const [storedDefaults, setStoredDefaults] = useStoredString(DEFAULTS_KEY);
+  const [spec, setSpec] = useState<VirtualDisplaySpec>(() => parseDefaults(storedDefaults));
+  const [preset, setPreset] = useState(() => presetIdFor(parseDefaults(storedDefaults)));
   const [component, setComponent] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -77,7 +82,17 @@ export function VirtualDisplayDialog({ device, onClose }: { device: Device; onCl
         </p>
 
         {virtual ? (
-          <>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (busy || !component.trim() || componentProblem) return;
+              void act(async () => {
+                await launchOnVirtualDisplay(device.serial, component.trim());
+                return "Started.";
+              });
+            }}
+          >
             <label className="flex flex-col gap-1 text-sm text-[var(--pc-ink)]">
               Start an app on this display
               <input
@@ -94,10 +109,9 @@ export function VirtualDisplayDialog({ device, onClose }: { device: Device; onCl
             {componentProblem && <p className="text-xs text-[var(--pc-warn)]">{componentProblem}</p>}
             <div className="flex flex-wrap gap-2">
               <button
-                type="button"
                 className="pc-toggle pc-toggle-md"
                 disabled={busy || !component.trim() || !!componentProblem}
-                onClick={() => void act(async () => { await launchOnVirtualDisplay(device.serial, component.trim()); return "Started."; })}
+                type="submit"
                 data-virtual-launch
               >
                 Start app
@@ -112,9 +126,21 @@ export function VirtualDisplayDialog({ device, onClose }: { device: Device; onCl
                 Close display
               </button>
             </div>
-          </>
+          </form>
         ) : (
-          <>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (busy || problem) return;
+              void act(async () => {
+                await createVirtualDisplay(device.id, spec);
+                // The next dialog starts from what was just used.
+                setStoredDefaults(serializeDefaults(spec));
+                onClose();
+              });
+            }}
+          >
             <label className="flex flex-col gap-1 text-sm text-[var(--pc-ink)]">
               Size
               <select
@@ -159,16 +185,15 @@ export function VirtualDisplayDialog({ device, onClose }: { device: Device; onCl
             {problem && <p className="text-xs text-[var(--pc-warn)]">{problem}</p>}
             <div className="flex flex-wrap gap-2">
               <button
-                type="button"
                 className="pc-toggle pc-toggle-md"
                 disabled={busy || !!problem}
-                onClick={() => void act(async () => { await createVirtualDisplay(device.id, spec); onClose(); })}
+                type="submit"
                 data-virtual-create
               >
                 {busy ? "Creating…" : "Create display"}
               </button>
             </div>
-          </>
+          </form>
         )}
         {note && (
           <p className={note.ok ? "text-xs text-[var(--pc-signal)]" : "text-xs text-[var(--pc-warn)]"} role="status" data-virtual-note>

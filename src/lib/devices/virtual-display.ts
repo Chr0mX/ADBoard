@@ -69,3 +69,33 @@ export function specError(spec: VirtualDisplaySpec): string | null {
   if (app && !validStartApp(app)) return "The app must be a package name such as org.mozilla.firefox.";
   return null;
 }
+
+/** localStorage key for the size, density and app the create dialog starts from. */
+export const DEFAULTS_KEY = "adboard-virtual-display-defaults";
+
+/** The id of the preset that matches `spec`, or "custom". */
+export function presetIdFor(spec: Pick<VirtualDisplaySpec, "width" | "height" | "dpi">): string {
+  const match = SIZE_PRESETS.find((p) => p.width === spec.width && p.height === spec.height && p.dpi === spec.dpi);
+  return match ? match.id : "custom";
+}
+
+/** The saved defaults, or the built-in ones when nothing valid is saved. */
+export function parseDefaults(raw: string | null): VirtualDisplaySpec {
+  if (!raw) return { ...DEFAULT_SPEC };
+  try {
+    const value = JSON.parse(raw) as Partial<VirtualDisplaySpec> | null;
+    const candidate: VirtualDisplaySpec = {
+      width: Number(value?.width),
+      height: Number(value?.height),
+      dpi: Number(value?.dpi),
+      startApp: typeof value?.startApp === "string" ? value.startApp : "",
+    };
+    return specError(candidate) === null ? candidate : { ...DEFAULT_SPEC };
+  } catch {
+    return { ...DEFAULT_SPEC };
+  }
+}
+
+export function serializeDefaults(spec: VirtualDisplaySpec): string {
+  return JSON.stringify({ width: spec.width, height: spec.height, dpi: spec.dpi, startApp: spec.startApp?.trim() ?? "" });
+}

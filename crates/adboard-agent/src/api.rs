@@ -77,6 +77,10 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         )
         .route("/api/hosts", get(list_hosts))
         .route(
+            "/api/virtual-display",
+            get(virtual_display_overview).put(set_virtual_display_limit),
+        )
+        .route(
             "/api/devices/{serial}/virtual-display",
             get(list_virtual_displays).post(create_virtual_display),
         )
@@ -830,6 +834,68 @@ struct VirtualDisplayBody {
 #[derive(serde::Deserialize)]
 struct LaunchBody {
     component: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VirtualDisplayLimitBody {
+    /// `null` goes back to ADBOARD_MAX_VIRTUAL_DISPLAYS (default 1).
+    #[serde(default)]
+    max_per_phone: Option<u32>,
+}
+
+async fn virtual_display_overview_json(state: &AppState) -> serde_json::Value {
+    let displays: Vec<serde_json::Value> = state
+        .all_virtual_displays()
+        .await
+        .into_iter()
+        .map(|(phone, index, spec, display_id)| {
+            serde_json::json!({
+                "key": crate::virtual_display::display_key(&phone.serial, index),
+                "phoneId": phone.id,
+                "phoneName": phone.name,
+                "index": index,
+                "width": spec.width,
+                "height": spec.height,
+                "dpi": spec.dpi,
+                "startApp": spec.start_app,
+                "displayId": display_id,
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "limit": crate::virtual_display::max_per_phone(),
+        "saved": crate::virtual_display::limit_override(),
+        "envLimit": crate::virtual_display::env_limit(),
+        "ceiling": crate::virtual_display::CEILING_PER_PHONE,
+        "displays": displays,
+    })
+}
+
+/// GET /api/virtual-display — the limit and every virtual display on this computer.
+async fn virtual_display_overview(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(virtual_display_overview_json(&state).await)
+}
+
+/// PUT /api/virtual-display — set the per-phone limit (`null` = the default).
+async fn set_virtual_display_limit(
+    State(state): State<AppState>,
+    Json(body): Json<VirtualDisplayLimitBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    if let Some(n) = body.max_per_phone {
+        if n == 0 || n > crate::virtual_display::CEILING_PER_PHONE {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "the limit must be from 1 to {}",
+                    crate::virtual_display::CEILING_PER_PHONE
+                ),
+            ));
+        }
+    }
+    crate::virtual_display_store::save_limit(body.max_per_phone)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(virtual_display_overview_json(&state).await))
 }
 
 /// GET /api/devices/{serial}/virtual-display — the phone's virtual displays.

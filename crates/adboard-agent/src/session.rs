@@ -1092,6 +1092,29 @@ impl SessionManager {
         Ok((key, status))
     }
 
+    /// Close the virtual displays whose phone is no longer in `present` (it was
+    /// unplugged), and return their keys.
+    pub async fn prune_virtual_displays(
+        &self,
+        present: &std::collections::HashSet<String>,
+    ) -> Vec<String> {
+        let gone: Vec<String> = self
+            .virtual_specs
+            .read()
+            .await
+            .keys()
+            .filter(|key| match virtual_display::parse_display_key(key) {
+                Some((real, _)) => !present.contains(real),
+                None => true,
+            })
+            .cloned()
+            .collect();
+        for key in &gone {
+            self.close_virtual_display(key).await;
+        }
+        gone
+    }
+
     /// Stop a virtual display and forget it. The apps on it close with it.
     pub async fn close_virtual_display(&self, key: &str) {
         let _ = self.stop(key).await;

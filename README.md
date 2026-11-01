@@ -411,7 +411,7 @@ Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set;
 | `ADBOARD_FORCE_MOCK` | unset | `1`/`true` → ignore ADB, use mock fleet |
 | `ADBOARD_AUTO_SESSION` | unset | Auto-start session when a device comes online |
 | `ADBOARD_ALLOWED_HOSTS` | unset | Comma-separated host names (for example `adboard.local`) allowed to load the token without a password. IP addresses and `localhost` are always allowed |
-| `ADBOARD_MAX_VIRTUAL_DISPLAYS` | `1` | Extra Android displays (virtual displays) allowed per phone, 1 to 4. Not in use yet; see `docs/virtual-display.md` |
+| `ADBOARD_MAX_VIRTUAL_DISPLAYS` | `1` | Extra Android displays (virtual displays) allowed per phone, 1 to 4. Can also be set in Settings, which takes priority. See `docs/virtual-display.md` |
 | `ADBOARD_OCR_MODELS` | vendored `tools/ocr` / `vendor/ocr` | Folder with `text-detection.rten` and `text-recognition.rten` for macro text steps |
 | `NEXT_PUBLIC_AGENT_URL` | unset | UI → **controller** base URL |
 

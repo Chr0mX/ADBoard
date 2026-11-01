@@ -348,6 +348,20 @@ impl AppState {
             .await
     }
 
+    /// Every virtual display on this computer: its phone, index, settings, display id.
+    pub async fn all_virtual_displays(
+        &self,
+    ) -> Vec<(Device, u32, crate::virtual_display::VirtualDisplaySpec, Option<u32>)> {
+        let phones = self.inner.devices.read().await.clone();
+        let mut out = Vec::new();
+        for phone in phones {
+            for (index, spec, id) in self.inner.sessions.virtual_displays_of(&phone.serial).await {
+                out.push((phone.clone(), index, spec, id));
+            }
+        }
+        out
+    }
+
     /// `(index, settings, display id)` of a local phone's virtual displays.
     pub async fn virtual_displays(
         &self,
@@ -2613,6 +2627,13 @@ impl AppState {
         }
         if changed {
             info!(count = next.len(), "device fleet updated from ADB");
+            self.publish_fleet().await;
+        }
+        // A virtual display cannot outlive its phone.
+        let present: HashSet<String> = next.iter().map(|d| d.serial.clone()).collect();
+        let gone = self.inner.sessions.prune_virtual_displays(&present).await;
+        if !gone.is_empty() {
+            info!(count = gone.len(), "closed virtual displays of unplugged phones");
             self.publish_fleet().await;
         }
     }

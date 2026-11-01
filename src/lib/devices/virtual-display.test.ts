@@ -2,6 +2,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_SPEC,
+  parseDefaults,
+  presetIdFor,
+  serializeDefaults,
   SIZE_PRESETS,
   displayKey,
   isVirtualKey,
@@ -45,5 +48,22 @@ describe("virtual display settings", () => {
     assert.equal(validComponent("com.android.settings/.Settings"), true);
     assert.equal(validComponent("a.b/a.b.Main$Inner"), true);
     for (const bad of ["a.b", "/x", "a.b/", "a b/.X", "a.b/.X;id"]) assert.equal(validComponent(bad), false, bad);
+  });
+});
+
+describe("remembered defaults", () => {
+  it("round-trips a valid choice", () => {
+    const spec = { width: 720, height: 1280, dpi: 240, startApp: "org.mozilla.firefox" };
+    assert.deepEqual(parseDefaults(serializeDefaults(spec)), spec);
+    assert.equal(presetIdFor(spec), "small");
+    assert.equal(presetIdFor({ width: 700, height: 1280, dpi: 240 }), "custom");
+  });
+
+  it("falls back to the built-in defaults for missing or bad data", () => {
+    for (const raw of [null, "", "not json", "null", "{}", '{"width":50,"height":1920,"dpi":320}', '{"width":1080,"height":1920,"dpi":320,"startApp":"x;reboot"}']) {
+      const spec = parseDefaults(raw);
+      assert.equal(specError(spec), null, String(raw));
+      assert.equal(spec.width, raw && raw.includes('"startApp":"x;reboot"') ? 1080 : DEFAULT_SPEC.width);
+    }
   });
 });

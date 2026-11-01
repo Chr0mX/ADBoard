@@ -45,12 +45,35 @@ pub fn limit_from(value: Option<&str>) -> u32 {
         .clamp(1, CEILING_PER_PHONE)
 }
 
-pub fn max_per_phone() -> u32 {
+/// The limit chosen in Settings; 0 means none chosen (the environment decides).
+static LIMIT_OVERRIDE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Use `limit` (clamped to `1..=CEILING_PER_PHONE`) instead of the environment,
+/// or go back to the environment with `None`.
+pub fn set_limit_override(limit: Option<u32>) {
+    let value = limit.map_or(0, |n| n.clamp(1, CEILING_PER_PHONE));
+    LIMIT_OVERRIDE.store(value, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn limit_override() -> Option<u32> {
+    match LIMIT_OVERRIDE.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => None,
+        n => Some(n),
+    }
+}
+
+/// `ADBOARD_MAX_VIRTUAL_DISPLAYS`, or the default of 1.
+pub fn env_limit() -> u32 {
     limit_from(
         std::env::var("ADBOARD_MAX_VIRTUAL_DISPLAYS")
             .ok()
             .as_deref(),
     )
+}
+
+/// The limit in force: the Settings choice, else the environment, else 1.
+pub fn max_per_phone() -> u32 {
+    limit_override().unwrap_or_else(env_limit)
 }
 
 /// Display `index` (1-based) is allowed when it is within `limit`.
@@ -314,6 +337,21 @@ mod tests {
         assert_eq!(check_index(2, 1), Err(SpecError::Index(2, 1)));
         assert_eq!(check_index(0, 2), Err(SpecError::Index(0, 2)));
         assert_eq!(check_index(2, 2), Ok(()));
+    }
+
+    #[test]
+    fn a_limit_chosen_in_settings_wins_over_the_environment() {
+        let before = limit_override();
+        set_limit_override(Some(3));
+        assert_eq!(max_per_phone(), 3);
+        set_limit_override(Some(99));
+        assert_eq!(max_per_phone(), CEILING_PER_PHONE);
+        set_limit_override(Some(0));
+        assert_eq!(max_per_phone(), 1);
+        set_limit_override(None);
+        assert_eq!(limit_override(), None);
+        assert_eq!(max_per_phone(), env_limit());
+        set_limit_override(before);
     }
 
     #[test]

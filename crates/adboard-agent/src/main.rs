@@ -32,6 +32,7 @@ mod video;
 // Virtual displays: see docs/virtual-display.md. Some helpers are not used yet.
 #[allow(dead_code)]
 mod virtual_display;
+mod virtual_display_store;
 mod web_auth;
 
 use crate::adb::adb_binary;
@@ -110,6 +111,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logcat::spawn_crash_watch(state.clone());
     // Every data folder exists from the start, even when empty.
     data_dir::ensure_folders(&data_dir::root().path);
+    // The virtual display limit chosen in Settings.
+    virtual_display_store::load();
     // Phone model names: cached in the data folder, refreshed in the background.
     device_models::start(data_dir::root().path.clone());
     let app = api::router(state);

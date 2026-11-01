@@ -64,3 +64,33 @@ export async function launchOnVirtualDisplay(key: string, component: string): Pr
   });
   if (!res.ok) throw await failure(res);
 }
+
+export interface VirtualDisplayOverview {
+  /** The per-phone limit in force. */
+  limit: number;
+  /** The limit chosen in Settings, or null when the default applies. */
+  saved: number | null;
+  /** The default (ADBOARD_MAX_VIRTUAL_DISPLAYS, else 1). */
+  envLimit: number;
+  /** The highest limit that can be set. */
+  ceiling: number;
+  displays: Array<VirtualDisplayInfo & { phoneId: string; phoneName: string }>;
+}
+
+/** The limit and every virtual display on this computer. */
+export async function getVirtualDisplayOverview(): Promise<VirtualDisplayOverview> {
+  const res = await agentFetch(`${base()}/api/virtual-display`, { cache: "no-store" });
+  if (!res.ok) throw await failure(res);
+  return (await res.json()) as VirtualDisplayOverview;
+}
+
+/** Set the per-phone limit; null goes back to the default. */
+export async function setVirtualDisplayLimit(limit: number | null): Promise<VirtualDisplayOverview> {
+  const res = await agentFetch(`${base()}/api/virtual-display`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ maxPerPhone: limit }),
+  });
+  if (!res.ok) throw await failure(res);
+  return (await res.json()) as VirtualDisplayOverview;
+}

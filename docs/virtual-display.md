@@ -18,12 +18,13 @@ scrcpy-server 3.x creates a `VirtualDisplay` itself when started with `new_displ
 - Each display is a second scrcpy server (`scrcpy_video.rs`, `start_scrcpy_raw_capture` with a `#vd` key); settings are kept in `SessionManager.virtual_specs`; `list_local_devices` adds one device per display, so the video hub, the grid and the video socket treat it as a phone.
 - Checks before starting: Android API 33+, scrcpy-server 3.0+ (set `SCRCPY_VERSION` for `fetch-deps`), per-phone limit, and field validation.
 - Touch, multi-touch, keys and typed text go over the display's own control socket. The shell `input` fallbacks (tap, swipe, nav keys) add `-d <display id>` and fail rather than touch the phone's own screen if the id is not known.
-- UI: Control tab, a phone's `⋯` menu, "Add virtual display" (size, density, app) and, on a virtual display, "Virtual display" (start an app, close).
+- UI: Control tab, a phone's `⋯` menu, "Add virtual display" (size, density, app; Enter creates it; it starts from what you used last) and, on a virtual display, "Virtual display" (start an app, close).
+- Settings tab, **Virtual displays** card: displays per phone (saved by the agent in `config/virtual-display.json`, overrides `ADBOARD_MAX_VIRTUAL_DISPLAYS`), the size, density and app a new display starts as (saved in the browser), and the displays running now with Close and Close all. Agent: `GET`/`PUT /api/virtual-display`.
+- A display is closed automatically when its phone disappears from adb.
 
 ## Not done yet
 - Other adb-based device actions on a virtual display (reboot, app commands, macro shell steps) use the `#vd` key as the adb serial and fail with an adb error; they do not reach the phone. Route them to the real serial where it makes sense.
 - Virtual displays of phones on another agent (controller mode): create the display from the agent the phone is plugged into.
-- A display whose phone is unplugged is not cleaned up until the agent restarts.
 - Confirm on a real phone: the server option names, the display-id log line (`parse_display_id`), and that apps start on the display.
 - Audio, and pinning the scrcpy version in `fetch-deps`.
 
