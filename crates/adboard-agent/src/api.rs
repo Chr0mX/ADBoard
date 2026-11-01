@@ -76,6 +76,18 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
             get(qr_pair_status).delete(cancel_qr_pair),
         )
         .route("/api/hosts", get(list_hosts))
+        .route(
+            "/api/devices/{serial}/virtual-display",
+            get(list_virtual_displays).post(create_virtual_display),
+        )
+        .route(
+            "/api/virtual-display/{key}",
+            axum::routing::delete(close_virtual_display),
+        )
+        .route(
+            "/api/virtual-display/{key}/launch",
+            post(launch_on_virtual_display),
+        )
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/{serial}", get(get_session))
         .route("/api/sessions/{serial}/start", post(start_session))
@@ -793,6 +805,108 @@ async fn get_session(
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
     Ok(Json(state.session_status(&serial).await))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VirtualDisplayBody {
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+    #[serde(default)]
+    dpi: Option<u32>,
+    #[serde(default)]
+    start_app: Option<String>,
+    #[serde(default)]
+    keep_content: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct LaunchBody {
+    component: String,
+}
+
+/// GET /api/devices/{serial}/virtual-display — the phone's virtual displays.
+async fn list_virtual_displays(
+    State(state): State<AppState>,
+    Path(serial): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let displays = state
+        .virtual_displays(&serial)
+        .await
+        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let phone = state
+        .resolve_serial(&serial)
+        .await
+        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let items: Vec<serde_json::Value> = displays
+        .into_iter()
+        .map(|(index, spec, display_id)| {
+            serde_json::json!({
+                "index": index,
+                "key": crate::virtual_display::display_key(&phone, index),
+                "width": spec.width,
+                "height": spec.height,
+                "dpi": spec.dpi,
+                "startApp": spec.start_app,
+                "displayId": display_id,
+            })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({
+        "limit": crate::virtual_display::max_per_phone(),
+        "displays": items,
+    })))
+}
+
+/// POST /api/devices/{serial}/virtual-display — create one and start streaming it.
+async fn create_virtual_display(
+    State(state): State<AppState>,
+    Path(serial): Path<String>,
+    Json(body): Json<VirtualDisplayBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let defaults = crate::virtual_display::VirtualDisplaySpec::default();
+    let spec = crate::virtual_display::VirtualDisplaySpec {
+        width: body.width.unwrap_or(defaults.width),
+        height: body.height.unwrap_or(defaults.height),
+        dpi: body.dpi.unwrap_or(defaults.dpi),
+        start_app: body
+            .start_app
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        keep_content: body.keep_content,
+    };
+    state
+        .create_virtual_display(&serial, spec)
+        .await
+        .map(|(device, session)| Json(serde_json::json!({ "device": device, "session": session })))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+/// DELETE /api/virtual-display/{key} — stop a virtual display; its apps close with it.
+async fn close_virtual_display(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    state
+        .close_virtual_display(&key)
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(|e| (StatusCode::NOT_FOUND, e))
+}
+
+/// POST /api/virtual-display/{key}/launch — start `pkg/.Activity` on that display.
+async fn launch_on_virtual_display(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Json(body): Json<LaunchBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    state
+        .launch_on_virtual_display(&key, body.component.trim())
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 async fn start_session(

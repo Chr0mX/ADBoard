@@ -10,6 +10,7 @@
 
 use crate::audio::AudioHub;
 use crate::scrcpy_control::ControlSender;
+use crate::virtual_display::{self, VirtualDisplaySpec};
 use crate::scrcpy_video::{
     cleanup_forward, scrcpy_server_jar, scrcpy_video_ready, start_scrcpy_audio_capture,
     start_scrcpy_raw_capture, video_launch_for, AudioCapture, ServerLog,
@@ -114,6 +115,8 @@ pub struct SessionManager {
     clipboard_tx: broadcast::Sender<(String, String)>,
     /// One audio start or stop at a time, so a reload cannot launch a second server.
     audio_gate: Mutex<()>,
+    /// Settings of each virtual display, by `<serial>#vd<N>` key.
+    virtual_specs: RwLock<HashMap<String, VirtualDisplaySpec>>,
 }
 
 impl SessionManager {
@@ -161,6 +164,7 @@ impl SessionManager {
             prefs: RwLock::new(ScrcpyPrefs::default()),
             clipboard_tx,
             audio_gate: Mutex::new(()),
+            virtual_specs: RwLock::new(HashMap::new()),
         })
     }
 
@@ -390,6 +394,8 @@ impl SessionManager {
 
         let prefs = self.prefs.read().await.clone();
         let launch = prefs.launch();
+        let virtual_spec = self.virtual_specs.read().await.get(serial).cloned();
+        let is_virtual = virtual_spec.is_some();
         match start_scrcpy_raw_capture(
             self.video_hub.clone(),
             adb.clone(),
@@ -397,13 +403,14 @@ impl SessionManager {
             self.scrcpy_path.clone(),
             serial.to_string(),
             launch,
+            virtual_spec,
         )
         .await
         {
             Ok(capture) => {
                 let (pump, server_child, port, server_log, control) = capture.into_parts();
                 let mut note = "scrcpy-server raw H264 + control socket for touch".to_string();
-                if prefs.screen_off {
+                if prefs.screen_off && !is_virtual {
                     match control.set_display_power(false).await {
                         Ok(()) => note.push_str(" | screen off"),
                         Err(e) => note.push_str(&format!(" | screen off failed: {e}")),
@@ -424,7 +431,7 @@ impl SessionManager {
                     )
                     .await;
                 info!(serial, "scrcpy session streaming (real H264 pipe)");
-                if prefs.audio {
+                if prefs.audio && !is_virtual {
                     let _ = self.start_audio_if_needed(serial).await;
                 }
                 self.get_session(serial).await.unwrap_or(info)
@@ -992,6 +999,146 @@ impl SessionManager {
     }
 
     /// Inject a mapped tap. Real path: `adb -s SERIAL shell input tap X Y`.
+    /// A virtual display's settings and display id, by index, for `serial`.
+    pub async fn virtual_displays_of(
+        &self,
+        serial: &str,
+    ) -> Vec<(u32, VirtualDisplaySpec, Option<u32>)> {
+        let specs = self.virtual_specs.read().await;
+        let sessions = self.sessions.read().await;
+        let mut out: Vec<(u32, VirtualDisplaySpec, Option<u32>)> = specs
+            .iter()
+            .filter_map(|(key, spec)| {
+                let (real, index) = virtual_display::parse_display_key(key)?;
+                if real != serial {
+                    return None;
+                }
+                let id = sessions
+                    .get(key)
+                    .and_then(|live| live.server_log.as_ref())
+                    .and_then(|log| log.display_id());
+                Some((index, spec.clone(), id))
+            })
+            .collect();
+        out.sort_by_key(|(index, _, _)| *index);
+        out
+    }
+
+    /// The Android display id the server printed for `key`, once known.
+    pub async fn virtual_display_id(&self, key: &str) -> Option<u32> {
+        self.sessions
+            .read()
+            .await
+            .get(key)
+            .and_then(|live| live.server_log.as_ref())
+            .and_then(|log| log.display_id())
+    }
+
+    /// Create the next free virtual display of `serial` and start streaming it.
+    /// Returns its key (`<serial>#vd<N>`) and session.
+    pub async fn create_virtual_display(
+        &self,
+        serial: &str,
+        spec: VirtualDisplaySpec,
+    ) -> Result<(String, SessionStatus), String> {
+        if virtual_display::parse_display_key(serial).is_some() {
+            return Err("a virtual display cannot have its own virtual display".into());
+        }
+        spec.validate().map_err(|e| e.to_string())?;
+        let limit = virtual_display::max_per_phone();
+        let index = {
+            let specs = self.virtual_specs.read().await;
+            (1..=limit).find(|i| !specs.contains_key(&virtual_display::display_key(serial, *i)))
+        }
+        .ok_or_else(|| {
+            format!(
+                "this phone already has {limit} virtual display(s); close one, or raise ADBOARD_MAX_VIRTUAL_DISPLAYS"
+            )
+        })?;
+        let real_phone =
+            self.scrcpy_ready() && !should_use_testpattern(self.video_source, self.scrcpy_ready());
+        if real_phone {
+            if let Some(adb) = self.adb_path.clone() {
+                let args: Vec<String> = vec![
+                    "-s".into(),
+                    serial.into(),
+                    "shell".into(),
+                    "getprop".into(),
+                    "ro.build.version.sdk".into(),
+                ];
+                let sdk = run_adb_output(&adb, &args).await?;
+                if !virtual_display::sdk_supported(&sdk) {
+                    return Err(virtual_display::SpecError::Sdk(sdk.trim().to_string()).to_string());
+                }
+            }
+        }
+        let key = virtual_display::display_key(serial, index);
+        self.virtual_specs.write().await.insert(key.clone(), spec);
+        let status = self.start(&key).await;
+        if status.stream == StreamState::Error {
+            self.close_virtual_display(&key).await;
+            return Err(status.note);
+        }
+        // The server prints the display id shortly after it starts.
+        if real_phone {
+            for _ in 0..20 {
+                if self.virtual_display_id(&key).await.is_some() {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            }
+        }
+        let status = self.get_session(&key).await.unwrap_or(status);
+        Ok((key, status))
+    }
+
+    /// Stop a virtual display and forget it. The apps on it close with it.
+    pub async fn close_virtual_display(&self, key: &str) {
+        let _ = self.stop(key).await;
+        self.sessions.write().await.remove(key);
+        self.virtual_specs.write().await.remove(key);
+    }
+
+    /// Start `component` (`pkg/.Activity`) on the virtual display `key`.
+    pub async fn launch_on_virtual_display(
+        &self,
+        key: &str,
+        component: &str,
+    ) -> Result<(), String> {
+        let id = self
+            .virtual_display_id(key)
+            .await
+            .ok_or("the virtual display id is not known yet")?;
+        let (real, _) = virtual_display::parse_display_key(key).ok_or("not a virtual display")?;
+        let Some(adb) = self.adb_path.clone() else {
+            return Err("adb is not available".into());
+        };
+        let mut args: Vec<String> = vec!["-s".into(), real.into()];
+        args.extend(virtual_display::am_start_args(id, component).map_err(|e| e.to_string())?);
+        run_adb(&adb, &args).await
+    }
+
+    /// `adb … shell input [-d ID] <rest>` for a virtual display. Plain `input`
+    /// goes to the main display, so an unknown display id is an error, never
+    /// a fallback to the physical screen.
+    async fn virtual_input_args(&self, key: &str, rest: &[String]) -> Result<Vec<String>, String> {
+        let (real, _) = virtual_display::parse_display_key(key).ok_or("not a virtual display")?;
+        let id = self
+            .virtual_display_id(key)
+            .await
+            .ok_or("the virtual display id is not known yet")?;
+        let mut args: Vec<String> = vec![
+            "-s".into(),
+            real.into(),
+            "shell".into(),
+            "input".into(),
+            "-d".into(),
+            id.to_string(),
+        ];
+        args.extend(rest.iter().cloned());
+        Ok(args)
+    }
+
     pub async fn inject_tap(&self, serial: &str, tap: &MappedTap) -> InjectResult {
         let _ = self.ensure_session(serial).await;
 
@@ -1009,7 +1156,20 @@ impl SessionManager {
             };
         };
 
-        let args = adb_tap_args(serial, tap.x, tap.y);
+        let args = if virtual_display::parse_display_key(serial).is_some() {
+            let rest = ["tap".to_string(), tap.x.to_string(), tap.y.to_string()];
+            match self.virtual_input_args(serial, &rest).await {
+                Ok(args) => args,
+                Err(e) => {
+                    return InjectResult {
+                        status: InjectStatus::Error,
+                        detail: Some(e),
+                    }
+                }
+            }
+        } else {
+            adb_tap_args(serial, tap.x, tap.y)
+        };
         match run_adb(&adb, &args).await {
             Ok(()) => {
                 info!(serial, x = tap.x, y = tap.y, "[adb-inject] tap ok");
@@ -1170,11 +1330,7 @@ impl SessionManager {
                 detail: Some("no ADB — mock fleet stub inject".into()),
             };
         };
-        let args: Vec<String> = vec![
-            "-s".into(),
-            serial.into(),
-            "shell".into(),
-            "input".into(),
+        let swipe: Vec<String> = vec![
             "swipe".into(),
             from.0.to_string(),
             from.1.to_string(),
@@ -1182,6 +1338,26 @@ impl SessionManager {
             to.1.to_string(),
             duration_ms.max(1).to_string(),
         ];
+        let args: Vec<String> = if virtual_display::parse_display_key(serial).is_some() {
+            match self.virtual_input_args(serial, &swipe).await {
+                Ok(args) => args,
+                Err(e) => {
+                    return InjectResult {
+                        status: InjectStatus::Error,
+                        detail: Some(e),
+                    }
+                }
+            }
+        } else {
+            let mut args: Vec<String> = vec![
+                "-s".into(),
+                serial.into(),
+                "shell".into(),
+                "input".into(),
+            ];
+            args.extend(swipe);
+            args
+        };
         match run_adb(&adb, &args).await {
             Ok(()) => InjectResult {
                 status: InjectStatus::Ok,
@@ -1205,7 +1381,11 @@ impl SessionManager {
         };
 
         info!(serial, path = %apk.display(), "[adb-install] adb install -r");
-        match install_with_fallback(&adb, serial, apk).await {
+        // An app installs on the phone, whichever of its displays was asked.
+        let phone = virtual_display::parse_display_key(serial)
+            .map(|(real, _)| real)
+            .unwrap_or(serial);
+        match install_with_fallback(&adb, phone, apk).await {
             Ok(()) => {
                 info!(serial, "[adb-install] ok");
                 InjectResult {
@@ -1241,7 +1421,20 @@ impl SessionManager {
             };
         };
 
-        let args = adb_keyevent_args(serial, keycode);
+        let args = if virtual_display::parse_display_key(serial).is_some() {
+            let rest = ["keyevent".to_string(), keycode.to_string()];
+            match self.virtual_input_args(serial, &rest).await {
+                Ok(args) => args,
+                Err(e) => {
+                    return InjectResult {
+                        status: InjectStatus::Error,
+                        detail: Some(e),
+                    }
+                }
+            }
+        } else {
+            adb_keyevent_args(serial, keycode)
+        };
         match run_adb(&adb, &args).await {
             Ok(()) => {
                 info!(serial, ?action, keycode, "[adb-inject] nav ok");

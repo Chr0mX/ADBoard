@@ -242,8 +242,119 @@ impl AppState {
         self.inner.sessions.inject_mode()
     }
 
+    /// The phones adb sees, then one entry per virtual display of each.
     pub async fn list_local_devices(&self) -> Vec<Device> {
-        self.inner.devices.read().await.clone()
+        let mut devices = self.inner.devices.read().await.clone();
+        let virtual_devices = self.virtual_devices_of(&devices).await;
+        devices.extend(virtual_devices);
+        devices
+    }
+
+    /// A virtual display looks like its phone (same host and model) with its own
+    /// key as the serial, so the hub, the grid and the video socket treat it as
+    /// one more screen.
+    async fn virtual_devices_of(&self, phones: &[Device]) -> Vec<Device> {
+        let mut out = Vec::new();
+        for phone in phones {
+            for (index, spec, _id) in self.inner.sessions.virtual_displays_of(&phone.serial).await {
+                let mut device = phone.clone();
+                device.id = format!("{}#vd{index}", phone.id);
+                device.serial = crate::virtual_display::display_key(&phone.serial, index);
+                device.name = format!("{} (virtual {index})", phone.name);
+                device.resolution = adboard_protocol::DeviceResolution {
+                    width: spec.width,
+                    height: spec.height,
+                };
+                device.fps = None;
+                device.bitrate_mbps = None;
+                device.latency_ms = None;
+                out.push(device);
+            }
+        }
+        out
+    }
+
+    async fn local_phone(&self, id_or_serial: &str) -> Result<Device, String> {
+        self.inner
+            .devices
+            .read()
+            .await
+            .iter()
+            .find(|d| d.serial == id_or_serial || d.id == id_or_serial)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "{id_or_serial} is not a phone on this computer: use ADBoard on the computer it is plugged into"
+                )
+            })
+    }
+
+    async fn virtual_key(&self, id_or_key: &str) -> Result<String, String> {
+        self.list_local_devices()
+            .await
+            .into_iter()
+            .find(|d| {
+                (d.serial == id_or_key || d.id == id_or_key)
+                    && crate::virtual_display::parse_display_key(&d.serial).is_some()
+            })
+            .map(|d| d.serial)
+            .ok_or_else(|| format!("{id_or_key} is not a virtual display on this computer"))
+    }
+
+    /// Create a virtual display on a local phone and start streaming it.
+    pub async fn create_virtual_display(
+        &self,
+        id_or_serial: &str,
+        spec: crate::virtual_display::VirtualDisplaySpec,
+    ) -> Result<(Device, SessionStatus), String> {
+        let phone = self.local_phone(id_or_serial).await?;
+        if phone.status != DeviceStatus::Online {
+            return Err(format!("{} is not online", phone.name));
+        }
+        let (key, session) = self
+            .inner
+            .sessions
+            .create_virtual_display(&phone.serial, spec)
+            .await?;
+        self.publish(ServerEvent::SessionUpdated {
+            session: session.clone(),
+        });
+        self.publish_fleet().await;
+        let device = self
+            .list_local_devices()
+            .await
+            .into_iter()
+            .find(|d| d.serial == key)
+            .ok_or("the virtual display is gone")?;
+        Ok((device, session))
+    }
+
+    pub async fn close_virtual_display(&self, id_or_key: &str) -> Result<(), String> {
+        let key = self.virtual_key(id_or_key).await?;
+        self.inner.sessions.close_virtual_display(&key).await;
+        self.publish_fleet().await;
+        Ok(())
+    }
+
+    pub async fn launch_on_virtual_display(
+        &self,
+        id_or_key: &str,
+        component: &str,
+    ) -> Result<(), String> {
+        let key = self.virtual_key(id_or_key).await?;
+        self.inner
+            .sessions
+            .launch_on_virtual_display(&key, component)
+            .await
+    }
+
+    /// `(index, settings, display id)` of a local phone's virtual displays.
+    pub async fn virtual_displays(
+        &self,
+        id_or_serial: &str,
+    ) -> Result<Vec<(u32, crate::virtual_display::VirtualDisplaySpec, Option<u32>)>, String> {
+        let phone = self.local_phone(id_or_serial).await?;
+        Ok(self.inner.sessions.virtual_displays_of(&phone.serial).await)
     }
 
     /// Merged fleet: local + remote agents (controller) or local only (agent).
@@ -376,7 +487,7 @@ impl AppState {
     }
 
     async fn require_local_serial(&self, serial: &str) -> Result<(), String> {
-        let devices = self.inner.devices.read().await;
+        let devices = self.list_local_devices().await;
         if devices.iter().any(|d| d.serial == serial || d.id == serial) {
             Ok(())
         } else {
@@ -389,7 +500,7 @@ impl AppState {
             return None;
         }
         // Prefer remote only when not local.
-        let local = self.inner.devices.read().await;
+        let local = self.list_local_devices().await;
         if local
             .iter()
             .any(|d| d.serial == serial_or_id || d.id == serial_or_id)
@@ -945,9 +1056,7 @@ impl AppState {
     }
 
     pub(crate) async fn local_serial_set(&self) -> std::collections::HashSet<String> {
-        self.inner
-            .devices
-            .read()
+        self.list_local_devices()
             .await
             .iter()
             .map(|d| d.serial.clone())

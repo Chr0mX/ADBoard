@@ -29,7 +29,7 @@ mod shared_store;
 mod system_api;
 mod uploads;
 mod video;
-// Not wired into sessions yet; see docs/virtual-display.md.
+// Virtual displays: see docs/virtual-display.md. Some helpers are not used yet.
 #[allow(dead_code)]
 mod virtual_display;
 mod web_auth;

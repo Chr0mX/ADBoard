@@ -6,6 +6,8 @@ import { devicesClient } from "@/lib/api/client";
 import type { Device } from "@/lib/devices/types";
 import { ConfirmDialog } from "@/components/adboard/desk/bits";
 import { useDeskOptional } from "@/components/adboard/desk/desk-context";
+import { VirtualDisplayDialog } from "@/components/adboard/virtual-display-dialog";
+import { isVirtualKey } from "@/lib/devices/virtual-display";
 
 const ITEMS = [
   { id: "reconnect", label: "Reconnect", run: true },
@@ -38,6 +40,8 @@ export function DeviceMenu({
   const [note, setNote] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"reboot" | "shutdown" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [virtualOpen, setVirtualOpen] = useState(false);
+  const virtual = isVirtualKey(device.serial);
 
   useEffect(() => {
     const onPointer = (event: PointerEvent) => {
@@ -103,7 +107,8 @@ export function DeviceMenu({
       style={{ visibility: "hidden" }}
       className="fixed z-50 max-h-[calc(100dvh-1rem)] w-56 overflow-y-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg"
     >
-      {ITEMS.map((item) => (
+      {!virtual &&
+        ITEMS.map((item) => (
         <button
           key={item.id}
           type="button"
@@ -128,6 +133,17 @@ export function DeviceMenu({
           {item.label}
         </button>
       ))}
+      <button
+        type="button"
+        role="menuitem"
+        disabled={busy}
+        className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm leading-5 text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+        onClick={() => setVirtualOpen(true)}
+        data-virtual-display-item
+      >
+        {virtual ? "Virtual display" : "Add virtual display"}
+      </button>
+      {virtualOpen && <VirtualDisplayDialog device={device} onClose={onClose} />}
       {note && <p className="px-2 py-1 font-mono text-[11px] text-[var(--pc-muted)]">{note}</p>}
       {confirm && (
         <ConfirmDialog

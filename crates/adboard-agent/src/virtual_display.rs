@@ -25,6 +25,17 @@ pub const CEILING_PER_PHONE: u32 = 4;
 /// Virtual displays need Android 13 (API 33) or newer.
 pub const MIN_SDK: u32 = 33;
 
+/// Virtual displays need scrcpy-server 3.0 or newer (`new_display`).
+pub fn server_supported(version: &str) -> bool {
+    version
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .next()
+        .and_then(|major| major.parse::<u32>().ok())
+        .is_some_and(|major| major >= 3)
+}
+
 /// The per-phone limit from the value of `ADBOARD_MAX_VIRTUAL_DISPLAYS`: the
 /// default when unset or not a number, clamped to `1..=CEILING_PER_PHONE`.
 pub fn limit_from(value: Option<&str>) -> u32 {
@@ -303,6 +314,17 @@ mod tests {
         assert_eq!(check_index(2, 1), Err(SpecError::Index(2, 1)));
         assert_eq!(check_index(0, 2), Err(SpecError::Index(0, 2)));
         assert_eq!(check_index(2, 2), Ok(()));
+    }
+
+    #[test]
+    fn server_must_be_3_or_newer() {
+        assert!(server_supported("3.0"));
+        assert!(server_supported("v3.3.1"));
+        assert!(server_supported("4.1"));
+        assert!(!server_supported("2.7"));
+        assert!(!server_supported("1.25"));
+        assert!(!server_supported(""));
+        assert!(!server_supported("dev"));
     }
 
     #[test]

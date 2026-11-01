@@ -135,13 +135,27 @@ pub fn video_launch_custom(
 #[derive(Clone, Default)]
 pub struct ServerLog {
     lines: Arc<Mutex<String>>,
+    /// Id of the virtual display the server created; 0 until it prints it.
+    display_id: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl ServerLog {
+    /// The virtual display's id, once the server has logged it.
+    pub fn display_id(&self) -> Option<u32> {
+        match self.display_id.load(std::sync::atomic::Ordering::Relaxed) {
+            0 => None,
+            id => Some(id),
+        }
+    }
+
     pub fn push_line(&self, line: &str) {
         let line = line.trim();
         if line.is_empty() {
             return;
+        }
+        if let Some(id) = crate::virtual_display::parse_display_id(line) {
+            self.display_id
+                .store(id, std::sync::atomic::Ordering::Relaxed);
         }
         let mut guard = self.lines.lock().unwrap_or_else(|e| e.into_inner());
         if !guard.is_empty() {
@@ -460,9 +474,36 @@ pub async fn start_scrcpy_raw_capture(
     scrcpy_bin: Option<PathBuf>,
     serial: String,
     launch: VideoLaunch,
+    virtual_spec: Option<crate::virtual_display::VirtualDisplaySpec>,
 ) -> Result<ScrcpyRawCapture, String> {
     let version = scrcpy_server_version(&server_jar, scrcpy_bin.as_deref());
-    let local_port = local_port_for_serial(&serial);
+    // A `<serial>#vd<N>` key is a virtual display of the phone `<serial>`:
+    // adb talks to the real serial, the hub and the UI use the key.
+    let (adb_serial, vd_index) = match crate::virtual_display::parse_display_key(&serial) {
+        Some((real, index)) => (real.to_string(), Some(index)),
+        None => (serial.clone(), None),
+    };
+    let virtual_cfg = match (virtual_spec, vd_index) {
+        (Some(spec), Some(index)) => Some((spec, index)),
+        (None, Some(_)) => return Err("virtual display has no settings".to_string()),
+        _ => None,
+    };
+    if virtual_cfg.is_some() && !crate::virtual_display::server_supported(&version) {
+        return Err(format!(
+            "scrcpy-server {version} is too old for virtual displays: it needs 3.0 or newer (set SCRCPY_VERSION and run fetch-deps)"
+        ));
+    }
+    let (local_port, socket, scid) = match &virtual_cfg {
+        Some((_, index)) => {
+            let scid = crate::virtual_display::scid(&adb_serial, *index);
+            (
+                crate::virtual_display::local_port(&adb_serial, *index),
+                crate::virtual_display::socket_name(scid),
+                Some(scid),
+            )
+        }
+        None => (local_port_for_serial(&serial), "scrcpy".to_string(), None),
+    };
     let extra = extra_server_opts();
 
     info!(
@@ -477,7 +518,7 @@ pub async fn start_scrcpy_raw_capture(
         &adb,
         &[
             "-s",
-            &serial,
+            &adb_serial,
             "push",
             server_jar.to_str().ok_or("server path not utf-8")?,
             REMOTE_SERVER_PATH,
@@ -486,22 +527,32 @@ pub async fn start_scrcpy_raw_capture(
     .await?;
 
     // Per-device abstract socket (adb -s scopes the forward). Documented name: scrcpy.
-    let _ = adb_forward_remove(&adb, &serial, local_port).await;
+    let _ = adb_forward_remove(&adb, &adb_serial, local_port).await;
     run_adb(
         &adb,
         &[
             "-s",
-            &serial,
+            &adb_serial,
             "forward",
             &format!("tcp:{local_port}"),
-            "localabstract:scrcpy",
+            &format!("localabstract:{socket}"),
         ],
     )
     .await?;
 
-    let shell_cmd = build_server_shell_command(REMOTE_SERVER_PATH, &version, &launch, &extra);
+    let shell_cmd = match (&virtual_cfg, scid) {
+        (Some((spec, _)), Some(scid)) => crate::virtual_display::build_server_command(
+            REMOTE_SERVER_PATH,
+            &version,
+            scid,
+            spec,
+            launch.video_bit_rate,
+            launch.max_fps,
+        ),
+        _ => build_server_shell_command(REMOTE_SERVER_PATH, &version, &launch, &extra),
+    };
     let mut server = Command::new(&adb)
-        .args(["-s", &serial, "shell", &shell_cmd])
+        .args(["-s", &adb_serial, "shell", &shell_cmd])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -527,7 +578,7 @@ pub async fn start_scrcpy_raw_capture(
         Err(e) => {
             let _ = server.kill().await;
             let _ = server.wait().await;
-            let _ = adb_forward_remove(&adb, &serial, local_port).await;
+            let _ = adb_forward_remove(&adb, &adb_serial, local_port).await;
             return Err(with_server_log(
                 &format!("scrcpy-server handshake failed: {e}"),
                 &server_log,
@@ -538,7 +589,7 @@ pub async fn start_scrcpy_raw_capture(
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     if let Ok(Some(status)) = server.try_wait() {
-        let _ = adb_forward_remove(&adb, &serial, local_port).await;
+        let _ = adb_forward_remove(&adb, &adb_serial, local_port).await;
         return Err(with_server_log(
             &format!("scrcpy-server exited right after connect ({status})"),
             &server_log,
@@ -745,6 +796,10 @@ async fn open_audio_until_exit(
 
 /// Remove a previously installed adb forward (best-effort helper for session stop).
 pub async fn cleanup_forward(adb: &Path, serial: &str, port: u16) {
+    // A virtual display's key maps to the phone adb knows.
+    let serial = crate::virtual_display::parse_display_key(serial)
+        .map(|(real, _)| real)
+        .unwrap_or(serial);
     if let Err(e) = adb_forward_remove(adb, serial, port).await {
         warn!(%serial, port, error = %e, "adb forward remove failed");
     }
