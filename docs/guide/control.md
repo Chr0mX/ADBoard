@@ -10,6 +10,7 @@
 - [Who gets your input: Selected, Multi and All](#who-gets-your-input-selected-multi-and-all)
 - [The tool row](#the-tool-row)
 - [More tools (the ^ button)](#more-tools-the--button)
+- [Virtual displays](#virtual-displays)
 - [App shortcut buttons](#app-shortcut-buttons)
 - [Grid view](#grid-view)
 - [Folding the side panels](#folding-the-side-panels)
@@ -45,7 +46,7 @@ Each card in the Devices column shows:
 - its state: **Online**, **Offline** or **Unauthorized**,
 - its model and screen size,
 - battery and temperature when known,
-- a **...** button (also opens on right-click) with a menu of actions for that phone, such as Reconnect, Restart ADB, Reboot, Shutdown, Screenshot, Install APK, Open Shell and Device Information.
+- a **...** button (also opens on right-click) with a menu of actions for that phone, such as Reconnect, Restart ADB, Reboot, Shutdown, Screenshot, Install APK, Open Shell, Device Information and [Add virtual display](#virtual-displays).
 
 If a phone is unauthorized, the card says "Authorize USB debugging on the device." If it cannot be reached, it says "Device unreachable."
 
@@ -194,6 +195,22 @@ Then, after the label **Device actions**:
 | **Power off** | Shuts the phone down, after a confirmation (type "power off" when it affects more than one phone). |
 
 These actions go to the current targets (see [Selected, Multi and All](#who-gets-your-input-selected-multi-and-all)) and skip offline phones. A line under the phone reports the result, with a **dismiss** link.
+
+## Virtual displays
+
+A virtual display is a second, independent Android screen on a phone. Use it to run an app on its own screen while the phone's own screen stays free. It needs Android 13 or newer and scrcpy 3.0 or newer, and it has no audio yet.
+
+**Add one:** in the Devices list, open the three dots (⋯) on a phone and choose **Add virtual display**. Pick a size, check the density, optionally type an app to start (a package name such as `org.mozilla.firefox`), and press **Create display** or Enter. The box starts from what you chose in [Settings → Virtual displays](settings.md#virtual-displays) and remembers your last choice. The new screen appears as another phone named like "Pixel (virtual 1)", with its own live picture, in the Devices list and in Grid view. Touch, swipe and typing on it go to that display only, never to the phone's own screen.
+
+**Use one:** open the three dots on the virtual display and choose **Virtual display**. **Start an app on this display** takes `package/.Activity`, for example `com.android.settings/.Settings`. **Close display** stops it, and the apps on it close with it.
+
+Things to know:
+
+- Each phone may have only as many as the **Displays per phone** setting allows (1 by default). Close one before adding another, or raise the limit in Settings.
+- Size and density can't be changed later; close the display and add a new one.
+- The reboot, app-command and shell actions are for the phone itself and do not work on a virtual display yet.
+- Some apps refuse to run on a second screen, or show black. Some phone makers limit second screens.
+- A virtual display closes when its phone is unplugged. See [Troubleshooting](troubleshooting.md#a-virtual-display-wont-start).
 
 ## App shortcut buttons
 

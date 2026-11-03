@@ -2,7 +2,7 @@ Back to the [guide index](README.md)
 
 # Settings
 
-The **Settings** tab is one place for the choices that change how ADBoard looks and behaves: how the phone screens are streamed, how your keyboard and mouse reach the phones, how the grid and the phone taskbar are arranged, and your account. Where ADBoard keeps your data is in the **Storage** tab. Every switch here is the same switch you find elsewhere in ADBoard (for example in Control), so a change made here shows up there too.
+The **Settings** tab is one place for the choices that change how ADBoard looks and behaves: how the phone screens are streamed, how your keyboard and mouse reach the phones, how the grid and the phone taskbar are arranged, virtual displays, Discord notifications, and your account. Where ADBoard keeps your data is in the **Storage** tab. Every switch here is the same switch you find elsewhere in ADBoard (for example in Control), so a change made here shows up there too.
 
 
 ![The Settings tab with its cards](images/settings.jpg)
@@ -16,6 +16,8 @@ The **Settings** tab is one place for the choices that change how ADBoard looks 
 - [Control](#control)
 - [Grid view](#grid-view)
 - [Phone taskbar](#phone-taskbar)
+- [Virtual displays](#virtual-displays)
+- [Discord notifications](#discord-notifications)
 - [Account](#account)
 - [Storage](../storage.md) (its own tab)
 - [What is shared by all browsers and what is remembered per browser](#what-is-shared-by-all-browsers-and-what-is-remembered-per-browser)
@@ -83,12 +85,13 @@ Below the row is **Sync clipboard**: text a phone copies lands on your computer,
 
 ## Control
 
-Four switches:
+Three switches and one choice:
 
-| Switch | What it does |
+| Setting | What it does |
 |---|---|
 | **Keyboard injection** | Typing on your computer goes to the target phones. On by default. |
 | **Touch diagnostics** | Marks each tap and shows which control received it. Useful for checking taps on an iPhone. Off by default. |
+| **Tools and Stats tab at the edge** | When the floating Tools and Stats panels are hidden, a small tab stays on the screen edge. Choose what it shows: **Text**, **Icons** or **Both**. |
 | **Cursor mode** | Sends clicks and taps as a mouse, so the phone shows a pointer. Off by default. |
 | **Stats on phones** | The stats line under the phone (size, battery, CPU, frame rate and so on) scrolls across on a phone screen. On shows the line (Show); off hides it (Hide). |
 
@@ -102,6 +105,22 @@ Four switches:
 The row of pinned tools that sits beside **Back / Home / Recent** on phones. Each tool has a switch: **Keyboard**, **Touch**, **Record**, **Replay**, **Refresh**, **APK**, **Grid**, **Stats**, **Devices**, **Manage**, **Cursor**, **Restart device**, **Device info**, **Device actions**, **Rotate**, **Fullscreen**, **Pop out**, **Quiet mode**, **Macros**, **Screenshot** and **Screen record**. Once a tool is pinned, **Order (left to right)** lists the pinned tools with **Up** and **Down** buttons to change their order. Back, Home, Recent and Minimize always stay. **Show on the bar** lets you hide Volume down, Volume up and Power. Tools that this browser can't run, such as Fullscreen in some browsers, are marked as not available.
 
 You can pin up to 21 tools. When you reach the limit the remaining switches are greyed out until you turn one off. **Reset** removes all pins (it is greyed out when none are pinned). By default nothing is pinned and the taskbar only has Back, Home and Recent.
+
+## Virtual displays
+
+A virtual display is a second, independent Android screen on a phone. It runs its own apps and does not mirror the phone's own screen. It shows up in ADBoard as one more phone, named like "Pixel (virtual 1)", and appears in Grid view too. It needs Android 13 or newer and scrcpy 3.0 or newer, and it has no audio yet. How to add one is in [Control](control.md#virtual-displays).
+
+This card has three parts:
+
+- **Displays per phone**: how many virtual displays each phone may have, from 1 to 4. **Default** uses the computer's `ADBOARD_MAX_VIRTUAL_DISPLAYS` setting, or 1 if that is not set. Each display is another video stream and another encode on the phone, so keep this low. Lowering it does not close displays that already exist; it only stops new ones.
+- **New display starts as**: the size preset (Phone 1080 x 1920, Landscape 1920 x 1080, Small 720 x 1280, Tablet 1600 x 2560), the width, height and density in dpi, and an optional app to start, such as `org.mozilla.firefox`. These are what the **Add virtual display** box starts from. Whatever you used last time is remembered too. Width and height are 120 to 4096; density is 72 to 640.
+- **Running now**: every virtual display on this computer, with its phone, size, app and Android display id. **Close** stops one and **Close all** stops them all. The apps on a display close with it.
+
+You can't change a display's size or density after it exists. Close it and add a new one. A display also closes by itself when its phone is unplugged.
+
+## Discord notifications
+
+ADBoard can post the events you choose, such as a phone going offline or a macro failing, to a Discord channel. This card holds the webhook address, the on/off switch, which kinds of event to send and at what level, and the offline-alert, message-detail and cooldown choices. The webhook address is kept on the ADBoard computer and never shown again once saved. The full steps are in [Events and Discord notifications](../monitoring.md#discord).
 
 ## Account
 
@@ -171,7 +190,8 @@ ADBoard saves your choices in the data folder on the ADBoard computer, so they f
 
 - Layout and navigation: the open section, the last phone, folded panels, the grid view, the macro dock and your Files path
 - Editor state for Shell Automation and Macros: the open job, the preview phone, the selected step, and which sub-tab you were on
+- The size, density and app a new virtual display starts as
 
-A browser that opens ADBoard for the first time starts from the most recently used layout, so it does not start empty. **Stay awake** is not saved in any browser: it is a setting on the phones.
+A browser that opens ADBoard for the first time starts from the most recently used layout, so it does not start empty. **Stay awake** is not saved in any browser: it is a setting on the phones. The **Displays per phone** limit is saved by ADBoard on its own computer (`config\virtual-display.json` in the data folder), so it applies to every browser.
 
 Nothing secret is saved in these files: no passwords, tokens or cookies.

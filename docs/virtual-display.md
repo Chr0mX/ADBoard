@@ -1,6 +1,8 @@
 # Independent Android display (virtual display)
 
-Status: **built, not yet tried on a phone.** The agent side was not compiled in the authoring environment (no crate registry); run `cargo test --workspace` and try it on an Android 13+ phone before relying on it.
+Status: **built and tested on the mock fleet; not yet tried on a real phone.** `cargo test --workspace` passes (254 agent tests and 8 more). The endpoints, the Settings card and the Add dialog were checked against the mock agent (test-pattern video) in a browser. Still unconfirmed on a real Android 13+ phone: the scrcpy option names, the display-id log line, and that apps start on the display.
+
+User guide: [Control → Virtual displays](guide/control.md#virtual-displays), [Settings → Virtual displays](guide/settings.md#virtual-displays), [Troubleshooting](guide/troubleshooting.md#a-virtual-display-wont-start).
 
 ## Idea
 scrcpy-server 3.x creates a `VirtualDisplay` itself when started with `new_display=<W>x<H>/<dpi>`, encodes it, and sends input to it. ADBoard runs it as a **second scrcpy server on the same phone**, next to the physical-screen one. No helper app is needed.

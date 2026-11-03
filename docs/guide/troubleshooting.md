@@ -46,6 +46,18 @@ Nothing is deleted without being kept: look in the `backups` folder of the data 
 
 Start ADBoard once with `ADBOARD_PASSWORD` set to a new password and `ADBOARD_RESET_PASSWORD=1`. See [Remote access](../../README.md#remote-access-nginx-proxy-manager--cloudflare).
 
+## A virtual display won't start
+
+The message under **Add virtual display** says why:
+
+- **"Android API … is too old"**: virtual displays need Android 13 or newer.
+- **"scrcpy-server … is too old"**: they need scrcpy 3.0 or newer. Run `fetch-deps` again (set `SCRCPY_VERSION` to pin a version) and restart ADBoard.
+- **"already has 1 virtual display(s)"**: the phone is at its limit. Close one, or raise **Displays per phone** in [Settings](settings.md#virtual-displays).
+- **"not a phone on this computer"**: a phone plugged into another computer has to get its display from that computer's ADBoard.
+- **"is not online"**: the phone must show as online first.
+
+If the display starts but an app won't open on it, or shows black, that app may not support a second screen. Try another app, or start it from the display's menu with its full `package/.Activity` name.
+
 ## Still stuck
 
 The file `logs\adboard.log` in the data folder records what ADBoard did. **Developer → Logs** shows a phone's own log.
