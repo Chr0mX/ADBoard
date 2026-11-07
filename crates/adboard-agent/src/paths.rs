@@ -167,3 +167,46 @@ mod tests {
     }
 }
 
+/// A file in the ADBoard temp folder that is deleted when this value is
+/// dropped, however the request ends: success, an error, an early return or a
+/// client that disconnected. Uploads, pulls and installs use it so no partial
+/// APK or download is left behind.
+pub struct TempFile {
+    path: PathBuf,
+}
+
+impl TempFile {
+    /// `<temp>/<prefix>-<random><suffix>`. The file is not created.
+    pub fn new(prefix: &str, suffix: &str) -> Self {
+        Self {
+            path: app_temp_dir().join(format!("{prefix}-{}{suffix}", uuid::Uuid::new_v4())),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod temp_file_tests {
+    use super::*;
+
+    #[test]
+    fn the_file_goes_away_with_its_guard() {
+        let guard = TempFile::new("adboard-test", ".bin");
+        std::fs::write(guard.path(), b"data").unwrap();
+        let path = guard.path().to_path_buf();
+        assert!(path.exists());
+        drop(guard);
+        assert!(!path.exists());
+        // A guard whose file was never written drops quietly too.
+        drop(TempFile::new("adboard-test", ".bin"));
+    }
+}

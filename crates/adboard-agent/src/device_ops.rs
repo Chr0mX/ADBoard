@@ -477,12 +477,38 @@ async fn start_record(
     }
     command.push(' ');
     command.push_str(&sh_quote(&remote));
-    let adb = adb.to_path_buf();
-    let serial = serial.to_string();
-    tokio::spawn(async move {
-        let args = vec!["-s".into(), serial, "shell".into(), command];
-        let _ = Command::new(adb).args(args).output().await;
-    });
+    let mut child = Command::new(adb)
+        .args(["-s", serial, "shell", command.as_str()])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to start screenrecord: {e}"))?;
+    // screenrecord runs for the whole recording. If it dies right away the
+    // phone refused (no storage permission, unsupported size): say so instead
+    // of reporting a recording that does not exist.
+    match tokio::time::timeout(std::time::Duration::from_millis(1500), child.wait()).await {
+        Ok(Ok(status)) if !status.success() => {
+            let mut detail = String::new();
+            if let Some(mut err) = child.stderr.take() {
+                use tokio::io::AsyncReadExt;
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(500),
+                    err.read_to_string(&mut detail),
+                )
+                .await;
+            }
+            return Err(format!("screenrecord did not start ({status}): {}", detail.trim()));
+        }
+        Ok(Err(e)) => return Err(format!("screenrecord failed: {e}")),
+        Ok(Ok(_)) => {}
+        // Still running after 1.5 s: it is recording. Reap it when it finishes.
+        Err(_) => {
+            tokio::spawn(async move {
+                let _ = child.wait().await;
+            });
+        }
+    }
     Ok(format!(
         "{remote} (screenrecord has no audio; the device picks the frame rate)"
     ))
@@ -791,5 +817,38 @@ mod root_request_tests {
         for rel in ["Downloads", "/Downloads/", "a/../b", "./x"] {
             assert!(!is_root_rel(rel), "{rel:?} should not name the root");
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod record_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn fake_adb(body: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("adboard-rec-adb-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("adb");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[tokio::test]
+    async fn a_recording_that_fails_to_start_says_so() {
+        let adb = fake_adb("echo 'screenrecord: no permission' >&2\nexit 1");
+        let error = start_record(&adb, "SERIAL", None, None).await.expect_err("must fail");
+        assert!(error.contains("did not start"), "{error}");
+        assert!(error.contains("no permission"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_recording_that_keeps_running_counts_as_started() {
+        let adb = fake_adb("sleep 3");
+        let started = std::time::Instant::now();
+        let message = start_record(&adb, "SERIAL", None, None).await.expect("recording starts");
+        assert!(message.contains("/sdcard/Movies/adboard-"), "{message}");
+        // It answered after the 1.5 s check, not after the whole recording.
+        assert!(started.elapsed() < std::time::Duration::from_millis(2800));
     }
 }

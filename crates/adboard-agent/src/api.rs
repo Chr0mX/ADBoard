@@ -51,7 +51,19 @@ fn ws_ping() -> Message {
 }
 
 pub fn router(state: AppState) -> Router {
-    router_with_auth(state, WebAuth::from_env())
+    let auth = WebAuth::from_env();
+    // Not a restriction, only a heads-up: with no password, anyone who can reach
+    // the port can read the API token from /api/bootstrap and use every route.
+    let loopback_only = matches!(
+        crate::env::var("BIND").ok().as_deref().map(str::trim),
+        Some("127.0.0.1" | "localhost")
+    );
+    if !loopback_only && !auth.password_required() {
+        warn!(
+            "ADBoard is listening on every network interface with no password set: anyone on this network can use it. Set a password (Settings, Account) or start with ADBOARD_BIND=127.0.0.1"
+        );
+    }
+    router_with_auth(state, auth)
 }
 
 pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
@@ -415,6 +427,17 @@ fn origin_matches_host(origin: &str, headers: &HeaderMap) -> bool {
         || origin_host.eq_ignore_ascii_case(host)
 }
 
+/// Compare the token a request carries with the real one without stopping at
+/// the first difference, so the time taken does not hint at how much matched.
+fn tokens_match(provided: &str, expected: &str) -> bool {
+    let (a, b) = (provided.as_bytes(), expected.as_bytes());
+    let mut diff = (a.len() ^ b.len()) as u32;
+    for i in 0..a.len().max(b.len()) {
+        diff |= u32::from(a.get(i).copied().unwrap_or(0) ^ b.get(i).copied().unwrap_or(0));
+    }
+    diff == 0
+}
+
 async fn require_api_token(
     State(state): State<AppState>,
     request: Request,
@@ -426,7 +449,7 @@ async fn require_api_token(
     }
     let provided = token_from_request(request.headers(), request.uri());
     match provided {
-        Some(token) if token == state.api_token() => Ok(next.run(request).await),
+        Some(token) if tokens_match(&token, state.api_token()) => Ok(next.run(request).await),
         _ => Err(StatusCode::UNAUTHORIZED),
     }
 }
@@ -3258,6 +3281,16 @@ mod tests {
 #[cfg(test)]
 mod host_check_tests {
     use super::*;
+
+    #[test]
+    fn tokens_match_only_when_identical() {
+        assert!(tokens_match("abc-123", "abc-123"));
+        assert!(!tokens_match("abc-124", "abc-123"));
+        assert!(!tokens_match("abc-12", "abc-123"));
+        assert!(!tokens_match("abc-1234", "abc-123"));
+        assert!(!tokens_match("", "abc-123"));
+        assert!(tokens_match("", ""));
+    }
     use axum::http::HeaderValue;
 
     fn with_host(host: &str) -> HeaderMap {

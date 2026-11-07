@@ -823,9 +823,10 @@ impl AppState {
             if local_serials.contains(&device.serial) {
                 let state = self.clone();
                 let strokes = request.strokes.clone();
-                tasks.push(tokio::spawn(async move {
+                let (id, name) = (device.id.clone(), device.name.clone());
+                tasks.push((id, name, tokio::spawn(async move {
                     state.play_gesture_local(&device, &strokes).await
-                }));
+                })));
             } else {
                 by_remote
                     .entry(device.effective_host_id().to_string())
@@ -844,7 +845,9 @@ impl AppState {
                 target_ids: group.iter().map(|d| d.id.clone()).collect(),
                 strokes: request.strokes.clone(),
             };
-            remote_tasks.push(tokio::spawn(async move {
+            let phones: Vec<(String, String)> =
+                group.iter().map(|d| (d.id.clone(), d.name.clone())).collect();
+            remote_tasks.push((phones, tokio::spawn(async move {
                 match state.proxy_gesture_http(&host_id, &body).await {
                     Ok(targets) => targets,
                     Err(e) => group
@@ -857,18 +860,37 @@ impl AppState {
                         })
                         .collect(),
                 }
-            }));
+            })));
         }
         let mut targets = Vec::new();
-        for task in tasks {
+        // A task that panicked or was cancelled still gets a result row for
+        // its phone, so the reply never claims fewer targets than were asked.
+        for (device_id, device_name, task) in tasks {
             match task.await {
                 Ok(result) => targets.push(result),
-                Err(e) => warn!(error = %e, "[gesture] task failed"),
+                Err(e) => {
+                    warn!(error = %e, "[gesture] task failed");
+                    targets.push(NavTargetResult {
+                        device_id,
+                        device_name,
+                        inject: InjectStatus::Error,
+                        detail: Some(format!("gesture task failed: {e}")),
+                    });
+                }
             }
         }
-        for task in remote_tasks {
-            if let Ok(result) = task.await {
-                targets.extend(result);
+        for (phones, task) in remote_tasks {
+            match task.await {
+                Ok(result) => targets.extend(result),
+                Err(e) => {
+                    warn!(error = %e, "[gesture] remote task failed");
+                    targets.extend(phones.into_iter().map(|(device_id, device_name)| NavTargetResult {
+                        device_id,
+                        device_name,
+                        inject: InjectStatus::Error,
+                        detail: Some(format!("gesture task failed: {e}")),
+                    }));
+                }
             }
         }
         Ok(GestureResult::new(request.mode, request.target_ids, targets))
@@ -1170,7 +1192,8 @@ impl AppState {
     }
 
     async fn install_local_group(&self, devices: &[Device], bytes: &[u8]) -> Vec<NavTargetResult> {
-        let path = crate::paths::app_temp_dir().join(format!("adboard-{}.apk", uuid::Uuid::new_v4()));
+        let staged = crate::paths::TempFile::new("adboard", ".apk");
+        let path = staged.path().to_path_buf();
         if let Err(e) = tokio::fs::write(&path, bytes).await {
             return devices
                 .iter()
@@ -1190,7 +1213,7 @@ impl AppState {
             }
         })
         .await;
-        let _ = tokio::fs::remove_file(&path).await;
+        drop(staged);
         results
     }
 
@@ -1666,8 +1689,8 @@ impl AppState {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("upload.bin");
-        let local =
-            crate::paths::app_temp_dir().join(format!("adboard-push-{}", uuid::Uuid::new_v4()));
+        let staged = crate::paths::TempFile::new("adboard-push", "");
+        let local = staged.path().to_path_buf();
         tokio::fs::write(&local, bytes)
             .await
             .map_err(|e| format!("failed to store upload: {e}"))?;
@@ -1677,7 +1700,6 @@ impl AppState {
             dest.to_string()
         };
         let Some(adb) = self.inner.adb_path.clone() else {
-            let _ = tokio::fs::remove_file(&local).await;
             return Ok(DeviceCommandResponse {
                 id: format!("push-{}", uuid::Uuid::new_v4()),
                 op: "push".into(),
@@ -1695,7 +1717,7 @@ impl AppState {
             }
         })
         .await;
-        let _ = tokio::fs::remove_file(&local).await;
+        drop(staged);
         Ok(DeviceCommandResponse {
             id: format!("push-{}", uuid::Uuid::new_v4()),
             op: "push".into(),
@@ -1717,13 +1739,13 @@ impl AppState {
         let Some(adb) = self.inner.adb_path.clone() else {
             return Err("adb is not available".into());
         };
-        let local =
-            crate::paths::app_temp_dir().join(format!("adboard-pull-{}", uuid::Uuid::new_v4()));
+        let staged = crate::paths::TempFile::new("adboard-pull", "");
+        let local = staged.path().to_path_buf();
         crate::device_ops::adb_pull(&adb, &device.serial, remote, &local).await?;
         let bytes = tokio::fs::read(&local)
             .await
             .map_err(|e| format!("failed to read pulled file: {e}"))?;
-        let _ = tokio::fs::remove_file(&local).await;
+        drop(staged);
         let name = remote
             .rsplit('/')
             .next()
@@ -2859,10 +2881,33 @@ fn install_error(device: &Device, detail: String) -> NavTargetResult {
     }
 }
 
+/// Biggest reply accepted from another agent. They answer with small JSON.
+const MAX_PROXY_REPLY: usize = 8 * 1024 * 1024;
+
 pub(crate) async fn http_post_bytes(
     url: &str,
     headers: &[(&str, &str)],
     body: &[u8],
+) -> Result<(u16, String), String> {
+    // Installs and pushes make the other agent run adb on each phone, which
+    // can take minutes; everything else is quick.
+    let slow = url.contains("/install") || url.contains("/push");
+    let reply_wait = if slow { crate::adb::LIMIT_TRANSFER } else { crate::adb::LIMIT_SHELL }
+        + Duration::from_secs(30);
+    // A slow link still has to move the body: allow 256 KiB/s on top of 30 s.
+    let send_wait = Duration::from_secs(30 + (body.len() / (256 * 1024)) as u64);
+    http_post_limited(url, headers, body, Duration::from_secs(5), send_wait, reply_wait).await
+}
+
+/// POST over plain HTTP with a limit on connecting, sending and waiting for
+/// the reply, so an agent that is gone or stuck cannot hold a request.
+async fn http_post_limited(
+    url: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    connect_wait: Duration,
+    send_wait: Duration,
+    reply_wait: Duration,
 ) -> Result<(u16, String), String> {
     let rest = url
         .strip_prefix("http://")
@@ -2889,22 +2934,27 @@ pub(crate) async fn http_post_bytes(
     }
     header.push_str("\r\n");
 
-    let mut stream = TcpStream::connect(hostport)
+    let mut stream = tokio::time::timeout(connect_wait, TcpStream::connect(hostport))
         .await
+        .map_err(|_| format!("agent at {hostport} did not answer within {} s", connect_wait.as_secs().max(1)))?
         .map_err(|e| format!("install proxy connect failed: {e}"))?;
-    stream
-        .write_all(header.as_bytes())
+    let send = async {
+        stream.write_all(header.as_bytes()).await?;
+        stream.write_all(body).await
+    };
+    tokio::time::timeout(send_wait, send)
         .await
-        .map_err(|e| format!("install proxy write failed: {e}"))?;
-    stream
-        .write_all(body)
-        .await
+        .map_err(|_| format!("sending to {hostport} timed out"))?
         .map_err(|e| format!("install proxy write failed: {e}"))?;
     let mut buf = Vec::new();
-    stream
-        .read_to_end(&mut buf)
+    let mut limited = (&mut stream).take(MAX_PROXY_REPLY as u64 + 1);
+    tokio::time::timeout(reply_wait, limited.read_to_end(&mut buf))
         .await
+        .map_err(|_| format!("agent at {hostport} sent no reply within {} s", reply_wait.as_secs().max(1)))?
         .map_err(|e| format!("install proxy read failed: {e}"))?;
+    if buf.len() > MAX_PROXY_REPLY {
+        return Err(format!("agent at {hostport} sent a reply larger than {} MiB", MAX_PROXY_REPLY / (1024 * 1024)));
+    }
     let text = String::from_utf8_lossy(&buf);
     let (head, resp_body) = text
         .split_once("\r\n\r\n")
@@ -3040,6 +3090,55 @@ mod tests {
             out.targets[1].detail
         );
         assert!(elapsed < Duration::from_secs(3), "took {elapsed:?}");
+    }
+
+    #[tokio::test]
+    async fn a_remote_agent_that_never_answers_or_is_gone_fails_fast() {
+        let quick = Duration::from_millis(300);
+        // Accepts the connection, then says nothing.
+        let silent = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = silent.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (_socket, _) = silent.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        let started = std::time::Instant::now();
+        let error = http_post_limited(&format!("http://{addr}/api/x"), &[], b"{}", quick, quick, quick)
+            .await
+            .expect_err("no reply");
+        assert!(error.contains("no reply"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(3));
+
+        // Nothing is listening: refused at once, not hung.
+        let free = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let gone = free.local_addr().unwrap();
+        drop(free);
+        let error = http_post_limited(&format!("http://{gone}/api/x"), &[], b"{}", quick, quick, quick)
+            .await
+            .expect_err("refused");
+        assert!(error.contains("connect failed"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_remote_reply_is_read_and_an_oversized_one_is_refused() {
+        let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = server.local_addr().unwrap();
+        tokio::spawn(async move {
+            for big in [false, true] {
+                let (mut socket, _) = server.accept().await.unwrap();
+                let mut scratch = [0u8; 1024];
+                let _ = socket.read(&mut scratch).await;
+                let body = if big { "x".repeat(MAX_PROXY_REPLY + 10) } else { "{\"ok\":true}".to_string() };
+                let reply = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                let _ = socket.write_all(reply.as_bytes()).await;
+            }
+        });
+        let url = format!("http://{addr}/api/x");
+        let secs = Duration::from_secs(5);
+        let (code, body) = http_post_limited(&url, &[], b"{}", secs, secs, secs).await.unwrap();
+        assert_eq!((code, body.as_str()), (200, "{\"ok\":true}"));
+        let error = http_post_limited(&url, &[], b"{}", secs, secs, secs).await.expect_err("too large");
+        assert!(error.contains("larger than"), "{error}");
     }
 
     #[cfg(unix)]
