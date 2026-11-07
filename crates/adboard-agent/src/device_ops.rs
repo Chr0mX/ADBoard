@@ -2,7 +2,6 @@
 //! The browser never talks to ADB. The agent runs these on the device host.
 
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use tokio::process::Command;
 
 pub fn valid_package(package: &str) -> bool {
@@ -108,13 +107,7 @@ pub fn host_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
 }
 
 pub async fn adb_text(adb: &Path, args: &[String]) -> Result<String, String> {
-    let output = Command::new(adb)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("failed to spawn adb: {e}"))?;
+    let output = crate::adb::output_with_limit(adb, args, crate::adb::limit_for(args)).await?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if output.status.success() {
@@ -134,13 +127,7 @@ pub async fn adb_text(adb: &Path, args: &[String]) -> Result<String, String> {
 }
 
 pub async fn adb_bytes(adb: &Path, args: &[String]) -> Result<Vec<u8>, String> {
-    let output = Command::new(adb)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("failed to spawn adb: {e}"))?;
+    let output = crate::adb::output_with_limit(adb, args, crate::adb::limit_for(args)).await?;
     if output.status.success() {
         Ok(output.stdout)
     } else {

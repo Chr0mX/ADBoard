@@ -5,8 +5,87 @@ use adboard_protocol::{
 };
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::process::Command;
 use tracing::{debug, warn};
+
+/// How long one adb command may take before it is given up on. An `adb`
+/// that never answers (a wedged phone, an unauthorised one) must not hold a
+/// request, the poll loop or a session start forever.
+pub const LIMIT_INPUT: Duration = Duration::from_secs(10);
+/// Other quick adb commands (connect, forward, devices, ...).
+pub const LIMIT_OTHER: Duration = Duration::from_secs(30);
+/// Arbitrary `adb shell` commands, which can legitimately run a while.
+pub const LIMIT_SHELL: Duration = Duration::from_secs(120);
+/// Install, push, pull and the like move whole files.
+pub const LIMIT_TRANSFER: Duration = Duration::from_secs(600);
+
+/// Test hook: when non-zero, replaces `LIMIT_INPUT`.
+static INPUT_LIMIT_OVERRIDE_MS: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+pub fn set_input_limit_for_tests(limit: Option<Duration>) {
+    INPUT_LIMIT_OVERRIDE_MS.store(limit.map_or(0, |d| d.as_millis() as u64), Ordering::Relaxed);
+}
+
+fn input_limit() -> Duration {
+    match INPUT_LIMIT_OVERRIDE_MS.load(Ordering::Relaxed) {
+        0 => LIMIT_INPUT,
+        ms => Duration::from_millis(ms),
+    }
+}
+
+/// The time limit for an adb command, from its arguments (`-s SERIAL` first).
+pub fn limit_for<S: AsRef<str>>(args: &[S]) -> Duration {
+    let mut it = args.iter().map(AsRef::as_ref);
+    let mut first = it.next();
+    while first == Some("-s") {
+        it.next();
+        first = it.next();
+    }
+    match first {
+        Some("install" | "install-multiple" | "push" | "pull" | "sideload" | "backup" | "restore") => LIMIT_TRANSFER,
+        Some("shell") => match it.next() {
+            Some(cmd) if cmd == "input" || cmd.starts_with("input ") => input_limit(),
+            Some(cmd) if cmd.starts_with("getprop") || cmd.starts_with("wm ") || cmd == "wm" => input_limit(),
+            _ => LIMIT_SHELL,
+        },
+        _ => LIMIT_OTHER,
+    }
+}
+
+/// Run `adb args…` and collect its output, giving up after `limit`. The
+/// process is killed when the future is dropped, so a timeout (or a client
+/// that disconnected) never leaves an `adb` behind.
+pub async fn output_with_limit<S: AsRef<std::ffi::OsStr>>(
+    adb: &Path,
+    args: &[S],
+    limit: Duration,
+) -> Result<std::process::Output, String> {
+    let mut cmd = Command::new(adb);
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    match tokio::time::timeout(limit, cmd.output()).await {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(e)) => Err(format!("failed to spawn adb: {e}")),
+        Err(_) => {
+            let what: Vec<String> = args
+                .iter()
+                .take(6)
+                .map(|a| a.as_ref().to_string_lossy().into_owned())
+                .collect();
+            Err(format!(
+                "adb did not answer within {} s: {}",
+                limit.as_secs().max(1),
+                what.join(" ")
+            ))
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -45,14 +124,7 @@ fn which(bin: &str) -> Option<PathBuf> {
 }
 
 pub async fn list_adb_devices(adb: &PathBuf) -> Result<Vec<AdbDeviceLine>, String> {
-    let output = Command::new(adb)
-        .arg("devices")
-        .arg("-l")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("failed to spawn adb: {e}"))?;
+    let output = output_with_limit(adb, &["devices", "-l"], Duration::from_secs(5)).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -206,26 +278,30 @@ pub async fn query_battery(adb: &PathBuf, serial: &str) -> BatterySample {
     let script = format!(
         "dumpsys battery; echo {VITALS_SPLIT}; head -n 1 /proc/stat; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo"
     );
-    let output = Command::new(adb)
-        .args(["-s", serial, "shell", script.as_str()])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await;
+    let output = output_with_limit(
+        adb,
+        &["-s", serial, "shell", script.as_str()],
+        Duration::from_secs(15),
+    )
+    .await;
     match output {
         Ok(out) if out.status.success() => parse_vitals(&String::from_utf8_lossy(&out.stdout)),
-        _ => BatterySample::default(),
+        Ok(_) => BatterySample::default(),
+        Err(error) => {
+            warn!(serial, %error, "battery query failed");
+            BatterySample::default()
+        }
     }
 }
 
 /// Best-effort `wm size` for resolution; falls back to 1080×1920.
 pub async fn query_resolution(adb: &PathBuf, serial: &str) -> DeviceResolution {
-    let output = Command::new(adb)
-        .args(["-s", serial, "shell", "wm", "size"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await;
+    let output = output_with_limit(
+        adb,
+        &["-s", serial, "shell", "wm", "size"],
+        Duration::from_secs(15),
+    )
+    .await;
 
     match output {
         Ok(out) if out.status.success() => {
@@ -625,13 +701,7 @@ fn wireless_failed(text: &str) -> bool {
 }
 
 async fn adb_output(adb: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(adb)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("failed to spawn adb: {e}"))?;
+    let output = output_with_limit(adb, args, limit_for(args)).await?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if output.status.success() {
@@ -945,6 +1015,43 @@ async fn adb_output_timeout(adb: &Path, args: &[&str], secs: u64) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn v(args: &[&str]) -> Vec<String> {
+        args.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn limits_follow_what_the_command_does() {
+        assert_eq!(limit_for(&v(&["-s", "X", "shell", "input", "keyevent", "4"])), LIMIT_INPUT);
+        assert_eq!(limit_for(&v(&["-s", "X", "shell", "input tap 1 2"])), LIMIT_INPUT);
+        assert_eq!(limit_for(&v(&["-s", "X", "shell", "getprop ro.build.version.sdk"])), LIMIT_INPUT);
+        assert_eq!(limit_for(&v(&["-s", "X", "shell", "dumpsys battery"])), LIMIT_SHELL);
+        assert_eq!(limit_for(&v(&["-s", "X", "shell"])), LIMIT_SHELL);
+        for transfer in ["install", "push", "pull", "install-multiple"] {
+            assert_eq!(limit_for(&v(&["-s", "X", transfer, "a", "b"])), LIMIT_TRANSFER, "{transfer}");
+        }
+        assert_eq!(limit_for(&v(&["-s", "X", "forward", "tcp:1", "localabstract:s"])), LIMIT_OTHER);
+        assert_eq!(limit_for(&v(&["devices", "-l"])), LIMIT_OTHER);
+        assert_eq!(limit_for::<String>(&[]), LIMIT_OTHER);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_command_that_never_answers_is_stopped_and_killed() {
+        let started = std::time::Instant::now();
+        let result = output_with_limit(Path::new("sleep"), &["30"], Duration::from_millis(300)).await;
+        let error = result.expect_err("sleep 30 must time out");
+        assert!(error.contains("did not answer"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_command_that_answers_returns_its_output() {
+        let out = output_with_limit(Path::new("echo"), &["hi"], Duration::from_secs(5)).await.unwrap();
+        assert!(out.status.success());
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hi");
+    }
 
     #[test]
     fn parses_adb_devices_l() {

@@ -28,9 +28,8 @@ use adboard_protocol::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::sync::Arc;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::{broadcast, Mutex, RwLock};
 use tracing::{debug, info, warn};
 
@@ -1677,13 +1676,7 @@ async fn install_with_fallback(adb: &PathBuf, serial: &str, apk: &std::path::Pat
 
 /// Like `run_adb`, returning stdout + stderr on success.
 async fn run_adb_output(adb: &PathBuf, args: &[String]) -> Result<String, String> {
-    let output = Command::new(adb)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("failed to spawn adb: {e}"))?;
+    let output = crate::adb::output_with_limit(adb, args, crate::adb::limit_for(args)).await?;
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -1697,13 +1690,7 @@ async fn run_adb_output(adb: &PathBuf, args: &[String]) -> Result<String, String
 }
 
 async fn run_adb(adb: &PathBuf, args: &[String]) -> Result<(), String> {
-    let output = Command::new(adb)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("failed to spawn adb: {e}"))?;
+    let output = crate::adb::output_with_limit(adb, args, crate::adb::limit_for(args)).await?;
 
     if output.status.success() {
         Ok(())

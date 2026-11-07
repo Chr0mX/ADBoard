@@ -1,5 +1,7 @@
 //! Device manager — owns the live fleet, ADB polling, mesh merge, and event fan-out.
 
+mod fanout;
+
 use crate::adb::{self, AdbDeviceLine};
 use crate::mesh::MeshRegistry;
 use crate::mock::{self, MockProfile};
@@ -559,34 +561,35 @@ impl AppState {
             }
         }
 
-        let mut mapped: Vec<MappedTap> = Vec::new();
-        if !local_group.is_empty() {
-            let mut local = map_to_devices(point, &local_group);
-            for (device, tap) in local_group.iter().zip(local.iter_mut()) {
-                let result = self.inner.sessions.inject_tap(&device.serial, tap).await;
-                tap.inject = result.status;
-                tap.inject_detail = result.detail;
-            }
-            mapped.extend(local);
-        }
-
-        for (host_id, group) in by_remote {
+        if let Some(host_id) = by_remote.keys().next() {
             if self.inner.role != Role::Controller {
                 return Err(format!("cannot reach remote host {host_id} from agent"));
             }
-            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
-            match self.inner.mesh.proxy_tap(&host_id, mode, ids, point).await {
-                Ok(remote) => mapped.extend(remote),
-                Err(e) => {
-                    for d in &group {
-                        let mut tap = adboard_protocol::map_point(point, d);
-                        tap.inject = InjectStatus::Error;
-                        tap.inject_detail = Some(e.clone());
-                        mapped.push(tap);
-                    }
-                }
-            }
         }
+        let local_taps = map_to_devices(point, &local_group);
+        let pairs: Vec<(Device, MappedTap)> = local_group.into_iter().zip(local_taps).collect();
+        let sessions = &self.inner.sessions;
+        let local_run = fanout::fan_out(pairs, fanout::DEFAULT_LIMIT, |(device, mut tap)| async move {
+            let result = sessions.inject_tap(&device.serial, &tap).await;
+            tap.inject = result.status;
+            tap.inject_detail = result.detail;
+            tap
+        });
+        let remote_run = fanout::fan_out_remote(
+            by_remote,
+            |host_id, group| {
+                let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+                async move { self.inner.mesh.proxy_tap(&host_id, mode, ids, point).await }
+            },
+            |d, error| {
+                let mut tap = adboard_protocol::map_point(point, d);
+                tap.inject = InjectStatus::Error;
+                tap.inject_detail = Some(error.to_string());
+                tap
+            },
+        );
+        let (mut mapped, remote) = tokio::join!(local_run, remote_run);
+        mapped.extend(remote);
 
         let broadcast = TapBroadcast::new(mode, point, mapped);
         self.publish(ServerEvent::TapResult {
@@ -606,12 +609,16 @@ impl AppState {
         if devices.is_empty() {
             return Err("no online local targets for tap".into());
         }
-        let mut mapped: Vec<MappedTap> = map_to_devices(point, &devices);
-        for (device, tap) in devices.iter().zip(mapped.iter_mut()) {
-            let result = self.inner.sessions.inject_tap(&device.serial, tap).await;
+        let taps: Vec<MappedTap> = map_to_devices(point, &devices);
+        let pairs: Vec<(Device, MappedTap)> = devices.into_iter().zip(taps).collect();
+        let sessions = &self.inner.sessions;
+        let mapped = fanout::fan_out(pairs, fanout::DEFAULT_LIMIT, |(device, mut tap)| async move {
+            let result = sessions.inject_tap(&device.serial, &tap).await;
             tap.inject = result.status;
             tap.inject_detail = result.detail;
-        }
+            tap
+        })
+        .await;
         Ok(TapBroadcast::new(mode, point, mapped))
     }
 
@@ -1021,46 +1028,46 @@ impl AppState {
             }
         }
 
-        let mut results = Vec::new();
-        let mut ids = Vec::new();
-        for d in &local_group {
-            ids.push(d.id.clone());
-            let result = self.inner.sessions.inject_nav(&d.serial, action).await;
-            results.push(NavTargetResult {
+        if let Some(host_id) = by_remote.keys().next() {
+            if self.inner.role != Role::Controller {
+                return Err(format!("cannot reach remote host {host_id} from agent"));
+            }
+        }
+        let ids: Vec<String> = local_group
+            .iter()
+            .chain(by_remote.values().flatten())
+            .map(|d| d.id.clone())
+            .collect();
+        let sessions = &self.inner.sessions;
+        let local_run = fanout::fan_out(local_group, fanout::DEFAULT_LIMIT, |d| async move {
+            let result = sessions.inject_nav(&d.serial, action).await;
+            NavTargetResult {
                 device_id: d.id.clone(),
                 device_name: d.name.clone(),
                 inject: result.status,
                 detail: result.detail,
-            });
-        }
-
-        for (host_id, group) in by_remote {
-            if self.inner.role != Role::Controller {
-                return Err(format!("cannot reach remote host {host_id} from agent"));
             }
-            for d in &group {
-                ids.push(d.id.clone());
-            }
-            let group_ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
-            match self
-                .inner
-                .mesh
-                .proxy_nav(&host_id, mode, group_ids, action)
-                .await
-            {
-                Ok(remote) => results.extend(remote),
-                Err(e) => {
-                    for d in &group {
-                        results.push(NavTargetResult {
-                            device_id: d.id.clone(),
-                            device_name: d.name.clone(),
-                            inject: InjectStatus::Error,
-                            detail: Some(e.clone()),
-                        });
-                    }
+        });
+        let remote_run = fanout::fan_out_remote(
+            by_remote,
+            |host_id, group| {
+                let group_ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
+                async move {
+                    self.inner
+                        .mesh
+                        .proxy_nav(&host_id, mode, group_ids, action)
+                        .await
                 }
-            }
-        }
+            },
+            |d, error| NavTargetResult {
+                device_id: d.id.clone(),
+                device_name: d.name.clone(),
+                inject: InjectStatus::Error,
+                detail: Some(error.to_string()),
+            },
+        );
+        let (mut results, remote) = tokio::join!(local_run, remote_run);
+        results.extend(remote);
 
         let broadcast = NavBroadcast::new(mode, action, ids, results);
         self.publish(ServerEvent::NavResult {
@@ -1087,17 +1094,18 @@ impl AppState {
         if devices.is_empty() {
             return Err("no online local targets for nav".into());
         }
-        let mut results = Vec::with_capacity(devices.len());
-        for device in &devices {
-            let result = self.inner.sessions.inject_nav(&device.serial, action).await;
-            results.push(NavTargetResult {
+        let ids: Vec<String> = devices.iter().map(|d| d.id.clone()).collect();
+        let sessions = &self.inner.sessions;
+        let results = fanout::fan_out(devices, fanout::DEFAULT_LIMIT, |device| async move {
+            let result = sessions.inject_nav(&device.serial, action).await;
+            NavTargetResult {
                 device_id: device.id.clone(),
                 device_name: device.name.clone(),
                 inject: result.status,
                 detail: result.detail,
-            });
-        }
-        let ids: Vec<String> = devices.iter().map(|d| d.id.clone()).collect();
+            }
+        })
+        .await;
         Ok(NavBroadcast::new(mode, action, ids, results))
     }
 
@@ -1169,16 +1177,19 @@ impl AppState {
                 .map(|d| install_error(d, format!("failed to store apk: {e}")))
                 .collect();
         }
-        let mut results = Vec::with_capacity(devices.len());
-        for device in devices {
-            let result = self.inner.sessions.install_apk(&device.serial, &path).await;
-            results.push(NavTargetResult {
+        let sessions = &self.inner.sessions;
+        let apk = &path;
+        // Installs move a whole file over USB, so only a few run at once.
+        let results = fanout::fan_out(devices.to_vec(), fanout::TRANSFER_LIMIT, |device| async move {
+            let result = sessions.install_apk(&device.serial, apk).await;
+            NavTargetResult {
                 device_id: device.id.clone(),
                 device_name: device.name.clone(),
                 inject: result.status,
                 detail: result.detail,
-            });
-        }
+            }
+        })
+        .await;
         let _ = tokio::fs::remove_file(&path).await;
         results
     }
@@ -1262,48 +1273,41 @@ impl AppState {
             }
         }
 
-        let mut results = Vec::new();
-        for device in local_group {
-            results.push(
-                self.command_one(
-                    &device,
-                    &op,
-                    request.arg.as_deref(),
-                    request.arg2.as_deref(),
-                )
-                .await,
-            );
-        }
-        for (host_id, group) in by_remote {
-            if self.inner.role != Role::Controller {
-                for device in group {
-                    results.push(op_error(
-                        &device,
-                        format!("cannot reach remote host {host_id}"),
-                    ));
-                }
-                continue;
-            }
-            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
-            let forwarded = DeviceCommandRequest {
-                target_ids: ids,
-                op: op.clone(),
-                arg: request.arg.clone(),
-                arg2: request.arg2.clone(),
-            };
-            match self.proxy_command_http(&host_id, &forwarded).await {
-                Ok(remote) => results.extend(remote),
-                Err(error) => {
-                    for device in group {
-                        results.push(op_error(&device, error.clone()));
+        let command = &request;
+        let op = &op;
+        let local_run = fanout::fan_out(local_group, fanout::DEFAULT_LIMIT, |device| async move {
+            self.command_one(
+                &device,
+                op,
+                command.arg.as_deref(),
+                command.arg2.as_deref(),
+            )
+            .await
+        });
+        let remote_run = fanout::fan_out_remote(
+            by_remote,
+            |host_id, group| {
+                let forwarded = DeviceCommandRequest {
+                    target_ids: group.iter().map(|d| d.id.clone()).collect(),
+                    op: op.clone(),
+                    arg: command.arg.clone(),
+                    arg2: command.arg2.clone(),
+                };
+                async move {
+                    if self.inner.role != Role::Controller {
+                        return Err(format!("cannot reach remote host {host_id}"));
                     }
+                    self.proxy_command_http(&host_id, &forwarded).await
                 }
-            }
-        }
+            },
+            |device, error| op_error(device, error.to_string()),
+        );
+        let (mut results, remote) = tokio::join!(local_run, remote_run);
+        results.extend(remote);
 
         Ok(DeviceCommandResponse {
             id: format!("cmd-{}", uuid::Uuid::new_v4()),
-            op,
+            op: op.clone(),
             results,
         })
     }
@@ -1672,7 +1676,6 @@ impl AppState {
         } else {
             dest.to_string()
         };
-        let mut results = Vec::new();
         let Some(adb) = self.inner.adb_path.clone() else {
             let _ = tokio::fs::remove_file(&local).await;
             return Ok(DeviceCommandResponse {
@@ -1684,12 +1687,14 @@ impl AppState {
                     .collect(),
             });
         };
-        for device in &devices {
-            match crate::device_ops::adb_push(&adb, &device.serial, &local, &dest).await {
-                Ok(output) => results.push(op_ok(device, output)),
-                Err(error) => results.push(op_error(device, error)),
+        let (adb_ref, local_ref, dest_ref) = (&adb, &local, &dest);
+        let results = fanout::fan_out(devices.clone(), fanout::TRANSFER_LIMIT, |device| async move {
+            match crate::device_ops::adb_push(adb_ref, &device.serial, local_ref, dest_ref).await {
+                Ok(output) => op_ok(&device, output),
+                Err(error) => op_error(&device, error),
             }
-        }
+        })
+        .await;
         let _ = tokio::fs::remove_file(&local).await;
         Ok(DeviceCommandResponse {
             id: format!("push-{}", uuid::Uuid::new_v4()),
@@ -1962,41 +1967,34 @@ impl AppState {
         body: VideoRefreshRequest,
     ) -> Result<ClipboardResponse, String> {
         let (local, by_remote) = self.split_targets(&body.target_ids).await?;
-        let mut results = Vec::new();
-        for device in local {
-            match self.inner.sessions.reset_video(&device.serial).await {
-                Ok(()) => results.push(DeviceOpResult {
-                    device_id: device.id.clone(),
-                    device_name: device.name.clone(),
-                    ok: true,
-                    output: None,
-                    error: None,
-                }),
-                Err(e) => results.push(op_error(&device, e)),
+        let sessions = &self.inner.sessions;
+        let local_run = fanout::fan_out(local, fanout::DEFAULT_LIMIT, |device| async move {
+            match sessions.reset_video(&device.serial).await {
+                Ok(()) => op_done(&device),
+                Err(e) => op_error(&device, e),
             }
-        }
-        for (host_id, group) in by_remote {
-            let ids: Vec<String> = group.iter().map(|d| d.id.clone()).collect();
-            let forward = VideoRefreshRequest {
-                mode: ControlMode::Selected,
-                target_ids: ids,
-            };
-            match self
-                .proxy_json::<VideoRefreshRequest, ClipboardResponse>(
-                    &host_id,
-                    "/api/input/refresh",
-                    &forward,
-                )
-                .await
-            {
-                Ok(remote) => results.extend(remote.results),
-                Err(e) => {
-                    for device in group {
-                        results.push(op_error(&device, e.clone()));
-                    }
+        });
+        let remote_run = fanout::fan_out_remote(
+            by_remote,
+            |host_id, group| {
+                let forward = VideoRefreshRequest {
+                    mode: ControlMode::Selected,
+                    target_ids: group.iter().map(|d| d.id.clone()).collect(),
+                };
+                async move {
+                    self.proxy_json::<VideoRefreshRequest, ClipboardResponse>(
+                        &host_id,
+                        "/api/input/refresh",
+                        &forward,
+                    )
+                    .await
+                    .map(|remote| remote.results)
                 }
-            }
-        }
+            },
+            |device, error| op_error(device, error.to_string()),
+        );
+        let (mut results, remote) = tokio::join!(local_run, remote_run);
+        results.extend(remote);
         Ok(ClipboardResponse { results })
     }
 
@@ -2008,46 +2006,36 @@ impl AppState {
             return Err("text is too long for one scrcpy inject".into());
         }
         let (local, by_remote) = self.split_targets(&body.target_ids).await?;
-        let mut results = Vec::new();
-        for device in local {
-            match self
-                .inner
-                .sessions
-                .inject_text(&device.serial, &body.text)
-                .await
-            {
-                Ok(()) => results.push(DeviceOpResult {
-                    device_id: device.id.clone(),
-                    device_name: device.name.clone(),
-                    ok: true,
-                    output: None,
-                    error: None,
-                }),
-                Err(e) => results.push(op_error(&device, e)),
+        let sessions = &self.inner.sessions;
+        let text = &body.text;
+        let local_run = fanout::fan_out(local, fanout::DEFAULT_LIMIT, |device| async move {
+            match sessions.inject_text(&device.serial, text).await {
+                Ok(()) => op_done(&device),
+                Err(e) => op_error(&device, e),
             }
-        }
-        for (host_id, group) in by_remote {
-            let forward = TextInjectRequest {
-                mode: ControlMode::Selected,
-                target_ids: group.iter().map(|d| d.id.clone()).collect(),
-                text: body.text.clone(),
-            };
-            match self
-                .proxy_json::<TextInjectRequest, ClipboardResponse>(
-                    &host_id,
-                    "/api/input/text",
-                    &forward,
-                )
-                .await
-            {
-                Ok(remote) => results.extend(remote.results),
-                Err(e) => {
-                    for device in group {
-                        results.push(op_error(&device, e.clone()));
-                    }
+        });
+        let remote_run = fanout::fan_out_remote(
+            by_remote,
+            |host_id, group| {
+                let forward = TextInjectRequest {
+                    mode: ControlMode::Selected,
+                    target_ids: group.iter().map(|d| d.id.clone()).collect(),
+                    text: body.text.clone(),
+                };
+                async move {
+                    self.proxy_json::<TextInjectRequest, ClipboardResponse>(
+                        &host_id,
+                        "/api/input/text",
+                        &forward,
+                    )
+                    .await
+                    .map(|remote| remote.results)
                 }
-            }
-        }
+            },
+            |device, error| op_error(device, error.to_string()),
+        );
+        let (mut results, remote) = tokio::join!(local_run, remote_run);
+        results.extend(remote);
         Ok(ClipboardResponse { results })
     }
 
@@ -2058,55 +2046,41 @@ impl AppState {
             _ => return Err("key action must be down or up".into()),
         };
         let (local, by_remote) = self.split_targets(&body.target_ids).await?;
-        let mut results = Vec::new();
-        for device in local {
-            match self
-                .inner
-                .sessions
-                .inject_keycode(
-                    &device.serial,
-                    action,
-                    body.keycode,
-                    body.repeat,
-                    body.metastate,
-                )
+        let sessions = &self.inner.sessions;
+        let local_run = fanout::fan_out(local, fanout::DEFAULT_LIMIT, |device| async move {
+            match sessions
+                .inject_keycode(&device.serial, action, body.keycode, body.repeat, body.metastate)
                 .await
             {
-                Ok(()) => results.push(DeviceOpResult {
-                    device_id: device.id.clone(),
-                    device_name: device.name.clone(),
-                    ok: true,
-                    output: None,
-                    error: None,
-                }),
-                Err(e) => results.push(op_error(&device, e)),
+                Ok(()) => op_done(&device),
+                Err(e) => op_error(&device, e),
             }
-        }
-        for (host_id, group) in by_remote {
-            let forward = KeyInjectRequest {
-                mode: ControlMode::Selected,
-                target_ids: group.iter().map(|d| d.id.clone()).collect(),
-                action: body.action.clone(),
-                keycode: body.keycode,
-                repeat: body.repeat,
-                metastate: body.metastate,
-            };
-            match self
-                .proxy_json::<KeyInjectRequest, ClipboardResponse>(
-                    &host_id,
-                    "/api/input/key",
-                    &forward,
-                )
-                .await
-            {
-                Ok(remote) => results.extend(remote.results),
-                Err(e) => {
-                    for device in group {
-                        results.push(op_error(&device, e.clone()));
-                    }
+        });
+        let remote_run = fanout::fan_out_remote(
+            by_remote,
+            |host_id, group| {
+                let forward = KeyInjectRequest {
+                    mode: ControlMode::Selected,
+                    target_ids: group.iter().map(|d| d.id.clone()).collect(),
+                    action: body.action.clone(),
+                    keycode: body.keycode,
+                    repeat: body.repeat,
+                    metastate: body.metastate,
+                };
+                async move {
+                    self.proxy_json::<KeyInjectRequest, ClipboardResponse>(
+                        &host_id,
+                        "/api/input/key",
+                        &forward,
+                    )
+                    .await
+                    .map(|remote| remote.results)
                 }
-            }
-        }
+            },
+            |device, error| op_error(device, error.to_string()),
+        );
+        let (mut results, remote) = tokio::join!(local_run, remote_run);
+        results.extend(remote);
         Ok(ClipboardResponse { results })
     }
 
@@ -2805,6 +2779,17 @@ fn frame_tap(
     }
 }
 
+/// A phone's operation succeeded and has nothing to report.
+fn op_done(device: &Device) -> DeviceOpResult {
+    DeviceOpResult {
+        device_id: device.id.clone(),
+        device_name: device.name.clone(),
+        ok: true,
+        output: None,
+        error: None,
+    }
+}
+
 fn op_ok(device: &Device, output: String) -> DeviceOpResult {
     DeviceOpResult {
         device_id: device.id.clone(),
@@ -2937,6 +2922,129 @@ pub fn inject_summary(targets: &[MappedTap]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stand-in for `adb` that answers every call after a delay. A serial
+    /// starting with `HUNG` never answers in time. Unix only (a shell script).
+    #[cfg(unix)]
+    fn fake_adb(delay_secs: &str, hung_secs: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("adboard-fake-adb-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("adb");
+        let script = format!(
+            "#!/bin/sh\ncase \"$2\" in HUNG*) sleep {hung_secs};; *) sleep {delay_secs};; esac\nexit 0\n"
+        );
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    /// `count` online phones with serials `FAKE1..`, plus optional hung ones, in a state that uses `adb`.
+    #[cfg(unix)]
+    async fn state_with_fake_phones(adb: PathBuf, serials: &[&str]) -> (AppState, Vec<String>) {
+        let state = AppState::new(Role::Controller, "fan-test".into(), "fan-test".into(), 0, Some(adb));
+        let template = AppState::new(Role::Controller, "tpl".into(), "tpl".into(), 0, None)
+            .list_devices()
+            .await
+            .into_iter()
+            .find(|d| d.status == DeviceStatus::Online)
+            .expect("an online mock phone");
+        let mut phones = Vec::new();
+        for (i, serial) in serials.iter().enumerate() {
+            let mut d = template.clone();
+            d.id = format!("fake-{i}");
+            d.serial = (*serial).to_string();
+            d.name = format!("Fake {i}");
+            d.host_id = Some("fan-test".into());
+            phones.push(d);
+        }
+        let ids = phones.iter().map(|d| d.id.clone()).collect();
+        *state.inner.devices.write().await = phones;
+        (state, ids)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn nav_reaches_five_phones_at_once_and_a_hung_phone_only_delays_itself() {
+        // Five phones that each take 200 ms to answer: one round trip, not five.
+        let (state, ids) = state_with_fake_phones(
+            fake_adb("0.2", "30"),
+            &["FAKE1", "FAKE2", "FAKE3", "FAKE4", "FAKE5"],
+        )
+        .await;
+        let started = std::time::Instant::now();
+        let out = state
+            .handle_nav(ControlMode::Multi, &ids, NavActionType::Back)
+            .await
+            .expect("nav runs");
+        let elapsed = started.elapsed();
+        eprintln!("NAV5_ELAPSED_MS={}", elapsed.as_millis());
+        assert_eq!(out.targets.len(), 5);
+        assert!(out.targets.iter().all(|t| t.inject == InjectStatus::Ok), "{:?}", out.targets);
+        // Results come back in request order.
+        let order: Vec<&str> = out.targets.iter().map(|t| t.device_id.as_str()).collect();
+        assert_eq!(order, ids.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(elapsed < Duration::from_millis(700), "five phones took {elapsed:?}");
+
+        // A phone that never answers fails on its own after the time limit; the
+        // phones around it are done long before.
+        crate::adb::set_input_limit_for_tests(Some(Duration::from_millis(900)));
+        let (state, ids) =
+            state_with_fake_phones(fake_adb("0.2", "30"), &["FAKE1", "HUNG1", "FAKE2"]).await;
+        let started = std::time::Instant::now();
+        let out = state
+            .handle_nav(ControlMode::Multi, &ids, NavActionType::Home)
+            .await
+            .expect("nav runs");
+        let elapsed = started.elapsed();
+        crate::adb::set_input_limit_for_tests(None);
+        eprintln!("NAV_HUNG_ELAPSED_MS={}", elapsed.as_millis());
+        let statuses: Vec<InjectStatus> = out.targets.iter().map(|t| t.inject).collect();
+        assert_eq!(statuses, vec![InjectStatus::Ok, InjectStatus::Error, InjectStatus::Ok]);
+        assert!(
+            out.targets[1].detail.as_deref().unwrap_or("").contains("did not answer"),
+            "{:?}",
+            out.targets[1].detail
+        );
+        assert!(elapsed < Duration::from_secs(3), "took {elapsed:?}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn tap_and_commands_run_on_all_phones_at_once_in_request_order() {
+        let (state, ids) =
+            state_with_fake_phones(fake_adb("0.2", "30"), &["FAKE1", "FAKE2", "FAKE3", "FAKE4"]).await;
+
+        let started = std::time::Instant::now();
+        let tap = state
+            .handle_tap(ControlMode::Multi, &ids, NormalizedPoint { x: 0.5, y: 0.5 })
+            .await
+            .expect("tap runs");
+        let tap_elapsed = started.elapsed();
+        eprintln!("TAP4_ELAPSED_MS={}", tap_elapsed.as_millis());
+        assert_eq!(tap.targets.len(), 4);
+        assert!(tap.targets.iter().all(|t| t.inject == InjectStatus::Ok), "{:?}", tap.targets);
+        let tap_order: Vec<&str> = tap.targets.iter().map(|t| t.device_id.as_str()).collect();
+        assert_eq!(tap_order, ids.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(tap_elapsed < Duration::from_millis(600), "{tap_elapsed:?}");
+
+        let started = std::time::Instant::now();
+        let command = state
+            .handle_command(DeviceCommandRequest {
+                target_ids: ids.clone(),
+                op: "shell".into(),
+                arg: Some("id".into()),
+                arg2: None,
+            })
+            .await
+            .expect("command runs");
+        let command_elapsed = started.elapsed();
+        eprintln!("CMD4_ELAPSED_MS={}", command_elapsed.as_millis());
+        assert_eq!(command.results.len(), 4);
+        let cmd_order: Vec<&str> = command.results.iter().map(|r| r.device_id.as_str()).collect();
+        assert_eq!(cmd_order, ids.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(command_elapsed < Duration::from_millis(600), "{command_elapsed:?}");
+    }
 
     #[tokio::test]
     async fn gesture_plays_on_every_target_with_its_timing() {
