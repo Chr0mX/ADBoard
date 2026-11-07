@@ -1,3 +1,4 @@
+use super::watcher::{recovery_actions, RecoveryAction};
 use super::*;
 
 /// A stand-in for `adb` that answers every call after a delay. A serial
