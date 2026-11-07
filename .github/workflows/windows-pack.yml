@@ -1,0 +1,34 @@
+name: windows-pack
+
+# Builds the portable Windows folder (ADBoard.exe + UI + docs) from this
+# commit and attaches it as a downloadable artifact. Run it by hand from the
+# Actions tab, or push a tag like v1.2.0. The folder committed under
+# dist/windows keeps working as before; this gives a clean, reproducible build
+# that does not add another 34 MB binary to git history.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: MinGW linker for the Windows build
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - run: npm ci
+      - name: Build the pack
+        # Builds the static UI and the exe, writes BUILD.txt, and runs
+        # scripts/verify-pack.sh (which fails the job if the pack is incomplete).
+        run: bash scripts/package-windows.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adboard-windows-pack
+          path: dist/windows
+          if-no-files-found: error

@@ -123,3 +123,5 @@ make package-windows
 ```
 
 Do not commit real `adb.exe` / scrcpy redistributables into git — download them onto the Windows host as above.
+
+`make package-windows` builds the UI and the exe, writes `BUILD.txt` (commit, date, compiler versions, exe checksum) and then runs `scripts/verify-pack.sh`, which fails if a file is missing, the exe is older than the agent source, or the UI is not the one in `public/`. It also refuses to pack an old `target/` exe unless `ADBOARD_ALLOW_STALE_EXE=1` is set. The same build runs in CI as the `windows-pack` workflow (Actions tab, run by hand or on a `v*` tag) and attaches the folder as an artifact.
