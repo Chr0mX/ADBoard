@@ -281,7 +281,7 @@ pub async fn query_battery(adb: &PathBuf, serial: &str) -> BatterySample {
     let output = output_with_limit(
         adb,
         &["-s", serial, "shell", script.as_str()],
-        Duration::from_secs(15),
+        input_limit(),
     )
     .await;
     match output {
@@ -299,7 +299,7 @@ pub async fn query_resolution(adb: &PathBuf, serial: &str) -> DeviceResolution {
     let output = output_with_limit(
         adb,
         &["-s", serial, "shell", "wm", "size"],
-        Duration::from_secs(15),
+        input_limit(),
     )
     .await;
 

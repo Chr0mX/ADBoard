@@ -2473,15 +2473,20 @@ impl AppState {
                                 }
                                 RecoveryAction::RestartSession { serial } => {
                                     info!(%serial, "device online — restarting scrcpy");
-                                    state.apply_connect_display_size(&serial).await;
-                                    match state.restart_session_local(&serial).await {
-                                        Ok(session) => {
-                                            state.publish(ServerEvent::SessionUpdated { session });
+                                    // Restarting a stream takes several adb calls; it
+                                    // must not hold up the poll for the other phones.
+                                    let state = state.clone();
+                                    tokio::spawn(async move {
+                                        state.apply_connect_display_size(&serial).await;
+                                        match state.restart_session_local(&serial).await {
+                                            Ok(session) => {
+                                                state.publish(ServerEvent::SessionUpdated { session });
+                                            }
+                                            Err(error) => {
+                                                warn!(%serial, %error, "automatic scrcpy restart failed");
+                                            }
                                         }
-                                        Err(error) => {
-                                            warn!(%serial, %error, "automatic scrcpy restart failed");
-                                        }
-                                    }
+                                    });
                                 }
                             }
                         }
@@ -2524,10 +2529,17 @@ impl AppState {
                             .unwrap_or(true);
                         if due {
                             last_recovery.insert(session.serial.clone(), std::time::Instant::now());
-                            if let Ok(restarted) = state.restart_session(&session.serial).await {
-                                state.publish(ServerEvent::SessionUpdated { session: restarted });
-                                continue;
-                            }
+                            // One phone's slow restart must not delay reaping the others.
+                            let state = state.clone();
+                            tokio::spawn(async move {
+                                match state.restart_session(&session.serial).await {
+                                    Ok(restarted) => {
+                                        state.publish(ServerEvent::SessionUpdated { session: restarted })
+                                    }
+                                    Err(_) => state.publish(ServerEvent::SessionUpdated { session }),
+                                }
+                            });
+                            continue;
                         }
                     }
                     state.publish(ServerEvent::SessionUpdated { session });
@@ -2553,24 +2565,70 @@ impl AppState {
                 .unwrap_or_else(|error| error.into_inner());
             std::mem::take(&mut *guard)
         };
-        let mut next = Vec::with_capacity(lines.len());
         for line in lines {
             if refresh.contains(&line.serial) {
                 known_resolutions.remove(&line.serial);
             }
-            let resolution = if let Some(res) = known_resolutions.get(&line.serial) {
-                res.clone()
-            } else if line.status == DeviceStatus::Online {
-                let res = adb::query_resolution(adb, &line.serial).await;
-                known_resolutions.insert(line.serial.clone(), res.clone());
-                res
-            } else {
-                adboard_protocol::DeviceResolution {
+        }
+        // Ask every phone that needs it at the same time. Each query has its
+        // own time limit, so a phone that does not answer costs only itself,
+        // not the whole fleet's status updates.
+        let need_resolution: Vec<String> = lines
+            .iter()
+            .filter(|l| l.status == DeviceStatus::Online && !known_resolutions.contains_key(&l.serial))
+            .map(|l| l.serial.clone())
+            .collect();
+        let need_vitals: Vec<String> = lines
+            .iter()
+            .filter(|l| l.status == DeviceStatus::Online && !battery_is_fresh(batteries, &l.serial))
+            .map(|l| l.serial.clone())
+            .collect();
+        let (resolutions, vitals) = tokio::join!(
+            fanout::fan_out(need_resolution, fanout::DEFAULT_LIMIT, |serial| async move {
+                let resolution = adb::query_resolution(adb, &serial).await;
+                (serial, resolution)
+            }),
+            fanout::fan_out(need_vitals, fanout::DEFAULT_LIMIT, |serial| async move {
+                let sample = adb::query_battery(adb, &serial).await;
+                (serial, sample)
+            }),
+        );
+        for (serial, resolution) in resolutions {
+            known_resolutions.insert(serial, resolution);
+        }
+        for (serial, mut sample) in vitals {
+            // CPU % is the busy share since the previous read (about 15 s ago).
+            if let (Some(prev), Some(now)) = (
+                batteries.get(&serial).and_then(|cached| cached.sample.cpu_times),
+                sample.cpu_times,
+            ) {
+                sample.cpu_percent = adb::cpu_percent_between(prev, now);
+            }
+            batteries.insert(
+                serial,
+                CachedBattery {
+                    sample,
+                    fetched: std::time::Instant::now(),
+                },
+            );
+        }
+        let mut next = Vec::with_capacity(lines.len());
+        for line in lines {
+            let resolution = known_resolutions
+                .get(&line.serial)
+                .cloned()
+                .unwrap_or(adboard_protocol::DeviceResolution {
                     width: 1080,
                     height: 1920,
-                }
+                });
+            let battery = if line.status == DeviceStatus::Online {
+                batteries
+                    .get(&line.serial)
+                    .map(|cached| cached.sample)
+                    .unwrap_or_default()
+            } else {
+                adb::BatterySample::default()
             };
-            let battery = battery_sample(adb, line, batteries).await;
             next.push(adb::adb_line_to_device(
                 line, host_id, host_name, resolution, battery,
             ));
@@ -2708,37 +2766,12 @@ struct CachedBattery {
     fetched: std::time::Instant,
 }
 
-async fn battery_sample(
-    adb: &PathBuf,
-    line: &AdbDeviceLine,
-    batteries: &mut HashMap<String, CachedBattery>,
-) -> adb::BatterySample {
-    if line.status != DeviceStatus::Online {
-        return adb::BatterySample::default();
-    }
-    let fresh = batteries
-        .get(&line.serial)
+/// The cached vitals of `serial` are recent enough to reuse.
+fn battery_is_fresh(batteries: &HashMap<String, CachedBattery>, serial: &str) -> bool {
+    batteries
+        .get(serial)
         .map(|cached| cached.fetched.elapsed() < Duration::from_secs(15))
-        .unwrap_or(false);
-    if fresh {
-        return batteries.get(&line.serial).unwrap().sample;
-    }
-    let mut sample = adb::query_battery(adb, &line.serial).await;
-    // CPU % is the busy share since the previous poll (about 15 s ago).
-    if let (Some(prev), Some(now)) = (
-        batteries.get(&line.serial).and_then(|cached| cached.sample.cpu_times),
-        sample.cpu_times,
-    ) {
-        sample.cpu_percent = adb::cpu_percent_between(prev, now);
-    }
-    batteries.insert(
-        line.serial.clone(),
-        CachedBattery {
-            sample,
-            fetched: std::time::Instant::now(),
-        },
-    );
-    sample
+        .unwrap_or(false)
 }
 
 fn temp_same(left: Option<f32>, right: Option<f32>) -> bool {
@@ -3007,6 +3040,36 @@ mod tests {
             out.targets[1].detail
         );
         assert!(elapsed < Duration::from_secs(3), "took {elapsed:?}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_poll_asks_every_phone_at_once_and_a_hung_phone_costs_only_itself() {
+        use crate::adb::AdbDeviceLine;
+        let adb = fake_adb("0.2", "30");
+        let (state, _ids) = state_with_fake_phones(adb.clone(), &[]).await;
+        let line = |serial: &str| AdbDeviceLine {
+            serial: serial.to_string(),
+            status: DeviceStatus::Online,
+            model: Some("Pixel".into()),
+            product: None,
+            transport_id: None,
+            connection: adboard_protocol::ConnectionType::Usb,
+        };
+        let lines = vec![line("FAKE1"), line("FAKE2"), line("FAKE3"), line("HUNG1")];
+        crate::adb::set_input_limit_for_tests(Some(Duration::from_millis(900)));
+        let mut known = HashMap::new();
+        let mut batteries = HashMap::new();
+        let started = std::time::Instant::now();
+        state.apply_adb_snapshot(&adb, &lines, &mut known, &mut batteries).await;
+        let elapsed = started.elapsed();
+        crate::adb::set_input_limit_for_tests(None);
+        eprintln!("POLL4_ELAPSED_MS={}", elapsed.as_millis());
+        // Done in about one time limit (the hung phone's), where reading the
+        // phones one by one took 3 x 0.4 s plus 2 x 0.9 s.
+        assert!(elapsed < Duration::from_millis(1600), "{elapsed:?}");
+        let serials: Vec<String> = state.list_local_devices().await.into_iter().map(|d| d.serial).collect();
+        assert_eq!(serials, vec!["FAKE1", "FAKE2", "FAKE3", "HUNG1"]);
     }
 
     #[cfg(unix)]
