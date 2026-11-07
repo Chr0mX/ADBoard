@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { agentBaseUrl } from "@/lib/api/auth";
 import {
   IDLE_VIDEO,
+  notifyVideoVisibility,
   restartVideo,
   subscribeVideo,
   videoState,
@@ -49,13 +50,43 @@ export function useDeviceVideo(
     (onChange: () => void) => {
       frameSizeRef.current = serial ? videoState(serial).size : null;
       if (!serial) return () => {};
-      return subscribeVideo(serial, {
+      // Track whether the canvas is on screen, so a tile scrolled away or in a
+      // collapsed panel is not decoded into and painted for nothing.
+      let visible = true;
+      let observed: HTMLCanvasElement | null = null;
+      const observer =
+        typeof IntersectionObserver === "undefined"
+          ? null
+          : new IntersectionObserver((entries) => {
+              const now = entries[entries.length - 1]?.isIntersecting ?? true;
+              if (now === visible) return;
+              visible = now;
+              notifyVideoVisibility(serial);
+            });
+      const watch = () => {
+        const el = canvasRef.current;
+        if (!observer || el === observed) return;
+        if (observed) observer.unobserve(observed);
+        observed = el;
+        visible = true;
+        if (el) observer.observe(el);
+      };
+      watch();
+      const unsubscribe = subscribeVideo(serial, {
         canvas: () => canvasRef.current,
         onState: (state) => {
           frameSizeRef.current = state.size;
           onChange();
         },
+        visible: () => {
+          watch(); // the canvas element can be replaced while subscribed
+          return visible;
+        },
       });
+      return () => {
+        observer?.disconnect();
+        unsubscribe();
+      };
     },
     [serial],
   );

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_DECODE_QUEUE, admitFrame, newDecodeGate, type GateVerdict } from "./backpressure.ts";
+import { MAX_DECODE_QUEUE, admitFrame, anyViewVisible, newDecodeGate, type GateVerdict } from "./backpressure.ts";
 
 const frame = (isKey: boolean, queueSize: number, hidden = false) => ({ isKey, queueSize, hidden });
 
@@ -138,5 +138,27 @@ describe("decode back-pressure", () => {
     assert.ok(run.verdicts.slice(200, 210).every((v) => v === "drop"));
     assert.equal(run.verdicts[210], "decode");
     assert.equal(run.badFrames, 0);
+  });
+});
+
+describe("anyViewVisible", () => {
+  it("counts views with no visibility callback, and any one visible view is enough", () => {
+    assert.equal(anyViewVisible([]), false);
+    assert.equal(anyViewVisible([{}]), true);
+    assert.equal(anyViewVisible([{ visible: () => false }]), false);
+    assert.equal(anyViewVisible([{ visible: () => false }, { visible: () => true }]), true);
+    assert.equal(anyViewVisible(new Set([{ visible: () => false }, { visible: () => false }])), false);
+  });
+
+  it("drops frames while every view is off screen and asks for a keyframe once one returns", () => {
+    const gate = newDecodeGate();
+    const views = [{ visible: () => false }];
+    assert.equal(admitFrame(gate, frame(false, 0, !anyViewVisible(views))), "drop");
+    assert.equal(admitFrame(gate, frame(true, 0, !anyViewVisible(views))), "drop");
+    assert.equal(gate.dropping, true);
+    views[0] = { visible: () => true };
+    // On screen again: the next delta frame is still refused until a keyframe arrives.
+    assert.notEqual(admitFrame(gate, frame(false, 0, !anyViewVisible(views))), "decode");
+    assert.equal(admitFrame(gate, frame(true, 0, !anyViewVisible(views))), "decode");
   });
 });

@@ -62,3 +62,21 @@ export function admitFrame(gate: DecodeGate, frame: FrameInfo): GateVerdict {
   }
   return "decode";
 }
+
+/** A place that shows a stream. `visible` is absent for views that always count. */
+export interface VideoViewLike {
+  visible?: () => boolean;
+}
+
+/**
+ * Is at least one view of the stream on screen? A grid tile scrolled out of
+ * sight, or in a collapsed panel, reports `visible() === false`. When no view
+ * is visible the stream is treated like a hidden page: frames are dropped
+ * instead of decoded and painted, and a keyframe is asked for on return.
+ */
+export function anyViewVisible(views: Iterable<VideoViewLike>): boolean {
+  for (const view of views) {
+    if (!view.visible || view.visible()) return true;
+  }
+  return false;
+}

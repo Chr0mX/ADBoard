@@ -9,10 +9,11 @@ import {
   codecStringFromSps,
   extractSpsPps,
   spsDimensions,
+  splitAnnexBNals,
 } from "@/lib/video/h264";
 import { MseH264Player } from "@/lib/video/mse-player";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
-import { admitFrame, newDecodeGate } from "@/lib/video/backpressure";
+import { admitFrame, anyViewVisible, newDecodeGate } from "@/lib/video/backpressure";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { agentBaseUrl, agentWsUrl, agentWsProtocols } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
@@ -67,6 +68,8 @@ export const IDLE_VIDEO: VideoState = {
 export interface VideoView {
   canvas(): HTMLCanvasElement | null;
   onState(state: VideoState): void;
+  /** False while this view is scrolled out of sight or hidden. Absent means always shown. */
+  visible?(): boolean;
 }
 
 /** Keep a stream this long after its last view leaves (view switches, Strict Mode). */
@@ -236,6 +239,8 @@ class SharedStream {
   private paint(source: CanvasImageSource, width: number, height: number) {
     if (width <= 0 || height <= 0) return;
     for (const view of this.views) {
+      // Nothing to gain from drawing into a canvas nobody can see.
+      if (view.visible && !view.visible()) continue;
       const canvas = view.canvas();
       if (canvas) this.drawInto(canvas, source, width, height);
     }
@@ -285,8 +290,18 @@ class SharedStream {
   }
 
   private onVisibility = () => {
-    if (!pageHidden() && this.gate.dropping) this.askKeyframe();
+    if (!this.hiddenNow() && this.gate.dropping) this.askKeyframe();
   };
+
+  /** The page is hidden, or no view of this stream is on screen. */
+  private hiddenNow() {
+    return pageHidden() || !anyViewVisible(this.views);
+  }
+
+  /** A view scrolled into or out of sight. Coming back needs a fresh keyframe. */
+  viewVisibilityChanged() {
+    this.onVisibility();
+  }
 
   private teardownDecoder() {
     if (this.decoder) {
@@ -445,8 +460,18 @@ class SharedStream {
       return;
     }
 
+    // Nothing is shown (hidden page, or every view off screen): skip parsing
+    // and decoding. The next keyframe is asked for when a view comes back.
+    if (this.decoder && this.hiddenNow()) {
+      this.gate.dropping = true;
+      this.gate.dropped += 1;
+      return;
+    }
+
+    // Split the frame once; every check below reads the same NAL list.
+    const nals = splitAnnexBNals(buf);
     // SPS/PPS often arrive in their own access unit, before the IDR.
-    const paramSets = extractSpsPps(buf);
+    const paramSets = extractSpsPps(nals);
     if (paramSets) {
       this.description = buildAvcDecoderConfig(paramSets.sps, paramSets.pps);
       this.codecString = codecStringFromSps(paramSets.sps);
@@ -466,8 +491,8 @@ class SharedStream {
       }
     }
 
-    if (!annexBHasVcl(buf)) return;
-    const isKey = annexBIsIdr(buf);
+    if (!annexBHasVcl(nals)) return;
+    const isKey = annexBIsIdr(nals);
     // An earlier SPS/PPS AU is enough; the IDR does not have to repeat it.
     if (!this.description) return; // wait for SPS/PPS
 
@@ -493,12 +518,12 @@ class SharedStream {
     const verdict = admitFrame(this.gate, {
       isKey,
       queueSize: decoder.decodeQueueSize,
-      hidden: pageHidden(),
+      hidden: this.hiddenNow(),
     });
     if (verdict === "drop-ask-keyframe") this.askKeyframe();
     if (verdict !== "decode") return;
 
-    const avcc = annexBToAvcc(buf);
+    const avcc = annexBToAvcc(nals);
     if (avcc.byteLength === 0) return;
     try {
       decoder.decode(
@@ -530,6 +555,11 @@ export function subscribeVideo(serial: string, view: VideoView): () => void {
   }
   const owner = stream;
   return () => owner.removeView(view);
+}
+
+/** A view of `serial` moved in or out of sight (its `visible()` changed). */
+export function notifyVideoVisibility(serial: string) {
+  streams.get(serial)?.viewVisibilityChanged();
 }
 
 export function videoState(serial: string): VideoState {

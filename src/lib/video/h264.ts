@@ -9,21 +9,29 @@ export interface ParsedNal {
 
 export function splitAnnexBNals(data: Uint8Array): ParsedNal[] {
   const starts: number[] = [];
+  const n = data.length;
   let i = 0;
-  while (i + 3 < data.length) {
+  while (i + 3 < n) {
+    // A start code (00 00 01, or 00 00 00 01) needs data[i + 2] to be 0 or 1.
+    // Anything bigger rules out a start code beginning at i, i + 1 or i + 2.
+    const b = data[i + 2];
+    if (b > 1) {
+      i += 3;
+      continue;
+    }
     if (data[i] === 0 && data[i + 1] === 0) {
-      if (data[i + 2] === 1) {
+      if (b === 1) {
         starts.push(i);
         i += 3;
         continue;
       }
-      if (i + 3 < data.length && data[i + 2] === 0 && data[i + 3] === 1) {
+      if (data[i + 3] === 1) {
         starts.push(i);
         i += 4;
         continue;
       }
     }
-    i += 1;
+    i += b === 1 ? 3 : 1;
   }
 
   const out: ParsedNal[] = [];
@@ -46,12 +54,23 @@ export function splitAnnexBNals(data: Uint8Array): ParsedNal[] {
   return out;
 }
 
-export function annexBHasVcl(data: Uint8Array): boolean {
-  return splitAnnexBNals(data).some((n) => n.type === 1 || n.type === 5);
+/**
+ * Either raw Annex-B bytes or the same access unit already split by
+ * `splitAnnexBNals`. The hub splits each frame once and passes the result to
+ * every helper below instead of scanning the bytes four times.
+ */
+export type AccessUnit = Uint8Array | ParsedNal[];
+
+function nalsOf(unit: AccessUnit): ParsedNal[] {
+  return unit instanceof Uint8Array ? splitAnnexBNals(unit) : unit;
 }
 
-export function annexBIsIdr(data: Uint8Array): boolean {
-  return splitAnnexBNals(data).some((n) => n.type === 5);
+export function annexBHasVcl(data: AccessUnit): boolean {
+  return nalsOf(data).some((n) => n.type === 1 || n.type === 5);
+}
+
+export function annexBIsIdr(data: AccessUnit): boolean {
+  return nalsOf(data).some((n) => n.type === 5);
 }
 
 /** Build AVCDecoderConfigurationRecord from SPS + PPS NAL payloads. */
@@ -90,8 +109,8 @@ export function codecStringFromSps(sps: Uint8Array): string {
 }
 
 /** Convert Annex-B AU → AVCC (length-prefixed VCL + SEI; SPS/PPS omitted). */
-export function annexBToAvcc(data: Uint8Array): Uint8Array {
-  const nals = splitAnnexBNals(data).filter(
+export function annexBToAvcc(data: AccessUnit): Uint8Array {
+  const nals = nalsOf(data).filter(
     (n) => n.type !== 7 && n.type !== 8 && n.type !== 9,
   );
   let size = 0;
@@ -111,9 +130,9 @@ export function annexBToAvcc(data: Uint8Array): Uint8Array {
 }
 
 export function extractSpsPps(
-  data: Uint8Array,
+  data: AccessUnit,
 ): { sps: Uint8Array; pps: Uint8Array } | null {
-  const nals = splitAnnexBNals(data);
+  const nals = nalsOf(data);
   const sps = nals.find((n) => n.type === 7)?.data;
   const pps = nals.find((n) => n.type === 8)?.data;
   if (!sps || !pps) return null;
