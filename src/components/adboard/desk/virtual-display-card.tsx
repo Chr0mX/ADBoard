@@ -51,7 +51,9 @@ export function VirtualDisplayCard() {
   useEffect(() => {
     if (!agent) return;
     const first = setTimeout(() => void load(), 0);
-    const timer = setInterval(() => void load(), 10_000);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 10_000);
     return () => {
       clearTimeout(first);
       clearInterval(timer);

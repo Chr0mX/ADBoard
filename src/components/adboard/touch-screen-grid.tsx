@@ -1,5 +1,6 @@
 "use client";
 
+import { createSerialQueue, shouldSendMove } from "@/lib/ui/pointer-flow";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsUp, LayoutGrid, Maximize2, Minus, Plus, SlidersHorizontal, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -166,10 +167,14 @@ export function TouchScreenGrid({
 
     const measure = () => {
       const rect = node.getBoundingClientRect();
-      setPack(
-        fixed
-          ? fixedPack(fixed.cols, Math.max(1, fixedRows), rect.width, rect.height, PORTRAIT, GAP, TILE_STATS_H)
-          : bestDesktopPack(listed.length, rect.width, rect.height, PORTRAIT),
+      const next = fixed
+        ? fixedPack(fixed.cols, Math.max(1, fixedRows), rect.width, rect.height, PORTRAIT, GAP, TILE_STATS_H)
+        : bestDesktopPack(listed.length, rect.width, rect.height, PORTRAIT);
+      // A resize callback that measured the same size must not re-render every tile.
+      setPack((prev) =>
+        prev.cols === next.cols && prev.rows === next.rows && prev.tileW === next.tileW && prev.tileH === next.tileH
+          ? prev
+          : next,
       );
     };
     measure();
@@ -663,7 +668,12 @@ function TouchScreenTile({
   const dragRef = useRef<{
     id: number;
     tool: PointerTool;
+    lastX: number;
+    lastY: number;
+    lastSent: number;
   } | null>(null);
+  // Pointer events go to the agent one at a time, in order (see pointer-flow.ts).
+  const pointerQueue = useRef(createSerialQueue());
   const [ripple, setRipple] = useState<{ x: number; y: number; key: number } | null>(
     null,
   );
@@ -682,15 +692,17 @@ function TouchScreenTile({
       setRipple({ x: point.x * 100, y: point.y * 100, key: Date.now() });
     }
     const size = frameSizeRef.current;
-    void devicesClient
-      .sendPointer(
-        sendTo.mode,
-        sendTo.targets,
-        phase,
-        point,
-        size?.width ?? width,
-        size?.height ?? height,
-        tool,
+    void pointerQueue.current
+      .run(() =>
+        devicesClient.sendPointer(
+          sendTo.mode,
+          sendTo.targets,
+          phase,
+          point,
+          size?.width ?? width,
+          size?.height ?? height,
+          tool,
+        ),
       )
       .catch(() => {
         // Tile stays interactive; next pointer may succeed.
@@ -731,12 +743,23 @@ function TouchScreenTile({
               if (offline || !mouseOn) return;
               event.currentTarget.setPointerCapture(event.pointerId);
               const tool: PointerTool = cursorMode || event.pointerType !== "touch" ? "mouse" : "finger";
-              dragRef.current = { id: event.pointerId, tool };
+              dragRef.current = {
+                id: event.pointerId,
+                tool,
+                lastX: event.clientX,
+                lastY: event.clientY,
+                lastSent: performance.now(),
+              };
               emit("down", event.clientX, event.clientY, tool);
             }}
             onPointerMove={(event) => {
               const drag = dragRef.current;
               if (!drag || drag.id !== event.pointerId) return;
+              const now = performance.now();
+              if (!shouldSendMove(drag, event.clientX, event.clientY, now)) return;
+              drag.lastX = event.clientX;
+              drag.lastY = event.clientY;
+              drag.lastSent = now;
               emit("move", event.clientX, event.clientY, drag.tool);
             }}
             onPointerUp={(event) => {
@@ -864,12 +887,23 @@ function TouchScreenTile({
           if (offline || !mouseOn) return;
           event.currentTarget.setPointerCapture(event.pointerId);
           const tool: PointerTool = cursorMode || event.pointerType !== "touch" ? "mouse" : "finger";
-          dragRef.current = { id: event.pointerId, tool };
+          dragRef.current = {
+                id: event.pointerId,
+                tool,
+                lastX: event.clientX,
+                lastY: event.clientY,
+                lastSent: performance.now(),
+              };
           emit("down", event.clientX, event.clientY, tool);
         }}
         onPointerMove={(event) => {
           const drag = dragRef.current;
           if (!drag || drag.id !== event.pointerId) return;
+          const now = performance.now();
+          if (!shouldSendMove(drag, event.clientX, event.clientY, now)) return;
+          drag.lastX = event.clientX;
+          drag.lastY = event.clientY;
+          drag.lastSent = now;
           emit("move", event.clientX, event.clientY, drag.tool);
         }}
         onPointerUp={(event) => {

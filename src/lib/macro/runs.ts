@@ -1,5 +1,6 @@
 "use client";
 
+import { createPoller } from "@/lib/ui/poller";
 import { useSyncExternalStore } from "react";
 import { devicesClient } from "@/lib/api/client";
 import { agentBaseUrl, agentFetch } from "@/lib/api/auth";
@@ -265,7 +266,6 @@ const LIVE = new Set(["running", "paused", "stopping"]);
 let view: AgentView = { version: -1, runs: [], paused: [] };
 const seenTouch = new Map<string, number>();
 let polling = false;
-let pollTimer: ReturnType<typeof setTimeout> | null = null;
 const viewListeners = new Set<(view: AgentView) => void>();
 
 const agentMode = () => typeof window !== "undefined" && agentBaseUrl() !== null;
@@ -361,19 +361,23 @@ export async function refreshRuns() {
   }
 }
 
+const pageVisible = () => typeof document === "undefined" || document.visibilityState === "visible";
+
+const runsPoller = createPoller({
+  tick: refreshRuns,
+  // Nothing is shown while the tab is hidden: skip the request. Returning to
+  // the tab pokes the poller (below), so the view is current again at once.
+  shouldRun: pageVisible,
+  delayMs: () => (view.runs.some(isLive) && pageVisible() ? 400 : 3000),
+});
+
 function startPolling() {
   if (polling || !agentMode()) return;
   polling = true;
-  const loop = async () => {
-    await refreshRuns();
-    const busy = view.runs.some(isLive);
-    const visible = typeof document === "undefined" || document.visibilityState === "visible";
-    pollTimer = setTimeout(loop, busy && visible ? 400 : 3000);
-  };
-  void loop();
-  window.addEventListener("focus", () => {
-    if (pollTimer) clearTimeout(pollTimer);
-    void loop();
+  runsPoller.start();
+  window.addEventListener("focus", () => runsPoller.poke());
+  document.addEventListener("visibilitychange", () => {
+    if (pageVisible()) runsPoller.poke();
   });
 }
 

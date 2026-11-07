@@ -66,7 +66,9 @@ export function NotificationsCard() {
       );
     void load();
     // Delivery status changes as events are sent.
-    const timer = setInterval(() => void load(), 15_000);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 15_000);
     return () => {
       live = false;
       clearInterval(timer);

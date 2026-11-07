@@ -1,5 +1,6 @@
 "use client";
 
+import { reuseUnchanged } from "@/lib/devices/fleet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
 import { MOCK_DEVICES } from "@/lib/devices/mock-data";
@@ -90,7 +91,9 @@ export function useADBoard() {
   );
 
   const applyFleet = useCallback((next: Device[]) => {
-    setDevices(next);
+    // Keep the previous objects for phones that did not change, so a fleet
+    // update that changed nothing visible does not re-render the whole UI.
+    setDevices((prev) => reuseUnchanged(prev, next));
     setActiveId((prev) => {
       if (prev && next.some((d) => d.id === prev)) return prev;
       const saved = readSavedDevice();
