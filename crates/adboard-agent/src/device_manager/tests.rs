@@ -44,6 +44,7 @@ async fn state_with_fake_phones(adb: PathBuf, serials: &[&str]) -> (AppState, Ve
 #[cfg(unix)]
 #[tokio::test]
 async fn nav_reaches_five_phones_at_once_and_a_hung_phone_only_delays_itself() {
+    let _guard = crate::adb::INPUT_LIMIT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // Five phones that each take 200 ms to answer: one round trip, not five.
     let (state, ids) = state_with_fake_phones(
         fake_adb("0.2", "30"),
@@ -139,6 +140,7 @@ async fn a_remote_reply_is_read_and_an_oversized_one_is_refused() {
 #[cfg(unix)]
 #[tokio::test]
 async fn the_poll_asks_every_phone_at_once_and_a_hung_phone_costs_only_itself() {
+    let _guard = crate::adb::INPUT_LIMIT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use crate::adb::AdbDeviceLine;
     let adb = fake_adb("0.2", "30");
     let (state, _ids) = state_with_fake_phones(adb.clone(), &[]).await;

@@ -45,6 +45,10 @@ pub fn limit_from(value: Option<&str>) -> u32 {
         .clamp(1, CEILING_PER_PHONE)
 }
 
+/// Tests that change the limit hold this, so they cannot overlap.
+#[cfg(test)]
+pub static LIMIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The limit chosen in Settings; 0 means none chosen (the environment decides).
 static LIMIT_OVERRIDE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -341,6 +345,7 @@ mod tests {
 
     #[test]
     fn a_limit_chosen_in_settings_wins_over_the_environment() {
+        let _guard = LIMIT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let before = limit_override();
         set_limit_override(Some(3));
         assert_eq!(max_per_phone(), 3);

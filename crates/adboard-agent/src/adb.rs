@@ -24,6 +24,10 @@ pub const LIMIT_TRANSFER: Duration = Duration::from_secs(600);
 /// Test hook: when non-zero, replaces `LIMIT_INPUT`.
 static INPUT_LIMIT_OVERRIDE_MS: AtomicU64 = AtomicU64::new(0);
 
+/// Tests that change the input limit hold this, so they cannot overlap.
+#[cfg(test)]
+pub static INPUT_LIMIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 pub fn set_input_limit_for_tests(limit: Option<Duration>) {
     INPUT_LIMIT_OVERRIDE_MS.store(limit.map_or(0, |d| d.as_millis() as u64), Ordering::Relaxed);

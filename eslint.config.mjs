@@ -12,6 +12,16 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated or vendored output that is committed or built outside src.
+    "dist/**",
+    "target/**",
+    "temp/**",
+    "site/**",
+    "mockups/**",
+    "tools/**",
+    "ADBoard-data/**",
+    "adboard-data/**",
+    "data/**",
   ]),
 ]);
 

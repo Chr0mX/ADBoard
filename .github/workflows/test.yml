@@ -2,7 +2,7 @@ name: test
 
 on:
   push:
-    branches: [main, "cursor/**"]
+    branches: ["**"]
   pull_request:
 
 jobs:
@@ -27,7 +27,17 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Unit tests
-        run: node --experimental-strip-types --test src/lib/video/fit-box.test.ts src/lib/video/backpressure.test.ts src/lib/devices/logcat.test.ts src/lib/desk/gesture.test.ts src/lib/ui/floating-clamp.test.ts src/lib/ui/mobile-stats-mode.test.ts src/lib/ui/document-title.test.ts src/lib/scrcpy/keyboard.test.mjs src/lib/api/http-error.test.ts src/lib/ui/taskbar-pins.test.ts src/lib/ui/connection-copy.test.ts src/lib/ui/grid-layout.test.ts src/lib/adboard-files.test.ts src/lib/desk/apps.test.ts
+        # Every src/**/*.test.ts and *.test.mjs, found by pattern. A new test
+        # file is picked up without editing this workflow.
+        run: npm test
       - name: Typecheck
         # LayoutProps and next-env.d.ts come from Next's generated route types.
-        run: npx next typegen && npx tsc --noEmit
+        run: npm run typecheck
+      - name: Lint
+        # Source only (dist, target and temp are ignored in eslint.config.mjs).
+        # Not blocking yet: a few older react-hooks errors are still open
+        # (phone-screen, floating-panel, adboard-app, developer-panel).
+        run: npm run lint
+        continue-on-error: true
+      - name: Production build
+        run: npm run build
