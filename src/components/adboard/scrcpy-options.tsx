@@ -202,7 +202,7 @@ export function ScrcpyOptions({
         )}
       >
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
- <span className="hidden font-mono text-[11px] tracking-wide text-[var(--pc-muted)] lg:inline">
+ <span className="hidden text-[11px] tracking-wide text-[var(--pc-muted)] lg:inline">
             Quality
           </span>
           <select
@@ -213,7 +213,7 @@ export function ScrcpyOptions({
             onChange={(event) => {
               void apply({ ...options, quality: event.target.value });
             }}
-            className="h-8 bg-transparent font-mono text-xs text-[var(--pc-ink)] outline-none"
+            className="h-8 bg-transparent text-xs text-[var(--pc-ink)] outline-none"
           >
             <option value="low">Low</option>
             <option value="balanced">Balanced</option>
@@ -223,7 +223,7 @@ export function ScrcpyOptions({
           </select>
         </label>
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
- <span className="hidden font-mono text-[11px] tracking-wide text-[var(--pc-muted)] lg:inline">
+ <span className="hidden text-[11px] tracking-wide text-[var(--pc-muted)] lg:inline">
             Size
           </span>
           <select
@@ -234,7 +234,7 @@ export function ScrcpyOptions({
             onChange={(event) => {
               void matchSize(event.target.value);
             }}
-            className="h-8 bg-transparent font-mono text-xs text-[var(--pc-ink)] outline-none"
+            className="h-8 bg-transparent text-xs text-[var(--pc-ink)] outline-none"
           >
             {DISPLAY_SIZES.map((item) => (
               <option key={item.id} value={item.id}>
@@ -298,7 +298,7 @@ export function ScrcpyOptions({
             disabled={disabled}
             placeholder="Clipboard"
             onChange={(event) => setClip(event.target.value)}
-            className="h-11 min-w-[8rem] flex-1 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 font-mono text-xs text-[var(--pc-ink)] outline-none placeholder:text-[var(--pc-muted)]"
+            className="h-11 min-w-[8rem] flex-1 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 text-xs text-[var(--pc-ink)] outline-none placeholder:text-[var(--pc-muted)]"
           />
           <Button
             type="button"
@@ -399,7 +399,7 @@ function CustomQualityFields({
         submit();
       }}
     >
- <label className="flex flex-col gap-0.5 font-mono text-[11px] text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
         Max size px
         <input
           type="number"
@@ -416,7 +416,7 @@ function CustomQualityFields({
           className={field}
         />
       </label>
- <label className="flex flex-col gap-0.5 font-mono text-[11px] text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
         Bitrate Mbps
         <input
           type="number"
@@ -432,7 +432,7 @@ function CustomQualityFields({
           className={field}
         />
       </label>
- <label className="flex flex-col gap-0.5 font-mono text-[11px] text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
         FPS
         <input
           type="number"

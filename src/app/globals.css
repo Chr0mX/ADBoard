@@ -126,6 +126,26 @@
     background-color: var(--pc-panel);
     color: var(--pc-ink);
   }
+
+  /* Type roles, one rule for the whole app:
+     - Geist (font-display): headings, titles, phone names.
+     - Figtree (the page default): prose, labels, hints, the top tab bar and
+       fields where you type words (search, names, selects).
+     - JetBrains Mono: every button, and data: status, ids, paths, commands,
+       numbers.
+     The font-display, font-sans and font-mono utilities still win, so an
+     explicit choice on an element is kept. */
+  button,
+  summary {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+  nav[aria-label="Sections"] button {
+    font-family: var(--font-body), ui-sans-serif, sans-serif;
+  }
+  input[type="number"],
+  [data-mono] {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
 }
 
 .font-display {
@@ -884,18 +904,4 @@ html::-webkit-scrollbar-thumb,
 .pc-clean select,
 .pc-clean textarea {
   border-radius: 12px;
-}
-
-/* Settings tab: buttons, fields and labels use the body font, so the card
-   reads as one typeface. Headings keep font-display. Mono stays only where
-   a field opts in with data-keep-mono (the Discord webhook URL). */
-.pc-settings .pc-toggle,
-.pc-settings input,
-.pc-settings select,
-.pc-settings textarea,
-.pc-settings .font-mono {
-  font-family: var(--font-body), ui-sans-serif, sans-serif;
-}
-.pc-settings [data-keep-mono] {
-  font-family: var(--font-mono), ui-monospace, monospace;
 }

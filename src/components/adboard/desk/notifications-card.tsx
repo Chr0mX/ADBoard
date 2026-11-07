@@ -131,7 +131,7 @@ export function NotificationsCard() {
                 onChange={(e) => setUrl(e.target.value)}
                 className={cn(fieldClass, "min-w-48 flex-1 font-mono")}
                 data-webhook-input
-                data-keep-mono
+                data-mono
               />
               <button
                 type="button"

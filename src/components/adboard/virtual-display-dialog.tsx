@@ -104,6 +104,7 @@ export function VirtualDisplayDialog({ device, onClose }: { device: Device; onCl
                 autoCorrect="off"
                 onChange={(event) => setComponent(event.target.value)}
                 data-virtual-component
+                data-mono
               />
             </label>
             {componentProblem && <p className="text-xs text-[var(--pc-warn)]">{componentProblem}</p>}
@@ -180,6 +181,7 @@ export function VirtualDisplayDialog({ device, onClose }: { device: Device; onCl
                 autoCorrect="off"
                 onChange={(event) => setSpec((prev) => ({ ...prev, startApp: event.target.value }))}
                 data-virtual-start-app
+                data-mono
               />
             </label>
             {problem && <p className="text-xs text-[var(--pc-warn)]">{problem}</p>}

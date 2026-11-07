@@ -145,6 +145,7 @@ export function VirtualDisplayCard() {
             className={FIELD}
             value={spec.startApp ?? ""}
             placeholder="org.mozilla.firefox"
+            data-mono
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
