@@ -46,6 +46,10 @@ export const BROWSER_KEYS = [
   "adboard-grid-view",
   "adboard-macro-dock",
   "adboard-files-path",
+  // The mobile app (/m) keeps its own layout so the two UIs never move each other.
+  "adboard-m-section",
+  "adboard-m-macro-dock",
+  "adboard-m-grid-view",
 ] as const;
 
 export const BUILDER_KEYS = ["adboard-automate-view", "adboard-shell-builder", "adboard-macro-view"] as const;

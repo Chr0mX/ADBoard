@@ -67,6 +67,7 @@ done
   echo "rustc:      $(rustc --version 2>/dev/null || echo unknown)"
   echo "node:       $(node --version 2>/dev/null || echo unknown)"
   echo "ui cache:   $(sed -n 's/^const CACHE_VERSION = "\(.*\)";.*/\1/p' "$DIST/ui/sw.js" 2>/dev/null | head -1)"
+  echo "ui/m cache:  $(sed -n 's/^const CACHE_VERSION = "\(.*\)";.*/\1/p' "$DIST/ui/m/sw.js" 2>/dev/null | head -1)"
   echo "exe sha256: $(sha256sum "$DIST/ADBoard.exe" | cut -d' ' -f1)"
 } > "$DIST/BUILD.txt"
 

@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Figtree, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { RegisterSw } from "@/components/pwa/register-sw";
 import "./globals.css";
 
 const geist = Geist({
@@ -28,7 +27,6 @@ export const metadata: Metadata = {
   description:
     "Multi-device Android control center — scrcpy/ADB transport with a unified Web UI.",
   applicationName: "ADBoard",
-  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -68,7 +66,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <TooltipProvider>
           {children}
           <Toaster position="bottom-right" richColors closeButton />
-          <RegisterSw />
         </TooltipProvider>
       </body>
     </html>

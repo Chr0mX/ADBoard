@@ -16,7 +16,7 @@ ok() { echo "ok:   $*"; }
 
 # 1. Every file the portable folder needs.
 for f in ADBoard.exe run.bat Start-ADBoard.ps1 README.md .env.example \
-         ui/index.html ui/sw.js \
+         ui/index.html ui/sw.js ui/m/index.html ui/m/sw.js ui/m/manifest.webmanifest \
          vendor/adb/README.md vendor/scrcpy/README.md vendor/ocr/README.md; do
   if [[ -f "$DIST/$f" ]]; then ok "$f"; else fail "missing $f"; fi
 done
@@ -36,16 +36,19 @@ if [[ -f "$exe" ]]; then
   [[ -z "$stale" ]] && ok "exe is newer than every .rs file" || fail "exe is older than ${stale#$ROOT/}: rebuild it"
 fi
 
-# 3. The packed page is the page in public/: same service-worker cache version.
-want=$(sed -n 's/^const CACHE_VERSION = "\(.*\)";.*/\1/p' "$ROOT/public/sw.js" | head -1)
-have=$(sed -n 's/^const CACHE_VERSION = "\(.*\)";.*/\1/p' "$DIST/ui/sw.js" 2>/dev/null | head -1)
-if [[ -z "$want" ]]; then
-  fail "cannot read CACHE_VERSION from public/sw.js"
-elif [[ "$want" == "$have" ]]; then
-  ok "ui cache version $have matches public/sw.js"
-else
-  fail "ui cache version is '${have:-none}', public/sw.js has '$want': rebuild the UI"
-fi
+# 3. The packed pages are the pages in public/: same service-worker cache
+#    versions, for the desktop app (ui/sw.js) and the mobile app (ui/m/sw.js).
+for sw in sw.js m/sw.js; do
+  want=$(sed -n 's/^const CACHE_VERSION = "\(.*\)";.*/\1/p' "$ROOT/public/$sw" | head -1)
+  have=$(sed -n 's/^const CACHE_VERSION = "\(.*\)";.*/\1/p' "$DIST/ui/$sw" 2>/dev/null | head -1)
+  if [[ -z "$want" ]]; then
+    fail "cannot read CACHE_VERSION from public/$sw"
+  elif [[ "$want" == "$have" ]]; then
+    ok "ui/$sw cache version $have matches public/$sw"
+  else
+    fail "ui/$sw cache version is '${have:-none}', public/$sw has '$want': rebuild the UI"
+  fi
+done
 
 if (( problems > 0 )); then
   echo "pack check: $problems problem(s)" >&2
