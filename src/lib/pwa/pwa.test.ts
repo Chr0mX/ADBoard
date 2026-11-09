@@ -165,3 +165,8 @@ test("the build marker on the desktop shell matches its service worker cache ver
   assert.ok(version);
   assert.ok(read("src/components/adboard/adboard-app.tsx").includes(`data-ui-build="${version}"`), `data-ui-build should be ${version}`);
 });
+
+test("the mobile document stays 100lvh tall (fixes the 797 px Home Screen window on iPhone)", () => {
+  const css = read("src/app/globals.css");
+  assert.match(css, /html:has\(\[data-m-app\]\) body::after\s*\{[^}]*height:\s*100lvh/s);
+});

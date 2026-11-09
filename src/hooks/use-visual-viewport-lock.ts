@@ -10,13 +10,6 @@ import { keyboardInset, readStandalone } from "@/lib/pwa/standalone";
 export function useVisualViewportLock(active = true) {
   useEffect(() => {
     if (!active || typeof window === "undefined") return;
-    // Diagnostic switch (More → Display info): leave the page alone to see what the browser gives it.
-    try {
-      if (window.localStorage.getItem("adboard-m-no-vv-sync") === "1") return;
-    } catch {
-      // storage blocked: sync as usual
-    }
-
     const root = document.documentElement;
     // Optional styling hook: html[data-standalone] in an installed app. The
     // layout itself never depends on it.
