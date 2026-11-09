@@ -100,6 +100,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
   const pickPhone = (deviceId: string) => {
     feedback.tap();
     selectDevice({ deviceId, ctrlKey: false, shiftKey: false, metaKey: false });
+    clearSelected(); // the phone you pick is the one you control
   };
   const selectAllOnline = () => {
     feedback.tap();
@@ -345,7 +346,12 @@ export function MobileApp({ children }: { children?: ReactNode }) {
               selectedIds={selectedIds}
               onSelect={(event) => {
                 selectDevice(event);
-                if (!event.ctrlKey && !event.shiftKey && !event.metaKey) closeDevices();
+                // A plain tap picks this phone alone: the other ticks are cleared and
+                // control goes to it. Ticking boxes still adds more phones.
+                if (!event.ctrlKey && !event.shiftKey && !event.metaKey) {
+                  clearSelected();
+                  closeDevices();
+                }
               }}
               onToggleSelected={toggleSelected}
             />

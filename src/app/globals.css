@@ -1105,11 +1105,11 @@ html:has([data-m-app]) body::after {
   pointer-events: none;
 }
 
-/* Mobile app, desk screens and sheets: one type scale.
-     Geist   headings          20 page / 16 card / 14 group
-     Figtree text              14 labels and body / 12 hints
-     JetBrains Mono            14 buttons and rows, 16 form fields (16 keeps iOS from
-                               zooming in on focus), 12 data lines
+/* Mobile app, desk screens and sheets: one type scale (smaller than before).
+     Geist   headings          18 page / 15 card / 13 group
+     Figtree text              14 labels and body / 11 hints
+     JetBrains Mono            13 buttons and rows, 16 form fields (16 keeps iOS from
+                               zooming in on focus), 11 data lines
    The Control screen is not touched. */
 @media (pointer: coarse) {
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item),
@@ -1118,24 +1118,23 @@ html:has([data-m-app]) body::after {
     line-height: 1.25;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item) {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
     font-size: 1rem;
   }
+  [data-m-section]:not([data-m-section="control"]) h2 {
+    font-size: 1.125rem;
+  }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h3 {
-    font-size: 1rem;
+    font-size: 0.9375rem;
   }
-  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4 {
-    font-size: 0.875rem;
-  }
-  /* hints and data lines: one small size (they were 11 and 12) */
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) [class*="text-[11px]"],
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-xs {
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
   }
-  /* group headings stay 14 even when they also carry text-xs */
+  /* group headings stay 13 even when they also carry text-xs */
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4 {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
   }
 }
