@@ -36,6 +36,13 @@ if [[ -f "$exe" ]]; then
   [[ -z "$stale" ]] && ok "exe is newer than every .rs file" || fail "exe is older than ${stale#$ROOT/}: rebuild it"
 fi
 
+# 2b. The packed UI must not be older than the source it was built from. A failed
+#     or skipped UI build leaves the previous ui/ in place and the pack looks fine.
+if [[ -f "$DIST/ui/index.html" ]]; then
+  stale_ui=$(find "$ROOT/src" "$ROOT/public" -type f -newer "$DIST/ui/index.html" -print -quit 2>/dev/null)
+  [[ -z "$stale_ui" ]] && ok "ui is newer than every file in src/ and public/" || fail "ui is older than ${stale_ui#$ROOT/}: rebuild the UI"
+fi
+
 # 3. The packed pages are the pages in public/: same service-worker cache
 #    versions, for the desktop app (ui/sw.js) and the mobile app (ui/m/sw.js).
 for sw in sw.js m/sw.js; do
