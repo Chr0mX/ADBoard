@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Icons">
+<title>Icons</title><link rel="manifest" href="/probe-icons.webmanifest">
+<style>
+  html, body { margin: 0; background: #0e141b; color: #e6edf3; font: 14px/1.5 ui-monospace, Menlo, monospace; }
+  .top { position: fixed; top: 0; left: 0; right: 0; height: 40px; background: #1f6feb; }
+  .bottom { position: fixed; bottom: 0; left: 0; right: 0; height: 40px; background: #2ea043; }
+  .tall { position: absolute; top: 0; left: 0; width: 6px; height: 100lvh; background: #f85149; }
+  main { padding: calc(env(safe-area-inset-top) + 48px) 16px 80px 16px; }
+  b { color: #7ee787; }
+</style>
+</head>
+<body>
+<div class="top"></div><div class="tall"></div><div class="bottom"></div>
+<main>
+  <p><b>Icons</b></p>
+  <pre id="out">measuring…</pre>
+  <p>Blue = fixed top. Green = fixed <i>bottom:0</i>. Red = 100lvh tall.<br>
+  Is the green bar at the very bottom edge of the screen, or short of it?</p>
+</main>
+<script>
+  function px(css) { var e = document.createElement("div"); e.style.cssText = "position:fixed;left:0;top:0;width:0;visibility:hidden;height:" + css; document.body.appendChild(e); var h = Math.round(e.getBoundingClientRect().height); e.remove(); return h; }
+  function show() {
+    var g = document.querySelector(".bottom").getBoundingClientRect();
+    var vv = window.visualViewport;
+    document.getElementById("out").textContent =
+      "standalone (iOS): " + (navigator.standalone === true) + "\n" +
+      "inner: " + innerWidth + "x" + innerHeight + "\n" +
+      "visualViewport: " + Math.round(vv.width) + "x" + Math.round(vv.height) + " @" + Math.round(vv.offsetTop) + "\n" +
+      "screen: " + screen.width + "x" + screen.height + "\n" +
+      "safe top/bottom: " + px("env(safe-area-inset-top,0px)") + " / " + px("env(safe-area-inset-bottom,0px)") + "\n" +
+      "svh " + px("100svh") + "  dvh " + px("100dvh") + "  lvh " + px("100lvh") + "  vh " + px("100vh") + "\n" +
+      "green bar bottom edge at y=" + Math.round(g.bottom);
+  }
+  show(); setInterval(show, 600);
+  addEventListener("resize", show); addEventListener("orientationchange", show);
+</script>
+</body>
+</html>
