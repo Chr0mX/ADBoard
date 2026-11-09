@@ -1015,3 +1015,13 @@ html[data-keyboard="1"] [data-m-sheet] {
   padding-top: 0.5rem;
   padding-bottom: 0.25rem;
 }
+
+/* Mobile grid bar: the Macro button is an icon like the rest (it keeps its aria-label). */
+[data-m-app] [data-grid-macros] [data-macro-label] {
+  display: none;
+}
+[data-m-app] [data-grid-macros] {
+  flex: 0 0 auto;
+  min-width: 2.75rem;
+  justify-content: center;
+}
