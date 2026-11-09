@@ -1088,3 +1088,19 @@ html[data-keyboard="1"] [data-m-sheet] {
   height: 2.375rem;
   min-height: 2.375rem;
 }
+
+/* Experimental (More → Display info): size the shell to the large viewport
+   height (100lvh) for iPhones whose Home Screen app is shorter than the screen. */
+html[data-m-full="1"]:not([data-keyboard="1"]) .pc-shell[data-m-app] {
+  top: 0;
+  bottom: auto;
+  height: 100vh;
+  height: 100lvh;
+  max-height: 100lvh;
+}
+html[data-m-full="1"]:not([data-keyboard="1"]) [data-m-sheet] {
+  top: 0;
+  bottom: auto;
+  height: 100vh;
+  height: 100lvh;
+}
