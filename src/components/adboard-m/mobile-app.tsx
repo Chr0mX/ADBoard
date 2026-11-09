@@ -9,7 +9,7 @@ import { PhoneScreen } from "@/components/adboard/phone-screen";
 import { MultiDeviceToolbar } from "@/components/adboard/multi-device-toolbar";
 import { TouchDiagnostics } from "@/components/adboard/touch-diagnostics";
 import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
-import { AppsPanel } from "@/components/adboard/desk/apps-panel";
+import { AppsPanelMobile } from "@/components/adboard-m/apps-panel-mobile";
 import { AutomatePanel } from "@/components/adboard/desk/automate-panel";
 import { DeveloperPanel } from "@/components/adboard/desk/developer-panel";
 import { EventsPanel } from "@/components/adboard/desk/events-panel";
@@ -217,7 +217,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
           {!loading && !control && !listOpen && route.view !== "root" && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-2">
               {section === "manage" && <ManagePanel />}
-              {section === "apps" && <AppsPanel />}
+              {section === "apps" && <AppsPanelMobile />}
               {section === "files" && <FilesPanel />}
               {section === "macros" && <MacrosPanel />}
               {section === "automate" && <AutomatePanel />}
