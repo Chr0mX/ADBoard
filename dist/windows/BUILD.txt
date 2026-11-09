@@ -1,6 +1,6 @@
 ADBoard Windows pack
-built:      2026-11-09T16:07:07Z
-commit:     99c309e (with uncommitted changes)
+built:      2026-11-09T16:08:15Z
+commit:     2c5551f (with uncommitted changes)
 rustc:      rustc 1.97.0 (2d8144b78 2026-07-07)
 node:       v22.22.0
 ui cache:   pc-shell-v71

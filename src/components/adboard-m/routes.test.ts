@@ -54,6 +54,14 @@ test("the mobile worker precaches every screen", () => {
   for (const id of ["control", "devices", "macros", "more"]) assert.ok(sw.includes(`"${id}"`), id);
 });
 
+test("the build marker on the mobile shell matches the service worker cache version", () => {
+  const sw = readFileSync(path.join(root, "public/m/sw.js"), "utf8");
+  const version = sw.match(/const CACHE_VERSION = "([^"]+)";/)?.[1];
+  const app = readFileSync(path.join(root, "src/components/adboard-m/mobile-app.tsx"), "utf8");
+  assert.ok(version);
+  assert.ok(app.includes(`data-ui-build="${version}"`), `data-ui-build should be ${version}`);
+});
+
 test("data-m attributes the tests and selectors rely on are kept", () => {
   const all = ["mobile-app.tsx", "mobile-nav.tsx"].map((f) => readFileSync(path.join(root, "src/components/adboard-m", f), "utf8")).join("\n");
   for (const a of ["data-m-nav", "data-m-tab", "data-m-badge", "data-m-more", "data-m-desktop-link"]) assert.ok(all.includes(a), a);
