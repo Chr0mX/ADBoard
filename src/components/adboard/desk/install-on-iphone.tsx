@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 
+import { readStandalone } from "@/lib/pwa/standalone";
+
 type Platform = { ios: boolean; safari: boolean; standalone: boolean };
 
 const SERVER: Platform = { ios: false, safari: false, standalone: false };
@@ -14,9 +16,7 @@ function detect(): Platform {
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   // Other iOS browsers add their own token (CriOS, FxiOS, EdgiOS, …).
   const safari = ios && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(ua);
-  const standalone =
-    (navigator as Navigator & { standalone?: boolean }).standalone === true ||
-    window.matchMedia?.("(display-mode: standalone)").matches === true;
+  const standalone = readStandalone();
   cached = { ios, safari, standalone };
   return cached;
 }

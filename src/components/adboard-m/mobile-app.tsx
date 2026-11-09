@@ -148,7 +148,7 @@ export function MobileApp() {
       <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v1">
         <div className="pc-atmosphere" aria-hidden />
         {!control && (
-          <header className="relative z-10 flex shrink-0 items-center gap-2 border-b border-[var(--pc-line)] px-3 pt-[env(safe-area-inset-top)]">
+          <header className="relative z-10 flex shrink-0 items-center gap-2 border-b border-[var(--pc-line)] px-3">
             <h1 className="min-w-0 flex-1 truncate py-2.5 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]" data-m-title>
               {sectionLabel}
             </h1>

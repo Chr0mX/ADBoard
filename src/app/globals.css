@@ -162,6 +162,8 @@
   bottom: auto;
   left: 0;
   width: 100%;
+  /* Older browsers without dvh get the plain viewport height. */
+  height: 100vh;
   height: var(--pc-app-height, 100dvh);
   min-height: var(--pc-app-height, 100dvh);
   max-height: var(--pc-app-height, 100dvh);
@@ -904,4 +906,26 @@ html::-webkit-scrollbar-thumb,
 .pc-clean select,
 .pc-clean textarea {
   border-radius: 12px;
+}
+
+/* Mobile app (/m) on a touch screen.
+   - Keyboard open: the shell is already the visual viewport; drop the bottom
+     bar and the home-indicator padding (the keyboard covers it) so fields and
+     sheets get the room.
+   - Fields at 16 px stop iOS zooming in on focus, so pinch-zoom can stay on. */
+html[data-keyboard="1"] [data-m-nav] {
+  display: none;
+}
+html[data-keyboard="1"] [data-m-sheet] [role="dialog"] {
+  padding-bottom: 0.75rem;
+}
+@media (pointer: coarse) {
+  [data-m-app] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  [data-m-app] select,
+  [data-m-app] textarea,
+  [data-m-sheet] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  [data-m-sheet] select,
+  [data-m-sheet] textarea {
+    font-size: max(16px, 1em);
+  }
 }

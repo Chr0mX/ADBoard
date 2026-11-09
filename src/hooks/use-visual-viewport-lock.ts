@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { keyboardInset, readStandalone } from "@/lib/pwa/standalone";
 
 /**
  * Lock the app shell to the visual viewport. Critical on iOS Safari / standalone
@@ -11,10 +12,11 @@ export function useVisualViewportLock(active = true) {
     if (!active || typeof window === "undefined") return;
 
     const root = document.documentElement;
-    const standalone =
-      (navigator as Navigator & { standalone?: boolean }).standalone === true ||
-      window.matchMedia?.("(display-mode: standalone)").matches === true;
-    if (standalone) root.dataset.standalone = "1";
+    // Optional styling hook: html[data-standalone] in an installed app. The
+    // layout itself never depends on it.
+    if (readStandalone()) root.dataset.standalone = "1";
+    else delete root.dataset.standalone;
+    let frame = 0;
     const sync = () => {
       const viewport = window.visualViewport;
       // The smallest of the visual viewport, innerHeight and the layout
@@ -31,14 +33,30 @@ export function useVisualViewportLock(active = true) {
       root.style.setProperty("--pc-app-height", `${Math.max(height, 1)}px`);
       root.style.setProperty("--pc-app-top", `${offsetTop}px`);
       document.body.style.height = `${Math.max(height, 1)}px`;
+      // Keyboard: the shell above already shrinks to the visual viewport. The
+      // inset and data-keyboard let sheets and the bottom bar adapt.
+      const kb = keyboardInset(window.innerHeight, viewport?.height ?? window.innerHeight, offsetTop);
+      root.style.setProperty("--pc-keyboard", `${kb}px`);
+      if (kb > 0) root.dataset.keyboard = "1";
+      else delete root.dataset.keyboard;
+      // iOS scrolls the (fixed) page when a field is focused; bring it back.
+      if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
+    };
+    // One sync per frame however many events fire.
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        sync();
+      });
     };
 
     sync();
     const viewport = window.visualViewport;
-    viewport?.addEventListener("resize", sync);
-    viewport?.addEventListener("scroll", sync);
-    window.addEventListener("resize", sync);
-    window.addEventListener("orientationchange", sync);
+    viewport?.addEventListener("resize", schedule);
+    viewport?.addEventListener("scroll", schedule);
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
     // iOS sometimes reports the final height one frame after rotate.
     const onOrient = () => {
       window.setTimeout(sync, 100);
@@ -52,16 +70,25 @@ export function useVisualViewportLock(active = true) {
       sync();
       window.setTimeout(sync, 250);
     };
+    // Closing the keyboard does not always fire a resize on iOS.
+    const onFocusOut = () => window.setTimeout(sync, 150);
+    document.addEventListener("focusout", onFocusOut);
+    const media = window.matchMedia?.("(display-mode: standalone)");
+    const onMode = () => sync();
+    media?.addEventListener?.("change", onMode);
     window.addEventListener("pageshow", onShow);
     document.addEventListener("visibilitychange", onShow);
     return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      document.removeEventListener("focusout", onFocusOut);
+      media?.removeEventListener?.("change", onMode);
       late.forEach((id) => window.clearTimeout(id));
       window.removeEventListener("pageshow", onShow);
       document.removeEventListener("visibilitychange", onShow);
-      viewport?.removeEventListener("resize", sync);
-      viewport?.removeEventListener("scroll", sync);
-      window.removeEventListener("resize", sync);
-      window.removeEventListener("orientationchange", sync);
+      viewport?.removeEventListener("resize", schedule);
+      viewport?.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
       window.removeEventListener("orientationchange", onOrient);
     };
   }, [active]);

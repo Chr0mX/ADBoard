@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { readStandalone } from "@/lib/pwa/standalone";
 import { deviceHint, type Hint } from "@/lib/pwa/device-hint";
 
 const DISMISS_KEY = "adboard-mobile-hint-dismissed";
@@ -38,9 +39,7 @@ export function DeviceHint() {
       // private mode
     }
     const next = deviceHint({
-      standalone:
-        (navigator as Navigator & { standalone?: boolean }).standalone === true ||
-        window.matchMedia("(display-mode: standalone)").matches,
+      standalone: readStandalone(),
       coarsePointer: window.matchMedia("(pointer: coarse)").matches,
       width: window.innerWidth,
       forcedDesktop: forced,

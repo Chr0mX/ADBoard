@@ -112,3 +112,48 @@ test("the mobile UI does not branch on display mode", () => {
   walk("src/app/m");
   for (const f of files) assert.ok(!/display-mode|navigator\.standalone/.test(read(f)), f);
 });
+
+import { isStandalone, keyboardInset } from "./standalone.ts";
+
+test("standalone detection: iOS flag or display-mode", () => {
+  const mm = (on: boolean) => () => ({ matches: on });
+  assert.equal(isStandalone({ standalone: true }, mm(false)), true);
+  assert.equal(isStandalone({}, mm(true)), true);
+  assert.equal(isStandalone({}, mm(false)), false);
+  assert.equal(isStandalone(undefined, undefined), false);
+});
+
+test("keyboard inset ignores the Safari address bar, counts the keyboard", () => {
+  assert.equal(keyboardInset(800, 740, 0), 0);
+  assert.equal(keyboardInset(800, 500, 0), 300);
+  assert.equal(keyboardInset(800, 450, 40), 310);
+});
+
+test("mobile manifest and metadata settings", () => {
+  const m = JSON.parse(read("public/m/manifest.webmanifest"));
+  assert.equal(m.display, "standalone");
+  const layout = read("src/app/m/layout.tsx");
+  assert.match(layout, /viewportFit: "cover"/);
+  assert.match(layout, /capable: true/);
+  assert.match(layout, /black-translucent/);
+  assert.match(layout, /title: "ADBoard"/);
+  assert.doesNotMatch(layout, /maximumScale: 1[,\s]/);
+});
+
+test("mobile header does not add a second top safe-area pad (the shell owns it)", () => {
+  assert.doesNotMatch(read("src/components/adboard-m/mobile-app.tsx"), /pt-\[env\(safe-area-inset-top\)\]/);
+  assert.match(read("src/app/globals.css"), /\.pc-shell \{[^}]*padding-top: env\(safe-area-inset-top/s);
+});
+
+test("one viewport hook; no other code writes the app-height variable", () => {
+  const hits: string[] = [];
+  const walk = (d: string) => {
+    for (const n of readdirSync(path.join(root, d))) {
+      const p = path.join(d, n);
+      if (statSync(path.join(root, p)).isDirectory()) walk(p);
+      else if (/\.tsx?$/.test(n) && !n.endsWith(".test.ts") && /setProperty\("--pc-app-height"/.test(read(p))) hits.push(p);
+    }
+  };
+  walk("src");
+  assert.deepEqual(hits, ["src/hooks/use-visual-viewport-lock.ts"]);
+});
