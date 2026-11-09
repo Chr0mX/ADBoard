@@ -1,9 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { SwitchRow } from "@/components/ui/switch";
-import { useStoredFlag } from "@/hooks/use-stored-flag";
-import { FULL_HEIGHT_KEY } from "@/components/adboard-m/full-height";
 import { readStandalone } from "@/lib/pwa/standalone";
 
 interface Info {
@@ -50,7 +47,6 @@ function read(): Info {
 export function DisplayInfo() {
   const [open, setOpen] = useState(false);
   const [info, setInfo] = useState<Info | null>(null);
-  const [full, setFull] = useStoredFlag(FULL_HEIGHT_KEY, false);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (!open) return;
@@ -62,14 +58,6 @@ export function DisplayInfo() {
   return (
     <details data-m-display-info onToggle={(event) => setOpen(event.currentTarget.open)} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]">
       <summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm text-[var(--pc-ink)]">Display info</summary>
-      <div className="px-3 pb-2">
-        <SwitchRow
-          label="Use the full screen height (experimental)"
-          description="Sizes the app to 100lvh. If the bottom still taps normally, tell me and I will make it the default."
-          checked={full}
-          onChange={(event) => setFull(event.target.checked)}
-        />
-      </div>
       {info && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-3 pt-0 font-mono text-[11px] text-[var(--pc-muted)]">
           {Object.entries({

@@ -29,7 +29,6 @@ import { PhoneLabels } from "@/components/adboard-m/phone-labels";
 import { TaskbarSheet } from "@/components/adboard-m/taskbar-sheet";
 import { usePhonePrefs } from "@/components/adboard-m/phone-prefs";
 import { useFeedback } from "@/components/adboard-m/feedback";
-import { useFullHeight } from "@/components/adboard-m/full-height";
 import { DisplayInfo } from "@/components/adboard-m/display-info";
 import { SwitchRow } from "@/components/ui/switch";
 import { MobileNav, tabOf, type MobileTab } from "@/components/adboard-m/mobile-nav";
@@ -91,7 +90,6 @@ export function MobileApp({ children }: { children?: ReactNode }) {
   useClipboardSync({ targets: broadcastTargets, mode: controlMode });
   useMacroAutomation(devices);
   useVisualViewportLock(true);
-  useFullHeight();
 
   const session = useAgentSessionInfo();
   const alerts = useEventAlerts();
