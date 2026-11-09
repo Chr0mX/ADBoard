@@ -1105,15 +1105,37 @@ html:has([data-m-app]) body::after {
   pointer-events: none;
 }
 
-/* Mobile app, desk sections and sheets: one look for every control. Buttons,
-   dropdowns and fields use the mono face at one size (16 px, which also keeps
-   iOS from zooming in when a field is focused). Text and headings keep their
-   own faces. The Control screen is not touched. */
+/* Mobile app, desk screens and sheets: one type scale.
+     Geist   headings          20 page / 16 card / 14 group
+     Figtree text              14 labels and body / 12 hints
+     JetBrains Mono            14 buttons and rows, 16 form fields (16 keeps iOS from
+                               zooming in on focus), 12 data lines
+   The Control screen is not touched. */
 @media (pointer: coarse) {
-  [data-m-section]:not([data-m-section="control"]) :is(button, summary, select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])):not(.pc-taskbar-item),
-  [data-m-sheet] :is(button, summary, select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item),
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
     font-family: var(--font-mono), ui-monospace, monospace;
-    font-size: 1rem;
     line-height: 1.25;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item) {
+    font-size: 0.875rem;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
+    font-size: 1rem;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h3 {
+    font-size: 1rem;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4 {
+    font-size: 0.875rem;
+  }
+  /* hints and data lines: one small size (they were 11 and 12) */
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) [class*="text-[11px]"],
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-xs {
+    font-size: 0.75rem;
+  }
+  /* group headings stay 14 even when they also carry text-xs */
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4 {
+    font-size: 0.875rem;
   }
 }
