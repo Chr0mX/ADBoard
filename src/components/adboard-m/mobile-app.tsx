@@ -29,6 +29,7 @@ import { PhoneLabels } from "@/components/adboard-m/phone-labels";
 import { TaskbarSheet } from "@/components/adboard-m/taskbar-sheet";
 import { usePhonePrefs } from "@/components/adboard-m/phone-prefs";
 import { useFeedback } from "@/components/adboard-m/feedback";
+import { DisplayInfo } from "@/components/adboard-m/display-info";
 import { SwitchRow } from "@/components/ui/switch";
 import { MobileNav, tabOf, type MobileTab } from "@/components/adboard-m/mobile-nav";
 import { MORE_SECTION_IDS, parseMobilePath, pathForSection, sectionOfRoute } from "@/components/adboard-m/routes";
@@ -229,6 +230,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
               <SwitchRow label="Phone strip on Control" description="Swipeable phone cards above the screen" checked={stripOn} onChange={(e) => setStripOn(e.target.checked)} />
               <SwitchRow label="Haptic feedback" description="A short buzz on taps (Android; iPhone Safari has no vibration)" checked={feedback.haptics} onChange={(e) => feedback.setHaptics(e.target.checked)} />
               <SwitchRow label="Tap sound" description="A quiet click on taps" checked={feedback.sounds} onChange={(e) => feedback.setSounds(e.target.checked)} />
+              <DisplayInfo />
               <div className="flex flex-col gap-2 border-t border-[var(--pc-line)] pt-3">
                 {(session.authRequired || session.canSetPassword) && (
                   <div className="flex gap-2">
