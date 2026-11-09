@@ -49,11 +49,11 @@ export function MobileNav({
           data-m-tab={id}
           aria-current={active === id ? "page" : undefined}
           onClick={() => onPick(id)}
-          className={`relative flex h-[50px] flex-col items-center justify-start gap-0.5 pt-1.5 text-[11px] ${
+          className={`relative flex h-11 flex-col items-center justify-start gap-px pt-1 text-[10px] leading-3 ${
             active === id ? "text-[var(--pc-accent)]" : "text-[var(--pc-muted)]"
           }`}
         >
-          <Icon className="size-5" aria-hidden />
+          <Icon className="size-[18px]" aria-hidden />
           {label}
           {id === "more" && badge > 0 && (
             <span

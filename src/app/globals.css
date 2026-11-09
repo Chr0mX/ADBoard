@@ -1071,3 +1071,20 @@ html[data-keyboard="1"] [data-m-sheet] {
     grid-row: 4;
   }
 }
+
+/* Mobile Control: a tighter chrome so the phone screen gets more room.
+   Taskbar buttons 38 px (below Apple's 44 px guideline, by request). */
+.pc-shell[data-m-app] [data-mobile-bottom-chrome] {
+  padding-top: 0.125rem;
+  padding-bottom: 0.2rem;
+  gap: 0.125rem;
+}
+.pc-shell[data-m-app] [data-mobile-bottom-chrome] .pc-taskbar {
+  padding: 0.125rem 0.25rem;
+}
+.pc-shell[data-m-app] [data-mobile-bottom-chrome] .pc-taskbar .pc-taskbar-item {
+  width: 2.375rem;
+  min-width: 2.375rem;
+  height: 2.375rem;
+  min-height: 2.375rem;
+}
