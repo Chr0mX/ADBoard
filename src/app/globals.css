@@ -939,3 +939,30 @@ html[data-keyboard="1"] [data-m-sheet] [role="dialog"] {
 [data-m-app] [data-stream-stats] {
   padding-bottom: 0.125rem;
 }
+
+/* Mobile app: stretch to the real screen edges (top and bottom 0) instead of a
+   JS-measured height, so no strip is left under the tab bar. While the
+   keyboard is open the shell and sheets follow the visual viewport instead. */
+.pc-shell[data-m-app] {
+  top: 0;
+  bottom: 0;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+html[data-keyboard="1"] .pc-shell[data-m-app] {
+  top: var(--pc-app-top, 0px);
+  bottom: auto;
+  height: var(--pc-app-height, 100dvh);
+  max-height: var(--pc-app-height, 100dvh);
+}
+[data-m-sheet] {
+  top: 0;
+  bottom: 0;
+  height: auto;
+}
+html[data-keyboard="1"] [data-m-sheet] {
+  top: var(--pc-app-top, 0px);
+  bottom: auto;
+  height: var(--pc-app-height, 100dvh);
+}

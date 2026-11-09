@@ -46,7 +46,6 @@ export function BottomSheet({
   return createPortal(
     <div
       className="fixed inset-x-0 z-40 flex flex-col justify-end"
-      style={{ top: "var(--pc-app-top, 0px)", height: "var(--pc-app-height, 100dvh)" }}
       data-m-sheet={dataSheet ?? title.toLowerCase()}>
       <button type="button" aria-label={`Close ${title}`} tabIndex={-1} className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div
