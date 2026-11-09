@@ -1145,4 +1145,11 @@ html:has([data-m-app]) body::after {
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) label[class]:is(.text-xs, [class*="text-[11px]"]) {
     font-size: 0.8125rem;
   }
+  /* Lighter weights: buttons and headings were semibold (600), which read as bold. */
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item) {
+    font-weight: 500;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(h3, h4)[class] {
+    font-weight: 500;
+  }
 }
