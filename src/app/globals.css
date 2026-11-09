@@ -1105,12 +1105,12 @@ html:has([data-m-app]) body::after {
   pointer-events: none;
 }
 
-/* Mobile app, desk screens and sheets: one type scale (smaller than before).
-     Geist   headings          18 page / 15 card / 13 group
-     Figtree text              14 labels and body / 11 hints
-     JetBrains Mono            13 buttons and rows, 16 form fields (16 keeps iOS from
-                               zooming in on focus), 11 data lines
-   The Control screen is not touched. */
+/* Mobile app, desk screens and sheets: one compact type scale.
+     Geist   headings          17 page / 14 card / 12 group
+     Figtree text              13 labels and body / 11 hints
+     JetBrains Mono            12 buttons and rows, 13 form fields, 11 data lines
+   Fields can be 13 px because /m sets maximum-scale=1 (see app/m/layout.tsx), which
+   stops iOS zooming in on focus. The Control screen is not touched. */
 @media (pointer: coarse) {
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item),
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
@@ -1118,38 +1118,36 @@ html:has([data-m-app]) body::after {
     line-height: 1.25;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item) {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
+    font-weight: 500;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
-    font-size: 1rem;
+    font-size: 0.8125rem;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-sm {
+    font-size: 0.8125rem;
   }
   [data-m-section]:not([data-m-section="control"]) h2 {
-    font-size: 1.125rem;
+    font-size: 1.0625rem;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h3 {
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) [class*="text-[11px]"],
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-xs {
     font-size: 0.6875rem;
   }
-  /* group headings stay 13 even when they also carry text-xs */
-  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4 {
-    font-size: 0.8125rem;
-  }
-  /* The rules above are overridden by the small-text rule for elements that carry
-     text-xs, so group headings and field captions are set again with more weight. */
+  /* Rules above can be overridden by classes like text-xs on headings and captions. */
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4[class] {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) label[class]:is(.text-xs, [class*="text-[11px]"]) {
-    font-size: 0.8125rem;
-  }
-  /* Lighter weights: buttons and headings were semibold (600), which read as bold. */
-  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item) {
-    font-weight: 500;
+    font-size: 0.75rem;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(h3, h4)[class] {
     font-weight: 500;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .pc-choice-row {
+    font-size: 0.8125rem;
   }
 }

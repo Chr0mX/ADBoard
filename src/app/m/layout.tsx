@@ -18,13 +18,13 @@ export const metadata: Metadata = {
 
 /**
  * Edge to edge on iPhone (the shell pads the safe areas itself). Unlike the
- * desktop root, pinch-zoom stays allowed; fields are 16 px so iOS does not
- * zoom on focus.
+ * desktop root, fields here are small (13 px), so maximum-scale=1 stops iOS
+ * zooming in on focus. iPhone Safari ignores it for pinch-zoom, which still works.
  */
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 5,
+  maximumScale: 1,
   viewportFit: "cover",
   themeColor: "#0e141b",
 };

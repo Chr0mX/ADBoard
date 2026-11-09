@@ -139,7 +139,8 @@ test("mobile manifest and metadata settings", () => {
   assert.match(layout, /capable: true/);
   assert.match(layout, /black-translucent/);
   assert.match(layout, /title: "ADBoard"/);
-  assert.doesNotMatch(layout, /maximumScale: 1[,\s]/);
+  // maximum-scale=1 is deliberate: small fields must not trigger the iOS focus zoom.
+  assert.match(layout, /maximumScale: 1,/);
 });
 
 test("mobile header does not add a second top safe-area pad (the shell owns it)", () => {
