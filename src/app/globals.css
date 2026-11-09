@@ -1150,4 +1150,16 @@ html:has([data-m-app]) body::after {
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .pc-choice-row {
     font-size: 0.8125rem;
   }
+  /* Leftovers: plain labels inherited the 16 px page size; big stat numbers were 20 px. */
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) label {
+    font-size: 0.8125rem;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-xl {
+    font-size: 1.0625rem;
+  }
+  /* Text with no size of its own (it used to inherit the 16 px page size). */
+  [data-m-section]:not([data-m-section="control"]),
+  [data-m-sheet] [role="dialog"] {
+    font-size: 0.8125rem;
+  }
 }
