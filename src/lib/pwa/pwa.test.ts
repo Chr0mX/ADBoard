@@ -73,9 +73,11 @@ test("mobile worker never handles the desktop shell and keeps other caches", asy
     h.fetch(f.event);
     assert.equal(f.responded(), false, u);
   }
-  const f = fetchEvent("/m/");
-  h.fetch(f.event);
-  assert.equal(f.responded(), true);
+  for (const u of ["/m/", "/m/control/", "/m/more/manage/"]) {
+    const g = fetchEvent(u);
+    h.fetch(g.event);
+    assert.equal(g.responded(), true, u);
+  }
   await activate(h);
   assert.ok(store.has("pc-shell-v71"));
   assert.ok(!store.has("adboard-m-v0"));

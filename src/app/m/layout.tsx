@@ -1,4 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { MobileApp } from "@/components/adboard-m/mobile-app";
+import { PrefsGate } from "@/components/adboard/prefs-gate";
+import { SignInGate } from "@/components/adboard/sign-in-gate";
 import { RegisterSw } from "@/components/pwa/register-sw";
 
 /**
@@ -29,7 +32,12 @@ export const viewport: Viewport = {
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {children}
+      {/* One shell for every /m route: it keeps the phone state and video while the path changes. */}
+      <SignInGate>
+        <PrefsGate>
+          <MobileApp>{children}</MobileApp>
+        </PrefsGate>
+      </SignInGate>
       <RegisterSw script="/m/sw.js" scope="/m/" />
     </>
   );

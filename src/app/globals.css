@@ -929,3 +929,13 @@ html[data-keyboard="1"] [data-m-sheet] [role="dialog"] {
     font-size: max(16px, 1em);
   }
 }
+
+/* Mobile app: the bottom bar is on every screen, Control included, so it owns
+   the home-indicator strip. The shared Control chrome and stats bar then sit
+   directly above it with no extra safe-area padding of their own. */
+[data-m-app] [data-mobile-bottom-chrome] {
+  padding-bottom: 0.35rem;
+}
+[data-m-app] [data-stream-stats] {
+  padding-bottom: 0.125rem;
+}

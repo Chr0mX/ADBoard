@@ -1,12 +1,22 @@
 "use client";
 
 import { Gamepad2, Layers, MoreHorizontal, Smartphone } from "lucide-react";
-import type { DeskSection } from "@/components/adboard/desk/desk-context";
+import type { MobileRoute } from "@/components/adboard-m/routes";
 
 export type MobileTab = "control" | "devices" | "macros" | "more";
 
-export function tabOf(section: DeskSection): MobileTab {
-  return section === "control" ? "control" : section === "macros" ? "macros" : "more";
+export function tabOf(route: MobileRoute): MobileTab {
+  switch (route.view) {
+    case "devices":
+      return "devices";
+    case "macros":
+      return "macros";
+    case "more":
+    case "section":
+      return "more";
+    default:
+      return "control";
+  }
 }
 
 const TABS: Array<{ id: MobileTab; label: string; icon: typeof Gamepad2 }> = [
@@ -16,7 +26,7 @@ const TABS: Array<{ id: MobileTab; label: string; icon: typeof Gamepad2 }> = [
   { id: "more", label: "More", icon: MoreHorizontal },
 ];
 
-/** Bottom navigation of the mobile app (desk sections; Control is full screen). */
+/** Bottom navigation of the mobile app, on every screen including Control. */
 export function MobileNav({
   active,
   badge,

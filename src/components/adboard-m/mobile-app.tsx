@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
 import { ControlModes } from "@/components/adboard/control-modes";
 import { DeviceGrid } from "@/components/adboard/device-grid";
 import { PhoneScreen } from "@/components/adboard/phone-screen";
@@ -21,24 +23,24 @@ import { MacroDock } from "@/components/adboard/macros/macro-dock";
 import { DESK_SECTIONS, DeskProvider, asSection, type DeskSection } from "@/components/adboard/desk/desk-context";
 import { BottomSheet } from "@/components/adboard-m/bottom-sheet";
 import { MobileNav, tabOf, type MobileTab } from "@/components/adboard-m/mobile-nav";
+import { MORE_SECTION_IDS, parseMobilePath, pathForSection, sectionOfRoute } from "@/components/adboard-m/routes";
 import { useADBoard } from "@/hooks/use-adboard";
 import { useClipboardSync } from "@/hooks/use-clipboard-sync";
 import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { useVisualViewportLock } from "@/hooks/use-visual-viewport-lock";
 import { useEventAlerts } from "@/lib/events/client";
 import { useMacroAutomation } from "@/lib/macro/automation-store";
-import { documentTitle } from "@/lib/ui/document-title";
+import { useMobileTitle } from "@/components/adboard-m/use-mobile-title";
 import { parseMobileStatsMode, type MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 
 /** Layout state of the mobile app. Own keys: the desktop app never sees them. */
 export const MOBILE_KEYS = {
-  section: "adboard-m-section",
   macroDock: "adboard-m-macro-dock",
   gridView: "adboard-m-grid-view",
 } as const;
 
 /** The sections reached from "More" (Control, Macros and Phones have tabs). */
-const MORE_SECTIONS = DESK_SECTIONS.filter((item) => item.id !== "control" && item.id !== "macros");
+const MORE_SECTIONS = DESK_SECTIONS.filter((item) => (MORE_SECTION_IDS as readonly string[]).includes(item.id));
 
 /**
  * ADBoard Mobile: one phone-first UI for the browser and the installed app
@@ -46,7 +48,7 @@ const MORE_SECTIONS = DESK_SECTIONS.filter((item) => item.id !== "control" && it
  * other section sits between a slim header and the bottom navigation. All
  * device state, video and macro logic is the same code the desktop uses.
  */
-export function MobileApp() {
+export function MobileApp({ children }: { children?: ReactNode }) {
   const {
     devices,
     loading,
@@ -82,15 +84,17 @@ export function MobileApp() {
 
   const session = useAgentSessionInfo();
   const alerts = useEventAlerts();
-  const [storedSection, setStoredSection] = useStoredString(MOBILE_KEYS.section);
-  const section = asSection(storedSection);
+  const router = useRouter();
+  const route = parseMobilePath(usePathname());
+  // The desk section on screen. "more" (the list) and "root" show none.
+  const section = asSection(sectionOfRoute(route));
+  const listOpen = route.view === "more";
+  const devicesOpen = route.view === "devices";
   const [storedMacroDock, setStoredMacroDock] = useStoredString(MOBILE_KEYS.macroDock);
   const macroDockOpen = storedMacroDock === "open";
   const [gridView, setGridView] = useStoredFlag(MOBILE_KEYS.gridView, false);
   const [storedStatsMode, setStoredStatsMode] = useStoredString("adboard-mobile-stats-mode");
   const statsMode = parseMobileStatsMode(storedStatsMode);
-  const [devicesOpen, setDevicesOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [focusTool, setFocusTool] = useState<string | null>(null);
   const [lastSeen, setLastSeen] = useState<Record<string, number>>({});
   const seenRef = useRef<Record<string, number>>({});
@@ -114,32 +118,23 @@ export function MobileApp() {
 
   const sectionLabel = DESK_SECTIONS.find((item) => item.id === section)?.label;
   const activeName = activeDevice?.name ?? null;
-  useEffect(() => {
-    document.title = documentTitle({ section, sectionLabel, gridView, deviceName: activeName });
-  }, [section, sectionLabel, gridView, activeName]);
+  useMobileTitle({ section, sectionLabel: listOpen ? "More" : sectionLabel, gridView, deviceName: activeName });
 
   const open = (next: DeskSection, tool?: string, deviceId?: string) => {
     if (deviceId) selectDevice({ deviceId, ctrlKey: false, shiftKey: false, metaKey: false });
     setFocusTool(tool ?? null);
-    setDevicesOpen(false);
-    setMoreOpen(false);
-    setStoredSection(next);
+    router.push(pathForSection(next));
   };
 
   const onTab = (tab: MobileTab) => {
-    if (tab === "devices") {
-      setMoreOpen(false);
-      setDevicesOpen(true);
-    } else if (tab === "more") {
-      setDevicesOpen(false);
-      setMoreOpen(true);
-    } else {
-      open(tab);
-    }
+    router.push(tab === "devices" ? "/m/devices/" : tab === "more" ? "/m/more/" : pathForSection(tab));
   };
+  const closeDevices = () => router.replace(pathForSection("control"));
 
   const badge = alerts.unseen;
-  const control = section === "control";
+  const control = route.view === "control" || route.view === "devices";
+  const showHeader = !control && route.view !== "root";
+  const title = listOpen ? "More" : sectionLabel;
 
   return (
     <DeskProvider
@@ -147,10 +142,21 @@ export function MobileApp() {
     >
       <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v1">
         <div className="pc-atmosphere" aria-hidden />
-        {!control && (
-          <header className="relative z-10 flex shrink-0 items-center gap-2 border-b border-[var(--pc-line)] px-3">
+        {showHeader && (
+          <header className="relative z-10 flex shrink-0 items-center gap-1 border-b border-[var(--pc-line)] px-3">
+            {route.view === "section" && (
+              <button
+                type="button"
+                data-m-back
+                aria-label="Back to More"
+                onClick={() => router.push("/m/more/")}
+                className="-ml-2 inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-[var(--pc-ink)]"
+              >
+                <ChevronLeft className="size-5" aria-hidden />
+              </button>
+            )}
             <h1 className="min-w-0 flex-1 truncate py-2.5 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]" data-m-title>
-              {sectionLabel}
+              {title}
             </h1>
             <span
               className={`inline-block size-2 rounded-full ${onlineCount > 0 ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-warn)]"}`}
@@ -162,11 +168,53 @@ export function MobileApp() {
           </header>
         )}
 
-        <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden" data-m-section={section}>
+        <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden" data-m-section={listOpen ? "more" : section}>
+          {children}
           {loading && (
             <div className="flex flex-1 items-center justify-center font-mono text-sm text-[var(--pc-muted)]">Loading devices…</div>
           )}
-          {!loading && !control && (
+          {!loading && listOpen && (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3" data-m-more-list>
+              <div className="grid grid-cols-2 gap-2">
+                {MORE_SECTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    data-m-more={item.id}
+                    onClick={() => open(item.id)}
+                    className="relative flex h-12 items-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-left text-sm text-[var(--pc-ink)]"
+                  >
+                    {item.label}
+                    {item.id === "events" && badge > 0 && (
+                      <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--pc-warn)] px-1 font-mono text-[11px] font-bold text-[#1a0f08]">
+                        {badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-2 border-t border-[var(--pc-line)] pt-3">
+                {(session.authRequired || session.canSetPassword) && (
+                  <div className="flex gap-2">
+                    <button type="button" className="pc-toggle pc-toggle-md flex-1" onClick={session.openAccount}>
+                      {session.authRequired ? session.username ?? "Account" : "Set password"}
+                    </button>
+                    {session.authRequired && (
+                      <button type="button" className="pc-toggle pc-toggle-md flex-1" onClick={session.signOut}>
+                        Sign out
+                      </button>
+                    )}
+                  </div>
+                )}
+                {/* A full page load on purpose: the desktop app has its own service worker. */}
+                {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+                <a href="/?desktop=1" data-m-desktop-link className="pc-toggle pc-toggle-md justify-center">
+                  Open desktop version
+                </a>
+              </div>
+            </div>
+          )}
+          {!loading && !control && !listOpen && route.view !== "root" && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-2">
               {section === "manage" && <ManagePanel />}
               {section === "apps" && <AppsPanel />}
@@ -202,7 +250,7 @@ export function MobileApp() {
                   setGridView(false);
                 }}
                 showDevicesButton
-                onOpenDevices={() => setDevicesOpen(true)}
+                onOpenDevices={() => router.push("/m/devices/")}
                 onKeyboardChange={setKeyboardOn}
                 onMouseChange={setMouseOn}
                 cursorMode={cursorMode}
@@ -223,7 +271,7 @@ export function MobileApp() {
                 broadcastTargets={broadcastTargets}
                 macroDockOpen={macroDockOpen}
                 onMacroDockChange={(next) => {
-                  if (next) setDevicesOpen(false);
+                  if (next && devicesOpen) closeDevices();
                   setStoredMacroDock(next ? "open" : "closed");
                 }}
               />
@@ -231,7 +279,9 @@ export function MobileApp() {
           )}
         </main>
 
-        {!control && <MobileNav active={tabOf(section)} badge={section === "events" ? 0 : badge} onPick={onTab} />}
+        {route.view !== "root" && (
+          <MobileNav active={tabOf(route)} badge={route.view === "section" && route.section === "events" ? 0 : badge} onPick={onTab} />
+        )}
 
         {control && macroDockOpen && (
           <BottomSheet title="Macros" full onClose={() => setStoredMacroDock("closed")} dataSheet="macros">
@@ -240,14 +290,14 @@ export function MobileApp() {
         )}
 
         {devicesOpen && (
-          <BottomSheet title="Phones" onClose={() => setDevicesOpen(false)} dataSheet="devices">
+          <BottomSheet title="Phones" onClose={closeDevices} dataSheet="devices">
             <DeviceGrid
               devices={devices}
               activeId={activeId}
               selectedIds={selectedIds}
               onSelect={(event) => {
                 selectDevice(event);
-                if (!event.ctrlKey && !event.shiftKey && !event.metaKey) setDevicesOpen(false);
+                if (!event.ctrlKey && !event.shiftKey && !event.metaKey) closeDevices();
               }}
               onToggleSelected={toggleSelected}
             />
@@ -267,52 +317,6 @@ export function MobileApp() {
               onClear={clearSelected}
               onSelectGroup={selectGroup}
             />
-          </BottomSheet>
-        )}
-
-        {moreOpen && (
-          <BottomSheet title="More" onClose={() => setMoreOpen(false)} dataSheet="more">
-            <div className="grid grid-cols-2 gap-2">
-              {MORE_SECTIONS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  data-m-more={item.id}
-                  onClick={() => open(item.id)}
-                  className={`relative flex h-12 items-center rounded-xl border px-3 text-left text-sm ${
-                    section === item.id
-                      ? "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)] text-[var(--pc-ink)]"
-                      : "border-[var(--pc-line)] bg-[var(--pc-panel)] text-[var(--pc-ink)]"
-                  }`}
-                >
-                  {item.label}
-                  {item.id === "events" && badge > 0 && (
-                    <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--pc-warn)] px-1 font-mono text-[11px] font-bold text-[#1a0f08]">
-                      {badge}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-col gap-2 border-t border-[var(--pc-line)] pt-3">
-              {(session.authRequired || session.canSetPassword) && (
-                <div className="flex gap-2">
-                  <button type="button" className="pc-toggle pc-toggle-md flex-1" onClick={session.openAccount}>
-                    {session.authRequired ? session.username ?? "Account" : "Set password"}
-                  </button>
-                  {session.authRequired && (
-                    <button type="button" className="pc-toggle pc-toggle-md flex-1" onClick={session.signOut}>
-                      Sign out
-                    </button>
-                  )}
-                </div>
-              )}
-              {/* A full page load on purpose: the desktop app has its own service worker. */}
-              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-              <a href="/?desktop=1" data-m-desktop-link className="pc-toggle pc-toggle-md justify-center">
-                Open desktop version
-              </a>
-            </div>
           </BottomSheet>
         )}
       </div>
