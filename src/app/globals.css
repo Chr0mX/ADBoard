@@ -1025,3 +1025,49 @@ html[data-keyboard="1"] [data-m-sheet] {
   min-width: 2.75rem;
   justify-content: center;
 }
+
+/* Mobile app, desk sections and sheets: 44 px touch targets on touch screens
+   (Apple's minimum). The Control screen keeps its own sizes. */
+@media (pointer: coarse) {
+  [data-m-section]:not([data-m-section="control"]) :is(.pc-toggle, .pc-toggle-sm, .pc-toggle-md, button, summary, select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])),
+  [data-m-sheet] :is(.pc-toggle, .pc-toggle-sm, .pc-toggle-md, summary, select, textarea) {
+    min-height: 2.75rem;
+  }
+}
+
+/* Swipeable phone strip: no scrollbar. */
+[data-m-strip] {
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+[data-m-strip]::-webkit-scrollbar {
+  display: none;
+}
+
+/* Landscape phone: the tab bar becomes a rail on the left so the screen keeps its height. */
+@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
+  .pc-shell[data-m-app] {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+  .pc-shell[data-m-app] > [data-m-nav] {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(4, 1fr);
+    width: 4.5rem;
+    border-top: 0;
+    border-right: 1px solid var(--pc-line);
+  }
+  .pc-shell[data-m-app] > [data-m-nav] button {
+    height: auto;
+    min-height: 2.75rem;
+  }
+  .pc-shell[data-m-app] > :not([data-m-nav]):not(.pc-atmosphere) {
+    grid-column: 2;
+  }
+  .pc-shell[data-m-app] > main {
+    grid-row: 4;
+  }
+}

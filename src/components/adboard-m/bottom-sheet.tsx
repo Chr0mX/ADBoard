@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -42,6 +42,28 @@ export function BottomSheet({
     };
   }, []);
 
+  // Drag the title row down to close (touch or mouse).
+  const drag = useRef<{ y: number } | null>(null);
+  const onDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    drag.current = { y: event.clientY };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current || !panel.current) return;
+    const dy = Math.max(0, event.clientY - drag.current.y);
+    panel.current.style.transform = `translateY(${dy}px)`;
+    panel.current.style.transition = "none";
+  };
+  const onUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current || !panel.current) return;
+    const dy = event.clientY - drag.current.y;
+    drag.current = null;
+    panel.current.style.transition = "transform 150ms ease";
+    panel.current.style.transform = "";
+    if (dy > 90) onClose();
+  };
+
   if (typeof document === "undefined") return null;
   return createPortal(
     <div
@@ -58,7 +80,14 @@ export function BottomSheet({
           full ? "h-full rounded-none pt-[max(0.75rem,env(safe-area-inset-top))]" : "max-h-[88%]"
         }`}
       >
-        <div className="flex shrink-0 items-center justify-between gap-2">
+        <div
+          data-m-sheet-handle
+          className="flex shrink-0 touch-none items-center justify-between gap-2"
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+        >
           <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">{title}</h2>
           <button
             type="button"

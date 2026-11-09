@@ -22,6 +22,14 @@ import { MacrosPanel } from "@/components/adboard/macros/macros-panel";
 import { MacroDock } from "@/components/adboard/macros/macro-dock";
 import { DESK_SECTIONS, DeskProvider, asSection, type DeskSection } from "@/components/adboard/desk/desk-context";
 import { BottomSheet } from "@/components/adboard-m/bottom-sheet";
+import { ConnectionBanner } from "@/components/adboard-m/connection-banner";
+import { UpdatePrompt } from "@/components/adboard-m/update-prompt";
+import { PhoneStrip } from "@/components/adboard-m/phone-strip";
+import { PhoneLabels } from "@/components/adboard-m/phone-labels";
+import { TaskbarSheet } from "@/components/adboard-m/taskbar-sheet";
+import { usePhonePrefs } from "@/components/adboard-m/phone-prefs";
+import { useFeedback } from "@/components/adboard-m/feedback";
+import { SwitchRow } from "@/components/ui/switch";
 import { MobileNav, tabOf, type MobileTab } from "@/components/adboard-m/mobile-nav";
 import { MORE_SECTION_IDS, parseMobilePath, pathForSection, sectionOfRoute } from "@/components/adboard-m/routes";
 import { useADBoard } from "@/hooks/use-adboard";
@@ -84,6 +92,18 @@ export function MobileApp({ children }: { children?: ReactNode }) {
 
   const session = useAgentSessionInfo();
   const alerts = useEventAlerts();
+  const phones = usePhonePrefs();
+  const feedback = useFeedback();
+  const [taskbarOpen, setTaskbarOpen] = useState(false);
+  const [stripOn, setStripOn] = useStoredFlag("adboard-m-strip", true);
+  const pickPhone = (deviceId: string) => {
+    feedback.tap();
+    selectDevice({ deviceId, ctrlKey: false, shiftKey: false, metaKey: false });
+  };
+  const selectAllOnline = () => {
+    feedback.tap();
+    for (const device of devices) if (device.status === "online") toggleSelected(device.id, true);
+  };
   const router = useRouter();
   const route = parseMobilePath(usePathname());
   // The desk section on screen. "more" (the list) and "root" show none.
@@ -127,11 +147,18 @@ export function MobileApp({ children }: { children?: ReactNode }) {
   };
 
   const onTab = (tab: MobileTab) => {
+    feedback.tap();
     router.push(tab === "devices" ? "/m/devices/" : tab === "more" ? "/m/more/" : pathForSection(tab));
   };
   const closeDevices = () => router.replace(pathForSection("control"));
 
   const badge = alerts.unseen;
+  // Home Screen icon badge: unseen warnings and errors (where the browser supports it).
+  useEffect(() => {
+    const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+    if (badge > 0) void nav.setAppBadge?.(badge)?.catch(() => {});
+    else void nav.clearAppBadge?.()?.catch(() => {});
+  }, [badge]);
   const control = route.view === "control" || route.view === "devices";
   const showHeader = !control && route.view !== "root";
   const title = listOpen ? "More" : sectionLabel;
@@ -168,6 +195,9 @@ export function MobileApp({ children }: { children?: ReactNode }) {
           </header>
         )}
 
+        <UpdatePrompt />
+        {!loading && <ConnectionBanner error={error} />}
+
         <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden" data-m-section={listOpen ? "more" : section}>
           {children}
           {loading && (
@@ -193,6 +223,12 @@ export function MobileApp({ children }: { children?: ReactNode }) {
                   </button>
                 ))}
               </div>
+              <button type="button" data-m-taskbar-open className="pc-toggle pc-toggle-md min-h-11" onClick={() => setTaskbarOpen(true)}>
+                Customize taskbar
+              </button>
+              <SwitchRow label="Phone strip on Control" description="Swipeable phone cards above the screen" checked={stripOn} onChange={(e) => setStripOn(e.target.checked)} />
+              <SwitchRow label="Haptic feedback" description="A short buzz on taps (Android; iPhone Safari has no vibration)" checked={feedback.haptics} onChange={(e) => feedback.setHaptics(e.target.checked)} />
+              <SwitchRow label="Tap sound" description="A quiet click on taps" checked={feedback.sounds} onChange={(e) => feedback.setSounds(e.target.checked)} />
               <div className="flex flex-col gap-2 border-t border-[var(--pc-line)] pt-3">
                 {(session.authRequired || session.canSetPassword) && (
                   <div className="flex gap-2">
@@ -231,7 +267,16 @@ export function MobileApp({ children }: { children?: ReactNode }) {
           <TouchDiagnostics />
           {!loading && control && (
             <>
-              {error && <p className="shrink-0 truncate px-3 pt-1 font-mono text-[11px] text-[var(--pc-warn)]">{error}</p>}
+              {stripOn && (
+              <PhoneStrip
+                devices={devices}
+                activeId={activeId}
+                favs={phones.favs}
+                notes={phones.notes}
+                onPick={pickPhone}
+                onSelectAllOnline={selectAllOnline}
+              />
+              )}
               <PhoneScreen
                 device={activeDevice}
                 devices={devices}
@@ -291,6 +336,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
 
         {devicesOpen && (
           <BottomSheet title="Phones" onClose={closeDevices} dataSheet="devices">
+            <PhoneStrip devices={devices} activeId={activeId} favs={phones.favs} notes={phones.notes} onPick={(id) => { pickPhone(id); closeDevices(); }} onlyFavs className="-mx-3" />
             <DeviceGrid
               devices={devices}
               activeId={activeId}
@@ -301,6 +347,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
               }}
               onToggleSelected={toggleSelected}
             />
+            <PhoneLabels devices={devices} favs={phones.favs} notes={phones.notes} onToggleFav={phones.toggleFav} onNote={phones.setNote} />
             {/* Stays in reach at the bottom of the sheet while the list scrolls. */}
             <div data-m-sheet-actions className="flex flex-col gap-3">
               <ControlModes
@@ -322,6 +369,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
             </div>
           </BottomSheet>
         )}
+        {taskbarOpen && <TaskbarSheet onClose={() => setTaskbarOpen(false)} />}
       </div>
     </DeskProvider>
   );
