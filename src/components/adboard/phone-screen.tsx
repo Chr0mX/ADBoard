@@ -1452,7 +1452,12 @@ export function PhoneScreen({
         {floatingChrome && (
           <div
             data-mobile-bottom-chrome
-            className="flex w-full max-w-full shrink-0 flex-col items-center gap-1 bg-gradient-to-t from-[color-mix(in_srgb,var(--pc-frame)_70%,transparent)] via-[color-mix(in_srgb,var(--pc-frame)_35%,transparent)] to-transparent px-2 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5"
+            className={cn(
+              "flex w-full max-w-full shrink-0 flex-col items-center gap-1 bg-gradient-to-t from-[color-mix(in_srgb,var(--pc-frame)_70%,transparent)] via-[color-mix(in_srgb,var(--pc-frame)_35%,transparent)] to-transparent px-2 pt-1.5",
+              // With the stats bar shown it owns the home-indicator strip (its
+              // background fills it); otherwise the taskbar keeps clear of it.
+              statsMode === "show" ? "pb-0" : "pb-[max(0.35rem,env(safe-area-inset-bottom))]",
+            )}
           >
             <DeviceNavBar
               onMinimize={minimizeFloatingPanels}
@@ -1518,6 +1523,8 @@ export function PhoneScreen({
                 safeBottom={false}
                 compact
                 marquee
+                // Text stays above the home indicator; the bar's background runs under it.
+                className="pb-[calc(env(safe-area-inset-bottom,0px)*0.6)]"
               />
             )}
           </div>
