@@ -1137,4 +1137,12 @@ html:has([data-m-app]) body::after {
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4 {
     font-size: 0.8125rem;
   }
+  /* The rules above are overridden by the small-text rule for elements that carry
+     text-xs, so group headings and field captions are set again with more weight. */
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4[class] {
+    font-size: 0.8125rem;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) label[class]:is(.text-xs, [class*="text-[11px]"]) {
+    font-size: 0.8125rem;
+  }
 }
