@@ -159,3 +159,9 @@ test("one viewport hook; no other code writes the app-height variable", () => {
   walk("src");
   assert.deepEqual(hits, ["src/hooks/use-visual-viewport-lock.ts"]);
 });
+
+test("the build marker on the desktop shell matches its service worker cache version", () => {
+  const version = read("public/sw.js").match(/const CACHE_VERSION = "([^"]+)";/)?.[1];
+  assert.ok(version);
+  assert.ok(read("src/components/adboard/adboard-app.tsx").includes(`data-ui-build="${version}"`), `data-ui-build should be ${version}`);
+});

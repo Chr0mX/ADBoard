@@ -215,7 +215,7 @@ export function ADBoardApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v54"
+      data-ui-build="pc-shell-v71"
     >
       <div className="pc-atmosphere" aria-hidden />
       {showHeader && (
