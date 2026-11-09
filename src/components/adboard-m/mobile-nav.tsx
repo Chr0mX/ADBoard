@@ -40,7 +40,7 @@ export function MobileNav({
     <nav
       aria-label="Main"
       data-m-nav
-      className="relative z-10 grid shrink-0 grid-cols-4 border-t border-[var(--pc-line)] bg-[var(--pc-paper)] pb-[env(safe-area-inset-bottom)]"
+      className="relative z-10 grid shrink-0 grid-cols-4 border-t border-[var(--pc-line)] bg-[var(--pc-paper)] pb-[calc(env(safe-area-inset-bottom,0px)*0.35)]"
     >
       {TABS.map(({ id, label, icon: Icon }) => (
         <button
@@ -49,7 +49,7 @@ export function MobileNav({
           data-m-tab={id}
           aria-current={active === id ? "page" : undefined}
           onClick={() => onPick(id)}
-          className={`relative flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] ${
+          className={`relative flex h-[52px] flex-col items-center justify-center gap-0.5 text-[11px] ${
             active === id ? "text-[var(--pc-accent)]" : "text-[var(--pc-muted)]"
           }`}
         >
