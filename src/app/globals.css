@@ -1088,3 +1088,19 @@ html[data-keyboard="1"] [data-m-sheet] {
   height: 2.375rem;
   min-height: 2.375rem;
 }
+
+/* Mobile app: make the document as tall as the large viewport (100lvh), like the
+   viewport probes that get the full screen height on iPhone Home Screen apps.
+   Without it body's min-height (100dvh) only ever equals the window it starts
+   with, and iOS gives the app a 797 px window on a 844 px screen. The element is
+   invisible and does not take clicks. */
+html:has([data-m-app]) body::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 100vh;
+  height: 100lvh;
+  pointer-events: none;
+}
