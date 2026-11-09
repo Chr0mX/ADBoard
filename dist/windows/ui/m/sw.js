@@ -2,9 +2,9 @@
    Own cache prefix: never deletes or reads the desktop worker's caches, and
    never answers with the desktop shell. */
 const CACHE_PREFIX = "adboard-m-";
-const CACHE_VERSION = "adboard-m-v1";
+const CACHE_VERSION = "adboard-m-v2";
 const SCOPE = "/m/";
-const SHELL = ["/m/", "/m/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
+const SHELL = ["/m/", "/m/control/", "/m/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -38,9 +38,11 @@ function isNetworkOnly(path) {
   return /\.(mp4|webm|m4s|m3u8|ts|aac|mp3|wav|ogg)$/i.test(path);
 }
 
-/* Shell documents of this app only. */
+/* Shell documents of this app only: /m and its screens (/m/control/, /m/more/manage/ …), never a file. */
 function isShell(path) {
-  return path === "/m" || path === "/m/" || path === "/m/index.html" || path === "/m/manifest.webmanifest";
+  if (path === "/m/manifest.webmanifest") return true;
+  if (path !== "/m" && !path.startsWith("/m/")) return false;
+  return !/\.[a-z0-9]+$/i.test(path) || path === "/m/index.html";
 }
 
 self.addEventListener("fetch", (event) => {
