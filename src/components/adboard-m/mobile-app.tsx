@@ -301,22 +301,25 @@ export function MobileApp({ children }: { children?: ReactNode }) {
               }}
               onToggleSelected={toggleSelected}
             />
-            <ControlModes
-              mode={controlMode}
-              onChange={setControlMode}
-              selectedCount={activeId ? 1 : 0}
-              multiCount={selectedIds.size}
-              onlineCount={onlineCount}
-            />
-            <MultiDeviceToolbar
-              devices={devices}
-              selectedIds={selectedIds}
-              controlMode={controlMode}
-              targets={broadcastTargets}
-              onSelectAll={selectAll}
-              onClear={clearSelected}
-              onSelectGroup={selectGroup}
-            />
+            {/* Stays in reach at the bottom of the sheet while the list scrolls. */}
+            <div data-m-sheet-actions className="flex flex-col gap-3">
+              <ControlModes
+                mode={controlMode}
+                onChange={setControlMode}
+                selectedCount={activeId ? 1 : 0}
+                multiCount={selectedIds.size}
+                onlineCount={onlineCount}
+              />
+              <MultiDeviceToolbar
+                devices={devices}
+                selectedIds={selectedIds}
+                controlMode={controlMode}
+                targets={broadcastTargets}
+                onSelectAll={selectAll}
+                onClear={clearSelected}
+                onSelectGroup={selectGroup}
+              />
+            </div>
           </BottomSheet>
         )}
       </div>

@@ -966,3 +966,52 @@ html[data-keyboard="1"] [data-m-sheet] {
   bottom: auto;
   height: var(--pc-app-height, 100dvh);
 }
+
+/* Stage 2 (mobile only).
+   Control chrome: the taskbar sits at the bottom, nearest the thumb, full
+   width; the scrolling stats line sits above it. */
+[data-m-app] [data-mobile-bottom-chrome] {
+  flex-direction: column-reverse;
+}
+[data-m-app] [data-mobile-bottom-chrome] > * {
+  width: 100%;
+}
+[data-m-app] [data-mobile-bottom-chrome] .pc-taskbar {
+  width: 100%;
+  justify-content: safe center;
+}
+
+/* Phones sheet: the existing cards as a plain full-width list. One line for
+   state and model; the active phone is marked in words, not only colour. */
+[data-m-sheet="devices"] [data-device-card] .mt-1 {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem 0.75rem;
+}
+[data-m-sheet="devices"] [data-card-resolution],
+[data-m-sheet="devices"] [data-card-temperature] {
+  display: none;
+}
+[data-m-sheet="devices"] [data-device-card][data-active="1"] [data-card-name]::after {
+  content: "Active";
+  margin-left: 0.5rem;
+  border: 1px solid var(--pc-accent);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pc-accent);
+}
+/* The list scrolls with the sheet; the actions stay pinned under it. */
+[data-m-sheet="devices"] [data-m-sheet-actions] {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: auto;
+  border-top: 1px solid var(--pc-line);
+  background: var(--pc-paper);
+  padding-top: 0.5rem;
+  padding-bottom: 0.25rem;
+}
