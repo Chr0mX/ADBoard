@@ -1104,3 +1104,16 @@ html:has([data-m-app]) body::after {
   height: 100lvh;
   pointer-events: none;
 }
+
+/* Mobile app, desk sections and sheets: one look for every control. Buttons,
+   dropdowns and fields use the mono face at one size (16 px, which also keeps
+   iOS from zooming in when a field is focused). Text and headings keep their
+   own faces. The Control screen is not touched. */
+@media (pointer: coarse) {
+  [data-m-section]:not([data-m-section="control"]) :is(button, summary, select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])):not(.pc-taskbar-item),
+  [data-m-sheet] :is(button, summary, select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+}
