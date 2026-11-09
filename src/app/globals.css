@@ -1162,4 +1162,12 @@ html:has([data-m-app]) body::after {
   [data-m-sheet] [role="dialog"] {
     font-size: 0.8125rem;
   }
+  /* Sheets: the title matches a card title and semibold names are medium, like the headings. */
+  [data-m-sheet] h2 {
+    font-size: 0.9375rem;
+    font-weight: 500;
+  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .font-semibold {
+    font-weight: 500;
+  }
 }
