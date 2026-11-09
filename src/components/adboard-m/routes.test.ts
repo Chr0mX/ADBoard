@@ -42,10 +42,16 @@ test("each mobile route has a page file; /m redirects", () => {
   assert.match(readFileSync(path.join(root, "src/components/adboard-m/root-redirect.tsx"), "utf8"), /router\.replace\(MOBILE_HOME\)/);
 });
 
-test("mobile service worker: v2, shell covers screens, only its own caches", () => {
+test("mobile service worker: v3, shell covers screens, only its own caches", () => {
   const sw = readFileSync(path.join(root, "public/m/sw.js"), "utf8");
-  assert.match(sw, /const CACHE_VERSION = "adboard-m-v2";/);
+  assert.match(sw, /const CACHE_VERSION = "adboard-m-v3";/);
   assert.match(sw, /key\.startsWith\(CACHE_PREFIX\)/);
+});
+
+test("the mobile worker precaches every screen", () => {
+  const sw = readFileSync(path.join(root, "public/m/sw.js"), "utf8");
+  for (const id of MORE_SECTION_IDS) assert.ok(sw.includes(`"${id}"`), id);
+  for (const id of ["control", "devices", "macros", "more"]) assert.ok(sw.includes(`"${id}"`), id);
 });
 
 test("data-m attributes the tests and selectors rely on are kept", () => {

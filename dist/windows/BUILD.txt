@@ -1,8 +1,8 @@
 ADBoard Windows pack
-built:      2026-11-09T15:48:31Z
-commit:     617e000 (with uncommitted changes)
+built:      2026-11-09T16:07:07Z
+commit:     99c309e (with uncommitted changes)
 rustc:      rustc 1.97.0 (2d8144b78 2026-07-07)
 node:       v22.22.0
 ui cache:   pc-shell-v71
-ui/m cache:  adboard-m-v2
+ui/m cache:  adboard-m-v3
 exe sha256: 81114647d643d85acedecc2b74dd8318a29c3777e4480dd4efa20358bcc61751

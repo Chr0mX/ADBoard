@@ -2,9 +2,14 @@
    Own cache prefix: never deletes or reads the desktop worker's caches, and
    never answers with the desktop shell. */
 const CACHE_PREFIX = "adboard-m-";
-const CACHE_VERSION = "adboard-m-v2";
+const CACHE_VERSION = "adboard-m-v3";
 const SCOPE = "/m/";
-const SHELL = ["/m/", "/m/control/", "/m/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"];
+const SCREENS = ["control", "devices", "macros", "more"].concat(
+  ["manage", "apps", "files", "automate", "developer", "hosts", "events", "storage", "settings"].map((id) => "more/" + id),
+);
+const SHELL = ["/m/"]
+  .concat(SCREENS.map((id) => "/m/" + id + "/"))
+  .concat(["/m/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
