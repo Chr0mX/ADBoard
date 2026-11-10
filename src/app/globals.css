@@ -1105,12 +1105,32 @@ html:has([data-m-app]) body::after {
   pointer-events: none;
 }
 
-/* Mobile app, desk screens and sheets: one compact type scale.
-     Geist   headings          17 page / 14 card / 12 group
-     Figtree text              13 labels and body / 11 hints
-     JetBrains Mono            12 buttons and rows, 13 form fields, 11 data lines
-   Fields can be 13 px because /m sets maximum-scale=1 (see app/m/layout.tsx), which
-   stops iOS zooming in on focus. The Control screen is not touched. */
+/* Mobile app: text size setting (More → Text size). Compact is the default;
+   Standard is larger and uses 16 px fields (no iOS focus zoom, so pinch zoom can stay).
+     Geist   headings          page / card / group
+     Figtree text              body / hints
+     JetBrains Mono            buttons / fields / data
+   The Control screen is not touched. */
+:root {
+  --m-body: 0.8125rem;
+  --m-hint: 0.6875rem;
+  --m-btn: 0.75rem;
+  --m-field: 0.8125rem;
+  --m-h2: 1.0625rem;
+  --m-h3: 0.875rem;
+  --m-h4: 0.75rem;
+  --m-tab: 0.6875rem;
+}
+html[data-m-text="standard"] {
+  --m-body: 0.875rem;
+  --m-hint: 0.75rem;
+  --m-btn: 0.8125rem;
+  --m-field: 1rem;
+  --m-h2: 1.125rem;
+  --m-h3: 0.9375rem;
+  --m-h4: 0.8125rem;
+  --m-tab: 0.75rem;
+}
 @media (pointer: coarse) {
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item),
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
@@ -1118,56 +1138,119 @@ html:has([data-m-app]) body::after {
     line-height: 1.25;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(button, summary):not(.pc-taskbar-item) {
-    font-size: 0.75rem;
+    font-size: var(--m-btn);
     font-weight: 500;
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])) {
-    font-size: 0.8125rem;
+    font-size: var(--m-field);
   }
-  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-sm {
-    font-size: 0.8125rem;
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(.text-sm, .pc-choice-row, label) {
+    font-size: var(--m-body);
   }
   [data-m-section]:not([data-m-section="control"]) h2 {
-    font-size: 1.0625rem;
+    font-size: var(--m-h2);
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h3 {
-    font-size: 0.875rem;
+    font-size: var(--m-h3);
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) [class*="text-[11px]"],
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-xs {
-    font-size: 0.6875rem;
+    font-size: var(--m-hint);
   }
-  /* Rules above can be overridden by classes like text-xs on headings and captions. */
+  /* Headings and captions that also carry text-xs: set again with more weight. */
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) h4[class] {
-    font-size: 0.75rem;
+    font-size: var(--m-h4);
   }
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) label[class]:is(.text-xs, [class*="text-[11px]"]) {
-    font-size: 0.75rem;
+    font-size: var(--m-h4);
   }
-  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(h3, h4)[class] {
-    font-weight: 500;
-  }
-  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .pc-choice-row {
-    font-size: 0.8125rem;
-  }
-  /* Leftovers: plain labels inherited the 16 px page size; big stat numbers were 20 px. */
-  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) label {
-    font-size: 0.8125rem;
-  }
-  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-xl {
-    font-size: 1.0625rem;
-  }
-  /* Text with no size of its own (it used to inherit the 16 px page size). */
-  [data-m-section]:not([data-m-section="control"]),
-  [data-m-sheet] [role="dialog"] {
-    font-size: 0.8125rem;
-  }
-  /* Sheets: the title matches a card title and semibold names are medium, like the headings. */
-  [data-m-sheet] h2 {
-    font-size: 0.9375rem;
-    font-weight: 500;
-  }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) :is(h3, h4)[class],
   :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .font-semibold {
     font-weight: 500;
   }
+  :is([data-m-section]:not([data-m-section="control"]), [data-m-sheet]) .text-xl {
+    font-size: var(--m-h2);
+  }
+  /* Text with no size of its own. */
+  [data-m-section]:not([data-m-section="control"]),
+  [data-m-sheet] [role="dialog"] {
+    font-size: var(--m-body);
+  }
+  [data-m-sheet] h2 {
+    font-size: var(--m-h3);
+    font-weight: 500;
+  }
+}
+[data-m-nav] button {
+  font-size: var(--m-tab);
+}
+
+/* Taskbar buttons stay 38 px to look, but the tappable area is 44 px (the padding box plus 4 px a side), with 8 px between them. */
+.pc-shell[data-m-app] [data-mobile-bottom-chrome] .pc-taskbar {
+  gap: 0.5rem;
+}
+.pc-shell[data-m-app] [data-mobile-bottom-chrome] .pc-taskbar .pc-taskbar-item {
+  position: relative;
+}
+.pc-shell[data-m-app] [data-mobile-bottom-chrome] .pc-taskbar .pc-taskbar-item::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+/* Pressed feedback (about 100 ms) on the mobile app's own controls. */
+[data-m-nav] button,
+[data-m-strip] button,
+[data-m-sheet] [data-device-card] {
+  transition: background-color 100ms ease, transform 100ms ease;
+}
+[data-m-nav] button:active,
+[data-m-strip] button:active {
+  background-color: var(--pc-accent-soft);
+}
+[data-m-sheet] [data-device-card]:active {
+  background-color: var(--pc-accent-soft);
+}
+/* The active tab is shown by more than colour: a bar on top, a filled icon and heavier text. */
+[data-m-nav] button {
+  position: relative;
+}
+[data-m-nav] button[aria-current="page"] {
+  font-weight: 600;
+}
+[data-m-nav] button[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 25%;
+  right: 25%;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--pc-accent);
+}
+[data-m-nav] button[aria-current="page"] svg {
+  fill: color-mix(in srgb, currentColor 25%, transparent);
+}
+
+/* Sheets: the grab bar and no scroll chaining into the page behind. */
+[data-m-sheet] [role="dialog"] {
+  overscroll-behavior: contain;
+}
+[data-m-sheet-grab] {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 36px;
+  height: 4px;
+  margin-left: -18px;
+  border-radius: 2px;
+  background: var(--pc-line);
+}
+
+/* Phones sheet: phones first. The "Hosts/Devices" heading goes and "Add wireless" moves under the list. */
+[data-m-sheet="devices"] section > h2:first-child {
+  display: none;
+}
+[data-m-sheet="devices"] section > :nth-child(2) {
+  order: 5;
 }

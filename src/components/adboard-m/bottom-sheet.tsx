@@ -59,7 +59,8 @@ export function BottomSheet({
     if (!drag.current || !panel.current) return;
     const dy = event.clientY - drag.current.y;
     drag.current = null;
-    panel.current.style.transition = "transform 150ms ease";
+    const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    panel.current.style.transition = calm ? "none" : "transform 150ms ease";
     panel.current.style.transform = "";
     if (dy > 90) onClose();
   };
@@ -76,7 +77,7 @@ export function BottomSheet({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative flex min-h-0 flex-col gap-3 overflow-y-auto rounded-t-2xl border-t border-[var(--pc-line)] bg-[var(--pc-paper)] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] outline-none ${
+        className={`relative flex min-h-0 flex-col gap-3 overflow-y-auto rounded-t-2xl border-t border-[var(--pc-line)] bg-[var(--pc-paper)] px-3 pt-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] outline-none ${
           full ? "h-full rounded-none pt-[max(0.75rem,env(safe-area-inset-top))]" : "max-h-[88%]"
         }`}
       >
@@ -88,6 +89,7 @@ export function BottomSheet({
           onPointerUp={onUp}
           onPointerCancel={onUp}
         >
+          <span data-m-sheet-grab aria-hidden />
           <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">{title}</h2>
           <button
             type="button"

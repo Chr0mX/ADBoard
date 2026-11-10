@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Plus } from "lucide-react";
 import { devicesClient } from "@/lib/api/client";
 import { AppIcon } from "@/components/adboard/app-icon";
 import type { Device } from "@/lib/devices/types";
@@ -147,8 +148,8 @@ export function AppsPanelMobile() {
                   </article>
                 ))}
                 {group === "Custom" && (
-                  <button type="button" data-add-app className="flex min-h-11 items-center justify-center rounded-xl border border-dashed border-[var(--pc-line)] text-sm" onClick={() => setAdding({ group: "Custom" })}>
-                    ➕ Add App
+                  <button type="button" data-add-app className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--pc-line)] text-sm" onClick={() => setAdding({ group: "Custom" })}>
+                    <Plus className="size-4" aria-hidden /> Add App
                   </button>
                 )}
               </section>

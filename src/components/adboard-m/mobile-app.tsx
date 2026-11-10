@@ -29,6 +29,7 @@ import { PhoneLabels } from "@/components/adboard-m/phone-labels";
 import { TaskbarSheet } from "@/components/adboard-m/taskbar-sheet";
 import { usePhonePrefs } from "@/components/adboard-m/phone-prefs";
 import { useFeedback } from "@/components/adboard-m/feedback";
+import { useTextSize } from "@/components/adboard-m/text-size";
 import { DisplayInfo } from "@/components/adboard-m/display-info";
 import { SwitchRow } from "@/components/ui/switch";
 import { MobileNav, tabOf, type MobileTab } from "@/components/adboard-m/mobile-nav";
@@ -90,6 +91,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
   useClipboardSync({ targets: broadcastTargets, mode: controlMode });
   useMacroAutomation(devices);
   useVisualViewportLock(true);
+  const [textSize, setTextSize] = useTextSize();
 
   const session = useAgentSessionInfo();
   const alerts = useEventAlerts();
@@ -228,6 +230,17 @@ export function MobileApp({ children }: { children?: ReactNode }) {
               <button type="button" data-m-taskbar-open className="pc-toggle pc-toggle-md min-h-11" onClick={() => setTaskbarOpen(true)}>
                 Customize taskbar
               </button>
+              <div className="flex flex-col gap-1.5" data-m-text-size>
+                <p className="text-sm text-[var(--pc-ink)]">Text size</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["compact", "standard"] as const).map((size) => (
+                    <button key={size} type="button" aria-pressed={textSize === size} className="pc-toggle pc-toggle-md min-h-11" onClick={() => setTextSize(size)}>
+                      {size === "compact" ? "Compact" : "Standard"}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-[var(--pc-muted)]">Standard is larger and keeps pinch zoom on.</p>
+              </div>
               <SwitchRow label="Phone strip on Control" description="Swipeable phone cards above the screen" checked={stripOn} onChange={(e) => setStripOn(e.target.checked)} />
               <SwitchRow label="Haptic feedback" description="A short buzz on taps (Android; iPhone Safari has no vibration)" checked={feedback.haptics} onChange={(e) => feedback.setHaptics(e.target.checked)} />
               <SwitchRow label="Tap sound" description="A quiet click on taps" checked={feedback.sounds} onChange={(e) => feedback.setSounds(e.target.checked)} />
