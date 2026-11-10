@@ -104,6 +104,25 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     selectDevice({ deviceId, ctrlKey: false, shiftKey: false, metaKey: false });
     clearSelected(); // the phone you pick is the one you control
   };
+  // The ticks show who gets your touches: the viewed phone in Selected, the ticked ones in Multi, every online phone in All.
+  const controlledIds = new Set(
+    controlMode === "all"
+      ? devices.filter((d) => d.status === "online").map((d) => d.id)
+      : controlMode === "selected"
+        ? activeId
+          ? [activeId]
+          : []
+        : selectedIds,
+  );
+  const toggleControlled = (id: string, selected: boolean) => {
+    if (controlMode === "selected") {
+      if (id === activeId && !selected) return; // the viewed phone stays controlled in Selected
+      if (selected && activeId && id !== activeId) toggleSelected(activeId, true); // keep it when adding another
+    } else if (controlMode === "all") {
+      return; // every online phone is already controlled; pick Multi to choose
+    }
+    toggleSelected(id, selected);
+  };
   const selectAllOnline = () => {
     feedback.tap();
     for (const device of devices) if (device.status === "online") toggleSelected(device.id, true);
@@ -356,7 +375,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
             <DeviceGrid
               devices={devices}
               activeId={activeId}
-              selectedIds={selectedIds}
+              selectedIds={controlledIds}
               onSelect={(event) => {
                 selectDevice(event);
                 // A plain tap picks this phone alone: the other ticks are cleared and
@@ -366,7 +385,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
                   closeDevices();
                 }
               }}
-              onToggleSelected={toggleSelected}
+              onToggleSelected={toggleControlled}
             />
             <PhoneLabels devices={devices} favs={phones.favs} notes={phones.notes} onToggleFav={phones.toggleFav} onNote={phones.setNote} />
             {/* Stays in reach at the bottom of the sheet while the list scrolls. */}
