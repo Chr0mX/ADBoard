@@ -1274,3 +1274,10 @@ html[data-m-text="standard"] {
     font-size: 0.8125rem;
   }
 }
+
+/* Desktop: the smallest text is 12 px (it was 11). The mobile app keeps its own scale. */
+@media (pointer: fine) {
+  .pc-shell:not([data-m-app]) [class*="text-[11px]"] {
+    font-size: 0.75rem;
+  }
+}

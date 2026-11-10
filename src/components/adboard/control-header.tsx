@@ -19,7 +19,12 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
   // If the tabs do not fit, the bar scrolls: keep the current tab in view.
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const nav = navRef.current;
+    // Only when the bar really overflows: scrolling an element into view also moves
+    // the browser's keyboard starting point, which would skip the first tab stops.
+    if (!nav || nav.scrollWidth <= nav.clientWidth + 1) return;
+    const tab = nav.querySelector<HTMLElement>('[aria-current="page"]');
+    if (tab) nav.scrollLeft = Math.max(0, tab.offsetLeft - (nav.clientWidth - tab.offsetWidth) / 2);
   }, [section]);
   return (
     <header className="relative z-10 flex shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1.5 sm:px-4">

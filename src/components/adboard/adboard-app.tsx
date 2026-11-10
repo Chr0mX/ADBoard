@@ -218,6 +218,14 @@ export function ADBoardApp() {
       data-ui-build="pc-shell-v71"
     >
       <div className="pc-atmosphere" aria-hidden />
+      {/* Keyboard users: jump past the section bar. Visible only when focused. */}
+      <a
+        href="#pc-main"
+        data-skip-link
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-[var(--pc-panel)] focus:px-3 focus:py-2 focus:text-sm focus:text-[var(--pc-ink)] focus:outline focus:outline-2 focus:outline-[var(--pc-accent)]"
+      >
+        Skip to content
+      </a>
       {showHeader && (
         <ControlHeader
           onlineCount={onlineCount}
@@ -228,8 +236,10 @@ export function ADBoardApp() {
       )}
 
       <main
+        id="pc-main"
+        tabIndex={-1}
         className={cn(
-          "relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden",
+          "relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden outline-none",
           section !== "control"
             ? "px-3 py-2 lg:px-4 lg:py-3"
             : !fillWindow && !mobileControl && "px-2 py-2 lg:px-4 lg:py-3",

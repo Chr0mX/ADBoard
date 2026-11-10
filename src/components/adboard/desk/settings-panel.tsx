@@ -51,7 +51,7 @@ export function SettingsPanel() {
 
   return (
     <PanelFrame title="Settings" panel="settings" clean description="Stream quality, keyboard, grid, notifications, account and taskbar.">
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="lg:columns-2 lg:gap-3 [&>*]:mb-3 [&>*]:break-inside-avoid" data-settings-cards>
         <InstallOnIphone />
         <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-stream>
           <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Stream</h3>

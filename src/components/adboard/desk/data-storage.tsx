@@ -141,7 +141,7 @@ export function FolderHint({ folder, store, itemId }: { folder: "macros" | "shel
         </span>
         <button
           type="button"
-          className="underline underline-offset-2 hover:text-[var(--pc-ink)]"
+          className="inline-flex min-h-6 items-center px-1 underline underline-offset-2 hover:text-[var(--pc-ink)]"
           onClick={() => openFolder(folder).then(() => setNote(null), (e: Error) => setNote(e.message))}
         >
           Open folder
