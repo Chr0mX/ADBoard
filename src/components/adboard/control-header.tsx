@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { DESK_SECTIONS, type DeskSection } from "@/components/adboard/desk/desk-context";
 import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
 import { useEventAlerts } from "@/lib/events/client";
@@ -15,6 +16,11 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
   const session = useAgentSessionInfo();
   const alerts = useEventAlerts();
   const badge = section !== "events" && alerts.unseen > 0 ? alerts.unseen : 0;
+  // If the tabs do not fit, the bar scrolls: keep the current tab in view.
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [section]);
   return (
     <header className="relative z-10 flex shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1.5 sm:px-4">
       <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]">
@@ -41,7 +47,9 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
       </label>
 
       <nav
+        ref={navRef}
         aria-label="Sections"
+        data-section-nav
         className="hidden min-w-0 flex-1 gap-1 overflow-x-auto sm:flex"
       >
         {DESK_SECTIONS.map((item) => (

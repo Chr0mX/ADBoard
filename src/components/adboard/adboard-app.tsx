@@ -46,6 +46,8 @@ function subscribeWide(onChange: () => void) {
 }
 
 export function ADBoardApp() {
+  const [storedSection, setStoredSection] = useStoredString("adboard-section");
+  const section = asSection(storedSection);
   const {
     devices,
     loading,
@@ -74,7 +76,7 @@ export function ADBoardApp() {
     handleInstall,
     lastTap,
     sessions,
-  } = useADBoard();
+  } = useADBoard({ keyboardScope: section === "control" });
   useClipboardSync({ targets: broadcastTargets, mode: controlMode });
   // Macro scheduler tick + device list for the task queue.
   useMacroAutomation(devices);
@@ -108,8 +110,6 @@ export function ADBoardApp() {
   const mobileStatsMode = parseMobileStatsMode(storedStatsMode);
   const setMobileStatsMode = (mode: MobileStatsMode) => setStoredStatsMode(mode);
 
-  const [storedSection, setStoredSection] = useStoredString("adboard-section");
-  const section = asSection(storedSection);
   const [focusTool, setFocusTool] = useState<string | null>(null);
   const [lastSeen, setLastSeen] = useState<Record<string, number>>({});
   const seenRef = useRef<Record<string, number>>({});

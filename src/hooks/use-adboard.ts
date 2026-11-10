@@ -68,7 +68,16 @@ function initialActiveId(devices: Device[]): string | null {
   return devices.find((d) => d.status === "online")?.id ?? null;
 }
 
-export function useADBoard() {
+export interface ADBoardOptions {
+  /**
+   * Whether typing on this computer goes to the phones right now. Pass false on
+   * screens without a phone (Manage, Settings, …) so Tab, Enter and letters stay
+   * in the page. Default true.
+   */
+  keyboardScope?: boolean;
+}
+
+export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -383,7 +392,7 @@ export function useADBoard() {
   }, [broadcastTargets, controlMode]);
 
   useEffect(() => {
-    if (!keyboardOn) return;
+    if (!keyboardOn || !keyboardScope) return;
 
     const post = (inject: KeyInject) => {
       const targets = targetsRef.current;
@@ -461,7 +470,7 @@ export function useADBoard() {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
     };
-  }, [keyboardOn]);
+  }, [keyboardOn, keyboardScope]);
 
   return {
     devices,

@@ -59,6 +59,8 @@ const MORE_SECTIONS = DESK_SECTIONS.filter((item) => (MORE_SECTION_IDS as readon
  * device state, video and macro logic is the same code the desktop uses.
  */
 export function MobileApp({ children }: { children?: ReactNode }) {
+  const router = useRouter();
+  const route = parseMobilePath(usePathname());
   const {
     devices,
     loading,
@@ -87,7 +89,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     handleInstall,
     lastTap,
     sessions,
-  } = useADBoard();
+  } = useADBoard({ keyboardScope: route.view === "control" || route.view === "devices" });
   useClipboardSync({ targets: broadcastTargets, mode: controlMode });
   useMacroAutomation(devices);
   useVisualViewportLock(true);
@@ -127,8 +129,6 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     feedback.tap();
     for (const device of devices) if (device.status === "online") toggleSelected(device.id, true);
   };
-  const router = useRouter();
-  const route = parseMobilePath(usePathname());
   // The desk section on screen. "more" (the list) and "root" show none.
   const section = asSection(sectionOfRoute(route));
   const listOpen = route.view === "more";
