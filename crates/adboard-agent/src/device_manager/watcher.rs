@@ -63,6 +63,96 @@ pub(super) fn recovery_actions(
     actions
 }
 
+/// What the poll loop does about the adb server after a failed `adb devices`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ServerFix {
+    None,
+    /// `adb start-server`: the server was probably still starting.
+    Start,
+    /// `adb kill-server` then `start-server`: it keeps not answering.
+    Restart,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct FailureStep {
+    /// Shown once per run of failures, not every poll.
+    pub notice: Option<String>,
+    pub fix: ServerFix,
+    /// Time until the next poll.
+    pub wait: Duration,
+}
+
+/// Consecutive `adb devices` failures, so the loop backs off and repairs the
+/// server instead of failing (and notifying) every 2 s.
+#[derive(Debug, Default)]
+pub(super) struct PollHealth {
+    failures: u32,
+}
+
+impl PollHealth {
+    /// A poll answered. Returns a notice when it follows failures.
+    pub fn success(&mut self) -> Option<String> {
+        let was_failing = self.failures > 0;
+        self.failures = 0;
+        was_failing.then(|| "ADB is answering again.".to_string())
+    }
+
+    pub fn failure(&mut self, error: &str) -> FailureStep {
+        self.failures = self.failures.saturating_add(1);
+        let n = self.failures;
+        let timed_out = error.contains("did not answer");
+        let fix = match n {
+            _ if !timed_out => ServerFix::None,
+            1 => ServerFix::Start,
+            3 => ServerFix::Restart,
+            n if n > 3 && (n - 3) % 10 == 0 => ServerFix::Restart,
+            _ => ServerFix::None,
+        };
+        let wait = match n {
+            1 => ADB_POLL_SECS,
+            2 => 4,
+            3 => 8,
+            _ => 10,
+        };
+        FailureStep {
+            notice: (n == 1).then(|| describe_adb_failure(error)),
+            fix,
+            wait: Duration::from_secs(wait.max(ADB_POLL_SECS)),
+        }
+    }
+}
+
+/// The notice for a failed `adb devices`, with what to do about it.
+pub(super) fn describe_adb_failure(error: &str) -> String {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("doesn't match") || lower.contains("does not match") {
+        return "adb devices failed: another adb on this PC is a different version and keeps restarting the adb server. \
+                Close Android Studio or other phone tools, or remove their adb from PATH."
+            .to_string();
+    }
+    if error.contains("did not answer") {
+        return format!("adb devices failed: {error}. The adb server may be starting or stuck; ADBoard is restarting it.");
+    }
+    format!("adb devices failed: {error}")
+}
+
+/// Reconnect the saved wireless phones (at start, and after the server restarts).
+async fn restore_wireless(adb: &std::path::Path) {
+    for endpoint in adb::load_wireless() {
+        match tokio::time::timeout(Duration::from_secs(8), adb::connect_wireless(adb, &endpoint, None)).await {
+            Ok(Ok(message)) => {
+                info!(endpoint = %endpoint.display(), %message, "restored wireless device")
+            }
+            Ok(Err(error)) => {
+                warn!(endpoint = %endpoint.display(), %error, "could not restore wireless device")
+            }
+            Err(_) => {
+                warn!(endpoint = %endpoint.display(), "wireless restore timed out")
+            }
+        }
+    }
+}
+
 pub(super) struct CachedBattery {
     sample: adb::BatterySample,
     fetched: std::time::Instant,
@@ -95,24 +185,19 @@ impl AppState {
         info!(path = %adb.display(), "ADB found — polling devices every {ADB_POLL_SECS}s");
         let state = self.clone();
         tokio::spawn(async move {
-            for endpoint in adb::load_wireless() {
-                match tokio::time::timeout(
-                    Duration::from_secs(8),
-                    adb::connect_wireless(&adb, &endpoint, None),
-                )
-                .await
-                {
-                    Ok(Ok(message)) => {
-                        info!(endpoint = %endpoint.display(), %message, "restored wireless device")
-                    }
-                    Ok(Err(error)) => {
-                        warn!(endpoint = %endpoint.display(), %error, "could not restore wireless device")
-                    }
-                    Err(_) => {
-                        warn!(endpoint = %endpoint.display(), "wireless restore timed out")
-                    }
+            // Start the server up front with a generous limit: the first
+            // `adb devices` would otherwise have to start it inside its own limit.
+            match adb::start_server(&adb).await {
+                Ok(()) => info!("adb server running"),
+                Err(error) => {
+                    warn!(%error, "adb start-server failed");
+                    state.publish(ServerEvent::Notice {
+                        message: format!("Could not start the adb server: {error}"),
+                    });
                 }
             }
+            restore_wireless(&adb).await;
+            let mut health = PollHealth::default();
             let mut known_resolutions: HashMap<String, adboard_protocol::DeviceResolution> =
                 HashMap::new();
             let mut batteries: HashMap<String, CachedBattery> = HashMap::new();
@@ -120,8 +205,13 @@ impl AppState {
             let mut last_recovery: HashMap<String, std::time::Instant> = HashMap::new();
             let mut adb_attempts: HashMap<String, u8> = HashMap::new();
             loop {
+                let mut wait = Duration::from_secs(ADB_POLL_SECS);
                 match adb::list_adb_devices(&adb).await {
                     Ok(lines) => {
+                        if let Some(message) = health.success() {
+                            info!("adb devices answering again");
+                            state.publish(ServerEvent::Notice { message });
+                        }
                         state
                             .apply_adb_snapshot(&adb, &lines, &mut known_resolutions, &mut batteries)
                             .await;
@@ -201,12 +291,30 @@ impl AppState {
                     }
                     Err(e) => {
                         warn!(error = %e, "adb devices failed");
-                        state.publish(ServerEvent::Notice {
-                            message: format!("adb devices failed: {e}"),
-                        });
+                        let step = health.failure(&e);
+                        if let Some(message) = step.notice {
+                            state.publish(ServerEvent::Notice { message });
+                        }
+                        match step.fix {
+                            ServerFix::None => {}
+                            ServerFix::Start => {
+                                info!("adb did not answer — starting the adb server");
+                                if let Err(error) = adb::start_server(&adb).await {
+                                    warn!(%error, "adb start-server failed");
+                                }
+                            }
+                            ServerFix::Restart => {
+                                warn!("adb still not answering — restarting the adb server");
+                                match adb::restart_server(&adb).await {
+                                    Ok(()) => restore_wireless(&adb).await,
+                                    Err(error) => warn!(%error, "adb server restart failed"),
+                                }
+                            }
+                        }
+                        wait = step.wait;
                     }
                 }
-                tokio::time::sleep(Duration::from_secs(ADB_POLL_SECS)).await;
+                tokio::time::sleep(wait).await;
             }
         });
     }

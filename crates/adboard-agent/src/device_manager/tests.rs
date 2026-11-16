@@ -1,4 +1,4 @@
-use super::watcher::{recovery_actions, RecoveryAction};
+use super::watcher::{describe_adb_failure, recovery_actions, FailureStep, PollHealth, RecoveryAction, ServerFix};
 use super::*;
 
 /// A stand-in for `adb` that answers every call after a delay. A serial
@@ -472,4 +472,35 @@ fn recovery_sets_size_when_a_phone_first_appears_online() {
     );
     // Default: first sight of a phone does not restart anything.
     assert!(recovery_actions(&previous, &next, false).is_empty());
+}
+
+#[test]
+fn a_timed_out_poll_starts_then_restarts_the_server_and_backs_off() {
+    let timeout = "adb did not answer within 15 s: devices -l";
+    let mut health = PollHealth::default();
+    let first = health.failure(timeout);
+    assert_eq!(first.fix, ServerFix::Start);
+    assert_eq!(first.wait, Duration::from_secs(ADB_POLL_SECS));
+    assert!(first.notice.as_deref().unwrap().contains("restarting it"));
+    let steps: Vec<FailureStep> = (0..12).map(|_| health.failure(timeout)).collect();
+    // Failures 2..=13: one notice only (the first), a restart at 3 and 13, waits up to 10 s.
+    assert!(steps.iter().all(|step| step.notice.is_none()));
+    let restarts: Vec<usize> = steps.iter().enumerate().filter(|(_, s)| s.fix == ServerFix::Restart).map(|(i, _)| i + 2).collect();
+    assert_eq!(restarts, vec![3, 13]);
+    assert_eq!(steps[0].wait, Duration::from_secs(4));
+    assert_eq!(steps[1].wait, Duration::from_secs(8));
+    assert_eq!(steps[11].wait, Duration::from_secs(10));
+    // Recovery is announced once, and the next failure starts a fresh run.
+    assert!(health.success().is_some());
+    assert!(health.success().is_none());
+    assert_eq!(health.failure(timeout).fix, ServerFix::Start);
+}
+
+#[test]
+fn other_adb_errors_do_not_touch_the_server_and_name_a_version_fight() {
+    let mut health = PollHealth::default();
+    let step = health.failure("adb exited exit code: 1: adb server version (41) doesn't match this client (39)");
+    assert_eq!(step.fix, ServerFix::None);
+    assert!(step.notice.unwrap().contains("different version"));
+    assert!(describe_adb_failure("adb exited 1: boom").ends_with("boom"));
 }

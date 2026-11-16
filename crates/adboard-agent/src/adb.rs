@@ -127,8 +127,37 @@ fn which(bin: &str) -> Option<PathBuf> {
     })
 }
 
+/// `adb devices -l`. A running server answers in milliseconds; the limit only
+/// matters while the server is starting, which on Windows can take well over 5 s.
+pub const LIMIT_DEVICES: Duration = Duration::from_secs(15);
+
+/// Run a server command (`start-server`, `kill-server`) and report adb's own error text.
+async fn server_command(adb: &Path, what: &str) -> Result<(), String> {
+    let output = output_with_limit(adb, &[what], LIMIT_OTHER).await?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Err(format!("adb {what} exited {}: {}{}", output.status, stderr.trim(), stdout.trim()))
+}
+
+/// Start the adb server and wait for it, so the device poll never has to.
+pub async fn start_server(adb: &Path) -> Result<(), String> {
+    server_command(adb, "start-server").await
+}
+
+/// Stop a stuck adb server and start a fresh one.
+pub async fn restart_server(adb: &Path) -> Result<(), String> {
+    // A wedged server may not answer kill-server either; start-server still decides.
+    if let Err(error) = server_command(adb, "kill-server").await {
+        warn!(%error, "adb kill-server failed");
+    }
+    start_server(adb).await
+}
+
 pub async fn list_adb_devices(adb: &PathBuf) -> Result<Vec<AdbDeviceLine>, String> {
-    let output = output_with_limit(adb, &["devices", "-l"], Duration::from_secs(5)).await?;
+    let output = output_with_limit(adb, &["devices", "-l"], LIMIT_DEVICES).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1047,6 +1076,46 @@ mod tests {
         let error = result.expect_err("sleep 30 must time out");
         assert!(error.contains("did not answer"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// A fake adb that logs each call; `start-server` fails when `fail` is set.
+    #[cfg(unix)]
+    fn logging_adb(fail_start: bool) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("adboard-server-adb-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("calls.log");
+        let path = dir.join("adb");
+        let start = if fail_start {
+            "echo 'adb server version (41) does not match this client (39)' >&2; exit 1"
+        } else {
+            "exit 0"
+        };
+        let script = format!(
+            "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1\" in start-server) {start};; *) exit 0;; esac\n",
+            log.display()
+        );
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (path, log)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn server_commands_call_adb_in_order_and_report_its_error() {
+        let (adb, log) = logging_adb(false);
+        start_server(&adb).await.unwrap();
+        restart_server(&adb).await.unwrap();
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "start-server\nkill-server\nstart-server\n");
+
+        let (adb, _) = logging_adb(true);
+        let error = start_server(&adb).await.unwrap_err();
+        assert!(error.contains("does not match"), "{error}");
+    }
+
+    #[test]
+    fn the_device_poll_waits_long_enough_for_a_starting_server() {
+        assert!(LIMIT_DEVICES >= Duration::from_secs(15));
     }
 
     #[cfg(unix)]
