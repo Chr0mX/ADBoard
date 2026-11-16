@@ -3,6 +3,7 @@
 //! Framing: text JSON = [`VideoStatusFrame`]; binary = one Annex-B access unit
 //! (start-code delimited NALs; keyframes typically carry SPS/PPS + IDR).
 
+use axum::body::Bytes;
 use adboard_protocol::{StreamState, VideoStatusFrame};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -67,16 +68,18 @@ impl VideoSourceKind {
 pub enum VideoPacket {
     Status(VideoStatusFrame),
     /// One Annex-B access unit.
-    AnnexB(Vec<u8>),
+    /// `Bytes`: the broadcast channel clones a packet for every viewer, and a
+    /// `Vec` would copy the whole frame each time.
+    AnnexB(Bytes),
 }
 
 struct SerialChannel {
     tx: broadcast::Sender<VideoPacket>,
     last_status: Option<VideoStatusFrame>,
     /// Latest access unit that carries SPS/PPS. May be the keyframe itself.
-    last_sps: Option<Vec<u8>>,
+    last_sps: Option<Bytes>,
     /// Latest IDR access unit. Late subscribers need this or they wait forever.
-    last_keyframe: Option<Vec<u8>>,
+    last_keyframe: Option<Bytes>,
 }
 
 /// Fan-out hub: one producer per serial, many WS subscribers.
@@ -144,7 +147,7 @@ impl VideoHub {
 
     /// SPS/PPS and the latest IDR, so a browser that connects mid-stream can decode
     /// without waiting for the encoder to emit another keyframe.
-    pub async fn replay_access_units(&self, serial: &str) -> Vec<Vec<u8>> {
+    pub async fn replay_access_units(&self, serial: &str) -> Vec<Bytes> {
         let guard = self.channels.read().await;
         let Some(ch) = guard.get(serial) else {
             return Vec::new();
@@ -165,7 +168,7 @@ impl VideoHub {
         if au.is_empty() {
             return;
         }
-        self.publish(serial, VideoPacket::AnnexB(au)).await;
+        self.publish(serial, VideoPacket::AnnexB(Bytes::from(au))).await;
     }
 }
 

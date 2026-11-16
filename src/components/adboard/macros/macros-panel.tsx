@@ -731,7 +731,8 @@ function useNow(active: boolean) {
   useEffect(() => {
     if (!active) return;
     const tick = () => setNow(Date.now());
-    const timer = setInterval(tick, 500);
+    // Elapsed and remaining time show whole seconds: one tick a second is enough.
+    const timer = setInterval(tick, 1000);
     const first = setTimeout(tick, 0);
     return () => {
       clearInterval(timer);

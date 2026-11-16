@@ -848,7 +848,7 @@ async fn the_keyframe_reset_on_a_new_stream_waits_for_its_first_frame() {
     let sender = tx.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let _ = sender.send(VideoPacket::AnnexB(vec![0, 0, 0, 1, 0x65]));
+        let _ = sender.send(VideoPacket::AnnexB(vec![0, 0, 0, 1, 0x65].into()));
     });
     let started = std::time::Instant::now();
     assert!(first_access_unit(&mut rx, std::time::Duration::from_secs(5)).await);
@@ -856,4 +856,25 @@ async fn the_keyframe_reset_on_a_new_stream_waits_for_its_first_frame() {
     // A stream that went away does not hold the socket for the whole limit.
     drop(tx);
     assert!(!first_access_unit(&mut rx, std::time::Duration::from_secs(5)).await);
+}
+
+#[test]
+fn the_heartbeat_status_frame_keeps_every_field_and_adds_the_beat() {
+    let frame = VideoStatusFrame {
+        serial: "A".into(),
+        stream: adboard_protocol::StreamState::Streaming,
+        note: "ok".into(),
+        backend: "scrcpy".into(),
+        codec: Some("h264".into()),
+        codec_string: None,
+        width: Some(1080),
+        height: Some(2400),
+        framing: None,
+    };
+    let plain: serde_json::Value = serde_json::to_value(&frame).unwrap();
+    let beat: serde_json::Value = serde_json::from_str(&status_with_heartbeat(&frame)).unwrap();
+    assert_eq!(beat["heartbeat"], 5);
+    for (key, value) in plain.as_object().unwrap() {
+        assert_eq!(&beat[key], value, "{key}");
+    }
 }

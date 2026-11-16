@@ -51,6 +51,29 @@ fn ws_keepalive() -> tokio::time::Interval {
     interval
 }
 
+/// Seconds between status frames repeated on a video socket as a heartbeat.
+const VIDEO_HEARTBEAT_SECS: u64 = 5;
+/// A lagging viewer triggers at most one keyframe request in this time.
+const LAG_KEYFRAME_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
+
+fn video_heartbeat() -> tokio::time::Interval {
+    let period = std::time::Duration::from_secs(VIDEO_HEARTBEAT_SECS);
+    let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    interval
+}
+
+/// The status frame plus `"heartbeat": <seconds>`. The extra field tells the
+/// page this agent repeats the frame on that beat, so silence for a few beats
+/// means a dead connection. Older pages ignore the field.
+fn status_with_heartbeat(frame: &VideoStatusFrame) -> String {
+    let mut value = serde_json::to_value(frame).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(map) = value.as_object_mut() {
+        map.insert("heartbeat".into(), serde_json::json!(VIDEO_HEARTBEAT_SECS));
+    }
+    value.to_string()
+}
+
 fn ws_ping() -> Message {
     Message::Ping(Bytes::new())
 }
@@ -1985,7 +2008,7 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
     }
 
     let frame = state.inner.sessions.video_status_frame(&serial).await;
-    if send_json(&mut sender, &frame).await.is_err() {
+    if sender.send(Message::Text(status_with_heartbeat(&frame).into())).await.is_err() {
         return;
     }
 
@@ -2026,13 +2049,14 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
         });
     }
     let hub_lag = hub.clone();
+    let sessions_lag = state.inner.sessions.clone();
     let mut events = state.subscribe();
     let serial_filter = serial.clone();
     let serial_lag = serial.clone();
 
     let mut send_task = tokio::spawn(async move {
         for au in replay {
-            if sender.send(Message::Binary(au.into())).await.is_err() {
+            if sender.send(Message::Binary(au)).await.is_err() {
                 return;
             }
         }
@@ -2040,10 +2064,20 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
         // later P-frames. The keyframe requested above ends the wait.
         let mut wait_for_key = scrcpy_live;
         let mut keepalive = ws_keepalive();
+        let mut heartbeat = video_heartbeat();
+        let mut last_lag_reset: Option<std::time::Instant> = None;
         loop {
             tokio::select! {
                 _ = keepalive.tick() => {
                     if sender.send(ws_ping()).await.is_err() {
+                        break;
+                    }
+                }
+                _ = heartbeat.tick() => {
+                    // Browsers cannot see WebSocket pings. A still screen sends no
+                    // video, so the page needs this to tell "quiet" from "dead".
+                    let frame = sessions_lag.video_status_frame(&serial_lag).await;
+                    if sender.send(Message::Text(status_with_heartbeat(&frame).into())).await.is_err() {
                         break;
                     }
                 }
@@ -2059,7 +2093,7 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
                                 continue;
                             }
                             if sender
-                                .send(Message::Binary(bytes.into()))
+                                .send(Message::Binary(bytes))
                                 .await
                                 .is_err()
                             {
@@ -2069,9 +2103,20 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                             debug!(lagged = n, "video subscriber lagged");
                             let mut failed = false;
+                            // This viewer fell behind: ask the phone for a keyframe now
+                            // instead of leaving it on the cached one until the next
+                            // natural keyframe, which can be seconds away.
+                            if scrcpy_live && last_lag_reset.is_none_or(|at: std::time::Instant| at.elapsed() >= LAG_KEYFRAME_EVERY) {
+                                last_lag_reset = Some(std::time::Instant::now());
+                                let sessions = sessions_lag.clone();
+                                let serial = serial_lag.clone();
+                                tokio::spawn(async move {
+                                    let _ = sessions.reset_video(&serial).await;
+                                });
+                            }
                             for au in hub_lag.replay_access_units(&serial_lag).await {
                                 if sender
-                                    .send(Message::Binary(au.into()))
+                                    .send(Message::Binary(au))
                                     .await
                                     .is_err()
                                 {

@@ -22,6 +22,11 @@ export interface StreamPerf {
   maxQueue: number;
   keyframeAsks: number;
   reconnects: number;
+  /** Reconnects because the socket went silent past its heartbeat. */
+  staleReconnects: number;
+  /** Times the stream was suspended while nobody watched, and brought back. */
+  suspends: number;
+  resumes: number;
   decoderErrors: number;
   /** "hardware" | "software" | "auto" | "mse" | "" (none yet). */
   decoder: string;
@@ -44,6 +49,9 @@ export function newStreamPerf(): StreamPerf {
     maxQueue: 0,
     keyframeAsks: 0,
     reconnects: 0,
+    staleReconnects: 0,
+    suspends: 0,
+    resumes: 0,
     decoderErrors: 0,
     decoder: "",
     messageMs: [],

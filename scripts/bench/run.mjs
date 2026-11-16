@@ -263,7 +263,7 @@ async function main() {
   if (!recover) {
     // Client-side move to a section with no phone screens (same page, same hub).
     await page
-      .locator(mobile ? '[data-m-nav] a[href^="/m/more"]' : '[data-section-tab="storage"]')
+      .locator(mobile ? '[data-m-tab="more"]' : '[data-section-tab="storage"]')
       .first()
       .click({ timeout: 5000 })
       .catch(() => {});

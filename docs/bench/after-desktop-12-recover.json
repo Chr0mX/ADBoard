@@ -1,0 +1,63 @@
+{
+  "label": "after",
+  "route": "/",
+  "phones": 12,
+  "sourceFps": 30,
+  "minutes": 0.26,
+  "allPaintedMs": 1755,
+  "paintedFpsPerPhone": 30,
+  "receivedFpsPerPhone": 30,
+  "decodedFpsPerPhone": 30,
+  "droppedPerSecond": 0,
+  "supersededPerSecond": 0,
+  "maxDecodeQueue": 0,
+  "keyframeAsks": 0,
+  "reconnects": 0,
+  "decoderErrors": 0,
+  "decoder": "auto",
+  "wsMessageMsP50": 0.1,
+  "wsMessageMsP95": 0.4,
+  "inputToPaintMsP50": 15.8,
+  "inputToPaintMsP95": 31,
+  "pageMainThreadPct": 59.2,
+  "pageScriptPct": 46.5,
+  "browserCpuPct": 90.7,
+  "agentCpuPct": 156.6,
+  "browserRssMb": 1400,
+  "browserRssGrowthMb": 7.2,
+  "jsHeapMb": 13.1,
+  "jsHeapGrowthMb": -0.5,
+  "domNodes": 1479,
+  "taps": 3,
+  "renders": {
+    "screen": 8,
+    "tile": 10
+  },
+  "recovery": {
+    "agentUpMs": 208,
+    "allPhonesBackMs": 2083
+  },
+  "afterLeave": null,
+  "samples": [
+    {
+      "t": 0,
+      "heapMb": 9.9,
+      "browserRssMb": 1384.1
+    },
+    {
+      "t": 5189,
+      "heapMb": 11.1,
+      "browserRssMb": 1386.6
+    },
+    {
+      "t": 10287,
+      "heapMb": 13.6,
+      "browserRssMb": 1392.8
+    },
+    {
+      "t": 15371,
+      "heapMb": 13.1,
+      "browserRssMb": 1400
+    }
+  ]
+}

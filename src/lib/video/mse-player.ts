@@ -7,6 +7,10 @@ import {
   spsDimensions,
 } from "./h264";
 import { createInitSegment, createMediaSegment } from "./fmp4";
+import { createSegmentQueue, trimRange } from "./mse-queue-core";
+
+/** Access units held while the MediaSource opens. Past this, wait for the next keyframe. */
+const MAX_HELD = 120;
 
 /**
  * Plays Annex-B H264 with MediaSource. Used when the page is opened by LAN IP:
@@ -17,7 +21,8 @@ export class MseH264Player {
   private media!: MediaSource;
   private url!: string;
   private sb: SourceBuffer | null = null;
-  private queue: Uint8Array[] = [];
+  private queue = createSegmentQueue<Uint8Array>();
+  private lastTrimAt = 0;
   private held: Uint8Array[] = [];
   private sps: Uint8Array | null = null;
   private pps: Uint8Array | null = null;
@@ -98,7 +103,10 @@ export class MseH264Player {
       }
     }
     if (!this.sourceOpen) {
-      this.held.push(au);
+      // A source that is slow to open must not collect frames without limit:
+      // start again from the newest keyframe.
+      if (this.held.length >= MAX_HELD && annexBIsIdr(au)) this.held = [];
+      if (this.held.length < MAX_HELD) this.held.push(au);
       return;
     }
     if (!annexBHasVcl(au) || !this.sps || !this.pps) return;
@@ -115,9 +123,13 @@ export class MseH264Player {
     const sample = annexBToAvcc(au);
     if (sample.byteLength === 0) return;
     const duration = this.frameDuration();
-    this.enqueue(
-      createMediaSegment(sample, this.sequence, this.mediaTime, key, duration),
-    );
+    const queued = this.queue.push(createMediaSegment(sample, this.sequence, this.mediaTime, key, duration), key);
+    if (!queued) {
+      // The SourceBuffer cannot keep up: frames are skipped until a keyframe.
+      this.sawKey = false;
+      return;
+    }
+    this.pump();
     this.sequence += 1;
     this.mediaTime += duration;
   }
@@ -132,7 +144,7 @@ export class MseH264Player {
 
   /** New encoder size or profile needs a new SourceBuffer. Repeating SPS does not. */
   private reopen(au: Uint8Array) {
-    this.queue = [];
+    this.queue.clear();
     this.held = [au];
     this.sb = null;
     this.sourceOpen = false;
@@ -154,7 +166,8 @@ export class MseH264Player {
     if (this.closed) return;
     this.closed = true;
     cancelAnimationFrame(this.raf);
-    this.queue = [];
+    this.queue.clear();
+    this.held = [];
     try {
       if (this.media.readyState === "open") this.media.endOfStream();
     } catch {
@@ -186,17 +199,17 @@ export class MseH264Player {
       if (!this.closed) this.onError("H264 playback failed");
     });
     const size = spsDimensions(this.sps) ?? { width: 16, height: 16 };
-    this.enqueue(createInitSegment(this.sps, this.pps, size.width, size.height));
-  }
-
-  private enqueue(chunk: Uint8Array) {
-    this.queue.push(chunk);
+    this.queue.pushRequired(createInitSegment(this.sps, this.pps, size.width, size.height));
     this.pump();
   }
 
   private pump() {
     const sb = this.sb;
-    if (!sb || sb.updating || this.queue.length === 0 || this.closed) return;
+    if (!sb || sb.updating || this.closed) return;
+    if (this.queue.length === 0) {
+      this.trim(sb);
+      return;
+    }
     const next = this.queue.shift();
     if (!next) return;
     try {
@@ -215,6 +228,20 @@ export class MseH264Player {
       }
       console.warn("[video] mse append failed", err);
       if (!this.closed) this.onError("H264 playback failed");
+    }
+  }
+
+  /** Remove video that was already played, so the buffer does not grow for hours. */
+  private trim(sb: SourceBuffer) {
+    const now = performance.now();
+    if (now - this.lastTrimAt < 2000 || this.video.buffered.length === 0) return;
+    const range = trimRange(this.video.buffered.start(0), this.video.currentTime);
+    if (!range) return;
+    this.lastTrimAt = now;
+    try {
+      sb.remove(range.start, range.end);
+    } catch {
+      // the buffer is busy; the next idle moment tries again
     }
   }
 

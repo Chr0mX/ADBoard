@@ -2,7 +2,7 @@
 
 import { countRender } from "@/lib/video/perf-core";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { formatResolution } from "@/lib/devices/coords";
 import type { Device } from "@/lib/devices/types";
@@ -30,7 +30,7 @@ function statusLabel(status: Device["status"]) {
   }
 }
 
-export function DeviceCard({
+export const DeviceCard = memo(function DeviceCard({
   device,
   isActive,
   isSelected,
@@ -166,4 +166,4 @@ export function DeviceCard({
       )}
     </div>
   );
-}
+});

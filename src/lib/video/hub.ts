@@ -17,6 +17,11 @@ import { admitFrame, anyViewVisible, newDecodeGate } from "@/lib/video/backpress
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { agentBaseUrl, agentWsUrl, agentWsProtocols, forgetAgentToken } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
+import { createFrameSlot } from "@/lib/video/frame-slot-core";
+import { fittedSize, nextCanvasSize } from "@/lib/video/canvas-size-core";
+import { accelPreference, createErrorWindow, fallbackMode, parseAccelMode } from "@/lib/video/decoder-config-core";
+import { SUSPEND_GRACE_MS, onVisibilityChange, shouldSuspend } from "@/lib/video/stream-policy-core";
+import { createBackoff, isStale } from "@/lib/api/reconnect-core";
 import {
   markInput,
   newStreamPerf,
@@ -47,6 +52,8 @@ export interface VideoStatusMessage {
   width?: number;
   height?: number;
   framing?: string;
+  /** Seconds between repeats of this frame (newer agents). Silence for three beats means a dead socket. */
+  heartbeat?: number;
 }
 
 export type VideoDecodeState =
@@ -102,8 +109,89 @@ function mseSupported(): boolean {
   );
 }
 
+/** A picture-in-picture window shows the stream even while the page itself is hidden. */
+function pipActive() {
+  if (typeof document === "undefined") return false;
+  if (document.pictureInPictureElement) return true;
+  const docPip = (window as unknown as { documentPictureInPicture?: { window?: unknown } }).documentPictureInPicture;
+  return Boolean(docPip?.window);
+}
+
 function pageHidden() {
-  return typeof document !== "undefined" && document.visibilityState === "hidden";
+  return typeof document !== "undefined" && document.visibilityState === "hidden" && !pipActive();
+}
+
+/** "hardware" | "software" forces a decoder kind (benchmarks); anything else lets the browser pick. */
+const forcedAccel = (() => {
+  if (typeof window === "undefined") return parseAccelMode(null);
+  try {
+    return parseAccelMode(window.localStorage.getItem("adboard-video-accel"));
+  } catch {
+    return parseAccelMode(null);
+  }
+})();
+
+/** Whether the browser reports a hardware H264 decoder (null until asked; perf mode only). */
+let hardwareDecoderSupported: boolean | null = null;
+
+// One 2D context per canvas, looked up once instead of on every frame.
+const contexts = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D | null>();
+function contextOf(canvas: HTMLCanvasElement) {
+  let context = contexts.get(canvas);
+  if (context === undefined) {
+    context = canvas.getContext("2d");
+    contexts.set(canvas, context);
+  }
+  return context;
+}
+
+const canvasOwners = new WeakMap<HTMLCanvasElement, { sharpen(canvas: HTMLCanvasElement): void }>();
+
+// The size each canvas is shown at, in device pixels, kept current by one observer.
+const boxes = new WeakMap<Element, { width: number; height: number }>();
+const boxObserver =
+  typeof ResizeObserver === "undefined"
+    ? null
+    : new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const device = entry.devicePixelContentBoxSize?.[0];
+          const ratio = window.devicePixelRatio || 1;
+          const box = device
+            ? { width: device.inlineSize, height: device.blockSize }
+            : { width: Math.round(entry.contentRect.width * ratio), height: Math.round(entry.contentRect.height * ratio) };
+          boxes.set(entry.target, box);
+          // The canvas was enlarged (Fill, a dragged panel edge): its picture is
+          // now too coarse. A still screen sends no new frame, so ask for one.
+          const canvas = entry.target as HTMLCanvasElement;
+          if (box.width > canvas.width * 1.1 && box.height > canvas.height * 1.1) canvasOwners.get(canvas)?.sharpen(canvas);
+        }
+      });
+function boxOf(canvas: HTMLCanvasElement) {
+  const box = boxes.get(canvas);
+  if (box) return box;
+  if (!boxObserver) return null;
+  // First sight: measure once now, then the observer keeps it current.
+  const ratio = window.devicePixelRatio || 1;
+  const measured = { width: Math.round(canvas.clientWidth * ratio), height: Math.round(canvas.clientHeight * ratio) };
+  boxes.set(canvas, measured);
+  boxObserver.observe(canvas);
+  return measured;
+}
+
+/** The parts of a status frame the UI shows (the heartbeat repeats it every few seconds). */
+function sameStatus(a: VideoStatusMessage | null, b: VideoStatusMessage) {
+  return (
+    a !== null &&
+    a.serial === b.serial &&
+    a.stream === b.stream &&
+    a.note === b.note &&
+    a.backend === b.backend &&
+    a.codec === b.codec &&
+    a.codecString === b.codecString &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.framing === b.framing
+  );
 }
 
 /** Timing samples cost a clock read per message: only with ?perf=1 or localStorage adboard-perf=1. */
@@ -155,6 +243,21 @@ class SharedStream {
   private meter = { t: 0, frames: 0, bytes: 0 };
   private generation = 0;
   readonly perf = newStreamPerf();
+  private backoff = createBackoff();
+  /** Heartbeat promised by the agent on this socket, and when anything last arrived. */
+  private heartbeatSeconds: number | null = null;
+  private lastMessageAt = 0;
+  private accel = forcedAccel;
+  private decoderErrors = createErrorWindow();
+  /** No view on screen for a while: socket and decoder are closed until one shows again. */
+  private suspended = false;
+  private suspendTimer: ReturnType<typeof setTimeout> | null = null;
+  // The newest decoded frame, painted once per display refresh.
+  private slot = createFrameSlot<VideoFrame>(
+    (run) => requestAnimationFrame(run),
+    (handle) => cancelAnimationFrame(handle),
+    (frame) => this.paintFrame(frame),
+  );
 
   constructor(readonly serial: string) {}
 
@@ -174,6 +277,7 @@ class SharedStream {
     this.generation += 1;
     if (this.lingerTimer) clearTimeout(this.lingerTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.suspendTimer) clearTimeout(this.suspendTimer);
     if (this.statsTimer) clearInterval(this.statsTimer);
     document.removeEventListener("visibilitychange", this.onVisibility);
     this.disconnect();
@@ -184,8 +288,12 @@ class SharedStream {
   restart() {
     if (this.closed || !this.statsTimer) return;
     if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.suspendTimer) clearTimeout(this.suspendTimer);
+    this.suspendTimer = null;
+    this.suspended = false;
     this.disconnect();
     this.refreshAsked = false;
+    this.backoff.reset();
     this.setState({ frameSize: null, size: null });
     this.connect();
   }
@@ -196,6 +304,7 @@ class SharedStream {
       this.lingerTimer = null;
     }
     this.views.add(view);
+    this.onVisibility(); // a new view can bring a suspended stream back
     // A new view would stay blank on a still screen until something moves:
     // copy the picture another view already shows, or ask for a keyframe.
     requestAnimationFrame(() => {
@@ -215,6 +324,7 @@ class SharedStream {
 
   removeView(view: VideoView) {
     this.views.delete(view);
+    if (this.views.size > 0) this.onVisibility(); // the views that remain may all be off screen
     if (this.views.size > 0 || this.lingerTimer) return;
     this.lingerTimer = setTimeout(() => {
       this.lingerTimer = null;
@@ -250,11 +360,19 @@ class SharedStream {
     // (status bar icons included) reaches the screen. A size reported by
     // status or SPS can be smaller; the canvas is then stretched, which blurs
     // small text on a high-density display.
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
+    canvasOwners.set(canvas, this);
+    // A picture-in-picture window can be larger than the canvas on the page.
+    const needed = pipActive() ? { width, height } : fittedSize({ width, height }, boxOf(canvas));
+    const next = nextCanvasSize(canvas, needed);
+    if (canvas.width !== next.width || canvas.height !== next.height) {
+      canvas.width = next.width;
+      canvas.height = next.height;
     }
-    canvas.getContext("2d")?.drawImage(source, 0, 0, width, height);
+    const context = contextOf(canvas);
+    if (!context) return;
+    // Shrinking a lot with plain bilinear sampling makes small text shimmer.
+    context.imageSmoothingQuality = next.width * 2 < width ? "medium" : "low";
+    context.drawImage(source, 0, 0, next.width, next.height);
   }
 
   private paint(source: CanvasImageSource, width: number, height: number) {
@@ -276,9 +394,15 @@ class SharedStream {
     const width = frame.displayWidth > 0 ? frame.displayWidth : frame.codedWidth;
     const height = frame.displayHeight > 0 ? frame.displayHeight : frame.codedHeight;
     if (width > 0 && height > 0) this.publishSize(width, height, "frame");
-    this.paint(frame, width, height);
-    frame.close();
+    this.paint(frame, width, height); // the frame slot closes it
   };
+
+  /** A canvas grew past its picture: get a fresh frame to redraw it at the new size. */
+  sharpen(canvas: HTMLCanvasElement) {
+    // Already at the phone's full resolution: there is nothing sharper to draw.
+    if (canvas.width >= (this.state.size?.width ?? 0)) return;
+    if (!this.closed && this.state.decodeState === "decoding") this.askKeyframe();
+  }
 
   /** Benchmark hook: an input for this phone was sent now. */
   markInput() {
@@ -287,6 +411,12 @@ class SharedStream {
 
   private measure = () => {
     const now = performance.now();
+    // A socket whose agent promised a heartbeat and went silent is dead (a
+    // sleeping laptop, a dropped Wi-Fi link): reconnect instead of waiting.
+    if (this.socket && !this.suspended && isStale(this.lastMessageAt, now, this.heartbeatSeconds)) {
+      this.perf.staleReconnects += 1;
+      this.reconnect();
+    }
     const sample = this.meter;
     const seconds = Math.max(0.001, (now - sample.t) / 1000);
     const size = this.state.size;
@@ -322,8 +452,50 @@ class SharedStream {
   }
 
   private onVisibility = () => {
-    if (!this.hiddenNow() && this.gate.dropping) this.askKeyframe();
+    if (this.closed) return;
+    const shown = !this.hiddenNow();
+    const state = { suspended: this.suspended, armed: this.suspendTimer !== null };
+    switch (onVisibilityChange(state, shown)) {
+      case "arm":
+        this.suspendTimer = setTimeout(() => {
+          this.suspendTimer = null;
+          if (!this.closed && shouldSuspend({ suspended: this.suspended, armed: true }, !this.hiddenNow())) this.suspend();
+        }, SUSPEND_GRACE_MS);
+        break;
+      case "disarm":
+        if (this.suspendTimer) clearTimeout(this.suspendTimer);
+        this.suspendTimer = null;
+        break;
+      case "resume":
+        this.suspended = false;
+        this.perf.resumes += 1;
+        this.backoff.reset();
+        this.connect();
+        return;
+      default:
+        break;
+    }
+    if (shown && this.gate.dropping) this.askKeyframe();
   };
+
+  /** Nobody has looked at this stream for a while: stop receiving it. Views stay attached. */
+  private suspend() {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.suspended = true;
+    this.perf.suspends += 1;
+    this.disconnect();
+    this.refreshAsked = false;
+  }
+
+  /** Drop the socket and connect again after the backoff delay. */
+  private reconnect() {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.disconnect();
+    this.refreshAsked = false;
+    this.perf.reconnects += 1;
+    this.retryTimer = setTimeout(this.connect, this.backoff.next());
+  }
 
   /** The page is hidden, or no view of this stream is on screen. */
   private hiddenNow() {
@@ -344,6 +516,7 @@ class SharedStream {
       }
       this.decoder = null;
     }
+    this.slot.clear();
     this.sawKeyframe = false;
   }
 
@@ -382,21 +555,55 @@ class SharedStream {
         }
         this.perf.decoded += 1;
         this.setState({ decodeState: "decoding", error: null });
-        this.paintFrame(frame);
+        if (document.visibilityState === "hidden") {
+          // Animation frames do not run in a hidden page; a picture-in-picture
+          // window still shows the stream, so paint it now.
+          this.paintFrame(frame);
+          frame.close();
+        } else if (this.slot.offer(frame)) {
+          this.perf.superseded += 1;
+        }
       },
       error: (err) => {
         this.perf.decoderErrors += 1;
         console.warn("[video] decoder error", err);
-        if (this.decoder === decoder) this.markBroken("Recovering decode…");
+        if (this.decoder === decoder) {
+          this.noteDecoderError();
+          this.markBroken("Recovering decode…");
+        }
       },
     });
-    decoder.configure({ codec, description: desc, optimizeForLatency: true });
-    this.perf.decoder = "auto";
+    decoder.configure({
+      codec,
+      description: desc,
+      optimizeForLatency: true,
+      hardwareAcceleration: accelPreference(this.accel),
+    });
+    this.perf.decoder = this.accel;
     this.decoder = decoder;
+    if (perfTiming && hardwareDecoderSupported === null) {
+      hardwareDecoderSupported = false;
+      void VideoDecoder.isConfigSupported({ codec, description: desc, hardwareAcceleration: "prefer-hardware" })
+        .then((result) => {
+          hardwareDecoderSupported = result.supported === true;
+        })
+        .catch(() => {});
+    }
+  }
+
+  /** A decoder kind that keeps failing is swapped for the software decoder. */
+  private noteDecoderError() {
+    if (!this.decoderErrors.note(Date.now())) return;
+    const next = fallbackMode(this.accel);
+    if (next !== this.accel) {
+      console.warn("[video] decoder keeps failing; using the software decoder for", this.serial);
+      this.accel = next;
+      this.decoderErrors.reset();
+    }
   }
 
   private connect = () => {
-    if (this.closed) return;
+    if (this.closed || this.suspended) return;
     const generation = ++this.generation;
     if (!webCodecsSupported()) {
       // LAN http:// has no WebCodecs. MSE plays the same Annex-B access units.
@@ -420,13 +627,15 @@ class SharedStream {
     this.description = null;
     this.waitingForKeyframeConfig = false;
     this.acceptVideo = false;
+    this.heartbeatSeconds = null;
+    this.lastMessageAt = performance.now();
     void agentWsUrl(`/ws/devices/${encodeURIComponent(this.serial)}/video`)
       .then((url) => {
         if (generation === this.generation) this.bindSocket(url, generation);
       })
       .catch(() => {
         forgetAgentToken();
-        if (generation === this.generation) this.retryTimer = setTimeout(this.connect, 2000);
+        if (generation === this.generation) this.retryTimer = setTimeout(this.connect, this.backoff.next());
       });
   };
 
@@ -441,7 +650,8 @@ class SharedStream {
     };
     socket.onmessage = (event) => {
       if (!current()) return;
-      const started = perfTiming ? performance.now() : 0;
+      this.lastMessageAt = performance.now();
+      const started = perfTiming ? this.lastMessageAt : 0;
       if (typeof event.data === "string") this.onStatus(event.data, generation);
       else this.onAccessUnit(new Uint8Array(event.data as ArrayBuffer));
       if (perfTiming) recordMessage(this.perf, performance.now() - started);
@@ -455,7 +665,7 @@ class SharedStream {
       this.perf.reconnects += 1;
       // Usually the agent restarted, and with it the token: fetch it again.
       forgetAgentToken();
-      this.retryTimer = setTimeout(this.connect, 2000);
+      this.retryTimer = setTimeout(this.connect, this.backoff.next());
     };
     socket.onerror = () => socket.close();
   }
@@ -467,7 +677,11 @@ class SharedStream {
     } catch {
       return;
     }
-    this.setState({ status: msg });
+    if (typeof msg.heartbeat === "number" && msg.heartbeat > 0) this.heartbeatSeconds = msg.heartbeat;
+    // The connection works: the next drop starts from the short retry delay.
+    this.backoff.reset();
+    // The heartbeat repeats the same frame; only a real change reaches the views.
+    if (!sameStatus(this.state.status, msg)) this.setState({ status: msg });
     if (msg.backend === "scrcpy" && !this.refreshAsked) {
       this.refreshAsked = true;
       this.lastKeyframeAsk = Date.now();
@@ -582,6 +796,7 @@ class SharedStream {
       this.perf.submitted += 1;
     } catch (err) {
       console.warn("[video] decode() threw", err);
+      this.noteDecoderError();
       this.markBroken("Recovering decode…");
     }
   }
@@ -626,6 +841,8 @@ export interface VideoPerfReport {
   /** Streams and stats listeners still held (leak check: 0 after every view left). */
   liveStreams: number;
   statsListeners: number;
+  /** The browser says it has a hardware H264 decoder (null: not asked yet). */
+  hardwareDecoderSupported: boolean | null;
 }
 
 /** Counters of every live stream (benchmarks, Display info). */
@@ -636,7 +853,7 @@ export function videoPerfReport(): VideoPerfReport {
   }
   let listeners = 0;
   for (const set of statsListeners.values()) listeners += set.size;
-  return { streams: out, liveStreams: streams.size, statsListeners: listeners };
+  return { streams: out, liveStreams: streams.size, statsListeners: listeners, hardwareDecoderSupported };
 }
 
 if (perfTiming) {

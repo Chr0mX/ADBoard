@@ -1,5 +1,6 @@
 "use client";
 
+import { createViewGate } from "@/lib/macro/view-gate";
 import { createPoller } from "@/lib/ui/poller";
 import { useSyncExternalStore } from "react";
 import { devicesClient } from "@/lib/api/client";
@@ -267,6 +268,7 @@ let view: AgentView = { version: -1, runs: [], paused: [] };
 const seenTouch = new Map<string, number>();
 let polling = false;
 const viewListeners = new Set<(view: AgentView) => void>();
+const viewGate = createViewGate();
 
 const agentMode = () => typeof window !== "undefined" && agentBaseUrl() !== null;
 const runsUrl = (path = "") => `${agentBaseUrl() ?? ""}/api/macro/runs${path}`;
@@ -343,7 +345,10 @@ export async function refreshRuns() {
   try {
     const res = await agentFetch(runsUrl(), { cache: "no-store" });
     if (!res.ok) return;
-    const next = (await res.json()) as AgentView;
+    // Most polls return the same list: skip parsing and every listener.
+    const text = await res.text();
+    if (!viewGate.changed(text)) return;
+    const next = JSON.parse(text) as AgentView;
     for (const run of next.runs) {
       const key = `${run.deviceId}:${run.startedAt}`;
       const last = seenTouch.get(key);
@@ -352,12 +357,12 @@ export async function refreshRuns() {
       }
       seenTouch.set(key, run.touchSeq);
     }
-    const changed = JSON.stringify(next) !== JSON.stringify(view);
     view = next;
     viewListeners.forEach((listener) => listener(view));
-    if (changed) notify();
+    notify();
   } catch {
-    // Agent unreachable: keep the last view.
+    // Agent unreachable (or an unreadable answer): keep the last view.
+    viewGate.reset();
   }
 }
 

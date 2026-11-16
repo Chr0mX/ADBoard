@@ -2,7 +2,8 @@
 
 import { countRender } from "@/lib/video/perf-core";
 import { createSerialQueue, shouldSendMove } from "@/lib/ui/pointer-flow";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { tileFlags } from "@/lib/ui/tile-flags";
 import { ChevronLeft, ChevronRight, ChevronsUp, LayoutGrid, Maximize2, Minus, Plus, SlidersHorizontal, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDeviceVideo } from "@/hooks/use-device-video";
@@ -232,9 +233,7 @@ export function TouchScreenGrid({
 
   const groupMode = controlMode === "all" || controlMode === "multi";
   const targetIds = new Set(broadcastTargets.map((d) => d.id));
-  const included = (device: Device) =>
-    device.status === "online" &&
-    (controlMode === "all" ? true : (selectedIds?.has(device.id) ?? false));
+  const included = (device: Device) => tileFlags(device, { activeId, groupMode, targetIds, controlMode, selectedIds }).included;
   const toggleInclude = (device: Device) => {
     if (!onToggleSelected) return;
     if (controlMode === "all") {
@@ -253,19 +252,30 @@ export function TouchScreenGrid({
       ? "No phones checked — tick Include on a tile"
       : `Touch on a highlighted tile goes to ${broadcastTargets.length} phone${broadcastTargets.length === 1 ? "" : "s"}`
     : "Touch goes to the phone you touch";
+  // Tiles are memoised: they get primitives and three callbacks that never
+  // change identity. The callbacks read the latest handlers from a ref, so a
+  // fleet update re-renders only the tile whose phone changed.
+  const latest = useRef({ toggleInclude, onFocusDevice, groupMode, targetIds, controlMode, broadcastTargets });
+  useLayoutEffect(() => {
+    latest.current = { toggleInclude, onFocusDevice, groupMode, targetIds, controlMode, broadcastTargets };
+  });
+  const onTileToggle = useCallback((device: Device) => latest.current.toggleInclude(device), []);
+  const onTileFocus = useCallback((deviceId: string) => latest.current.onFocusDevice(deviceId), []);
+  const sendToFor = useCallback((device: Device): TileSendTo => {
+    const now = latest.current;
+    return now.groupMode && now.targetIds.has(device.id)
+      ? { mode: now.controlMode, targets: now.broadcastTargets }
+      : { mode: "selected", targets: [device] };
+  }, []);
   const tileProps = (device: Device) => ({
     device,
-    isActive: device.id === activeId,
-    inTargets: groupMode && targetIds.has(device.id),
-    included: included(device),
+    ...tileFlags(device, { activeId, groupMode, targetIds, controlMode, selectedIds }),
     canToggle: Boolean(onToggleSelected),
-    onToggleInclude: () => toggleInclude(device),
-    sendTo: groupMode && targetIds.has(device.id)
-      ? { mode: controlMode, targets: broadcastTargets }
-      : { mode: "selected" as ControlMode, targets: [device] },
+    onToggleInclude: onTileToggle,
+    sendToFor,
     mouseOn,
     cursorMode,
-    onFocus: () => onFocusDevice(device.id),
+    onFocus: onTileFocus,
   });
 
   return (
@@ -635,14 +645,16 @@ function IncludeToggle({
   );
 }
 
-function TouchScreenTile({
+type TileSendTo = { mode: ControlMode; targets: Device[] };
+
+const TouchScreenTile = memo(function TouchScreenTile({
   device,
   isActive,
   inTargets,
   included,
   canToggle,
   onToggleInclude,
-  sendTo,
+  sendToFor,
   mouseOn,
   cursorMode = false,
   layout,
@@ -656,14 +668,15 @@ function TouchScreenTile({
   inTargets: boolean;
   included: boolean;
   canToggle: boolean;
-  onToggleInclude: () => void;
-  sendTo: { mode: ControlMode; targets: Device[] };
+  onToggleInclude: (device: Device) => void;
+  /** Who receives this tile's touches, read when a touch is sent. */
+  sendToFor: (device: Device) => TileSendTo;
   mouseOn: boolean;
   cursorMode?: boolean;
   layout: "mobile" | "desktop";
   tileWidth?: number;
   tileHeight?: number;
-  onFocus: () => void;
+  onFocus: (deviceId: string) => void;
 }) {
   countRender("tile");
   const paneRef = useRef<HTMLDivElement>(null);
@@ -694,6 +707,7 @@ function TouchScreenTile({
       setRipple({ x: point.x * 100, y: point.y * 100, key: Date.now() });
     }
     const size = frameSizeRef.current;
+    const sendTo = sendToFor(device);
     void pointerQueue.current
       .run(() =>
         devicesClient.sendPointer(
@@ -817,7 +831,7 @@ function TouchScreenTile({
               name={device.name}
               included={included}
               disabled={offline}
-              onToggle={onToggleInclude}
+              onToggle={() => onToggleInclude(device)}
               compact
             />
           )}
@@ -833,7 +847,7 @@ function TouchScreenTile({
             aria-label={`Focus ${device.name}`}
             title={`Open ${device.name}`}
             className="pc-toggle pc-toggle-sm pc-toggle-icon"
-            onClick={onFocus}
+            onClick={() => onFocus(device.id)}
           >
             <Maximize2 className="size-3.5" />
           </Button>
@@ -860,7 +874,7 @@ function TouchScreenTile({
             name={device.name}
             included={included}
             disabled={offline}
-            onToggle={onToggleInclude}
+            onToggle={() => onToggleInclude(device)}
             compact
           />
         )}
@@ -869,7 +883,7 @@ function TouchScreenTile({
           variant="ghost"
           aria-label={`Focus ${device.name}`}
           className="pc-toggle pc-toggle-sm pc-toggle-icon"
-          onClick={onFocus}
+          onClick={() => onFocus(device.id)}
         >
           <Maximize2 className="size-3.5" />
         </Button>
@@ -957,4 +971,4 @@ function TouchScreenTile({
       </div>
     </div>
   );
-}
+});

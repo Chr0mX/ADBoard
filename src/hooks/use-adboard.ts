@@ -1,5 +1,6 @@
 "use client";
 
+import { sameSession } from "@/lib/ui/tile-flags";
 import { reuseUnchanged } from "@/lib/devices/fleet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { devicesClient } from "@/lib/api/client";
@@ -125,6 +126,8 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
 
   const applySession = useCallback((session: SessionStatus) => {
     setSessions((prev) => {
+      // The agent repeats session reports; an identical one changes nothing.
+      if (sameSession(prev.get(session.serial), session)) return prev;
       const next = new Map(prev);
       next.set(session.serial, session);
       return next;

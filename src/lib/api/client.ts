@@ -26,6 +26,8 @@ import {
   agentWsProtocols,
   forgetAgentToken,
 } from "@/lib/api/auth";
+import { createCoalescedRefresh } from "@/lib/api/refresh-core";
+import { createBackoff } from "@/lib/api/reconnect-core";
 
 /**
  * Thin client API shape for the control plane.
@@ -704,6 +706,15 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       let socket: WebSocket | null = null;
       let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
+      const backoff = createBackoff();
+      // One list fetch at a time, however many device_updated events arrive.
+      const refresh = createCoalescedRefresh(
+        () => agentFetch(`${base}/api/devices`, { cache: "no-store" }).then((r) => r.json() as Promise<Device[]>),
+        (devices) => {
+          if (!closed) onDevices(devices);
+        },
+      );
+
       const connect = () => {
         if (closed) return;
         void agentWsUrl("/ws")
@@ -719,14 +730,10 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
                   session?: SessionStatus;
                 };
                 if (msg.type === "devices" && Array.isArray(msg.devices)) {
+                  refresh.invalidate();
                   onDevices(msg.devices);
                 } else if (msg.type === "device_updated" && msg.device) {
-                  void agentFetch(`${base}/api/devices`, { cache: "no-store" })
-                    .then((r) => r.json())
-                    .then((devices: Device[]) => {
-                      if (!closed) onDevices(devices);
-                    })
-                    .catch(() => {});
+                  refresh.trigger();
                 } else if (msg.type === "session_updated" && msg.session) {
                   onSession?.(msg.session);
                 }
@@ -734,11 +741,12 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
                 // ignore malformed frames
               }
             };
+            socket.onopen = () => backoff.reset();
             socket.onclose = () => {
               if (!closed) {
                 // Usually the agent restarted, and with it the token: fetch it again.
                 forgetAgentToken();
-                retryTimer = setTimeout(connect, 2000);
+                retryTimer = setTimeout(connect, backoff.next());
               }
             };
             socket.onerror = () => {
@@ -747,7 +755,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
           })
           .catch(() => {
             if (!closed) {
-              retryTimer = setTimeout(connect, 2000);
+              retryTimer = setTimeout(connect, backoff.next());
             }
           });
       };
@@ -756,6 +764,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
 
       return () => {
         closed = true;
+        refresh.dispose();
         if (retryTimer) clearTimeout(retryTimer);
         socket?.close();
       };

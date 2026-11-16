@@ -66,7 +66,7 @@ test("desktop worker ignores /m and only deletes its own caches", async () => {
 });
 
 test("mobile worker never handles the desktop shell and keeps other caches", async () => {
-  const store = new Map([["adboard-m-v0", new Map()], ["pc-shell-v71", new Map()]]);
+  const store = new Map([["adboard-m-v0", new Map()], ["pc-shell-v72", new Map()]]);
   const h = load("public/m/sw.js", store);
   for (const u of ["/", "/index.html", "/manifest.webmanifest", "/sw.js"]) {
     const f = fetchEvent(u);
@@ -79,7 +79,7 @@ test("mobile worker never handles the desktop shell and keeps other caches", asy
     assert.equal(g.responded(), true, u);
   }
   await activate(h);
-  assert.ok(store.has("pc-shell-v71"));
+  assert.ok(store.has("pc-shell-v72"));
   assert.ok(!store.has("adboard-m-v0"));
   assert.ok(!read("public/m/sw.js").includes('caches.match("/")'));
 });
