@@ -1,0 +1,108 @@
+{
+  "label": "before",
+  "route": "/",
+  "phones": 1,
+  "sourceFps": 30,
+  "minutes": 1.01,
+  "allPaintedMs": 964,
+  "paintedFpsPerPhone": 30,
+  "receivedFpsPerPhone": 30,
+  "decodedFpsPerPhone": 30,
+  "droppedPerSecond": 0,
+  "supersededPerSecond": 0,
+  "maxDecodeQueue": 0,
+  "keyframeAsks": 0,
+  "reconnects": 0,
+  "decoderErrors": 0,
+  "decoder": "auto",
+  "wsMessageMsP50": 0.1,
+  "wsMessageMsP95": 0.2,
+  "inputToPaintMsP50": 21.2,
+  "inputToPaintMsP95": 31.6,
+  "pageMainThreadPct": 6.1,
+  "pageScriptPct": 3.7,
+  "browserCpuPct": 20.5,
+  "agentCpuPct": 14.5,
+  "browserRssMb": 1312.9,
+  "browserRssGrowthMb": 4,
+  "jsHeapMb": 6.9,
+  "jsHeapGrowthMb": 0.3,
+  "domNodes": 315,
+  "taps": 12,
+  "renders": {
+    "screen": 30,
+    "tile": 42
+  },
+  "recovery": null,
+  "afterLeave": {
+    "liveStreams": 0,
+    "statsListeners": 0
+  },
+  "samples": [
+    {
+      "t": 0,
+      "heapMb": 7.4,
+      "browserRssMb": 939.7
+    },
+    {
+      "t": 5088,
+      "heapMb": 8.7,
+      "browserRssMb": 1077.1
+    },
+    {
+      "t": 10127,
+      "heapMb": 9.8,
+      "browserRssMb": 1213.5
+    },
+    {
+      "t": 15167,
+      "heapMb": 8.9,
+      "browserRssMb": 1321.5
+    },
+    {
+      "t": 20204,
+      "heapMb": 9,
+      "browserRssMb": 1323
+    },
+    {
+      "t": 25238,
+      "heapMb": 9.2,
+      "browserRssMb": 1321.3
+    },
+    {
+      "t": 30284,
+      "heapMb": 6.6,
+      "browserRssMb": 1308.9
+    },
+    {
+      "t": 35322,
+      "heapMb": 6.8,
+      "browserRssMb": 1313.1
+    },
+    {
+      "t": 40360,
+      "heapMb": 7,
+      "browserRssMb": 1313.6
+    },
+    {
+      "t": 45394,
+      "heapMb": 6.6,
+      "browserRssMb": 1313.6
+    },
+    {
+      "t": 50427,
+      "heapMb": 6.6,
+      "browserRssMb": 1314.4
+    },
+    {
+      "t": 55466,
+      "heapMb": 6.8,
+      "browserRssMb": 1315
+    },
+    {
+      "t": 60502,
+      "heapMb": 6.9,
+      "browserRssMb": 1312.9
+    }
+  ]
+}

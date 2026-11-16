@@ -179,6 +179,25 @@ impl AppState {
                     state.publish(ServerEvent::SessionUpdated { session });
                 }
                 state.publish_fleet().await;
+                // Benchmarks: change one mock phone's vitals every 2 s, the way
+                // real phones' battery and CPU readings keep the fleet updating.
+                if crate::env::truthy("MOCK_VITALS") {
+                    let mut turn = 0usize;
+                    loop {
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        {
+                            let mut guard = state.inner.devices.write().await;
+                            let count = guard.len();
+                            if count == 0 {
+                                continue;
+                            }
+                            let device = &mut guard[turn % count];
+                            device.cpu_percent = Some(((turn * 7) % 90) as f32 + 5.0);
+                            turn += 1;
+                        }
+                        state.publish_fleet().await;
+                    }
+                }
             });
             return;
         };

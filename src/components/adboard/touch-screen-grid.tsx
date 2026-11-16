@@ -1,5 +1,6 @@
 "use client";
 
+import { countRender } from "@/lib/video/perf-core";
 import { createSerialQueue, shouldSendMove } from "@/lib/ui/pointer-flow";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsUp, LayoutGrid, Maximize2, Minus, Plus, SlidersHorizontal, X, Zap } from "lucide-react";
@@ -664,6 +665,7 @@ function TouchScreenTile({
   tileHeight?: number;
   onFocus: () => void;
 }) {
+  countRender("tile");
   const paneRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     id: number;

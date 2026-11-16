@@ -23,6 +23,16 @@ pub const TESTPATTERN_WIDTH: u32 = 360;
 pub const TESTPATTERN_HEIGHT: u32 = 640;
 pub const TESTPATTERN_CODEC_STRING: &str = "avc1.42E01E";
 pub const TESTPATTERN_FPS: u32 = 10;
+
+/// Test-pattern frame rate. `ADBOARD_TESTPATTERN_FPS` (1..=120) raises it for
+/// benchmarks; the default stays light for demos and CI.
+pub fn testpattern_fps() -> u32 {
+    crate::env::var("TESTPATTERN_FPS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u32>().ok())
+        .filter(|fps| (1..=120).contains(fps))
+        .unwrap_or(TESTPATTERN_FPS)
+}
 /// Placeholder until SPS / stream meta is known (WebCodecs sizes from decoded frames).
 pub const SCRCPY_DEFAULT_CODEC_STRING: &str = "avc1.42E01E";
 
@@ -404,7 +414,7 @@ pub async fn start_scrcpy_fixture_pump(hub: Arc<VideoHub>, serial: String) -> Vi
         if aus.is_empty() {
             return;
         }
-        let frame_delay = Duration::from_millis(1000 / TESTPATTERN_FPS as u64);
+        let frame_delay = Duration::from_millis(1000 / testpattern_fps() as u64);
         let mut idx = 0usize;
         loop {
             hub.publish_annexb(&serial_pump, aus[idx].clone()).await;
@@ -500,6 +510,7 @@ async fn spawn_ffmpeg_testsrc(
     serial: String,
     ffmpeg: PathBuf,
 ) -> Result<VideoPump, String> {
+    let fps = testpattern_fps();
     let mut cmd = Command::new(&ffmpeg);
     cmd.args([
         "-hide_banner",
@@ -510,7 +521,7 @@ async fn spawn_ffmpeg_testsrc(
         "lavfi",
         "-i",
         &format!(
-            "testsrc=size={TESTPATTERN_WIDTH}x{TESTPATTERN_HEIGHT}:rate={TESTPATTERN_FPS},format=yuv420p"
+            "testsrc=size={TESTPATTERN_WIDTH}x{TESTPATTERN_HEIGHT}:rate={fps},format=yuv420p"
         ),
         "-c:v",
         "libx264",
@@ -519,9 +530,9 @@ async fn spawn_ffmpeg_testsrc(
         "-level",
         "3.0",
         "-g",
-        &TESTPATTERN_FPS.to_string(),
+        &fps.to_string(),
         "-keyint_min",
-        &TESTPATTERN_FPS.to_string(),
+        &fps.to_string(),
         "-sc_threshold",
         "0",
         "-bf",
@@ -567,7 +578,7 @@ async fn fixture_loop(hub: Arc<VideoHub>, serial: String) {
         warn!(%serial, "fixture contained no access units");
         return;
     }
-    let frame_delay = Duration::from_millis(1000 / TESTPATTERN_FPS as u64);
+    let frame_delay = Duration::from_millis(1000 / testpattern_fps() as u64);
     let mut idx = 0usize;
     loop {
         let au = aus[idx].clone();

@@ -1,5 +1,6 @@
 "use client";
 
+import { countRender } from "@/lib/video/perf-core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Camera,
@@ -173,6 +174,7 @@ export function PhoneScreen({
   useRunVersion();
   const macroRunning = runningTabIds().length > 0;
   const screenRef = useRef<HTMLDivElement>(null);
+  countRender("screen");
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const dragRef = useRef<{

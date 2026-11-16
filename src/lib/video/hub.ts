@@ -17,6 +17,16 @@ import { admitFrame, anyViewVisible, newDecodeGate } from "@/lib/video/backpress
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { agentBaseUrl, agentWsUrl, agentWsProtocols, forgetAgentToken } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
+import {
+  markInput,
+  newStreamPerf,
+  recordMessage,
+  recordPaint,
+  recordQueue,
+  renderCountsSnapshot,
+  snapshotPerf,
+  type StreamPerfSnapshot,
+} from "@/lib/video/perf-core";
 
 /*
  * One live stream per phone per page. Every view of a phone (main screen,
@@ -96,6 +106,16 @@ function pageHidden() {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
+/** Timing samples cost a clock read per message: only with ?perf=1 or localStorage adboard-perf=1. */
+const perfTiming = (() => {
+  if (typeof window === "undefined") return false;
+  try {
+    return new URLSearchParams(window.location.search).has("perf") || window.localStorage.getItem("adboard-perf") === "1";
+  } catch {
+    return false;
+  }
+})();
+
 const streams = new Map<string, SharedStream>();
 const statsBySerial = new Map<string, StreamStats>();
 const statsListeners = new Map<string, Set<() => void>>();
@@ -134,6 +154,7 @@ class SharedStream {
   private lastKeyframeAsk = 0;
   private meter = { t: 0, frames: 0, bytes: 0 };
   private generation = 0;
+  readonly perf = newStreamPerf();
 
   constructor(readonly serial: string) {}
 
@@ -238,12 +259,17 @@ class SharedStream {
 
   private paint(source: CanvasImageSource, width: number, height: number) {
     if (width <= 0 || height <= 0) return;
+    let drawn = false;
     for (const view of this.views) {
       // Nothing to gain from drawing into a canvas nobody can see.
       if (view.visible && !view.visible()) continue;
       const canvas = view.canvas();
-      if (canvas) this.drawInto(canvas, source, width, height);
+      if (canvas) {
+        this.drawInto(canvas, source, width, height);
+        drawn = true;
+      }
     }
+    if (drawn) recordPaint(this.perf, performance.now());
   }
 
   private paintFrame = (frame: VideoFrame) => {
@@ -253,6 +279,11 @@ class SharedStream {
     this.paint(frame, width, height);
     frame.close();
   };
+
+  /** Benchmark hook: an input for this phone was sent now. */
+  markInput() {
+    markInput(this.perf, performance.now());
+  }
 
   private measure = () => {
     const now = performance.now();
@@ -286,6 +317,7 @@ class SharedStream {
     const now = Date.now();
     if (now - this.lastKeyframeAsk < KEYFRAME_ASK_MS) return;
     this.lastKeyframeAsk = now;
+    this.perf.keyframeAsks += 1;
     void postVideoRefresh([this.serial]).catch(() => {});
   }
 
@@ -348,15 +380,18 @@ class SharedStream {
           frame.close();
           return;
         }
+        this.perf.decoded += 1;
         this.setState({ decodeState: "decoding", error: null });
         this.paintFrame(frame);
       },
       error: (err) => {
+        this.perf.decoderErrors += 1;
         console.warn("[video] decoder error", err);
         if (this.decoder === decoder) this.markBroken("Recovering decode…");
       },
     });
     decoder.configure({ codec, description: desc, optimizeForLatency: true });
+    this.perf.decoder = "auto";
     this.decoder = decoder;
   }
 
@@ -365,6 +400,7 @@ class SharedStream {
     const generation = ++this.generation;
     if (!webCodecsSupported()) {
       // LAN http:// has no WebCodecs. MSE plays the same Annex-B access units.
+      this.perf.decoder = "mse";
       this.mse = new MseH264Player(
         (source, width, height) => {
           if (generation === this.generation) this.paint(source, width, height);
@@ -405,8 +441,10 @@ class SharedStream {
     };
     socket.onmessage = (event) => {
       if (!current()) return;
+      const started = perfTiming ? performance.now() : 0;
       if (typeof event.data === "string") this.onStatus(event.data, generation);
       else this.onAccessUnit(new Uint8Array(event.data as ArrayBuffer));
+      if (perfTiming) recordMessage(this.perf, performance.now() - started);
     };
     socket.onclose = () => {
       if (!current()) return;
@@ -414,6 +452,7 @@ class SharedStream {
       this.mse?.close();
       this.mse = null;
       this.description = null;
+      this.perf.reconnects += 1;
       // Usually the agent restarted, and with it the token: fetch it again.
       forgetAgentToken();
       this.retryTimer = setTimeout(this.connect, 2000);
@@ -457,6 +496,8 @@ class SharedStream {
     if (!this.acceptVideo || buf.byteLength === 0) return;
     this.meter.frames += 1;
     this.meter.bytes += buf.byteLength;
+    this.perf.received += 1;
+    this.perf.bytes += buf.byteLength;
 
     if (this.mse) {
       this.mse.push(buf);
@@ -468,6 +509,7 @@ class SharedStream {
     if (this.decoder && this.hiddenNow()) {
       this.gate.dropping = true;
       this.gate.dropped += 1;
+      this.perf.dropped += 1;
       return;
     }
 
@@ -523,8 +565,12 @@ class SharedStream {
       queueSize: decoder.decodeQueueSize,
       hidden: this.hiddenNow(),
     });
+    recordQueue(this.perf, decoder.decodeQueueSize);
     if (verdict === "drop-ask-keyframe") this.askKeyframe();
-    if (verdict !== "decode") return;
+    if (verdict !== "decode") {
+      this.perf.dropped += 1;
+      return;
+    }
 
     const avcc = annexBToAvcc(nals);
     if (avcc.byteLength === 0) return;
@@ -533,6 +579,7 @@ class SharedStream {
         new EncodedVideoChunk({ type: isKey ? "key" : "delta", timestamp: this.timestampUs, data: avcc }),
       );
       this.timestampUs += 100_000;
+      this.perf.submitted += 1;
     } catch (err) {
       console.warn("[video] decode() threw", err);
       this.markBroken("Recovering decode…");
@@ -572,6 +619,32 @@ export function videoState(serial: string): VideoState {
 /** Reconnect `serial`'s stream (all of its views). */
 export function restartVideo(serial: string) {
   streams.get(serial)?.restart();
+}
+
+export interface VideoPerfReport {
+  streams: Record<string, StreamPerfSnapshot & { views: number; state: VideoDecodeState }>;
+  /** Streams and stats listeners still held (leak check: 0 after every view left). */
+  liveStreams: number;
+  statsListeners: number;
+}
+
+/** Counters of every live stream (benchmarks, Display info). */
+export function videoPerfReport(): VideoPerfReport {
+  const out: VideoPerfReport["streams"] = {};
+  for (const [serial, stream] of streams) {
+    out[serial] = { ...snapshotPerf(stream.perf), views: stream.views.size, state: stream.state.decodeState };
+  }
+  let listeners = 0;
+  for (const set of statsListeners.values()) listeners += set.size;
+  return { streams: out, liveStreams: streams.size, statsListeners: listeners };
+}
+
+if (perfTiming) {
+  (window as unknown as { __adboardPerf?: unknown }).__adboardPerf = {
+    snapshot: videoPerfReport,
+    markInput: (serial: string) => streams.get(serial)?.markInput(),
+    renders: renderCountsSnapshot,
+  };
 }
 
 function subscribeStats(serial: string, listener: () => void) {

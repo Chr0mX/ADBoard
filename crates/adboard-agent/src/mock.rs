@@ -167,8 +167,37 @@ fn a52(host_id: &str, host_name: &str) -> Device {
     )
 }
 
+/// `ADBOARD_MOCK_COUNT`: a mock fleet of exactly this many phones (1..=64),
+/// for benchmarks with 1, 4, 8 or 12 screens. Unset keeps the seed fleet.
+pub fn mock_count_from_env() -> Option<usize> {
+    crate::env::var("MOCK_COUNT")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|n| (1..=64).contains(n))
+}
+
+/// `count` phones on one host: the seed phones first, then numbered copies.
+pub fn mock_fleet_of(host_id: &str, host_name: &str, count: usize) -> Vec<Device> {
+    let seeds = [s24, s23, pixel, a52];
+    (0..count)
+        .map(|i| {
+            let mut device = seeds[i % seeds.len()](host_id, host_name);
+            if i >= seeds.len() {
+                let n = i + 1;
+                device.id = format!("{}-{n}", device.id);
+                device.name = format!("{} {n}", device.name);
+                device.serial = format!("MOCK{n:04}");
+            }
+            device
+        })
+        .collect()
+}
+
 /// Build a mock fleet for the given profile, tagged to `host_id` / `host_name`.
 pub fn mock_fleet(host_id: &str, host_name: &str, profile: MockProfile) -> Vec<Device> {
+    if let Some(count) = mock_count_from_env() {
+        return mock_fleet_of(host_id, host_name, count);
+    }
     match profile {
         MockProfile::All => {
             // Standalone controller: keep the seed split labels so the UI can
@@ -188,6 +217,18 @@ pub fn mock_fleet(host_id: &str, host_name: &str, profile: MockProfile) -> Vec<D
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_counted_fleet_has_unique_ids_and_serials() {
+        for count in [1, 4, 8, 12] {
+            let fleet = mock_fleet_of("h", "h", count);
+            assert_eq!(fleet.len(), count);
+            let ids: std::collections::HashSet<_> = fleet.iter().map(|d| d.id.clone()).collect();
+            let serials: std::collections::HashSet<_> = fleet.iter().map(|d| d.serial.clone()).collect();
+            assert_eq!((ids.len(), serials.len()), (count, count));
+            assert!(fleet.iter().all(|d| d.host_id.as_deref() == Some("h")));
+        }
+    }
 
     #[test]
     fn windows_profile_has_two_online() {

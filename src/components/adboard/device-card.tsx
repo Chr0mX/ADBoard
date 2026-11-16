@@ -1,5 +1,6 @@
 "use client";
 
+import { countRender } from "@/lib/video/perf-core";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ export function DeviceCard({
   onSelect,
   onToggleSelected,
 }: DeviceCardProps) {
+  countRender("card");
   const offline = device.status !== "online";
   const [menu, setMenu] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
