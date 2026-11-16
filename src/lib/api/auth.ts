@@ -56,6 +56,16 @@ export async function ensureAgentToken(): Promise<string | null> {
   return tokenPromise;
 }
 
+/**
+ * Drop the cached token. The agent makes a new one each time it starts, so a
+ * page left open across a restart must fetch it again instead of retrying
+ * with the old one until the user reloads.
+ */
+export function forgetAgentToken(): void {
+  cachedToken = null;
+  tokenPromise = null;
+}
+
 export function agentTokenSync(): string | null {
   return cachedToken;
 }
@@ -72,12 +82,24 @@ export function agentWsProtocols(): string[] {
 }
 
 export async function agentFetch(input: string, init?: RequestInit): Promise<Response> {
+  const send = (token: string | null) => {
+    const headers = new Headers(init?.headers);
+    if (token) {
+      headers.set("x-adboard-token", token);
+    }
+    return fetch(input, { ...init, headers });
+  };
   const token = await ensureAgentToken();
-  const headers = new Headers(init?.headers);
-  if (token) {
-    headers.set("x-adboard-token", token);
+  const response = await send(token);
+  // A 401 with a token is usually a token from before the agent restarted:
+  // fetch the new one and try once more. (A body that was a stream cannot be resent.)
+  if (response.status === 401 && token && !(init?.body instanceof ReadableStream)) {
+    forgetAgentToken();
+    // Signed out (bootstrap refuses too): hand back the original 401 as before.
+    const fresh = await ensureAgentToken().catch(() => null);
+    if (fresh && fresh !== token) return send(fresh);
   }
-  return fetch(input, { ...init, headers });
+  return response;
 }
 
 export async function agentWsUrl(pathAndQuery: string): Promise<string> {

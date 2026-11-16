@@ -24,6 +24,7 @@ import {
   agentWsUrl,
   ensureAgentToken,
   agentWsProtocols,
+  forgetAgentToken,
 } from "@/lib/api/auth";
 
 /**
@@ -735,6 +736,8 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
             };
             socket.onclose = () => {
               if (!closed) {
+                // Usually the agent restarted, and with it the token: fetch it again.
+                forgetAgentToken();
                 retryTimer = setTimeout(connect, 2000);
               }
             };

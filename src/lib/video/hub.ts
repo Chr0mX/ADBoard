@@ -15,7 +15,7 @@ import { MseH264Player } from "@/lib/video/mse-player";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
 import { admitFrame, anyViewVisible, newDecodeGate } from "@/lib/video/backpressure";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
-import { agentBaseUrl, agentWsUrl, agentWsProtocols } from "@/lib/api/auth";
+import { agentBaseUrl, agentWsUrl, agentWsProtocols, forgetAgentToken } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
 
 /*
@@ -389,6 +389,7 @@ class SharedStream {
         if (generation === this.generation) this.bindSocket(url, generation);
       })
       .catch(() => {
+        forgetAgentToken();
         if (generation === this.generation) this.retryTimer = setTimeout(this.connect, 2000);
       });
   };
@@ -413,6 +414,8 @@ class SharedStream {
       this.mse?.close();
       this.mse = null;
       this.description = null;
+      // Usually the agent restarted, and with it the token: fetch it again.
+      forgetAgentToken();
       this.retryTimer = setTimeout(this.connect, 2000);
     };
     socket.onerror = () => socket.close();

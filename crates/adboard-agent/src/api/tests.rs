@@ -825,3 +825,35 @@ async fn password_can_be_set_and_changed() {
         .unwrap();
     assert_eq!(signed.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn the_keyframe_reset_on_a_new_stream_waits_for_its_first_frame() {
+    use crate::video::VideoPacket;
+    let (tx, mut rx) = tokio::sync::broadcast::channel::<VideoPacket>(8);
+    // Status frames are not video: still waiting when the limit passes.
+    tx.send(VideoPacket::Status(VideoStatusFrame {
+        serial: "A".into(),
+        stream: adboard_protocol::StreamState::Starting,
+        note: String::new(),
+        backend: "scrcpy".into(),
+        codec: None,
+        codec_string: None,
+        width: None,
+        height: None,
+        framing: None,
+    }))
+    .unwrap();
+    assert!(!first_access_unit(&mut rx, std::time::Duration::from_millis(100)).await);
+    // The first access unit ends the wait at once.
+    let sender = tx.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let _ = sender.send(VideoPacket::AnnexB(vec![0, 0, 0, 1, 0x65]));
+    });
+    let started = std::time::Instant::now();
+    assert!(first_access_unit(&mut rx, std::time::Duration::from_secs(5)).await);
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    // A stream that went away does not hold the socket for the whole limit.
+    drop(tx);
+    assert!(!first_access_unit(&mut rx, std::time::Duration::from_secs(5)).await);
+}

@@ -306,6 +306,26 @@ fn from_hex(byte: u8) -> Option<u8> {
     }
 }
 
+/// How long a video socket on a stream it just started waits for the first
+/// frame before asking scrcpy for a fresh keyframe. A reset sent before
+/// scrcpy's capture runs crashes its control thread (NullPointerException in
+/// CaptureControl.reset) and the stream has to restart.
+const FIRST_FRAME_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Wait until `rx` carries a video access unit, or `limit` passes.
+async fn first_access_unit(rx: &mut tokio::sync::broadcast::Receiver<crate::video::VideoPacket>, limit: std::time::Duration) -> bool {
+    let wait = async {
+        loop {
+            match rx.recv().await {
+                Ok(crate::video::VideoPacket::AnnexB(_)) => return true,
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return false,
+            }
+        }
+    };
+    tokio::time::timeout(limit, wait).await.unwrap_or(false)
+}
+
 /// Browsers cannot set headers on a WebSocket, so the UI offers the token as a
 /// subprotocol (`adboard-token.<hex>`) instead of `?token=`, which proxies and
 /// Cloudflare would log. The server answers with the plain `adboard` protocol.
@@ -1938,6 +1958,15 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
         return;
     }
 
+    // Was a stream already running before this socket? Only then can the
+    // cached IDR be stale enough to need a fresh keyframe.
+    let was_streaming = state
+        .inner
+        .sessions
+        .get_session(&serial)
+        .await
+        .is_some_and(|session| session.stream == adboard_protocol::StreamState::Streaming);
+
     // Local: ensure pump is running (subscribe does not tear down on disconnect).
     if let Err(e) = state.ensure_local_streaming(&serial).await {
         let frame = VideoStatusFrame {
@@ -1970,7 +1999,16 @@ async fn handle_video_socket(socket: WebSocket, state: AppState, id_or_serial: S
     if scrcpy_live {
         let sessions = state.inner.sessions.clone();
         let serial_reset = serial.clone();
+        // On a stream this socket just started, wait for scrcpy's first frame
+        // before the reset (see FIRST_FRAME_WAIT).
+        let mut first = if was_streaming { None } else { Some(hub.subscribe(&serial).await) };
         tokio::spawn(async move {
+            if let Some(rx) = first.as_mut() {
+                if !first_access_unit(rx, FIRST_FRAME_WAIT).await {
+                    debug!(%serial_reset, "no first frame yet; asking for a keyframe anyway");
+                }
+            }
+            drop(first);
             for attempt in 0..8 {
                 match sessions.reset_video(&serial_reset).await {
                     Ok(()) => {
