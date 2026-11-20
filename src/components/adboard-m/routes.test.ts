@@ -44,7 +44,7 @@ test("each mobile route has a page file; /m redirects", () => {
 
 test("mobile service worker: v3, shell covers screens, only its own caches", () => {
   const sw = readFileSync(path.join(root, "public/m/sw.js"), "utf8");
-  assert.match(sw, /const CACHE_VERSION = "adboard-m-v5";/);
+  assert.match(sw, /const CACHE_VERSION = "adboard-m-v6";/);
   assert.match(sw, /key\.startsWith\(CACHE_PREFIX\)/);
 });
 
@@ -63,7 +63,17 @@ test("the build marker on the mobile shell matches the service worker cache vers
 });
 
 test("data-m attributes the tests and selectors rely on are kept", () => {
-  const all = ["mobile-app.tsx", "mobile-nav.tsx"].map((f) => readFileSync(path.join(root, "src/components/adboard-m", f), "utf8")).join("\n");
+  const all = ["mobile-app.tsx", "mobile-nav.tsx", "more-screen.tsx"].map((f) => readFileSync(path.join(root, "src/components/adboard-m", f), "utf8")).join("\n");
   for (const a of ["data-m-nav", "data-m-tab", "data-m-badge", "data-m-more", "data-m-desktop-link"]) assert.ok(all.includes(a), a);
   assert.ok(all.includes("/?desktop=1"));
+});
+
+test("the More screen keeps every destination and setting", () => {
+  const more = readFileSync(path.join(root, "src/components/adboard-m/more-screen.tsx"), "utf8");
+  const app = readFileSync(path.join(root, "src/components/adboard-m/mobile-app.tsx"), "utf8");
+  for (const a of ["data-m-taskbar-open", "data-m-text-size", "data-m-events-badge", "data-m-sign-out", "data-m-account", "<DisplayInfo"]) assert.ok(more.includes(a), a);
+  for (const pref of ["strip", "haptics", "sounds"]) assert.ok(more.includes(`"${pref}")`), pref);
+  // Every More section is reachable, grouped as Phones (work) and System.
+  for (const id of ["manage", "apps", "files", "automate", "developer", "hosts", "events", "storage", "settings"]) assert.ok(more.includes(`${id}:`), id);
+  assert.ok(app.includes("<MoreScreen") && app.includes("<TaskbarSheet"));
 });

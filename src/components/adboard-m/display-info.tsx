@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight, Ruler } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { readStandalone } from "@/lib/pwa/standalone";
 
@@ -56,10 +57,17 @@ export function DisplayInfo() {
     return () => window.clearInterval(timer.current);
   }, [open]);
   return (
-    <details data-m-display-info onToggle={(event) => setOpen(event.currentTarget.open)} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]">
-      <summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm text-[var(--pc-ink)]">Display info</summary>
+    <details data-m-display-info onToggle={(event) => setOpen(event.currentTarget.open)} className="m-disclosure">
+      <summary className="m-row">
+        <Ruler className="m-row-icon" aria-hidden />
+        <span className="m-row-text">
+          <span className="m-row-label">Display info</span>
+          <span className="m-row-hint">Screen, viewport and safe-area sizes, live</span>
+        </span>
+        <ChevronRight className="m-row-chevron m-disclosure-chevron" aria-hidden />
+      </summary>
       {info && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-3 pt-0 font-mono text-[11px] text-[var(--pc-muted)]">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-3 pb-3 pl-11 font-mono text-[11px] text-[var(--pc-muted)]">
           {Object.entries({
             Mode: info.mode,
             "Inner (w×h)": info.inner,

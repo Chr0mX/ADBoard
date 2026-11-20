@@ -30,8 +30,7 @@ import { TaskbarSheet } from "@/components/adboard-m/taskbar-sheet";
 import { usePhonePrefs } from "@/components/adboard-m/phone-prefs";
 import { useFeedback } from "@/components/adboard-m/feedback";
 import { useTextSize } from "@/components/adboard-m/text-size";
-import { DisplayInfo } from "@/components/adboard-m/display-info";
-import { SwitchRow } from "@/components/ui/switch";
+import { MoreScreen } from "@/components/adboard-m/more-screen";
 import { MobileNav, tabOf, type MobileTab } from "@/components/adboard-m/mobile-nav";
 import { MORE_SECTION_IDS, parseMobilePath, pathForSection, sectionOfRoute } from "@/components/adboard-m/routes";
 import { useADBoard } from "@/hooks/use-adboard";
@@ -190,7 +189,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     <DeskProvider
       value={{ section, focusTool, devices, activeDevice, targets: broadcastTargets, sessions, lastSeen, open, selectDevice }}
     >
-      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v5">
+      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v6">
         <div className="pc-atmosphere" aria-hidden />
         <div data-m-top-cap aria-hidden />
         {showHeader && (
@@ -228,63 +227,28 @@ export function MobileApp({ children }: { children?: ReactNode }) {
             <div className="flex flex-1 items-center justify-center font-mono text-sm text-[var(--pc-muted)]">Loading devices…</div>
           )}
           {!loading && listOpen && (
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3" data-m-more-list>
-              <div className="grid grid-cols-2 gap-2">
-                {MORE_SECTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    data-m-more={item.id}
-                    onClick={() => open(item.id)}
-                    className="relative flex h-12 items-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-left text-sm text-[var(--pc-ink)]"
-                  >
-                    {item.label}
-                    {item.id === "events" && badge > 0 && (
-                      <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--pc-warn)] px-1 font-mono text-[11px] font-bold text-[#1a0f08]">
-                        {badge}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-              <button type="button" data-m-taskbar-open className="pc-toggle pc-toggle-md min-h-11" onClick={() => setTaskbarOpen(true)}>
-                Customize taskbar
-              </button>
-              <div className="flex flex-col gap-1.5" data-m-text-size>
-                <p className="text-sm text-[var(--pc-ink)]">Text size</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["compact", "standard"] as const).map((size) => (
-                    <button key={size} type="button" aria-pressed={textSize === size} className="pc-toggle pc-toggle-md min-h-11" onClick={() => setTextSize(size)}>
-                      {size === "compact" ? "Compact" : "Standard"}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-[var(--pc-muted)]">Standard is larger and keeps pinch zoom on.</p>
-              </div>
-              <SwitchRow label="Phone strip on Control" description="Swipeable phone cards above the screen" checked={stripOn} onChange={(e) => setStripOn(e.target.checked)} />
-              <SwitchRow label="Haptic feedback" description="A short buzz on taps (Android; iPhone Safari has no vibration)" checked={feedback.haptics} onChange={(e) => feedback.setHaptics(e.target.checked)} />
-              <SwitchRow label="Tap sound" description="A quiet click on taps" checked={feedback.sounds} onChange={(e) => feedback.setSounds(e.target.checked)} />
-              <DisplayInfo />
-              <div className="flex flex-col gap-2 border-t border-[var(--pc-line)] pt-3">
-                {(session.authRequired || session.canSetPassword) && (
-                  <div className="flex gap-2">
-                    <button type="button" className="pc-toggle pc-toggle-md flex-1" onClick={session.openAccount}>
-                      {session.authRequired ? session.username ?? "Account" : "Set password"}
-                    </button>
-                    {session.authRequired && (
-                      <button type="button" className="pc-toggle pc-toggle-md flex-1" onClick={session.signOut}>
-                        Sign out
-                      </button>
-                    )}
-                  </div>
-                )}
-                {/* A full page load on purpose: the desktop app has its own service worker. */}
-                {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-                <a href="/?desktop=1" data-m-desktop-link className="pc-toggle pc-toggle-md justify-center">
-                  Open desktop version
-                </a>
-              </div>
-            </div>
+            <MoreScreen
+              sections={MORE_SECTIONS}
+              onOpen={(id) => open(id)}
+              eventsUnseen={badge}
+              eventsWorst={alerts.worst}
+              onCustomizeTaskbar={() => setTaskbarOpen(true)}
+              textSize={textSize}
+              onTextSize={setTextSize}
+              stripOn={stripOn}
+              onStrip={setStripOn}
+              haptics={feedback.haptics}
+              onHaptics={feedback.setHaptics}
+              sounds={feedback.sounds}
+              onSounds={feedback.setSounds}
+              account={{
+                show: session.authRequired || session.canSetPassword,
+                authRequired: session.authRequired,
+                username: session.username,
+                openAccount: session.openAccount,
+                signOut: session.signOut,
+              }}
+            />
           )}
           {!loading && !control && !listOpen && route.view !== "root" && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-2">
