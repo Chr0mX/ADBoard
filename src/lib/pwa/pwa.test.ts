@@ -171,3 +171,17 @@ test("the mobile document stays 100lvh tall (fixes the 797 px Home Screen window
   const css = read("src/app/globals.css");
   assert.match(css, /html:has\(\[data-m-app\]\) body::after\s*\{[^}]*height:\s*100lvh/s);
 });
+
+test("the mobile shell has a solid, click-through cap over the status bar area, in the page background colour", () => {
+  const css = read("src/app/globals.css");
+  const rule = css.match(/\[data-m-app\] \[data-m-top-cap\]\s*\{([^}]*)\}/s)?.[1] ?? "";
+  assert.match(rule, /position:\s*fixed/);
+  assert.match(rule, /top:\s*0/);
+  assert.match(rule, /height:\s*env\(safe-area-inset-top/);
+  assert.match(rule, /background:\s*var\(--pc-paper\)/);
+  assert.match(rule, /pointer-events:\s*none/);
+  assert.ok(read("src/components/adboard-m/mobile-app.tsx").includes("data-m-top-cap"));
+  // The page colour and the status bar colour are the same surface.
+  assert.match(css, /--pc-paper:\s*#0e141b/);
+  assert.match(read("src/app/m/layout.tsx"), /themeColor:\s*"#0e141b"/);
+});

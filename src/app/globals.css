@@ -1105,6 +1105,21 @@ html:has([data-m-app]) body::after {
   pointer-events: none;
 }
 
+/* Mobile app: a solid cap over the status bar / Dynamic Island area. The app
+   draws under the translucent status bar (black-translucent); iOS blurs and
+   fades whatever sits under it, which smeared the phone chips. With the cap
+   there is nothing but the app's own background up there. Not clickable. */
+[data-m-app] [data-m-top-cap] {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top, 0px);
+  background: var(--pc-paper);
+  z-index: 30;
+  pointer-events: none;
+}
+
 /* Mobile app: text size setting (More → Text size). Compact is the default;
    Standard is larger and uses 16 px fields (no iOS focus zoom, so pinch zoom can stay).
      Geist   headings          page / card / group
