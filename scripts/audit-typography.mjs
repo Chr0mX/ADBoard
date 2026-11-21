@@ -73,6 +73,7 @@ function collect() {
       text: (own || el.getAttribute("placeholder") || el.getAttribute("aria-label") || el.value || "").slice(0, 40),
       // An explicit mono opt-in (font-mono, t-tech, data-mono-field) was reviewed when it was added.
       technical: looksTechnical(own || el.value || el.getAttribute("placeholder") || "") || el.matches(".font-mono, .t-tech, [data-mono-field], [data-mono]") || !!el.closest("code, pre, kbd, .font-mono, .t-tech, [data-mono]"),
+      inTabBar: !!el.closest("[data-m-nav]"),
       right: scrollable(el) ? 0 : Math.round(rect.right),
       cut: el.scrollWidth > el.clientWidth + 1 && ["hidden", "clip"].includes(cs.overflowX) && cs.textOverflow !== "ellipsis",
     });
@@ -87,7 +88,8 @@ function judge(label, { rows, hScroll, width }) {
     if (!["geist", "figtree", "mono"].includes(r.family)) issues.family.push(r);
     if (r.role === "heading" && r.family !== "geist") issues.heading.push(r);
     if (r.family === "mono" && ["control", "field", "label", "heading"].includes(r.role) && !r.technical) issues.mono.push(r);
-    if (r.size < 11.99) issues.small.push(r);
+    // The phone's bottom tab labels are the one deliberate 11 px exception (icon above the label, fixed 44 px bar).
+    if (r.size < 11.99 && !r.inTabBar) issues.small.push(r);
     if (r.right > width + 1 || r.cut) issues.overflow.push(r);
   }
   if (hScroll) issues.overflow.push({ text: "(page scrolls sideways)", role: "page", size: 0, family: "", right: 0 });
