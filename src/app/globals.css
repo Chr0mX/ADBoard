@@ -1484,3 +1484,16 @@ html[data-m-text="standard"] {
 [data-m-section="more"] [data-m-more-list] [data-m-text-size] .m-segmented .pc-segment {
   min-height: 2.5rem;
 }
+
+/* Desktop stage: the tool row and the Back/Home/Recent row are 36 px tall with a mouse
+   (they stay 44 px on touch). Only the docked desktop chrome has these attributes. */
+@media (pointer: fine) {
+  [data-tool-row] .pc-toggle,
+  [data-nav-row] .pc-toggle {
+    min-height: 2.25rem;
+    height: 2.25rem;
+  }
+  [data-tool-row] .pc-toggle {
+    padding-inline: 0.625rem;
+  }
+}

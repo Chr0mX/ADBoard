@@ -893,6 +893,7 @@ export function PhoneScreen({
               : "@container grid w-full min-w-0 auto-cols-fr grid-flow-col items-center justify-items-center gap-1 lg:flex lg:flex-wrap lg:justify-center lg:gap-1.5"
           }
         >
+          <div role="group" aria-label="Input" data-tool-group="input" className={sideDock ? "flex flex-col gap-1.5" : "contents lg:flex lg:items-center lg:gap-1.5"}>
           <Toggle
           size="none"
             pressed={keyboardOn}
@@ -917,32 +918,9 @@ export function PhoneScreen({
             <MousePointer2 className="size-4" />
             <span className={toolLabelClass}>Touch</span>
           </Toggle>
-          {gestureButtons("tool")}
-          {recording && (
-            <span
-              data-gesture-count
-              className="hidden font-mono text-[11px] text-[var(--pc-warn)] lg:inline"
-            >
-              {recordedCount}
-            </span>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={offline || refreshing}
-            onClick={() => void refreshVideo()}
-            aria-label="Refresh video"
-            data-video-refresh
-            className={toolControlClass}
-          >
-            <RefreshCw className="size-4" />
-            <span className={toolLabelClass}>Refresh</span>
-          </Button>
-          <ApkFileButton
-            disabled={offline || installing}
-            onFile={pickApk}
-            className={cn(toolControlClass, "font-mono text-[11px] leading-none lg:text-xs")}
-          />
+          </div>
+          <span aria-hidden data-tool-divider className={sideDock ? "hidden" : "hidden h-5 w-px shrink-0 bg-[var(--pc-line)] lg:block"} />
+          <div role="group" aria-label="Capture" data-tool-group="capture" className={sideDock ? "flex flex-col gap-1.5" : "contents lg:flex lg:items-center lg:gap-1.5"}>
           <Button
             type="button"
             variant="ghost"
@@ -971,6 +949,38 @@ export function PhoneScreen({
             <Video className="size-4" />
             <span className={toolLabelClass}>{screenRecording ? "Stop" : "Rec"}</span>
           </Button>
+          {gestureButtons("tool")}
+          {recording && (
+            <span
+              data-gesture-count
+              className="hidden font-mono text-[11px] text-[var(--pc-warn)] lg:inline"
+            >
+              {recordedCount}
+            </span>
+          )}
+          </div>
+          <span aria-hidden data-tool-divider className={sideDock ? "hidden" : "hidden h-5 w-px shrink-0 bg-[var(--pc-line)] lg:block"} />
+          <div role="group" aria-label="Phone" data-tool-group="phone" className={sideDock ? "flex flex-col gap-1.5" : "contents lg:flex lg:items-center lg:gap-1.5"}>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={offline || refreshing}
+            onClick={() => void refreshVideo()}
+            aria-label="Refresh video"
+            data-video-refresh
+            className={toolControlClass}
+          >
+            <RefreshCw className="size-4" />
+            <span className={toolLabelClass}>Refresh</span>
+          </Button>
+          <ApkFileButton
+            disabled={offline || installing}
+            onFile={pickApk}
+            className={cn(toolControlClass, "font-mono text-[11px] leading-none lg:text-xs")}
+          />
+          </div>
+          <span aria-hidden data-tool-divider className={sideDock ? "hidden" : "hidden h-5 w-px shrink-0 bg-[var(--pc-line)] lg:block"} />
+          <div role="group" aria-label="View" data-tool-group="view" className={sideDock ? "flex flex-col gap-1.5" : "contents lg:flex lg:items-center lg:gap-1.5"}>
           <Toggle
           size="none"
             pressed={fillWindow}
@@ -1042,6 +1052,7 @@ export function PhoneScreen({
               <span className={toolLabelClass}>Devices</span>
             </Button>
           )}
+          </div>
           {optionsPopover && (
           <Button
             type="button"
