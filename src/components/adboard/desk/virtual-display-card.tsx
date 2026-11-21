@@ -28,7 +28,8 @@ const FIELD =
  * how many each phone may have, what the Add dialog starts from, and the
  * displays that exist now.
  */
-export function VirtualDisplayCard() {
+/** `bare`: no card frame or title (the desktop Settings pane supplies its own). */
+export function VirtualDisplayCard({ bare = false }: { bare?: boolean } = {}) {
   const agent = hasAgent();
   const [overview, setOverview] = useState<VirtualDisplayOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,8 +83,11 @@ export function VirtualDisplayCard() {
   const limitValue = overview ? (overview.saved === null ? "default" : String(overview.saved)) : "default";
 
   return (
-    <section className="@container flex min-w-0 flex-col gap-3 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-virtual-display>
-      <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Virtual displays</h3>
+    <section
+      className={bare ? "@container flex min-w-0 flex-col gap-3" : "@container flex min-w-0 flex-col gap-3 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4"}
+      data-settings-virtual-display
+    >
+      <h3 className={bare ? "sr-only" : "font-display text-sm font-semibold text-[var(--pc-ink)]"}>Virtual displays</h3>
       <p className="text-xs text-[var(--pc-muted)]">
         An independent Android screen on a phone that runs its own apps. Add one from a phone&apos;s ⋯ menu in Control. Needs Android 13 or newer; no audio yet.
       </p>

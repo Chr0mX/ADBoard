@@ -48,7 +48,8 @@ const when = (ms?: number) => (ms ? new Date(ms).toLocaleString([], { dateStyle:
  * Discord notifications. The webhook URL goes to ADBoard and stays there:
  * this card only learns whether one is set.
  */
-export function NotificationsCard() {
+/** `bare`: no card frame or title (the desktop Settings pane supplies its own). */
+export function NotificationsCard({ bare = false }: { bare?: boolean } = {}) {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
@@ -104,8 +105,11 @@ export function NotificationsCard() {
   };
 
   return (
-    <section className="@container flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-settings-notifications>
-      <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Discord notifications</h3>
+    <section
+      className={bare ? "@container flex min-w-0 flex-col gap-2" : "@container flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4"}
+      data-settings-notifications
+    >
+      <h3 className={bare ? "sr-only" : "font-display text-sm font-semibold text-[var(--pc-ink)]"}>Discord notifications</h3>
       {!agent && <p className="text-xs text-[var(--pc-muted)]">{NO_AGENT}.</p>}
       {agent && !settings && <p className="text-xs text-[var(--pc-muted)]">{error ?? "Loading…"}</p>}
       {settings && (

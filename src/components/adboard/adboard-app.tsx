@@ -14,7 +14,7 @@ import { AutomatePanel } from "@/components/adboard/desk/automate-panel";
 import { MacrosDesktop } from "@/components/adboard/macros/macros-desktop";
 import { MacroDock } from "@/components/adboard/macros/macro-dock";
 import { MultiDeviceToolbar } from "@/components/adboard/multi-device-toolbar";
-import { SettingsPanel } from "@/components/adboard/desk/settings-panel";
+import { SettingsDesktop } from "@/components/adboard/desk/settings-desktop";
 import { StoragePanel } from "@/components/adboard/desk/storage-panel";
 import {
   DESK_SECTIONS,
@@ -215,7 +215,7 @@ export function ADBoardApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v73"
+      data-ui-build="pc-shell-v74"
     >
       <div className="pc-atmosphere" aria-hidden />
       {/* Keyboard users: jump past the section bar. Visible only when focused. */}
@@ -262,7 +262,7 @@ export function ADBoardApp() {
             {section === "hosts" && <HostsPanel />}
             {section === "events" && <EventsPanel />}
             {section === "storage" && <StoragePanel />}
-            {section === "settings" && <SettingsPanel />}
+            {section === "settings" && <SettingsDesktop />}
           </div>
         )}
 
