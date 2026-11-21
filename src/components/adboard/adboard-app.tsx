@@ -37,6 +37,7 @@ import { parseMobileStatsMode, type MobileStatsMode } from "@/lib/ui/mobile-stat
 import { cn } from "@/lib/utils";
 import { useClipboardSync } from "@/hooks/use-clipboard-sync";
 import { useMacroAutomation } from "@/lib/macro/automation-store";
+import { useConnectionAlerts } from "@/components/adboard/connection-alert";
 import { TouchDiagnostics } from "@/components/adboard/touch-diagnostics";
 
 function subscribeWide(onChange: () => void) {
@@ -80,6 +81,7 @@ export function ADBoardApp() {
   useClipboardSync({ targets: broadcastTargets, mode: controlMode });
   // Macro scheduler tick + device list for the task queue.
   useMacroAutomation(devices);
+  useConnectionAlerts(devices);
 
   const [storedFillWindow, setFillWindow] = useStoredFlag("adboard-fill-window", false);
   const wide = useSyncExternalStore(
@@ -215,7 +217,7 @@ export function ADBoardApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v82"
+      data-ui-build="pc-shell-v83"
     >
       <div className="pc-atmosphere" aria-hidden />
       {/* Keyboard users: jump past the section bar. Visible only when focused. */}

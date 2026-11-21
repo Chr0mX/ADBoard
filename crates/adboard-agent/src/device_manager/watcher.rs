@@ -63,6 +63,57 @@ pub(super) fn recovery_actions(
     actions
 }
 
+/// First wait before retrying a lost phone, doubling up to `RECONNECT_MAX_SECS`.
+pub(super) const RECONNECT_FIRST_SECS: u64 = 10;
+pub(super) const RECONNECT_MAX_SECS: u64 = 300;
+/// After this many tries a phone is left alone until it shows up online again.
+pub(super) const RECONNECT_MAX_ATTEMPTS: u32 = 10;
+
+/// Wait after `attempts` tries: 10 s, 20 s, 40 s ... capped at 5 minutes.
+pub(super) fn reconnect_delay(attempts: u32) -> Duration {
+    let secs = RECONNECT_FIRST_SECS.saturating_mul(1u64 << attempts.min(16));
+    Duration::from_secs(secs.min(RECONNECT_MAX_SECS))
+}
+
+/// Phones that were online and are gone, each retried on its own backoff.
+/// One phone's retries never wait on, or repeat for, another.
+#[derive(Default)]
+pub(super) struct Reconnects {
+    lost: HashMap<String, (u32, std::time::Instant)>,
+}
+
+impl Reconnects {
+    /// Start tracking a phone that just dropped (its first try is due at once).
+    pub(super) fn lost(&mut self, serial: &str, now: std::time::Instant) {
+        self.lost.entry(serial.to_string()).or_insert((0, now));
+    }
+
+    /// The phone is back (or needs the user, not a retry): stop.
+    pub(super) fn recovered(&mut self, serial: &str) {
+        self.lost.remove(serial);
+    }
+
+    /// Phones whose try is due now, with the number of tries made before this one
+    /// (0 is the first). Each is scheduled for its next try; one that has used all
+    /// its tries is dropped.
+    pub(super) fn due(&mut self, now: std::time::Instant) -> Vec<(String, u32)> {
+        let mut out = Vec::new();
+        self.lost.retain(|serial, (attempts, next_at)| {
+            if *attempts >= RECONNECT_MAX_ATTEMPTS {
+                return false;
+            }
+            if now >= *next_at {
+                out.push((serial.clone(), *attempts));
+                *attempts += 1;
+                *next_at = now + reconnect_delay(*attempts);
+            }
+            true
+        });
+        out.sort();
+        out
+    }
+}
+
 /// What the poll loop does about the adb server after a failed `adb devices`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ServerFix {
@@ -167,6 +218,22 @@ fn battery_is_fresh(batteries: &HashMap<String, CachedBattery>, serial: &str) ->
 }
 
 impl AppState {
+    /// A phone that came back goes back to normal: screen on and awake, unless the
+    /// Quiet mode loop is in its Quiet phase (which then keeps it off).
+    pub(super) async fn restore_screen_after_reconnect(&self, serial: &str) {
+        if crate::quiet_cycle::wants_quiet() {
+            return;
+        }
+        if let Err(error) = self.inner.sessions.set_display_power(serial, true).await {
+            info!(%serial, %error, "could not turn the display back on through scrcpy");
+        }
+        if let Some(adb) = self.inner.adb_path.clone() {
+            if let Err(error) = crate::device_ops::wake_screen(&adb, serial).await {
+                info!(%serial, %error, "could not wake the screen after reconnect");
+            }
+        }
+    }
+
     /// Background ADB poll loop (no-op when using mock fleet).
     pub fn spawn_adb_watcher(&self) {
         let Some(adb) = self.inner.adb_path.clone() else {
@@ -222,7 +289,7 @@ impl AppState {
             let mut batteries: HashMap<String, CachedBattery> = HashMap::new();
             let mut previous: HashMap<String, DeviceStatus> = HashMap::new();
             let mut last_recovery: HashMap<String, std::time::Instant> = HashMap::new();
-            let mut adb_attempts: HashMap<String, u8> = HashMap::new();
+            let mut reconnects = Reconnects::default();
             loop {
                 let mut wait = Duration::from_secs(ADB_POLL_SECS);
                 match adb::list_adb_devices(&adb).await {
@@ -236,14 +303,19 @@ impl AppState {
                             .await;
                         let next = state.list_local_devices().await;
                         for device in &next {
-                            if device.status == DeviceStatus::Online {
-                                adb_attempts.remove(&device.serial);
+                            // Back online, or waiting for the user to allow it: no more retries.
+                            if device.status != DeviceStatus::Offline {
+                                reconnects.recovered(&device.serial);
                             }
                         }
                         for action in
                             recovery_actions(&previous, &next, connect_display_size().is_some())
                         {
                             let serial = action.serial();
+                            if let RecoveryAction::RestartAdb { serial } = &action {
+                                reconnects.lost(serial, std::time::Instant::now());
+                                continue;
+                            }
                             let due = last_recovery
                                 .get(serial)
                                 .map(|at| at.elapsed() > Duration::from_secs(20))
@@ -251,33 +323,9 @@ impl AppState {
                             if !due {
                                 continue;
                             }
-                            if matches!(action, RecoveryAction::RestartAdb { .. })
-                                && adb_attempts.get(serial).copied().unwrap_or(0) >= 5
-                            {
-                                continue;
-                            }
                             last_recovery.insert(serial.to_string(), std::time::Instant::now());
                             match action {
-                                RecoveryAction::RestartAdb { serial } => {
-                                    *adb_attempts.entry(serial.clone()).or_insert(0) += 1;
-                                    let adb = adb.clone();
-                                    let state = state.clone();
-                                    info!(%serial, "phone disconnected — resetting wm size and restarting ADB");
-                                    tokio::spawn(async move {
-                                        // Best-effort: often fails if the cable is already gone.
-                                        state.reset_overridden_display_size(&serial).await;
-                                        let args =
-                                            vec!["-s".into(), serial.clone(), "reconnect".into()];
-                                        match crate::device_ops::adb_text(&adb, &args).await {
-                                            Ok(output) => {
-                                                info!(%serial, %output, "automatic adb reconnect")
-                                            }
-                                            Err(error) => {
-                                                warn!(%serial, %error, "automatic adb reconnect failed")
-                                            }
-                                        }
-                                    });
-                                }
+                                RecoveryAction::RestartAdb { .. } => {}
                                 RecoveryAction::RestartSession { serial } => {
                                     info!(%serial, "device online — restarting scrcpy");
                                     // Restarting a stream takes several adb calls; it
@@ -293,9 +341,30 @@ impl AppState {
                                                 warn!(%serial, %error, "automatic scrcpy restart failed");
                                             }
                                         }
+                                        state.restore_screen_after_reconnect(&serial).await;
                                     });
                                 }
                             }
+                        }
+                        // Retry phones that are still gone, each on its own backoff.
+                        for (serial, tries) in reconnects.due(std::time::Instant::now()) {
+                            let adb = adb.clone();
+                            let state = state.clone();
+                            info!(%serial, tries, "phone disconnected — trying to reconnect");
+                            tokio::spawn(async move {
+                                if tries == 0 {
+                                    // Once per disconnect; best-effort, often fails if the cable is already gone.
+                                    state.reset_overridden_display_size(&serial).await;
+                                    if let Err(error) = crate::device_ops::wake_screen(&adb, &serial).await {
+                                        info!(%serial, %error, "could not wake the screen of the disconnected phone");
+                                    }
+                                }
+                                let args = vec!["-s".into(), serial.clone(), "reconnect".into()];
+                                match crate::device_ops::adb_text(&adb, &args).await {
+                                    Ok(output) => info!(%serial, %output, "automatic adb reconnect"),
+                                    Err(error) => warn!(%serial, %error, "automatic adb reconnect failed"),
+                                }
+                            });
                         }
                         let mut updated = HashMap::new();
                         for device in &next {

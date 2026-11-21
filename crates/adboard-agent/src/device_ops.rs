@@ -259,6 +259,13 @@ async fn mute_media(adb: &Path, serial: &str, arg: Option<&str>) -> Result<Strin
     Ok(if now == 0 { "on".into() } else { "off".into() })
 }
 
+/// Wake the screen (the key event Android uses for "turn the screen on").
+pub async fn wake_screen(adb: &Path, serial: &str) -> Result<(), String> {
+    adb_text(adb, &adb_args(serial, &["shell", "input", "keyevent", "KEYCODE_WAKEUP"]))
+        .await
+        .map(|_| ())
+}
+
 /// `stayAwake` argument: `on` / `off` set it, `status` (or none) only reads.
 pub fn stay_awake_arg(arg: Option<&str>) -> Result<Option<bool>, String> {
     match arg.map(str::trim).unwrap_or("status") {

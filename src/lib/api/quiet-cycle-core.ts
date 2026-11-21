@@ -9,14 +9,21 @@ export const DEFAULT_INTERVAL_MINUTES = 60;
 export const MIN_MINUTES = 1;
 export const MAX_MINUTES = 7 * 24 * 60;
 
-/** Hours and minutes fields to whole minutes in range (the default when empty or not a number). */
-export function intervalMinutes(hours: string, minutes: string): number {
-  const h = Number(hours.trim() || 0);
-  const m = Number(minutes.trim() || 0);
-  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || m < 0) return DEFAULT_INTERVAL_MINUTES;
-  const total = Math.round(h * 60 + m);
-  if (total <= 0) return DEFAULT_INTERVAL_MINUTES;
+export type IntervalUnit = "min" | "h";
+
+/** A number and a unit to whole minutes in range (the default when empty or not a number). */
+export function intervalMinutes(value: string, unit: IntervalUnit): number {
+  const n = Number(value.trim());
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_INTERVAL_MINUTES;
+  const total = Math.round(unit === "h" ? n * 60 : n);
   return Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, total));
+}
+
+/** The saved minutes as the field shows them: whole hours as hours, anything else as minutes. */
+export function splitInterval(minutes: number): { value: string; unit: IntervalUnit } {
+  return minutes >= 60 && minutes % 60 === 0
+    ? { value: String(minutes / 60), unit: "h" }
+    : { value: String(minutes), unit: "min" };
 }
 
 /** "2 h 41 m", "15 m", "40 s" for a number of seconds. */
@@ -38,5 +45,5 @@ export function secondsLeft(phaseEndsAt: number, agentNow: number, receivedAtMs:
 
 /** The line under the toggle. */
 export function cycleLine(phase: QuietPhase, left: number): string {
-  return `${phase === "quiet" ? "Quiet" : "Normal"} now · switches in ${formatLeft(left)}`;
+  return `${phase === "quiet" ? "Quiet" : "Normal"} now · next change in ${formatLeft(left)}`;
 }

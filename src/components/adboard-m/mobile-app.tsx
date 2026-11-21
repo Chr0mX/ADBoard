@@ -39,6 +39,7 @@ import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { useVisualViewportLock } from "@/hooks/use-visual-viewport-lock";
 import { useEventAlerts } from "@/lib/events/client";
 import { useMacroAutomation } from "@/lib/macro/automation-store";
+import { useConnectionAlerts } from "@/components/adboard/connection-alert";
 import { useMobileTitle } from "@/components/adboard-m/use-mobile-title";
 import { parseMobileStatsMode, type MobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 
@@ -91,6 +92,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
   } = useADBoard({ keyboardScope: route.view === "control" || route.view === "devices" });
   useClipboardSync({ targets: broadcastTargets, mode: controlMode });
   useMacroAutomation(devices);
+  useConnectionAlerts(devices);
   useVisualViewportLock(true);
   const [textSize, setTextSize] = useTextSize();
 
@@ -189,7 +191,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     <DeskProvider
       value={{ section, focusTool, devices, activeDevice, targets: broadcastTargets, sessions, lastSeen, open, selectDevice }}
     >
-      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v13">
+      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v14">
         <div className="pc-atmosphere" aria-hidden />
         <div data-m-top-cap aria-hidden />
         {showHeader && (

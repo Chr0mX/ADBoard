@@ -1611,3 +1611,76 @@ html[data-m-text="standard"] [data-m-sheet] {
     font-weight: 400;
   }
 }
+
+/* Connection alerts (Sonner custom toast): compact, theme colours only. */
+.pc-alert-toast {
+  width: min(300px, calc(100vw - 24px)) !important;
+}
+@media (max-width: 600px) {
+  /* Phone: right edge 12 px in, above the home-indicator inset, never wider than the screen. */
+  [data-sonner-toaster] {
+    right: 12px !important;
+    left: auto !important;
+    width: min(300px, calc(100vw - 24px)) !important;
+  }
+  .pc-alert-toast {
+    width: 100% !important;
+  }
+}
+.pc-alert {
+  --pc-alert-accent: var(--pc-warn);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--pc-alert-accent) 45%, var(--pc-line));
+  border-radius: 10px;
+  background: var(--pc-panel);
+  color: var(--pc-ink);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--pc-frame) 55%, transparent);
+}
+.pc-alert[data-connection-alert="connected"] {
+  --pc-alert-accent: var(--pc-signal);
+}
+.pc-alert-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--pc-alert-accent);
+}
+.pc-alert-content {
+  flex: 1;
+  min-width: 0;
+}
+.pc-alert-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.pc-alert-message {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--pc-muted);
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pc-alert-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pc-muted);
+  cursor: pointer;
+}
+.pc-alert-close:hover {
+  color: var(--pc-ink);
+}

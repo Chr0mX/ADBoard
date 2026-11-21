@@ -1,4 +1,7 @@
-use super::watcher::{describe_adb_failure, recovery_actions, FailureStep, PollHealth, RecoveryAction, ServerFix};
+use super::watcher::{
+    describe_adb_failure, reconnect_delay, recovery_actions, FailureStep, PollHealth, RecoveryAction, Reconnects, ServerFix,
+    RECONNECT_MAX_ATTEMPTS,
+};
 use super::*;
 
 /// A stand-in for `adb` that answers every call after a delay. A serial
@@ -614,4 +617,118 @@ async fn changing_quiet_mode_by_hand_stops_the_cycle() {
         .await
         .expect("options apply");
     assert!(!crate::quiet_cycle::status().cycle.enabled, "a manual screen change stops it");
+}
+
+// ---- Unplug recovery and reconnect backoff ----
+
+#[test]
+fn reconnect_waits_longer_each_time_up_to_five_minutes() {
+    let secs: Vec<u64> = (1..8).map(|n| reconnect_delay(n).as_secs()).collect();
+    assert_eq!(secs, vec![20, 40, 80, 160, 300, 300, 300]);
+    assert_eq!(reconnect_delay(0).as_secs(), 10);
+}
+
+#[test]
+fn a_lost_phone_is_retried_on_a_backoff_and_not_every_poll() {
+    let start = std::time::Instant::now();
+    let mut r = Reconnects::default();
+    r.lost("A", start);
+    assert_eq!(r.due(start), vec![("A".to_string(), 0)], "first try at once");
+    // Polls every 2 s in between do nothing.
+    for secs in 1..19 {
+        assert!(r.due(start + Duration::from_secs(secs)).is_empty(), "no retry at {secs}s");
+    }
+    assert_eq!(r.due(start + Duration::from_secs(20)), vec![("A".to_string(), 1)]);
+    assert!(r.due(start + Duration::from_secs(20 + 39)).is_empty());
+    assert_eq!(r.due(start + Duration::from_secs(20 + 40)), vec![("A".to_string(), 2)]);
+}
+
+#[test]
+fn tracking_a_phone_twice_does_not_restart_its_backoff() {
+    let start = std::time::Instant::now();
+    let mut r = Reconnects::default();
+    r.lost("A", start);
+    r.due(start);
+    r.lost("A", start + Duration::from_secs(5));
+    assert!(r.due(start + Duration::from_secs(5)).is_empty());
+}
+
+#[test]
+fn a_phone_that_returns_stops_being_retried_and_others_are_unaffected() {
+    let start = std::time::Instant::now();
+    let mut r = Reconnects::default();
+    r.lost("A", start);
+    r.lost("B", start);
+    assert_eq!(r.due(start).len(), 2);
+    r.recovered("A");
+    let later = start + Duration::from_secs(20);
+    assert_eq!(r.due(later), vec![("B".to_string(), 1)]);
+}
+
+#[test]
+fn a_phone_that_never_comes_back_is_given_up_on() {
+    let start = std::time::Instant::now();
+    let mut r = Reconnects::default();
+    r.lost("A", start);
+    let mut tries = 0;
+    for minute in 0..200u64 {
+        tries += r.due(start + Duration::from_secs(minute * 60)).len() as u32;
+    }
+    assert_eq!(tries, RECONNECT_MAX_ATTEMPTS);
+    assert!(r.due(start + Duration::from_secs(100_000)).is_empty());
+}
+
+/// A stand-in `adb` that records its arguments, one call per line.
+#[cfg(unix)]
+fn recording_adb() -> (PathBuf, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("adboard-rec-adb-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("calls.txt");
+    let path = dir.join("adb");
+    std::fs::write(&path, format!("#!/bin/sh\necho \"$@\" >> {}\nexit 0\n", log.display())).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (path, log)
+}
+
+#[cfg(unix)]
+fn calls(log: &std::path::Path) -> String {
+    std::fs::read_to_string(log).unwrap_or_default()
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_returning_phone_gets_its_screen_on_unless_the_loop_is_quiet() {
+    let _guard = quiet_lock();
+    let (adb, log) = recording_adb();
+    let state = AppState::new(Role::Controller, "rec".into(), "rec".into(), 0, Some(adb));
+
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Quiet);
+    state.restore_screen_after_reconnect("FAKE1").await;
+    assert!(!calls(&log).contains("KEYCODE_WAKEUP"), "the Quiet phase keeps the screen off");
+
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Normal);
+    state.restore_screen_after_reconnect("FAKE1").await;
+    assert!(calls(&log).contains("-s FAKE1 shell input keyevent KEYCODE_WAKEUP"));
+
+    crate::quiet_cycle::stop();
+    let before = calls(&log).lines().count();
+    state.restore_screen_after_reconnect("FAKE2").await;
+    assert!(calls(&log).lines().count() > before, "no loop: a returning phone is woken");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unplugged_phone_gets_its_display_size_reset_once_and_only_that_phone() {
+    let (adb, log) = recording_adb();
+    let state = AppState::new(Role::Controller, "rec".into(), "rec".into(), 0, Some(adb));
+    state.inner.display_size_overrides.lock().unwrap().insert("FAKE1".into());
+    state.reset_overridden_display_size("FAKE1").await;
+    assert!(calls(&log).contains("-s FAKE1 shell wm size reset"), "{}", calls(&log));
+    assert!(!state.inner.display_size_overrides.lock().unwrap().contains("FAKE1"));
+    // Already reset, and a phone ADBoard never resized: nothing more is sent.
+    let sent = calls(&log).lines().count();
+    state.reset_overridden_display_size("FAKE1").await;
+    state.reset_overridden_display_size("FAKE2").await;
+    assert_eq!(calls(&log).lines().count(), sent);
 }

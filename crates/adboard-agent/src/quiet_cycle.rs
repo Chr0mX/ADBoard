@@ -188,6 +188,12 @@ pub fn status() -> Status {
     Status { cycle: cycle.clone(), now, seconds_left }
 }
 
+/// The loop is running and its current phase is Quiet.
+pub fn wants_quiet() -> bool {
+    let status = status();
+    status.cycle.enabled && status.cycle.phase == Phase::Quiet
+}
+
 /// Start (or restart) the cycle in `phase`.
 pub fn start(interval_secs: u64, phase: Phase) -> Status {
     let cycle = Cycle::started(interval_secs, phase, now_secs());

@@ -292,7 +292,7 @@ export function ScrcpyOptions({
           size="md"
         >
           <Moon className="size-4" />
-          Quiet mode
+          Quiet Mode
         </Toggle>
         {repeat && <QuietRepeat />}
         <div className={start ? "grid w-full grid-cols-2 gap-1.5 [&>input]:col-span-2 [&>input]:min-w-0" : "max-lg:hidden lg:flex lg:w-full lg:items-center lg:gap-1.5"}>

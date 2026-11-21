@@ -65,7 +65,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-dvh flex-col font-sans">
         <TooltipProvider>
           {children}
-          <Toaster position="bottom-right" richColors closeButton />
+          <Toaster
+            position="bottom-right"
+            richColors
+            closeButton
+            offset={16}
+            style={{ "--width": "300px" } as React.CSSProperties}
+            mobileOffset={{ left: 12, right: 12, bottom: "calc(12px + env(safe-area-inset-bottom))" }}
+          />
         </TooltipProvider>
       </body>
     </html>
