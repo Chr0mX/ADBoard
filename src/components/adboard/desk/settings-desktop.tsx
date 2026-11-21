@@ -91,7 +91,7 @@ export function SettingsDesktop() {
                       data-settings-category={entry.id}
                       onClick={() => setStored(entry.id)}
                       className={cn(
-                        "flex h-9 items-center rounded-md px-2 text-left text-sm",
+                        "flex h-9 items-center rounded-md px-2 text-left font-sans text-sm",
                         selected
                           ? "bg-[var(--pc-accent-soft)] font-medium text-[var(--pc-ink)]"
                           : "text-[var(--pc-ink)]/85 hover:bg-[var(--pc-accent-soft)]/60",

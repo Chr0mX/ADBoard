@@ -215,7 +215,7 @@ export function ADBoardApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v76"
+      data-ui-build="pc-shell-v77"
     >
       <div className="pc-atmosphere" aria-hidden />
       {/* Keyboard users: jump past the section bar. Visible only when focused. */}
@@ -259,8 +259,8 @@ export function ADBoardApp() {
             {section === "macros" && <MacrosDesktop />}
             {section === "automate" && <AutomatePanel />}
             {section === "developer" && <DeveloperPanel />}
-            {section === "hosts" && <HostsPanel />}
-            {section === "events" && <EventsPanel />}
+            {section === "hosts" && <HostsPanel desktop />}
+            {section === "events" && <EventsPanel desktop />}
             {section === "storage" && <StoragePanel />}
             {section === "settings" && <SettingsDesktop />}
           </div>

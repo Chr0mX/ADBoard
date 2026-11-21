@@ -367,7 +367,7 @@ function Library({
                     type="button"
                     aria-expanded={!isCollapsed}
                     onClick={() => onToggleGroup(group.key)}
-                    className="flex h-8 items-center gap-1 rounded-md px-1 text-left text-xs font-medium text-[var(--pc-muted)] hover:text-[var(--pc-ink)]"
+                    className="flex h-8 items-center gap-1 rounded-md px-1 text-left font-sans text-xs font-medium text-[var(--pc-muted)] hover:text-[var(--pc-ink)]"
                     data-macro-group={group.name}
                   >
                     {isCollapsed ? <ChevronRight className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
@@ -390,7 +390,7 @@ function Library({
                         onClick={() => onPick(tab.id)}
                         onDoubleClick={onRename}
                         className={cn(
-                          "flex h-9 min-h-9 items-center gap-2 rounded-md px-2 text-left text-sm",
+                          "flex h-9 min-h-9 items-center gap-2 rounded-md px-2 text-left font-sans text-sm",
                           showHeader && "ml-3",
                           selected
                             ? "bg-[var(--pc-accent-soft)] font-medium text-[var(--pc-ink)]"
@@ -535,7 +535,7 @@ function Editor({
                   type="button"
                   disabled={item.disabled}
                   {...{ [item.attr]: "" }}
-                  className="flex h-9 items-center gap-2 rounded-lg px-2 text-left text-sm text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-50"
+                  className="flex h-9 items-center gap-2 rounded-lg px-2 text-left font-sans text-sm text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-50"
                   onClick={(event) => {
                     item.run();
                     (event.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
@@ -560,7 +560,7 @@ function Editor({
             data-macro-section={id}
             onClick={() => setSection(id)}
             className={cn(
-              "-mb-px h-9 border-b-2 px-3 text-sm",
+              "-mb-px h-9 border-b-2 px-3 font-sans text-sm",
               section === id
                 ? "border-[var(--pc-accent)] font-medium text-[var(--pc-ink)]"
                 : "border-transparent text-[var(--pc-muted)] hover:text-[var(--pc-ink)]",

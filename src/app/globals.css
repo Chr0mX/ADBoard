@@ -1497,3 +1497,30 @@ html[data-m-text="standard"] {
     padding-inline: 0.625rem;
   }
 }
+
+/* Desktop type system (the pages inside a panel frame; the phone app has its own scale).
+     Geist (display)      headings: page 20, section 14, sub-heading 12
+     Figtree (sans)       text, descriptions, labels, list and menu items
+     JetBrains Mono       action buttons, fields and data (serials, sizes, times)
+   Action buttons are 12 px and fields 13 px wherever they appear. Items that are
+   navigation, not actions, carry `font-sans` and keep their own size. */
+.pc-shell:not([data-m-app]) [data-desk-panel] :is(h3) {
+  font-family: var(--font-display), ui-sans-serif, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.pc-shell:not([data-m-app]) [data-desk-panel] :is(h4) {
+  font-family: var(--font-display), ui-sans-serif, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.pc-shell:not([data-m-app]) [data-desk-panel] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea):not([data-macro-name]) {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+}
+.pc-shell:not([data-m-app]) [data-desk-panel] :is(button, summary):not(.font-sans):not([class*="text-lg"]):not([class*="text-base"]):not([class*="text-xl"]) {
+  font-size: 0.75rem;
+}
+.pc-shell:not([data-m-app]) [data-desk-panel] :is(button, summary).font-sans {
+  font-family: var(--font-sans), ui-sans-serif, sans-serif;
+}

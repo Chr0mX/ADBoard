@@ -51,13 +51,48 @@ type RangeId = (typeof RANGES)[number]["id"];
 
 const when = (ms: number) => new Date(ms).toLocaleString([], { dateStyle: "short", timeStyle: "medium" });
 const fieldClass =
-  "h-11 min-h-11 min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-xs text-[var(--pc-ink)] outline-none focus-visible:border-[var(--pc-accent)]";
+  "h-11 min-h-11 min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-xs text-[var(--pc-ink)] outline-none focus-visible:border-[var(--pc-accent)] pointer-fine:h-9 pointer-fine:min-h-9";
+
+/**
+ * A titled block. `flat` (the desktop page) drops the box: a heading over the
+ * content, blocks separated by whitespace and one hairline.
+ */
+function Section({
+  flat,
+  title,
+  action,
+  children,
+  ...rest
+}: {
+  flat: boolean;
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+} & Omit<React.HTMLAttributes<HTMLElement>, "title">) {
+  if (!flat) {
+    return (
+      <Card title={title} action={action} {...rest}>
+        {children}
+      </Card>
+    );
+  }
+  return (
+    <section {...rest} className="flex min-w-0 flex-col gap-3 border-t border-[var(--pc-line)] pt-4 first:border-t-0 first:pt-0">
+      <div className="flex min-h-8 items-center justify-between gap-2">
+        <h3 className="font-display text-sm font-semibold tracking-tight text-[var(--pc-ink)]">{title}</h3>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 /** Today-style date input value ↔ ms. */
 const dayStart = (value: string) => (value ? new Date(`${value}T00:00:00`).getTime() : undefined);
 const dayEnd = (value: string) => (value ? new Date(`${value}T23:59:59.999`).getTime() : undefined);
 
-export function EventsPanel() {
+/** `desktop`: the flat, two-column desktop page; without it the stacked cards of the phone layout. */
+export function EventsPanel({ desktop = false }: { desktop?: boolean } = {}) {
   const desk = useDesk();
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
@@ -185,6 +220,7 @@ export function EventsPanel() {
   return (
     <PanelFrame title="Events" panel="events" clean description="What happened to your phones, macros and ADBoard, kept across restarts.">
       <SummaryCard
+        flat={desktop}
         refresh={refresh}
         onDevice={(name) => {
           const match = devices.find(([, n]) => n === name);
@@ -201,7 +237,10 @@ export function EventsPanel() {
         }}
       />
 
+      <div className={desktop ? "grid items-start gap-x-8 gap-y-6 xl:grid-cols-[minmax(0,1fr)_22rem]" : "contents"} data-events-layout={desktop ? "desktop" : undefined}>
+      <div className={desktop ? "flex min-w-0 flex-col gap-4 xl:order-2" : "contents"}>
       <MacroStatsCard
+        flat={desktop}
         refresh={refresh}
         onMacro={(name) => {
           reset();
@@ -216,7 +255,8 @@ export function EventsPanel() {
         }}
       />
 
-      <Card title="History" data-events-history>
+      </div>
+      <Section flat={desktop} title="History" data-events-history>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))]" data-events-filters>
           <label className="relative flex min-w-0 items-center sm:col-span-2 xl:col-span-1">
             <span className="sr-only">Search events</span>
@@ -306,6 +346,7 @@ export function EventsPanel() {
           {events.map((event) => (
             <EventRow
               key={event.id}
+              flat={desktop}
               event={event}
               onRun={(id) => setRun(id)}
               onDevice={(id) => setDevice(id)}
@@ -322,20 +363,23 @@ export function EventsPanel() {
             {loadingMore ? "Loading…" : "Older events"}
           </GhostButton>
         )}
-      </Card>
+      </Section>
+      </div>
 
-      <RetentionCard onCleared={() => setRefresh((n) => n + 1)} />
+      <RetentionCard flat={desktop} onCleared={() => setRefresh((n) => n + 1)} />
     </PanelFrame>
   );
 }
 
 function EventRow({
+  flat,
   event,
   onRun,
   onDevice,
   onOpenPhone,
   onOpenMacro,
 }: {
+  flat: boolean;
   event: AppEvent;
   onRun: (runId: string) => void;
   onDevice: (deviceId: string) => void;
@@ -346,8 +390,12 @@ function EventRow({
   const meta = Object.entries(event.meta ?? {});
   const tabId = typeof event.meta?.tabId === "string" ? event.meta.tabId : null;
   return (
-    <li className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)]" data-event={event.kind} data-severity={event.severity}>
-      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex min-h-11 w-full items-center gap-2 px-2 py-1.5 text-left">
+    <li
+      className={flat ? "border-b border-[var(--pc-line)] last:border-b-0" : "rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)]"}
+      data-event={event.kind}
+      data-severity={event.severity}
+    >
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className={cn("flex w-full items-center gap-2 px-2 py-1.5 text-left font-sans", flat ? "min-h-10 hover:bg-[var(--pc-accent-soft)]/50" : "min-h-11")}>
         {open ? <ChevronDown className="size-3.5 shrink-0 text-[var(--pc-muted)]" aria-hidden /> : <ChevronRight className="size-3.5 shrink-0 text-[var(--pc-muted)]" aria-hidden />}
         <span className={cn("w-16 shrink-0 rounded px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold", SEVERITY_TONE[event.severity])}>{event.severity}</span>
         <span className="flex min-w-0 flex-1 flex-col">
@@ -409,13 +457,17 @@ function EventRow({
   );
 }
 
+const FLAT_TILE = "flex flex-col gap-0.5 border-l border-[var(--pc-line)] px-4 py-1 first:border-l-0 first:pl-0 max-sm:odd:border-l-0 max-sm:odd:pl-0";
+
 /** Counts for the last 24 hours, recent problems and Discord delivery. */
 function SummaryCard({
+  flat,
   refresh,
   onDevice,
   onProblems,
   onMacroFailures,
 }: {
+  flat: boolean;
   refresh: number;
   onDevice: (name: string) => void;
   onProblems: () => void;
@@ -437,15 +489,15 @@ function SummaryCard({
   const finished = runs.done + runs.failed + runs.stopped;
   const phones = Object.entries(summary.problemDevices).sort((a, b) => b[1] - a[1]).slice(0, 6);
   return (
-    <Card title="Last 24 hours" data-events-summary>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <button type="button" onClick={onProblems} className="flex flex-col rounded-xl border border-[var(--pc-line)] p-2 text-left hover:bg-[var(--pc-accent-soft)]" data-events-stat="problems">
+    <Section flat={flat} title="Last 24 hours" data-events-summary>
+      <div className={flat ? "grid grid-cols-2 gap-y-3 sm:grid-cols-4" : "grid grid-cols-2 gap-2 sm:grid-cols-4"}>
+        <button type="button" onClick={onProblems} className={flat ? FLAT_TILE + " text-left hover:bg-[var(--pc-accent-soft)]/50" : "flex flex-col rounded-xl border border-[var(--pc-line)] p-2 text-left hover:bg-[var(--pc-accent-soft)]"} data-events-stat="problems">
           <span className={cn("font-display text-xl font-semibold", problems ? "text-[var(--pc-warn)]" : "text-[var(--pc-ink)]")}>{problems}</span>
           <span className="text-[11px] text-[var(--pc-muted)]">
             warnings & errors{summary.bySeverity.critical ? ` · ${summary.bySeverity.critical} critical` : ""}
           </span>
         </button>
-        <button type="button" onClick={onMacroFailures} className="flex flex-col rounded-xl border border-[var(--pc-line)] p-2 text-left hover:bg-[var(--pc-accent-soft)]" data-events-stat="macros">
+        <button type="button" onClick={onMacroFailures} className={flat ? FLAT_TILE + " text-left hover:bg-[var(--pc-accent-soft)]/50" : "flex flex-col rounded-xl border border-[var(--pc-line)] p-2 text-left hover:bg-[var(--pc-accent-soft)]"} data-events-stat="macros">
           <span className="font-display text-xl font-semibold text-[var(--pc-ink)]">
             {finished ? `${Math.round((runs.done / finished) * 100)}%` : "—"}
           </span>
@@ -453,11 +505,11 @@ function SummaryCard({
             macro runs OK · {runs.done} done, {runs.failed} failed, {runs.stopped} stopped
           </span>
         </button>
-        <div className="flex flex-col rounded-xl border border-[var(--pc-line)] p-2" data-events-stat="phones">
+        <div className={flat ? FLAT_TILE : "flex flex-col rounded-xl border border-[var(--pc-line)] p-2"} data-events-stat="phones">
           <span className="font-display text-xl font-semibold text-[var(--pc-ink)]">{summary.byCategory.device ?? 0}</span>
           <span className="text-[11px] text-[var(--pc-muted)]">phone connection changes</span>
         </div>
-        <div className="flex flex-col rounded-xl border border-[var(--pc-line)] p-2" data-events-stat="discord">
+        <div className={flat ? FLAT_TILE : "flex flex-col rounded-xl border border-[var(--pc-line)] p-2"} data-events-stat="discord">
           <span className="font-display text-xl font-semibold text-[var(--pc-ink)]">
             {!notify?.webhookSet ? "Off" : !notify.enabled ? "Paused" : notify.status.lastError && (notify.status.lastErrorAt ?? 0) > (notify.status.lastOkAt ?? 0) ? "Failing" : "On"}
           </span>
@@ -476,7 +528,7 @@ function SummaryCard({
           ))}
         </div>
       )}
-    </Card>
+    </Section>
   );
 }
 
@@ -496,10 +548,12 @@ const duration = (seconds?: number) => {
 
 /** Success rate, length and most failing steps per macro, from run events. */
 function MacroStatsCard({
+  flat,
   refresh,
   onMacro,
   onOpenMacro,
 }: {
+  flat: boolean;
   refresh: number;
   onMacro: (name: string) => void;
   onOpenMacro: (tabId: string) => void;
@@ -515,7 +569,8 @@ function MacroStatsCard({
   }, [days, refresh]);
   if (!stats) return null;
   return (
-    <Card
+    <Section
+      flat={flat}
       title="Macro runs"
       data-events-macros
       action={
@@ -536,7 +591,11 @@ function MacroStatsCard({
             const pct = Math.round(m.successRate * 100);
             const worst = m.failingSteps[0];
             return (
-              <li key={m.tabId ?? m.name} className="flex flex-col gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-2" data-macro-stats={m.name}>
+              <li
+                key={m.tabId ?? m.name}
+                className={flat ? "flex flex-col gap-1.5 border-b border-[var(--pc-line)] py-2 last:border-b-0" : "flex flex-col gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-2"}
+                data-macro-stats={m.name}
+              >
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                   <button type="button" className="min-w-0 truncate font-medium text-[var(--pc-ink)] hover:text-[var(--pc-accent)]" onClick={() => onMacro(m.name)} title="Show this macro's events">
                     {m.name}
@@ -572,12 +631,12 @@ function MacroStatsCard({
           })}
         </ul>
       )}
-    </Card>
+    </Section>
   );
 }
 
 /** How much history is kept, and clearing it. */
-function RetentionCard({ onCleared }: { onCleared: () => void }) {
+function RetentionCard({ flat, onCleared }: { flat: boolean; onCleared: () => void }) {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [draft, setDraft] = useState<{ maxEvents: number; maxDays: number } | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -621,7 +680,7 @@ function RetentionCard({ onCleared }: { onCleared: () => void }) {
     }
   };
   return (
-    <Card title="Keep history" data-events-retention>
+    <Section flat={flat} title="Keep history" data-events-retention>
       <p className="text-xs text-[var(--pc-muted)]">
         Saved in <span className="font-mono">logs/events.jsonl</span> in the data folder. The oldest events are removed when either limit is reached.
       </p>
@@ -656,6 +715,6 @@ function RetentionCard({ onCleared }: { onCleared: () => void }) {
           onConfirm={() => void clear(confirm)}
         />
       )}
-    </Card>
+    </Section>
   );
 }

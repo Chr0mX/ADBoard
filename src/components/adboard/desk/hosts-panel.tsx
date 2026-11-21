@@ -7,7 +7,8 @@ import type { HostInfo } from "@/lib/devices/types";
 import { useDesk } from "@/components/adboard/desk/desk-context";
 import { PanelFrame } from "@/components/adboard/desk/bits";
 
-export function HostsPanel() {
+/** `desktop`: flat host sections with a device table; without it the cards of the phone layout. */
+export function HostsPanel({ desktop = false }: { desktop?: boolean } = {}) {
   const desk = useDesk();
   const [hosts, setHosts] = useState<HostInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +34,62 @@ export function HostsPanel() {
   return (
     <PanelFrame title="Hosts" panel="hosts" clean description="The computers that run ADB, and the phones on each.">
       {error && <p className="text-sm text-[var(--pc-warn)]">{error}</p>}
+      {desktop && (
+        <div className="flex max-w-4xl flex-col gap-8" data-hosts-desktop>
+          {sections.map(({ host, devices }) => {
+            const online = devices.filter((device) => device.status === "online").length;
+            return (
+              <section key={host.hostId} data-host-card={host.hostId} aria-label={host.name} className="flex flex-col gap-2">
+                <header className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-[var(--pc-line)] pb-2">
+                  <h3 className="min-w-0 truncate font-display text-sm font-semibold text-[var(--pc-ink)]">{host.name}</h3>
+                  <span className="text-xs text-[var(--pc-muted)]">
+                    {sentenceCase(host.os)} · {sentenceCase(host.status)} · {host.local ? "this controller" : "remote agent"}
+                  </span>
+                  <span className="ml-auto font-mono text-xs text-[var(--pc-muted)]" data-host-count>
+                    {online}/{devices.length} online
+                  </span>
+                </header>
+                {devices.length === 0 ? (
+                  <p className="text-sm text-[var(--pc-muted)]">No devices reported.</p>
+                ) : (
+                  <table className="w-full table-fixed border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="text-xs text-[var(--pc-muted)]">
+                        <th scope="col" className="w-[38%] py-1.5 font-medium">Phone</th>
+                        <th scope="col" className="w-[26%] py-1.5 font-medium">Model</th>
+                        <th scope="col" className="w-[22%] py-1.5 font-medium">Screen</th>
+                        <th scope="col" className="py-1.5 text-right font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device) => (
+                        <tr key={device.id} className="border-t border-[var(--pc-line)]" data-host-device={device.id}>
+                          <td className="truncate py-2 pr-3 text-[var(--pc-ink)]">{device.name}</td>
+                          <td className="truncate py-2 pr-3 font-mono text-xs text-[var(--pc-muted)]" title={device.modelName ? `${device.modelName} (${device.model})` : device.model}>
+                            {device.modelName ?? device.model}
+                          </td>
+                          <td className="py-2 pr-3 font-mono text-xs text-[var(--pc-muted)]">
+                            {device.resolution.width > 0 ? `${device.resolution.width}×${device.resolution.height}` : "—"}
+                          </td>
+                          <td className="py-2 text-right">
+                            <span
+                              className={`inline-flex items-center gap-1.5 font-mono text-xs ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}
+                            >
+                              <span aria-hidden className={`size-1.5 rounded-full ${device.status === "online" ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-muted)]"}`} />
+                              {sentenceCase(device.status)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+      {!desktop && (
       <div className="grid gap-4 md:grid-cols-2">
         {sections.map(({ host, devices }) => {
           const online = devices.filter((device) => device.status === "online").length;
@@ -65,6 +122,7 @@ export function HostsPanel() {
           );
         })}
       </div>
+      )}
     </PanelFrame>
   );
 }
