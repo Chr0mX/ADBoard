@@ -41,6 +41,7 @@ export function MacroPreview({
   ripples,
   textMarks,
   readOnly = false,
+  maxHeight = "min(62vh, 640px)",
   selectedStepId,
   placing,
   onSelectStep,
@@ -60,6 +61,8 @@ export function MacroPreview({
   textMarks?: TextMark[];
   /** Show markers only (Control dock); no dragging. */
   readOnly?: boolean;
+  /** Tallest the picture may be (a CSS length); the width follows the phone's shape. */
+  maxHeight?: string;
   selectedStepId: string | null;
   placing: boolean;
   onSelectStep: (stepId: string) => void;
@@ -93,7 +96,7 @@ export function MacroPreview({
     <div className="flex min-w-0 flex-col gap-2">
       <div
         className="relative mx-auto w-full"
-        style={{ maxWidth: `min(100%, calc(min(62vh, 640px) * ${aspect}))` }}
+        style={{ maxWidth: `min(100%, calc(${maxHeight} * ${aspect}))` }}
       >
         <div
           ref={setBoxEl}

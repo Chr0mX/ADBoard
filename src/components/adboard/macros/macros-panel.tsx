@@ -83,7 +83,7 @@ import { FolderHint } from "@/components/adboard/desk/data-storage";
  * and reloads: it is kept in browser storage, which prefs.ts saves to
  * builder_state.json.
  */
-type TabView = { stepId: string | null; previewId: string };
+export type TabView = { stepId: string | null; previewId: string };
 const VIEW_KEY = "adboard-macro-view";
 const viewState = {
   all: () => readUiState<Record<string, TabView>>(VIEW_KEY, {}),
@@ -96,6 +96,14 @@ const viewState = {
   },
 };
 
+/** The remembered step and preview phone of a macro (shared by the desktop and phone editors). */
+export function getMacroView(tabId: string): TabView | undefined {
+  return viewState.get(tabId);
+}
+export function setMacroView(tabId: string, view: TabView) {
+  viewState.set(tabId, view);
+}
+
 /** Forget a deleted macro's remembered view. */
 export function forgetMacroView(tabId: string) {
   viewState.delete(tabId);
@@ -106,10 +114,10 @@ export function focusMacroPreview(tabId: string, deviceId: string) {
   viewState.set(tabId, { stepId: viewState.get(tabId)?.stepId ?? null, previewId: deviceId });
 }
 
-const hasScreen = (d: Device) => d.resolution.width > 0;
+export const hasScreen = (d: Device) => d.resolution.width > 0;
 
 /** The phone to preview first: the one being controlled, else an online ticked phone, else any online phone. */
-function defaultPreviewId(tab: MacroTab, devices: Device[], activeDevice: Device | null) {
+export function defaultPreviewId(tab: MacroTab, devices: Device[], activeDevice: Device | null) {
   if (activeDevice && hasScreen(activeDevice)) return activeDevice.id;
   const online = devices.filter((d) => d.status === "online" && hasScreen(d));
   return (online.find((d) => tab.targetIds.includes(d.id)) ?? online[0])?.id ?? "reference";

@@ -44,7 +44,7 @@ test("each mobile route has a page file; /m redirects", () => {
 
 test("mobile service worker: v3, shell covers screens, only its own caches", () => {
   const sw = readFileSync(path.join(root, "public/m/sw.js"), "utf8");
-  assert.match(sw, /const CACHE_VERSION = "adboard-m-v7";/);
+  assert.match(sw, /const CACHE_VERSION = "adboard-m-v8";/);
   assert.match(sw, /key\.startsWith\(CACHE_PREFIX\)/);
 });
 
@@ -76,4 +76,15 @@ test("the More screen keeps every destination and setting", () => {
   // Every More section is reachable, grouped as Phones (work) and System.
   for (const id of ["manage", "apps", "files", "automate", "developer", "hosts", "events", "storage", "settings"]) assert.ok(more.includes(`${id}:`), id);
   assert.ok(app.includes("<MoreScreen") && app.includes("<TaskbarSheet"));
+});
+
+test("phone Macros: the list, the editor and the full-screen placer are wired in and keep every card", () => {
+  const app = readFileSync(path.join(root, "src/components/adboard-m/mobile-app.tsx"), "utf8");
+  const m = readFileSync(path.join(root, "src/components/adboard-m/macros-mobile.tsx"), "utf8");
+  assert.ok(app.includes("<MacrosMobile />") && !app.includes("<MacrosPanel />"));
+  for (const a of ["data-m-macros-list", "data-m-macro-row", "data-m-macro-editor", "data-m-macro-place-open", "data-m-macro-place", "data-place-undo", "data-place-test", "data-macro-search", "data-macro-sort", "data-macro-group-field", "data-macro-quick-start"]) assert.ok(m.includes(a), a);
+  // Every existing card is still reachable.
+  for (const c of ["<RunCard", "<SettingsCard", "<QueueCard", "<ScheduleCard", "<PhoneRunsCard", "<StepList", "<AddStepBar", "<ImportButton", "<VersionsMenu", "<ExportMenu", "<ImportDialog"]) assert.ok(m.includes(c), c);
+  // The desktop layout keeps its own component.
+  assert.ok(readFileSync(path.join(root, "src/components/adboard/adboard-app.tsx"), "utf8").includes("<MacrosDesktop />"));
 });

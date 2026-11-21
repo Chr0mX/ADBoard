@@ -18,7 +18,7 @@ import { HostsPanel } from "@/components/adboard/desk/hosts-panel";
 import { ManagePanel } from "@/components/adboard/desk/manage-panel";
 import { SettingsPanel } from "@/components/adboard/desk/settings-panel";
 import { StoragePanel } from "@/components/adboard/desk/storage-panel";
-import { MacrosPanel } from "@/components/adboard/macros/macros-panel";
+import { MacrosMobile } from "@/components/adboard-m/macros-mobile";
 import { MacroDock } from "@/components/adboard/macros/macro-dock";
 import { DESK_SECTIONS, DeskProvider, asSection, type DeskSection } from "@/components/adboard/desk/desk-context";
 import { BottomSheet } from "@/components/adboard-m/bottom-sheet";
@@ -189,7 +189,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     <DeskProvider
       value={{ section, focusTool, devices, activeDevice, targets: broadcastTargets, sessions, lastSeen, open, selectDevice }}
     >
-      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v7">
+      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v8">
         <div className="pc-atmosphere" aria-hidden />
         <div data-m-top-cap aria-hidden />
         {showHeader && (
@@ -255,7 +255,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
               {section === "manage" && <ManagePanel />}
               {section === "apps" && <AppsPanelMobile />}
               {section === "files" && <FilesPanel />}
-              {section === "macros" && <MacrosPanel />}
+              {section === "macros" && <MacrosMobile />}
               {section === "automate" && <AutomatePanel />}
               {section === "developer" && <DeveloperPanel />}
               {section === "hosts" && <HostsPanel />}
