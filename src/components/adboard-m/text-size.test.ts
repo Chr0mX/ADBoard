@@ -21,8 +21,8 @@ test("standard keeps pinch zoom on, compact stops the iOS focus zoom", () => {
 
 test("the phone scale is token-driven: compact and standard define every token, small text is at least 11 px", () => {
   const css = readFileSync(path.join(root, "src/app/globals.css"), "utf8");
-  const compact = css.match(/\n\[data-m-app\]\s*\{([^}]*)\}/)?.[1] ?? "";
-  const standard = css.match(/html\[data-m-text="standard"\] \[data-m-app\]\s*\{([^}]*)\}/)?.[1] ?? "";
+  const compact = css.match(/\n\[data-m-app\],\s*\[data-m-sheet\]\s*\{([^}]*)\}/)?.[1] ?? "";
+  const standard = css.match(/html\[data-m-text="standard"\] \[data-m-app\],\s*html\[data-m-text="standard"\] \[data-m-sheet\]\s*\{([^}]*)\}/)?.[1] ?? "";
   const names = ["title", "subtitle", "heading", "device", "body", "control", "field", "label", "secondary", "tech", "meta", "tab"];
   for (const n of names) {
     const size = (block: string) => Number(block.match(new RegExp(`--t-${n}:\\s*([0-9.]+)rem`))?.[1]) * 16;

@@ -29,7 +29,7 @@ Never mono for a button, a tab, a heading or a description. A value is not mono 
 | `--t-meta` | 12 | 12 | 12.5 | Figtree 400 |
 | `--t-tab` | 13 | 11 | 12 | bottom tab labels |
 
-The phone app overrides the tokens on `[data-m-app]`; the More tab's Compact/Standard text size switches to the Standard column. The phone Control screen keeps the desktop values (its chrome is dense and has its own layout). Phone values are not the desktop values scaled down: body is 14 (not 13), and nothing below 12 except the bottom tab labels.
+The phone app overrides the tokens on `[data-m-app]` and on `[data-m-sheet]` (sheets are rendered outside the app element); the More tab's Compact/Standard text size switches to the Standard column. The phone Control screen keeps the desktop values (its chrome is dense and has its own layout). Phone values are not the desktop values scaled down: body is 14 (not 13), and nothing below 12 except the bottom tab labels.
 
 ## How it is applied
 
@@ -38,6 +38,16 @@ The phone app overrides the tokens on `[data-m-app]`; the More tab's Compact/Sta
 - **Semantic classes** (`@layer components`): `.t-title .t-subtitle .t-heading .t-device .t-body .t-control .t-label .t-secondary .t-meta .t-tech`, and `.tabular`.
 - **Mono** is opt-in: `font-mono` or `.t-tech` on the element that shows the technical value, `data-mono-field` on a field that holds one. `font-variant-numeric: tabular-nums` is on all of them.
 - **`cn`** (`src/lib/utils.ts`) knows `text-meta` is a size, so it is not dropped next to a text colour.
+
+## Tabs and navigation
+
+| Kind | Desktop | Phone (Compact / Standard) |
+|---|---:|---:|
+| Header tabs, section tabs (Macros), Settings categories, list rows | 14, weight 500 (current tab 600) | 14 / 15 |
+| Pill buttons and segmented controls (Manage and Apps sub-tabs, Selected / Multi / All) | 13, weight 500 | 14 / 15 |
+| Bottom tab bar labels (phone) | n/a | 11 / 12 |
+
+All of them are Figtree. Tabs read as navigation (body size); pill buttons read as controls.
 
 ## Checking it
 

@@ -34,8 +34,10 @@ test("the three size tokens exist for desktop and the phone app, and Tailwind si
   for (const name of ["title", "subtitle", "heading", "device", "body", "control", "field", "label", "secondary", "tech", "meta"]) {
     assert.match(css, new RegExp(`--t-${name}:`), `--t-${name}`);
   }
-  assert.match(css, /\[data-m-app\]\s*\{[^}]*--t-body:/s);
-  assert.match(css, /html\[data-m-text="standard"\] \[data-m-app\]\s*\{[^}]*--t-body:/s);
+  assert.match(css, /\[data-m-app\],\s*\[data-m-sheet\]\s*\{[^}]*--t-body:/s);
+  assert.match(css, /html\[data-m-text="standard"\] \[data-m-app\],\s*html\[data-m-text="standard"\] \[data-m-sheet\]\s*\{[^}]*--t-body:/s);
+  // Tailwind's size variables are re-declared where the phone tokens are set (a var() copy resolves where declared).
+  assert.match(css, /:root,\s*\[data-m-app\],\s*\[data-m-sheet\][^{]*\{[^}]*--text-sm:\s*var\(--t-body\)/s);
   for (const [utility, token] of [["--text-xs", "--t-secondary"], ["--text-sm", "--t-body"], ["--text-meta", "--t-meta"], ["--text-xl", "--t-title"]]) {
     assert.match(css, new RegExp(`${utility}:\\s*var\\(${token}\\)`), utility);
   }
