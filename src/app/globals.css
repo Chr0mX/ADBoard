@@ -1470,3 +1470,17 @@ html[data-m-text="standard"] {
     transition: transform 150ms ease;
   }
 }
+/* Text size: the selector gets its own line, as wide as the row's text. */
+[data-m-section="more"] [data-m-more-list] .m-row-static[data-m-text-size] {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+[data-m-more-list] [data-m-text-size] .m-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: calc(100% - 2rem);
+  margin-left: 2rem;
+}
+[data-m-section="more"] [data-m-more-list] [data-m-text-size] .m-segmented .pc-segment {
+  min-height: 2.5rem;
+}
