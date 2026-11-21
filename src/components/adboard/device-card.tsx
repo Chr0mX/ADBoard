@@ -17,6 +17,8 @@ interface DeviceCardProps {
   onToggleSelected: (deviceId: string, selected: boolean) => void;
   /** Unused: cards no longer repeat the host line. Kept for callers. */
   showHost?: boolean;
+  /** Desktop device list: one flat two-line row instead of the tall card. */
+  dense?: boolean;
 }
 
 function statusLabel(status: Device["status"]) {
@@ -36,11 +38,89 @@ export const DeviceCard = memo(function DeviceCard({
   isSelected,
   onSelect,
   onToggleSelected,
+  dense = false,
 }: DeviceCardProps) {
   countRender("card");
   const offline = device.status !== "online";
   const [menu, setMenu] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  if (dense) {
+    const dot =
+      device.status === "online" ? "bg-[var(--pc-signal)]" : device.status === "unauthorized" ? "bg-[var(--pc-warn)]" : "bg-[var(--pc-muted)]";
+    const detail =
+      device.status === "online"
+        ? [device.model, formatResolution(device.resolution.width, device.resolution.height)].filter(Boolean).join(" · ")
+        : device.status === "unauthorized"
+          ? "Authorize USB debugging on the device."
+          : "Offline · device unreachable.";
+    return (
+      <div
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu(true);
+        }}
+        data-device-card={device.id}
+        data-active={isActive ? "1" : "0"}
+        data-dense
+        className={cn(
+          "group relative flex w-full items-center rounded-lg border-l-2 pr-1",
+          isActive
+            ? "border-[var(--pc-accent)] bg-[var(--pc-accent-soft)]"
+            : isSelected
+              ? "border-[var(--pc-accent)]/40 bg-[var(--pc-panel)]/70"
+              : "border-transparent hover:bg-[var(--pc-panel)]/70",
+          offline && "opacity-70",
+        )}
+      >
+        <label className="flex size-9 shrink-0 items-center justify-center">
+          <Checkbox
+            checked={isSelected}
+            data-device-check={device.id}
+            aria-label={`Select ${device.name}`}
+            onChange={(event) => onToggleSelected(device.id, event.target.checked)}
+            onClick={(event) => event.stopPropagation()}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={(e) => onSelect({ deviceId: device.id, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, metaKey: e.metaKey })}
+          className="flex min-h-11 min-w-0 flex-1 flex-col justify-center py-1 text-left"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span aria-label={statusLabel(device.status)} className={cn("size-1.5 shrink-0 rounded-full", dot)} />
+            <span data-card-name className="min-w-0 truncate font-display text-sm font-semibold leading-5 text-[var(--pc-ink)]">
+              {device.name}
+            </span>
+            {device.battery != null && (
+              <span data-card-battery className="ml-auto shrink-0 font-mono text-xs text-[var(--pc-muted)]">
+                {device.battery}%
+              </span>
+            )}
+          </span>
+          <span data-card-model title={detail} className="truncate pl-3 text-xs leading-4 text-[var(--pc-muted)]">
+            {detail}
+          </span>
+        </button>
+        <button
+          ref={menuButtonRef}
+          type="button"
+          aria-label={`Actions for ${device.name}`}
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          className="flex size-9 shrink-0 items-center justify-center rounded-md text-lg leading-none text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)]"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            setMenu((open) => !open);
+          }}
+        >
+          ⋯
+        </button>
+        {menu && <DeviceMenu device={device} anchor={menuButtonRef.current} onClose={() => setMenu(false)} />}
+      </div>
+    );
+  }
 
   return (
     <div

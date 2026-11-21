@@ -215,7 +215,7 @@ export function ADBoardApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v74"
+      data-ui-build="pc-shell-v75"
     >
       <div className="pc-atmosphere" aria-hidden />
       {/* Keyboard users: jump past the section bar. Visible only when focused. */}
@@ -434,8 +434,34 @@ export function ADBoardApp() {
                     </Button>
                   </div>
                 )}
+                {/* Wide: who is controlled sits above the list, in one compact block. */}
+                {wide && (
+                  <div className="flex flex-col gap-2 [&_.pc-segment]:flex-1" data-devices-controls>
+                    <ControlModes
+                      compact
+                      stretch
+                      size="sm"
+                      mode={controlMode}
+                      onChange={setControlMode}
+                      selectedCount={activeId ? 1 : 0}
+                      multiCount={selectedIds.size}
+                      onlineCount={onlineCount}
+                    />
+                    <MultiDeviceToolbar
+                      compact
+                      devices={devices}
+                      selectedIds={selectedIds}
+                      controlMode={controlMode}
+                      targets={broadcastTargets}
+                      onSelectAll={selectAll}
+                      onClear={clearSelected}
+                      onSelectGroup={selectGroup}
+                    />
+                  </div>
+                )}
                 <DeviceGrid
                   hostsHeadingOnly={wide}
+                  dense={wide}
                   devices={devices}
                   activeId={activeId}
                   selectedIds={selectedIds}
@@ -452,22 +478,26 @@ export function ADBoardApp() {
                   }}
                   onToggleSelected={toggleSelected}
                 />
-                <ControlModes
-                  mode={controlMode}
-                  onChange={setControlMode}
-                  selectedCount={activeId ? 1 : 0}
-                  multiCount={selectedIds.size}
-                  onlineCount={onlineCount}
-                />
-                <MultiDeviceToolbar
-                  devices={devices}
-                  selectedIds={selectedIds}
-                  controlMode={controlMode}
-                  targets={broadcastTargets}
-                  onSelectAll={selectAll}
-                  onClear={clearSelected}
-                  onSelectGroup={selectGroup}
-                />
+                {!wide && (
+                  <>
+                    <ControlModes
+                      mode={controlMode}
+                      onChange={setControlMode}
+                      selectedCount={activeId ? 1 : 0}
+                      multiCount={selectedIds.size}
+                      onlineCount={onlineCount}
+                    />
+                    <MultiDeviceToolbar
+                      devices={devices}
+                      selectedIds={selectedIds}
+                      controlMode={controlMode}
+                      targets={broadcastTargets}
+                      onSelectAll={selectAll}
+                      onClear={clearSelected}
+                      onSelectGroup={selectGroup}
+                    />
+                  </>
+                )}
               </aside>
             )}
             </div>

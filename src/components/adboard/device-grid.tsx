@@ -17,6 +17,8 @@ interface DeviceGridProps {
   groupByHost?: boolean;
   /** The container already titles the list "Devices": only show "Hosts". */
   hostsHeadingOnly?: boolean;
+  /** Desktop panel: flat one-column rows (see DeviceCard). */
+  dense?: boolean;
 }
 
 function hostKey(device: Device): string {
@@ -35,6 +37,7 @@ export function DeviceGrid({
   onToggleSelected,
   groupByHost = true,
   hostsHeadingOnly = false,
+  dense = false,
 }: DeviceGridProps) {
   const groups = useMemo(() => {
     if (!groupByHost) {
@@ -80,7 +83,7 @@ export function DeviceGrid({
                   </span>
                 </div>
               )}
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <div className={dense ? "flex flex-col gap-0.5" : "grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"}>
                 {group.devices.map((device) => (
                   <DeviceCard
                     key={device.id}
@@ -90,6 +93,7 @@ export function DeviceGrid({
                     onSelect={onSelect}
                     onToggleSelected={onToggleSelected}
                     showHost={!multiHost}
+                    dense={dense}
                   />
                 ))}
               </div>

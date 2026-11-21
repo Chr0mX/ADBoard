@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { DESK_SECTIONS, type DeskSection } from "@/components/adboard/desk/desk-context";
 import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
 import { useEventAlerts } from "@/lib/events/client";
+
+/** The first system page: everything before it is a work area. */
+const SYSTEM_FROM: DeskSection = "hosts";
 
 interface ControlHeaderProps {
   onlineCount: number;
@@ -27,7 +30,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
     if (tab) nav.scrollLeft = Math.max(0, tab.offsetLeft - (nav.clientWidth - tab.offsetWidth) / 2);
   }, [section]);
   return (
-    <header className="relative z-10 flex shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1.5 sm:px-4">
+    <header className="relative z-10 flex shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--pc-line)] px-3 py-1 sm:px-4">
       <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]">
         ADBoard
       </h1>
@@ -58,15 +61,17 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
         className="hidden min-w-0 flex-1 gap-1 overflow-x-auto sm:flex"
       >
         {DESK_SECTIONS.map((item) => (
+          <Fragment key={item.id}>
+          {/* Work areas first, then the system pages (the order is unchanged). */}
+          {item.id === SYSTEM_FROM && <span aria-hidden className="mx-1.5 my-2 w-px shrink-0 bg-[var(--pc-line)]" />}
           <button
-            key={item.id}
             type="button"
             data-section-tab={item.id}
             aria-current={section === item.id ? "page" : undefined}
-            className={`inline-flex h-11 shrink-0 items-center justify-center rounded-xl px-2.5 text-sm leading-5 ${
+            className={`relative inline-flex h-11 shrink-0 items-center justify-center rounded-md px-2.5 text-sm leading-5 pointer-fine:h-9 ${
               section === item.id
-                ? "bg-[var(--pc-accent-fill)] text-white"
-                : "text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]"
+                ? "font-semibold text-[var(--pc-ink)] after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[var(--pc-accent)] after:content-['']"
+                : "text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
             }`}
             onClick={() => onSection(item.id)}
           >
@@ -83,6 +88,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
               </span>
             )}
           </button>
+          </Fragment>
         ))}
       </nav>
       <div className="flex shrink-0 items-center gap-2">
@@ -105,7 +111,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
             type="button"
             data-set-password
             onClick={session.openAccount}
-            className="inline-flex h-11 items-center rounded-xl px-2.5 text-sm text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
+            className="inline-flex h-11 items-center rounded-md px-2.5 text-sm text-[var(--pc-muted)] pointer-fine:h-9 hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
           >
             Set password
           </button>
@@ -117,7 +123,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
               data-account
               onClick={session.openAccount}
               title="Change password"
-              className="inline-flex h-11 items-center rounded-xl px-2.5 text-sm text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
+              className="inline-flex h-11 items-center rounded-md px-2.5 text-sm text-[var(--pc-muted)] pointer-fine:h-9 hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
             >
               {session.username ?? "Account"}
             </button>
@@ -125,7 +131,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
               type="button"
               data-sign-out
               onClick={session.signOut}
-              className="inline-flex h-11 items-center rounded-xl px-2.5 text-sm text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
+              className="inline-flex h-11 items-center rounded-md px-2.5 text-sm text-[var(--pc-muted)] pointer-fine:h-9 hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)]"
             >
               Sign out
             </button>

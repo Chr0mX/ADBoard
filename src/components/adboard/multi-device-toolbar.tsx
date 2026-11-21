@@ -21,6 +21,7 @@ export function MultiDeviceToolbar({
   onSelectAll,
   onClear,
   onSelectGroup,
+  compact = false,
 }: {
   devices: Device[];
   selectedIds: Set<string>;
@@ -30,6 +31,8 @@ export function MultiDeviceToolbar({
   onSelectAll: () => void;
   onClear: () => void;
   onSelectGroup: (deviceIds: string[]) => void;
+  /** Desktop panel: the three buttons in one small row. */
+  compact?: boolean;
 }) {
   const library = useLibrary();
   const [busy, setBusy] = useState(false);
@@ -67,10 +70,10 @@ export function MultiDeviceToolbar({
 
   return (
     <section data-multi-device-toolbar className="flex flex-col gap-2" aria-label="Multi-device">
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className={compact ? "flex flex-wrap gap-1.5" : "grid grid-cols-2 gap-1.5"}>
         <button
           type="button"
-          className="pc-toggle pc-toggle-md"
+          className={compact ? "pc-toggle pc-toggle-sm" : "pc-toggle pc-toggle-md"}
           aria-pressed={allTicked}
           disabled={online.length === 0}
           onClick={onSelectAll}
@@ -81,7 +84,7 @@ export function MultiDeviceToolbar({
         </button>
         <button
           type="button"
-          className="pc-toggle pc-toggle-md"
+          className={compact ? "pc-toggle pc-toggle-sm" : "pc-toggle pc-toggle-md"}
           disabled={selectedIds.size === 0 && controlMode === "selected"}
           onClick={onClear}
           data-select-clear
@@ -91,14 +94,14 @@ export function MultiDeviceToolbar({
         </button>
         <button
           type="button"
-          className="pc-toggle pc-toggle-md col-span-2"
+          className={compact ? "pc-toggle pc-toggle-sm" : "pc-toggle pc-toggle-md col-span-2"}
           disabled={busy || reconnectCount === 0}
           onClick={() => void reconnect()}
           data-reconnect-targets
           title="Restart the live screen on the target phones; offline ticked phones get adb reconnect"
         >
           <RotateCw className={busy ? "size-4 animate-spin" : "size-4"} />
-          Reconnect {reconnectCount > 0 ? `${reconnectCount} phone${reconnectCount === 1 ? "" : "s"}` : ""}
+          Reconnect {reconnectCount > 0 ? (compact ? reconnectCount : `${reconnectCount} phone${reconnectCount === 1 ? "" : "s"}`) : ""}
         </button>
       </div>
       {library.groups.length > 0 && (
