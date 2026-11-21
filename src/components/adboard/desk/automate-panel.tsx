@@ -226,7 +226,7 @@ function JobLibrary({
     <div className="@container flex min-w-0 flex-col gap-4" data-shell-library>
       <section className="flex flex-col gap-2" data-shell-jobs>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Saved jobs ({library.macros.length})</h3>
+          <h3 className="t-heading text-[var(--pc-ink)]">Saved jobs ({library.macros.length})</h3>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="pc-toggle pc-toggle-sm" onClick={() => onOpen(null)} data-shell-new-job>
               New job
@@ -254,7 +254,7 @@ function JobLibrary({
         )}
         {folders.map((folder) => (
           <div key={folder} className="flex flex-col gap-1" data-shell-folder={folder}>
- <h4 className="font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">{folder}</h4>
+ <h4 className="text-meta text-[var(--pc-muted)]">{folder}</h4>
             <ul className="flex flex-col gap-1">
               {library.macros
                 .filter((macro) => (macro.folder || "Custom") === folder)
@@ -266,7 +266,7 @@ function JobLibrary({
                   >
                     <button type="button" className="flex min-h-10 min-w-0 flex-1 flex-col items-start text-left" onClick={() => onOpen(macro.id)}>
                       <span className="text-sm font-medium text-[var(--pc-ink)]">{macro.name}</span>
-                      <span className="font-mono text-[11px] text-[var(--pc-muted)]">
+                      <span className="text-meta text-[var(--pc-muted)]">
                         {macro.steps.length} step{macro.steps.length === 1 ? "" : "s"}
                         {(macro.repeat ?? 1) > 1 ? ` · ×${macro.repeat}` : ""}
                         {macro.id === openId ? " · open in Builder" : ""}
@@ -314,7 +314,7 @@ function JobLibrary({
 
       <section className="flex flex-col gap-3" data-shell-actions>
         <div className="flex flex-col gap-1">
-          <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Actions</h3>
+          <h3 className="t-heading text-[var(--pc-ink)]">Actions</h3>
           <p className="text-xs text-[var(--pc-muted)]">
             {open ? (
               <>
@@ -323,12 +323,12 @@ function JobLibrary({
             ) : (
               "No job is open: Add creates a new job with that action."
             )}{" "}
-            <span className="font-mono">Shell</span> and <span className="font-mono">File</span> actions need ADB on the phone; <span className="font-mono">Touch</span> actions simulate a finger on the screen.
+            <span>Shell</span> and <span>File</span> actions need ADB on the phone; <span>Touch</span> actions simulate a finger on the screen.
           </p>
         </div>
         {CATEGORIES.map((category) => (
           <div key={category} className="flex flex-col gap-1.5" data-shell-category={category}>
- <h4 className="font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">{category}</h4>
+ <h4 className="text-meta text-[var(--pc-muted)]">{category}</h4>
             <ul className="grid gap-2 @xl:grid-cols-2 @5xl:grid-cols-3">
               {ACTIONS.filter((a) => a.category === category).map((action) => (
                 <li key={action.kind} className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-2.5" data-shell-action={action.kind}>
@@ -336,9 +336,9 @@ function JobLibrary({
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--pc-ink)]">{action.label}</span>
                     <MechanismBadge mechanism={action.mechanism} />
                   </div>
-                  <p className="text-[11px] text-[var(--pc-muted)]">{action.description}</p>
+                  <p className="text-meta text-[var(--pc-muted)]">{action.description}</p>
                   {action.recordedOnly ? (
-                    <p className="text-[11px] italic text-[var(--pc-muted)]">Made with Record touches in Control; appears here as a job in “Recorded”.</p>
+                    <p className="text-meta italic text-[var(--pc-muted)]">Made with Record touches in Control; appears here as a job in “Recorded”.</p>
                   ) : (
                     <button
                       type="button"
@@ -444,8 +444,8 @@ function GroupsEditor() {
     <div className="flex flex-col gap-3">
       {library.groups.map((group) => (
         <section key={group.id}>
-          <h3 className="font-display text-sm font-semibold">{group.name}</h3>
-          <ul className="font-mono text-xs">
+          <h3 className="t-heading">{group.name}</h3>
+          <ul className="text-xs">
             {group.deviceIds.map((id) => (
               <li key={id}>{desk.devices.find((device) => device.id === id)?.name ?? id}</li>
             ))}

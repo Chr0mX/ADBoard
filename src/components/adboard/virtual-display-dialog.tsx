@@ -72,7 +72,7 @@ export function VirtualDisplayDialog({ device, onClose }: { device: Device; onCl
         aria-labelledby={titleId}
         className="flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col gap-3 overflow-y-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-4 shadow-lg"
       >
-        <h3 id={titleId} className="font-display text-base font-semibold text-[var(--pc-ink)]">
+        <h3 id={titleId} className="t-heading text-[var(--pc-ink)]">
           {virtual ? "Virtual display" : "Add a virtual display"}
         </h3>
         <p className="text-sm text-[var(--pc-muted)]">

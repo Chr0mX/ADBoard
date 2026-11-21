@@ -125,7 +125,7 @@ export function StoragePanel() {
       {info && (
         <>
           <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-storage-current>
-            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Current Storage Location</h3>
+            <h3 className="t-heading text-[var(--pc-ink)]">Current Storage Location</h3>
             <p className="text-sm text-[var(--pc-muted)]">Your data is currently stored in {currentLabel}.</p>
             <div className="flex min-w-0 flex-col gap-2">
               <p className="text-sm font-semibold text-[var(--pc-ink)]">{inApp ? "App folder" : inUser ? "User folder" : "Custom folder"}</p>
@@ -152,7 +152,7 @@ export function StoragePanel() {
           {(targets?.app || targets?.user) && (
             <section className="flex min-w-0 flex-col gap-3" data-storage-switch>
               <div className="flex min-w-0 flex-col gap-1">
-                <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Switch Storage Location</h3>
+                <h3 className="t-heading text-[var(--pc-ink)]">Switch Storage Location</h3>
                 <p className="text-sm text-[var(--pc-muted)]">Choose between the app folder and your Windows user folder.</p>
               </div>
               {(["app", "user"] as StandardKey[]).map((key) => {
@@ -183,7 +183,7 @@ export function StoragePanel() {
                   <button
                     key={key}
                     type="button"
-                    className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] p-4 text-left font-sans text-sm font-normal text-[var(--pc-ink)] disabled:opacity-60"
+                    className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] p-4 text-left text-sm font-normal text-[var(--pc-ink)] disabled:opacity-60"
                     disabled={!viaAgent || busy || !option.path}
                     onClick={() => setConfirmSwitch(key)}
                     data-storage-option={key}
@@ -199,7 +199,7 @@ export function StoragePanel() {
 
           <section className="flex min-w-0 flex-col gap-3" data-storage-change>
             <div className="flex min-w-0 flex-col gap-1">
-              <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Custom Storage Location</h3>
+              <h3 className="t-heading text-[var(--pc-ink)]">Custom Storage Location</h3>
               <p className="text-sm text-[var(--pc-muted)]">Enter a full folder path to use an existing data folder or choose a new location.</p>
               <p className="text-sm text-[var(--pc-muted)]">
                 Example: <span className="break-all font-mono text-xs text-[var(--pc-ink)]">D:\adboard-data</span>
@@ -235,7 +235,7 @@ export function StoragePanel() {
       {info && (
         <section className="flex min-w-0 flex-col gap-3" data-storage-folders>
           <div className="flex min-w-0 flex-col gap-1">
-            <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Folders</h3>
+            <h3 className="t-heading text-[var(--pc-ink)]">Folders</h3>
             <p className="text-sm text-[var(--pc-muted)]">Everything in your data folder. Open shows the folder on the ADBoard computer.</p>
           </div>
           <FolderRows info={info} onNotice={setNotice} />

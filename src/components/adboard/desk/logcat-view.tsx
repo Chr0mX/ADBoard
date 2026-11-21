@@ -166,14 +166,14 @@ export function LogcatView({ devices, preferred }: { devices: Device[]; preferre
           Save .txt
         </button>
       </div>
-      <p className="text-[11px] text-[var(--pc-muted)]">
+      <p className="text-meta text-[var(--pc-muted)]">
         {shown.length} line{shown.length === 1 ? "" : "s"}
         {search && ` of ${lines.length}`}
         {skipped > 0 && ` · ${skipped} skipped (too fast)`}
         {note && ` · ${note}`}
         {" · "}App crashes on any phone are also recorded in Events.
       </p>
-      <div ref={listRef} className="h-[28rem] overflow-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-frame)] p-2 font-mono text-[11px] leading-4" data-logcat-lines>
+      <div ref={listRef} className="h-[28rem] overflow-auto rounded-xl border border-[var(--pc-line)] bg-[var(--pc-frame)] p-2 font-mono text-meta leading-4" data-logcat-lines>
         {shown.map((line) => (
           <div key={line.id} className={cn("whitespace-pre", line.level ? LEVEL_CLASS[line.level] : "text-[var(--pc-muted)]")} data-level={line.level ?? ""}>
             {line.raw}

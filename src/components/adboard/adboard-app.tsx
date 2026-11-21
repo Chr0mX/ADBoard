@@ -215,7 +215,7 @@ export function ADBoardApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v77"
+      data-ui-build="pc-shell-v78"
     >
       <div className="pc-atmosphere" aria-hidden />
       {/* Keyboard users: jump past the section bar. Visible only when focused. */}
@@ -246,7 +246,7 @@ export function ADBoardApp() {
         )}
       >
         {loading && (
-          <div className="flex flex-1 items-center justify-center font-mono text-sm text-[var(--pc-muted)]">
+          <div className="flex flex-1 items-center justify-center text-sm text-[var(--pc-muted)]">
             Loading devices…
           </div>
         )}
@@ -270,7 +270,7 @@ export function ADBoardApp() {
         {!loading && section === "control" && (
           <>
             {error && !fillWindow && (
-              <p className="mb-1 shrink-0 truncate px-1 font-mono text-[11px] text-[var(--pc-warn)]">
+              <p className="mb-1 shrink-0 truncate px-1 text-meta text-[var(--pc-warn)]">
                 {error}
               </p>
             )}
@@ -379,7 +379,7 @@ export function ADBoardApp() {
                 className="fixed inset-0 z-40 flex flex-col gap-3 overflow-y-auto bg-[var(--pc-paper)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">Macros</h2>
+                  <h2 className="t-heading text-[var(--pc-ink)]">Macros</h2>
                   <Button type="button" variant="outline" className="h-11 min-w-11" onClick={() => setMacroDockOpen(false)}>
                     Close
                   </Button>
@@ -421,7 +421,7 @@ export function ADBoardApp() {
                 )}
                 {!wide && (
                   <div className="flex items-center justify-between gap-2">
-                    <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">
+                    <h2 className="t-heading text-[var(--pc-ink)]">
                       Devices
                     </h2>
                     <Button
@@ -509,7 +509,7 @@ export function ADBoardApp() {
                 className="absolute inset-0 z-40 flex flex-col gap-3 overflow-hidden bg-[var(--pc-paper)] p-3"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">
+                  <h2 className="t-heading text-[var(--pc-ink)]">
                     Screens
                   </h2>
                   <Button
@@ -568,7 +568,7 @@ function PanelHeader({
     side === "left" ? <ChevronLeft className="size-4" /> : <ChevronRight className="size-4" />;
   return (
     <div className="flex shrink-0 items-center justify-between gap-2">
-      <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
+      <h2 className="t-heading text-[var(--pc-ink)]">
         {title}
       </h2>
       <Button
@@ -612,10 +612,10 @@ function PanelRail({
         className="flex min-h-0 flex-1 flex-col items-center gap-3 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 py-3 text-[var(--pc-muted)] hover:bg-[var(--pc-accent-soft)] hover:text-[var(--pc-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pc-accent)]"
       >
         {side === "left" ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
-        <span className="font-mono text-[11px] tracking-wider [writing-mode:vertical-rl]">
+        <span className="text-meta [writing-mode:vertical-rl]">
           {label}
         </span>
-        <span className="font-mono text-[11px] text-[var(--pc-ink)]">{count}</span>
+        <span className="text-meta text-[var(--pc-ink)]">{count}</span>
       </button>
     </aside>
   );

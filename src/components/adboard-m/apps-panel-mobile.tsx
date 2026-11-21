@@ -113,7 +113,7 @@ export function AppsPanelMobile() {
             const apps = library.apps.filter((app) => (app.group || "Custom") === group);
             return (
               <section key={group} className="flex flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3">
-                <h3 className="font-display text-sm font-semibold">{group}</h3>
+                <h3 className="t-heading">{group}</h3>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" className={btn} onClick={() => setAdding({ group })} data-add-app-in={group}>
                     Add app
@@ -127,11 +127,11 @@ export function AppsPanelMobile() {
                 {apps.map((app) => (
                   <article key={app.id} data-app-shortcut={app.name} className="flex flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-3">
                     <div className="min-w-0">
-                      <p className="flex items-center gap-2 font-display text-sm font-semibold">
+                      <p className="flex items-center gap-2 text-sm font-semibold">
                         <AppIcon icon={app.icon} name={app.name} packageName={app.packageName} serial={iconSerial} />
                         <span className="min-w-0 truncate">{app.name}</span>
                       </p>
-                      <p className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{app.packageName}</p>
+                      <p className="truncate font-mono text-meta text-[var(--pc-muted)]">{app.packageName}</p>
                     </div>
                     <div className="grid grid-cols-4 gap-1.5">
                       <button type="button" className={btn} onClick={() => void launch(app)}>Launch</button>

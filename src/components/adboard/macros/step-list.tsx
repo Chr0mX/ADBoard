@@ -184,7 +184,7 @@ export function StepList({
                 className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg px-1 text-left"
               >
                 <span
-                  className="flex size-6 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold text-[#071016]"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-full text-meta font-bold text-[#071016]"
                   style={{ backgroundColor: stepColor(index) }}
                 >
                   {index + 1}
@@ -193,15 +193,15 @@ export function StepList({
                   <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--pc-ink)]">
                     {stepTitle(step)}
                     {kind === "text" && (
-                      <span className="rounded bg-[var(--pc-accent-soft)] px-1 font-mono text-[11px] text-[var(--pc-accent)]">text</span>
+                      <span className="rounded bg-[var(--pc-accent-soft)] px-1 text-meta text-[var(--pc-accent)]">text</span>
                     )}
                     {kind === "multi" && (
-                      <span className="rounded bg-[var(--pc-accent-soft)] px-1 font-mono text-[11px] text-[var(--pc-accent)]">
+                      <span className="rounded bg-[var(--pc-accent-soft)] px-1 text-meta text-[var(--pc-accent)]">
                         {step.fingers.length} fingers
                       </span>
                     )}
                   </span>
-                  <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{stepSummary(step, steps, apps)}</span>
+                  <span className="truncate font-mono text-meta text-[var(--pc-muted)]">{stepSummary(step, steps, apps)}</span>
                 </span>
               </button>
               <IconButton label={`Test step ${index + 1}`} disabled={!canTest} onClick={() => onTest(step.id)} tone="accent">
@@ -398,7 +398,7 @@ function StepEditor({
         <div aria-label="Finger timeline" className="flex flex-col gap-1 rounded-xl bg-[var(--pc-panel)] p-2">
           {step.fingers.map((finger, fingerIndex) => (
             <div key={finger.id} className="flex items-center gap-2">
-              <span className="w-5 font-mono text-[11px] text-[var(--pc-muted)]">{String.fromCharCode(97 + fingerIndex)}</span>
+              <span className="w-5 text-meta text-[var(--pc-muted)]">{String.fromCharCode(97 + fingerIndex)}</span>
               <div className="relative h-2.5 flex-1 rounded-full bg-[var(--pc-line)]">
                 <div
                   className="absolute h-full rounded-full"
@@ -411,7 +411,7 @@ function StepEditor({
               </div>
             </div>
           ))}
-          <span className="text-right font-mono text-[11px] text-[var(--pc-muted)]">{formatMs(total)} with fingers down</span>
+          <span className="text-right font-mono text-meta text-[var(--pc-muted)]">{formatMs(total)} with fingers down</span>
         </div>
       )}
 

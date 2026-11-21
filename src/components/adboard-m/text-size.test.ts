@@ -19,16 +19,20 @@ test("standard keeps pinch zoom on, compact stops the iOS focus zoom", () => {
   assert.match(viewportFor("compact", "width=device-width"), /maximum-scale=1$/);
 });
 
-test("the scale is variable-driven: both sizes define every variable, hints are at least 11 px", () => {
+test("the phone scale is token-driven: compact and standard define every token, small text is at least 11 px", () => {
   const css = readFileSync(path.join(root, "src/app/globals.css"), "utf8");
-  const names = ["body", "hint", "btn", "field", "h2", "h3", "h4", "tab"];
+  const compact = css.match(/\n\[data-m-app\]\s*\{([^}]*)\}/)?.[1] ?? "";
+  const standard = css.match(/html\[data-m-text="standard"\] \[data-m-app\]\s*\{([^}]*)\}/)?.[1] ?? "";
+  const names = ["title", "subtitle", "heading", "device", "body", "control", "field", "label", "secondary", "tech", "meta", "tab"];
   for (const n of names) {
-    const all = [...css.matchAll(new RegExp(`--m-${n}:\\s*([0-9.]+)rem`, "g"))].map((m) => Number(m[1]) * 16);
-    assert.equal(all.length, 2, `--m-${n} defined for compact and standard`);
-    if (n === "hint" || n === "tab") for (const px of all) assert.ok(px >= 11, `--m-${n} >= 11px`);
+    const size = (block: string) => Number(block.match(new RegExp(`--t-${n}:\\s*([0-9.]+)rem`))?.[1]) * 16;
+    const [c, st] = [size(compact), size(standard)];
+    assert.ok(Number.isFinite(c) && Number.isFinite(st), `--t-${n} defined for compact and standard`);
+    assert.ok(st >= c, `--t-${n}: standard is not smaller than compact`);
+    if (["secondary", "tech", "meta", "tab", "label"].includes(n)) assert.ok(c >= 11, `--t-${n} >= 11px`);
   }
-  const standardField = css.match(/html\[data-m-text="standard"\]\s*\{[^}]*--m-field:\s*([0-9.]+)rem/s);
-  assert.equal(Number(standardField?.[1]) * 16, 16, "standard fields are 16 px (no iOS focus zoom)");
+  // Standard fields are 16 px (no iOS focus zoom).
+  assert.equal(Number(standard.match(/--t-field:\s*([0-9.]+)rem/)?.[1]) * 16, 16);
 });
 
 test("mobile screens use an icon, not an emoji, for Add", () => {

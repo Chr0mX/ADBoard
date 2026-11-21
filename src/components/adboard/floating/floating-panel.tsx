@@ -647,7 +647,7 @@ export function FloatingPanel({
             )}
           >
             {tabStyle !== "text" && <PeekIcon className="size-4" />}
-            {tabStyle !== "icons" && <span className="font-mono text-[10px] font-semibold leading-none tracking-wide">{label}</span>}
+            {tabStyle !== "icons" && <span className="text-meta font-semibold leading-none">{label}</span>}
           </span>
         </button>
       ) : (
@@ -687,7 +687,7 @@ export function FloatingPanel({
               {collapsed && (
                 <span
                   data-float-label
-                  className="shrink-0 whitespace-nowrap font-mono text-xs font-medium tracking-wide text-[var(--pc-ink)]"
+                  className="shrink-0 whitespace-nowrap text-xs font-medium text-[var(--pc-ink)]"
                 >
                   {label}
                 </span>

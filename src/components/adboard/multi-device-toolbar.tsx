@@ -106,7 +106,7 @@ export function MultiDeviceToolbar({
       </div>
       {library.groups.length > 0 && (
         <div className="flex flex-col gap-1" data-device-groups>
- <p className="flex items-center gap-1.5 font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
+ <p className="flex items-center gap-1.5 text-meta text-[var(--pc-muted)]">
             <Users className="size-3" aria-hidden />
             Group control
           </p>
@@ -127,7 +127,7 @@ export function MultiDeviceToolbar({
                   title={`Control ${group.name} (${ids.length} phone${ids.length === 1 ? "" : "s"})`}
                 >
                   {group.name}
-                  <span className="text-[11px] text-[var(--pc-muted)]">{ids.length}</span>
+                  <span className="text-meta text-[var(--pc-muted)]">{ids.length}</span>
                 </button>
               );
             })}
@@ -135,7 +135,7 @@ export function MultiDeviceToolbar({
         </div>
       )}
       {note && (
-        <p role="status" data-multi-note className="font-mono text-[11px] text-[var(--pc-muted)] [overflow-wrap:anywhere]">
+        <p role="status" data-multi-note className="text-meta text-[var(--pc-muted)] [overflow-wrap:anywhere]">
           {note}
         </p>
       )}

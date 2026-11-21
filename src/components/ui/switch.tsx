@@ -24,7 +24,7 @@ export function SwitchRow({
     <label className={cn("pc-choice-row justify-between", className)} aria-disabled={props.disabled || undefined}>
       <span className="flex min-w-0 flex-col">
         <span className="text-sm text-[var(--pc-ink)]">{label}</span>
-        {description && <span className="text-[11px] leading-snug text-[var(--pc-muted)]">{description}</span>}
+        {description && <span className="text-meta leading-snug text-[var(--pc-muted)]">{description}</span>}
       </span>
       <Switch {...props} />
     </label>

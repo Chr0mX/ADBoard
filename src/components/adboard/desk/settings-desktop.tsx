@@ -78,7 +78,7 @@ export function SettingsDesktop() {
         <nav aria-label="Settings categories" className="hidden flex-col gap-4 lg:flex" data-settings-nav-list>
           {groups.map((group) => (
             <div key={group} className="flex flex-col gap-0.5">
-              <h3 className="px-2 pb-1 text-xs font-medium tracking-wide text-[var(--pc-muted)] uppercase">{group}</h3>
+              <h3 className="px-2 pb-1 text-xs font-medium text-[var(--pc-muted)]">{group}</h3>
               {entries
                 .filter((entry) => entry.group === group)
                 .map((entry) => {
@@ -91,7 +91,7 @@ export function SettingsDesktop() {
                       data-settings-category={entry.id}
                       onClick={() => setStored(entry.id)}
                       className={cn(
-                        "flex h-9 items-center rounded-md px-2 text-left font-sans text-sm",
+                        "flex h-9 items-center rounded-md px-2 text-left text-sm",
                         selected
                           ? "bg-[var(--pc-accent-soft)] font-medium text-[var(--pc-ink)]"
                           : "text-[var(--pc-ink)]/85 hover:bg-[var(--pc-accent-soft)]/60",

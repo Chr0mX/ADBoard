@@ -308,12 +308,12 @@ export function TouchScreenGrid({
           )}
         >
           {showTitle && (
-            <h2 className="hidden shrink-0 font-display text-sm font-semibold text-[var(--pc-ink)] xl:block">
+            <h2 className="hidden shrink-0 t-heading text-[var(--pc-ink)] xl:block">
               ADBoard
             </h2>
           )}
           <p
- className="hidden shrink-0 whitespace-nowrap font-mono text-[11px] tracking-wider text-[var(--pc-muted)] xl:block"
+ className="hidden shrink-0 whitespace-nowrap text-meta text-[var(--pc-muted)] xl:block"
             title={`${listed.length} devices · ${onlineCount} online`}
           >
             {onlineCount}/{listed.length} online
@@ -356,7 +356,7 @@ export function TouchScreenGrid({
                 </div>
               )}
               <p
- className="hidden min-w-0 truncate font-mono text-[11px] tracking-wider text-[var(--pc-muted)] 2xl:block"
+ className="hidden min-w-0 truncate text-meta text-[var(--pc-muted)] 2xl:block"
                 data-grid-touch-note
               >
                 {touchNote}
@@ -382,7 +382,7 @@ export function TouchScreenGrid({
                 >
                   <ChevronLeft className="size-4" />
                 </button>
-                <span className="whitespace-nowrap font-mono text-[11px] text-[var(--pc-ink)]" aria-label={`Page ${page + 1} of ${pages}`}>
+                <span className="whitespace-nowrap text-meta text-[var(--pc-ink)]" aria-label={`Page ${page + 1} of ${pages}`}>
                   {page + 1}/{pages}
                 </span>
                 <button
@@ -415,7 +415,7 @@ export function TouchScreenGrid({
                 <LayoutGrid className="size-3.5" />
                 <span>Arrangement</span>
                 {fixed && (
-                  <span className="rounded-md bg-[var(--pc-accent-soft)] px-1 text-[11px] text-[var(--pc-accent)]" data-grid-arrangement-value>
+                  <span className="rounded-md bg-[var(--pc-accent-soft)] px-1 text-meta text-[var(--pc-accent)]" data-grid-arrangement-value>
                     {fixed.cols}×{fixed.rows}
                   </span>
                 )}
@@ -470,7 +470,7 @@ export function TouchScreenGrid({
           aria-label="Arrangement options"
           className="flex shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/80 px-3 py-1.5"
         >
- <span className="font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">Arrangement</span>
+ <span className="text-meta text-[var(--pc-muted)]">Arrangement</span>
           <button
             type="button"
             aria-pressed={!fixed}
@@ -491,7 +491,7 @@ export function TouchScreenGrid({
             dim={!fixed}
             onStep={(delta) => step("cols", delta)}
           />
-          <span aria-hidden className="font-mono text-xs text-[var(--pc-muted)]">×</span>
+          <span aria-hidden className="text-xs text-[var(--pc-muted)]">×</span>
           <Stepper
             small={!desktop}
             label="Rows"
@@ -499,7 +499,7 @@ export function TouchScreenGrid({
             dim={!fixed}
             onStep={(delta) => step("rows", delta)}
           />
-          <p className="hidden min-w-0 flex-1 truncate text-[11px] text-[var(--pc-muted)] lg:block">
+          <p className="hidden min-w-0 flex-1 truncate text-meta text-[var(--pc-muted)] lg:block">
             More phones than cells adds pages (‹ › in the bar).
           </p>
           <button
@@ -519,7 +519,7 @@ export function TouchScreenGrid({
         className={cn("min-h-0 flex-1 overflow-auto", barHidden && "mr-7")}
       >
         {listed.length === 0 ? (
- <p className="px-1 font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
+ <p className="px-1 text-meta text-[var(--pc-muted)]">
             No devices
           </p>
         ) : desktop ? (
@@ -594,12 +594,12 @@ function Stepper({
       </button>
       <span
         className={cn(
-          "min-w-[3.25rem] text-center font-mono text-[11px] leading-tight",
+          "min-w-[3.25rem] text-center text-meta leading-tight",
           dim ? "text-[var(--pc-muted)]" : "text-[var(--pc-ink)]",
         )}
         aria-live="polite"
       >
- <span className="block text-[11px] tracking-wider text-[var(--pc-muted)]">{label}</span>
+ <span className="block text-meta text-[var(--pc-muted)]">{label}</span>
         <span data-grid-value>{value}</span>
       </span>
       <button
@@ -814,7 +814,7 @@ const TouchScreenTile = memo(function TouchScreenTile({
               />
             )}
             {offline && (
-              <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center font-mono text-[11px] text-white/70">
+              <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center text-meta text-white/70">
                 {device.status === "unauthorized" ? "Unauthorized" : "ADB offline"}
               </p>
             )}
@@ -835,11 +835,11 @@ const TouchScreenTile = memo(function TouchScreenTile({
               compact
             />
           )}
-          <span className="shrink-0 truncate font-mono text-[11px] font-semibold text-[var(--pc-ink)]" style={{ maxWidth: "40%" }}>
+          <span className="shrink-0 truncate text-meta font-semibold text-[var(--pc-ink)]" style={{ maxWidth: "40%" }}>
             {device.name}
           </span>
           <div data-tile-stats={device.id} className="min-w-0 flex-1 overflow-hidden">
-            <StatsLine device={device} className="truncate text-[11px] text-[var(--pc-muted)]" />
+            <StatsLine device={device} className="truncate text-meta text-[var(--pc-muted)]" />
           </div>
           <Button
             type="button"
@@ -866,7 +866,7 @@ const TouchScreenTile = memo(function TouchScreenTile({
       )}
     >
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--pc-line)] px-1">
-        <span className="min-w-0 flex-1 truncate px-0.5 font-mono text-[11px] text-[var(--pc-ink)]">
+        <span className="min-w-0 flex-1 truncate px-0.5 text-meta text-[var(--pc-ink)]">
           {device.name}
         </span>
         {canToggle && (
@@ -958,7 +958,7 @@ const TouchScreenTile = memo(function TouchScreenTile({
           />
         )}
         {offline && (
-          <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center font-mono text-[11px] text-white/70">
+          <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center text-meta text-white/70">
             {device.status === "unauthorized" ? "Unauthorized" : "ADB offline"}
           </p>
         )}
@@ -966,7 +966,7 @@ const TouchScreenTile = memo(function TouchScreenTile({
       <div data-tile-stats={device.id} className="shrink-0 border-t border-[var(--pc-line)] px-1.5 py-0.5">
         <StatsLine
           device={device}
-          className="text-[11px] text-[var(--pc-muted)]"
+          className="text-meta text-[var(--pc-muted)]"
         />
       </div>
     </div>

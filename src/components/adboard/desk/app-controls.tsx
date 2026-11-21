@@ -157,11 +157,11 @@ export function AppControls({
       {detail && (
         <div className="grid gap-3 xl:grid-cols-2" data-app-controls-detail>
           <section className={cardClass}>
-            <h3 className="font-display text-sm font-semibold">
+            <h3 className="t-heading">
               {detail.package}
               {detail.system && <span className="ml-2 text-xs font-normal text-[var(--pc-muted)]">system app</span>}
             </h3>
-            <p className="font-mono text-[11px] text-[var(--pc-muted)]">
+            <p className="font-mono text-meta text-[var(--pc-muted)]">
               {[detail.versionName && `v${detail.versionName}`, detail.uid != null && `uid ${detail.uid}`, detail.targetSdk && `target SDK ${detail.targetSdk}`]
                 .filter(Boolean)
                 .join(" · ")}
@@ -187,7 +187,7 @@ export function AppControls({
                 </button>
               ))}
             </div>
-            <p className="text-[11px] text-[var(--pc-muted)]">
+            <p className="text-meta text-[var(--pc-muted)]">
               {detail.suspended ? "Suspended. " : ""}
               {detail.disabled ? "Disabled. " : ""}
               Restore re-installs a removed system app.
@@ -195,7 +195,7 @@ export function AppControls({
           </section>
 
           <section className={cardClass}>
-            <h3 className="font-display text-sm font-semibold">Battery and network</h3>
+            <h3 className="t-heading">Battery and network</h3>
             <label className="flex min-w-0 flex-col gap-1 text-xs text-[var(--pc-muted)]">
               Standby bucket
               <select
@@ -237,7 +237,7 @@ export function AppControls({
           </section>
 
           <section className={cardClass}>
-            <h3 className="font-display text-sm font-semibold">Permissions</h3>
+            <h3 className="t-heading">Permissions</h3>
             {detail.permissions.length === 0 && <p className="text-xs text-[var(--pc-muted)]">No runtime permissions.</p>}
             <ul className="flex flex-col">
               {detail.permissions.map((perm) => (
@@ -245,7 +245,7 @@ export function AppControls({
                   <label className="pc-choice-row -mx-2 justify-between" data-app-permission={perm.name}>
                     <span className="flex min-w-0 flex-col">
                       <span className="text-sm">{permissionLabel(perm.name)}</span>
-                      <span className="truncate font-mono text-[10px] text-[var(--pc-muted)]">{perm.name}</span>
+                      <span className="truncate font-mono text-meta text-[var(--pc-muted)]">{perm.name}</span>
                     </span>
                     <Switch
                       checked={perm.granted}
@@ -260,7 +260,7 @@ export function AppControls({
 
           <section className={cardClass}>
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-display text-sm font-semibold">App ops</h3>
+              <h3 className="t-heading">App ops</h3>
               <input
                 value={opQuery}
                 onChange={(event) => setOpQuery(event.target.value)}
@@ -269,11 +269,11 @@ export function AppControls({
                 aria-label="Search app ops"
               />
             </div>
-            <p className="text-[11px] text-[var(--pc-muted)]">RUN_ANY_IN_BACKGROUND = ignore is how Android stops an app in the background.</p>
+            <p className="text-meta text-[var(--pc-muted)]">RUN_ANY_IN_BACKGROUND = ignore is how Android stops an app in the background.</p>
             <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto">
               {sortedOps(detail.ops, opQuery).map(([name, mode]) => (
                 <li key={name} className="flex items-center justify-between gap-2" data-app-op={name}>
-                  <span className="min-w-0 truncate font-mono text-[11px]">{name}</span>
+                  <span className="min-w-0 truncate font-mono text-meta">{name}</span>
                   <select
                     value={mode}
                     disabled={busy}
@@ -294,12 +294,12 @@ export function AppControls({
 
           <section className={cardClass}>
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-display text-sm font-semibold">Screens</h3>
+              <h3 className="t-heading">Screens</h3>
               <button type="button" className={smallButton} disabled={busy} onClick={() => void listActivities()} data-app-activities-list>
                 List screens
               </button>
             </div>
-            <p className="text-[11px] text-[var(--pc-muted)]">
+            <p className="text-meta text-[var(--pc-muted)]">
               &ldquo;Open hidden&rdquo; reaches a screen the app doesn&apos;t export by briefly making it the phone&apos;s assistant.
             </p>
             {activities && activities.length === 0 && <p className="text-xs text-[var(--pc-muted)]">No screens found.</p>}
@@ -308,7 +308,7 @@ export function AppControls({
                 const short = shortActivity(activity.name, detail.package);
                 return (
                   <li key={activity.name} className="flex items-center justify-between gap-2" data-app-activity={activity.name}>
-                    <span className="min-w-0 truncate font-mono text-[11px]">
+                    <span className="min-w-0 truncate font-mono text-meta">
                       {short}
                       {activity.launcher && <span className="ml-1 text-[var(--pc-signal)]">launcher</span>}
                     </span>
@@ -332,7 +332,7 @@ export function AppControls({
       )}
 
       <section className={cardClass} data-intent-sender>
-        <h3 className="font-display text-sm font-semibold">Send intent</h3>
+        <h3 className="t-heading">Send intent</h3>
         <div className="grid gap-2 md:grid-cols-[auto_1fr_auto]">
           <select value={intentVerb} className={fieldClass} onChange={(event) => setIntentVerb(event.target.value as "broadcast" | "start")} aria-label="Intent type">
             <option value="broadcast">Broadcast</option>
@@ -350,7 +350,7 @@ export function AppControls({
             Send
           </button>
         </div>
-        <p className="text-[11px] text-[var(--pc-muted)]">Allowed: -a -c -d -t -n -p -f, extras --es --ez --ei --el --ef --ed. Quote values with spaces.</p>
+        <p className="text-meta text-[var(--pc-muted)]">Allowed: -a -c -d -t -n -p -f, extras --es --ez --ei --el --ef --ed. Quote values with spaces.</p>
       </section>
 
       {confirm && (

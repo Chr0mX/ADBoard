@@ -393,7 +393,7 @@ function RecoveryList() {
           <p className="font-display text-sm font-semibold text-[var(--pc-warn)]">
             ⚠ {device.name} Offline
           </p>
-          <p className="mt-1 font-mono text-xs text-[var(--pc-muted)]">
+          <p className="mt-1 text-xs text-[var(--pc-muted)]">
             Last seen: {formatSeen(desk.lastSeen[device.id])}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">

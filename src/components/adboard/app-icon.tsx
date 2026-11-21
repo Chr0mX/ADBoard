@@ -48,7 +48,7 @@ export function AppIcon({
       aria-hidden
       data-app-icon-badge
       style={{ background: badgeColor(packageName) }}
-      className={cn("inline-flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold uppercase leading-none text-white", className)}
+      className={cn("inline-flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold leading-none text-white", className)}
     >
       {(name.trim()[0] ?? packageName[0] ?? "?").toUpperCase()}
     </span>

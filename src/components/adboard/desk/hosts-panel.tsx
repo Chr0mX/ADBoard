@@ -41,11 +41,11 @@ export function HostsPanel({ desktop = false }: { desktop?: boolean } = {}) {
             return (
               <section key={host.hostId} data-host-card={host.hostId} aria-label={host.name} className="flex flex-col gap-2">
                 <header className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-[var(--pc-line)] pb-2">
-                  <h3 className="min-w-0 truncate font-display text-sm font-semibold text-[var(--pc-ink)]">{host.name}</h3>
+                  <h3 className="min-w-0 truncate t-heading text-[var(--pc-ink)]">{host.name}</h3>
                   <span className="text-xs text-[var(--pc-muted)]">
                     {sentenceCase(host.os)} · {sentenceCase(host.status)} · {host.local ? "this controller" : "remote agent"}
                   </span>
-                  <span className="ml-auto font-mono text-xs text-[var(--pc-muted)]" data-host-count>
+                  <span className="ml-auto text-xs text-[var(--pc-muted)]" data-host-count>
                     {online}/{devices.length} online
                   </span>
                 </header>
@@ -73,7 +73,7 @@ export function HostsPanel({ desktop = false }: { desktop?: boolean } = {}) {
                           </td>
                           <td className="py-2 text-right">
                             <span
-                              className={`inline-flex items-center gap-1.5 font-mono text-xs ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}
+                              className={`inline-flex items-center gap-1.5 text-xs ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}
                             >
                               <span aria-hidden className={`size-1.5 rounded-full ${device.status === "online" ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-muted)]"}`} />
                               {sentenceCase(device.status)}
@@ -96,7 +96,7 @@ export function HostsPanel({ desktop = false }: { desktop?: boolean } = {}) {
           return (
             <section key={host.hostId} data-host-card={host.hostId} className="flex flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="min-w-0 truncate font-display text-base font-semibold">{host.name}</h3>
+                <h3 className="min-w-0 truncate t-heading">{host.name}</h3>
                 <span className="shrink-0 text-sm text-[var(--pc-muted)]">
                   {online}/{devices.length}
                 </span>
@@ -109,10 +109,10 @@ export function HostsPanel({ desktop = false }: { desktop?: boolean } = {}) {
                 <div key={device.id} className="flex items-center justify-between gap-3 border-b border-[var(--pc-line)] py-2 last:border-b-0">
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate text-sm">{device.modelName ?? device.model}</span>
-                    {device.modelName && <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{device.model}</span>}
+                    {device.modelName && <span className="truncate font-mono text-meta text-[var(--pc-muted)]">{device.model}</span>}
                   </span>
                   <span
-                    className={`shrink-0 font-mono text-[11px] ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}
+                    className={`shrink-0 text-meta ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}
                   >
                     {sentenceCase(device.status)}
                   </span>

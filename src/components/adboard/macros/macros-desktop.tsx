@@ -204,7 +204,7 @@ export function MacrosDesktop() {
                 <span aria-hidden className="size-2 animate-pulse rounded-full bg-[var(--pc-signal)]" />
                 <span className="text-[var(--pc-ink)]">{tab.name}</span>
                 {snapshot && snapshot.stepCount > 0 && (
-                  <span className="font-mono">
+                  <span>
                     step {Math.min(snapshot.stepIndex + 1, snapshot.stepCount)}/{snapshot.stepCount}
                   </span>
                 )}
@@ -367,12 +367,12 @@ function Library({
                     type="button"
                     aria-expanded={!isCollapsed}
                     onClick={() => onToggleGroup(group.key)}
-                    className="flex h-8 items-center gap-1 rounded-md px-1 text-left font-sans text-xs font-medium text-[var(--pc-muted)] hover:text-[var(--pc-ink)]"
+                    className="flex h-8 items-center gap-1 rounded-md px-1 text-left text-xs font-medium text-[var(--pc-muted)] hover:text-[var(--pc-ink)]"
                     data-macro-group={group.name}
                   >
                     {isCollapsed ? <ChevronRight className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
                     <span className="min-w-0 flex-1 truncate">{group.name}</span>
-                    <span className="font-mono">{group.tabs.length}</span>
+                    <span>{group.tabs.length}</span>
                   </button>
                 )}
                 {!isCollapsed &&
@@ -390,7 +390,7 @@ function Library({
                         onClick={() => onPick(tab.id)}
                         onDoubleClick={onRename}
                         className={cn(
-                          "flex h-9 min-h-9 items-center gap-2 rounded-md px-2 text-left font-sans text-sm",
+                          "flex h-9 min-h-9 items-center gap-2 rounded-md px-2 text-left text-sm",
                           showHeader && "ml-3",
                           selected
                             ? "bg-[var(--pc-accent-soft)] font-medium text-[var(--pc-ink)]"
@@ -399,7 +399,7 @@ function Library({
                       >
                         <StateDot tab={tab} />
                         <span className="min-w-0 flex-1 truncate">{tab.name}</span>
-                        <span className="font-mono text-xs text-[var(--pc-muted)]">{tab.steps.length}</span>
+                        <span className="text-xs text-[var(--pc-muted)]">{tab.steps.length}</span>
                       </button>
                     );
                   })}
@@ -484,7 +484,7 @@ function Editor({
             className="w-full rounded-md border border-transparent bg-transparent px-1 font-display text-lg font-semibold text-[var(--pc-ink)] outline-none hover:border-[var(--pc-line)] focus:border-[var(--pc-accent)]"
             data-macro-name
           />
-          <p className="px-1 font-mono text-xs text-[var(--pc-muted)]">
+          <p className="px-1 text-xs text-[var(--pc-muted)]">
             {tab.group ? `${tab.group} · ` : ""}
             {tab.reference.width}×{tab.reference.height} · {tab.steps.length} step{tab.steps.length === 1 ? "" : "s"} · cycle ≈ {formatMs(cycleMs(tab))}
             {running && snapshot ? ` · ${snapshot.status}` : ""}
@@ -535,7 +535,7 @@ function Editor({
                   type="button"
                   disabled={item.disabled}
                   {...{ [item.attr]: "" }}
-                  className="flex h-9 items-center gap-2 rounded-lg px-2 text-left font-sans text-sm text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-50"
+                  className="flex h-9 items-center gap-2 rounded-lg px-2 text-left text-sm text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-50"
                   onClick={(event) => {
                     item.run();
                     (event.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
@@ -560,7 +560,7 @@ function Editor({
             data-macro-section={id}
             onClick={() => setSection(id)}
             className={cn(
-              "-mb-px h-9 border-b-2 px-3 font-sans text-sm",
+              "-mb-px h-9 border-b-2 px-3 text-sm",
               section === id
                 ? "border-[var(--pc-accent)] font-medium text-[var(--pc-ink)]"
                 : "border-transparent text-[var(--pc-muted)] hover:text-[var(--pc-ink)]",

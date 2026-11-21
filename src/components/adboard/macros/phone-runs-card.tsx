@@ -104,7 +104,7 @@ function PhoneRow({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-[var(--pc-ink)]">{device.name}</span>
- <span className={cn("font-mono text-[11px] ", online ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
+ <span className={cn("text-meta ", online ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
           {sentenceCase(device.status)}
         </span>
         <select
@@ -162,7 +162,7 @@ function PhoneRow({
         )}
       </div>
       {run && (
-        <p className="flex flex-wrap gap-x-3 font-mono text-[11px]" data-macro-phone-status={run.status} aria-live="polite">
+        <p className="flex flex-wrap gap-x-3 text-meta" data-macro-phone-status={run.status} aria-live="polite">
  <span className={cn("font-semibold ", STATUS_TONE[run.status])}>{sentenceCase(run.status)}</span>
           <span className="truncate">“{run.tabName}”</span>
           <span>cycle {run.cycle}</span>

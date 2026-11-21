@@ -7,7 +7,7 @@ import "./globals.css";
 const geist = Geist({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
+  weight: ["600", "700"],
 });
 
 const figtree = Figtree({
@@ -19,7 +19,7 @@ const figtree = Figtree({
 const jetbrains = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {

@@ -32,7 +32,7 @@ import { VirtualDisplayCard } from "@/components/adboard/desk/virtual-display-ca
  * mode, keyboard, taskbar pins, account), so changes show up everywhere.
  */
 const CARD = "flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4";
-const CARD_TITLE = "font-display text-sm font-semibold text-[var(--pc-ink)]";
+const CARD_TITLE = "t-heading text-[var(--pc-ink)]";
 
 /** Stream options for the target phones. */
 export function StreamBody() {
@@ -178,7 +178,7 @@ export function TaskbarBody() {
         Back, Home, Recent, Volume, Power and Minimize always stay. They are the phone&apos;s own controls and the Tools panel&apos;s fold button, so they can&apos;t be moved or removed.
       </p>
       <div className="flex flex-col gap-1" data-settings-hide-nav>
-        <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">Show on the bar</h4>
+        <h4 className="t-label text-[var(--pc-ink)]">Show on the bar</h4>
         {HIDEABLE_NAV_IDS.map((id) => (
           <label key={id} className="pc-choice-row justify-between">
             <span>{HIDEABLE_NAV_LABELS[id]}</span>
@@ -192,7 +192,7 @@ export function TaskbarBody() {
       </div>
       {pins.length > 1 && (
         <div className="flex flex-col gap-1" data-settings-pin-order>
-          <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">Order (left to right)</h4>
+          <h4 className="t-label text-[var(--pc-ink)]">Order (left to right)</h4>
           {pins.map((id, index) => (
             <div key={id} className="flex items-center justify-between gap-2 text-sm text-[var(--pc-ink)]" data-pin-order-row={id}>
               <span>{index + 1}. {TASKBAR_TOOL_LABELS[id]}</span>

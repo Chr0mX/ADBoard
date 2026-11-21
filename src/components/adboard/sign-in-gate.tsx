@@ -75,7 +75,7 @@ export function SignInGate({ children }: { children: ReactNode }) {
   }, []);
 
   if (state.kind === "checking") {
-    return <Screen><p className="font-mono text-xs text-[var(--pc-muted)]">Connecting…</p></Screen>;
+    return <Screen><p className="text-xs text-[var(--pc-muted)]">Connecting…</p></Screen>;
   }
   if (state.kind === "blocked") {
     return (
@@ -280,7 +280,7 @@ function AccountDialog({
       }}
     >
       <section className="flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-6 shadow-lg">
-        <h2 id="adboard-account-title" className="font-display text-xl font-bold tracking-tight text-[var(--pc-ink)]">
+        <h2 id="adboard-account-title" className="font-display text-xl font-bold text-[var(--pc-ink)]">
           {hasAccount ? "Change password" : "Set a password"}
         </h2>
         {!hasAccount && (

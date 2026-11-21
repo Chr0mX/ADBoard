@@ -171,12 +171,12 @@ export function MacrosMobile() {
                     type="button"
                     aria-expanded={!isCollapsed}
                     onClick={() => toggleGroup(group.key)}
-                    className="flex min-h-9 items-center gap-1 px-1 text-left text-xs font-semibold tracking-wide text-[var(--pc-muted)] uppercase"
+                    className="flex min-h-9 items-center gap-1 px-1 text-left text-xs font-semibold text-[var(--pc-muted)]"
                     data-macro-group={group.name}
                   >
                     {isCollapsed ? <ChevronRight className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
                     <span className="min-w-0 flex-1 truncate">{group.name}</span>
-                    <span className="font-mono">{group.tabs.length}</span>
+                    <span>{group.tabs.length}</span>
                   </button>
                 )}
                 {!isCollapsed && (
@@ -221,7 +221,7 @@ export function MacrosMobile() {
           })}
 
           <div className="flex flex-col gap-1.5">
-            <h3 className="px-1 text-xs font-semibold tracking-wide text-[var(--pc-muted)] uppercase">Library</h3>
+            <h3 className="px-1 text-xs font-semibold text-[var(--pc-muted)]">Library</h3>
             <div className="flex flex-wrap items-center gap-2">
               <ImportButton onImportFile={(name, text) => setPendingImport({ name, text })} onNotice={setNotice} />
               <VersionsMenu onNotice={setNotice} />
@@ -383,7 +383,7 @@ function Editor({
             className="h-11 w-full rounded-lg border border-transparent bg-transparent px-1 font-display text-lg font-semibold text-[var(--pc-ink)] outline-none focus:border-[var(--pc-accent)]"
             data-macro-name
           />
-          <p className="px-1 font-mono text-xs text-[var(--pc-muted)]">
+          <p className="px-1 text-xs text-[var(--pc-muted)]">
             {tab.group ? `${tab.group} · ` : ""}
             {tab.reference.width}×{tab.reference.height} · {tab.steps.length} step{tab.steps.length === 1 ? "" : "s"} · ≈ {formatMs(cycleMs(tab))}
           </p>
@@ -542,7 +542,7 @@ function PreviewChips({ devices, previewDevice, activeDevice, tab, onPick }: { d
           >
             <span aria-hidden className={cn("size-1.5 rounded-full", d.status === "online" ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-muted)]")} />
             {d.name}
-            {d.id === activeDevice?.id && <span className="font-mono text-[var(--pc-muted)]">in Control</span>}
+            {d.id === activeDevice?.id && <span className="text-[var(--pc-muted)]">in Control</span>}
           </button>
         );
       })}
@@ -612,8 +612,8 @@ function Steps({ tab, devices, activeDevice }: { tab: MacroTab; devices: Device[
       </div>
 
       <div className="flex items-center justify-between gap-2 px-1">
-        <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Steps ({tab.steps.length})</h3>
-        <span className="font-mono text-xs text-[var(--pc-muted)]">cycle ≈ {formatMs(cycleMs(tab))}</span>
+        <h3 className="t-heading text-[var(--pc-ink)]">Steps ({tab.steps.length})</h3>
+        <span className="text-xs text-[var(--pc-muted)]">cycle ≈ {formatMs(cycleMs(tab))}</span>
       </div>
       <AddStepBar
         disabled={tab.steps.length >= MAX_STEPS}

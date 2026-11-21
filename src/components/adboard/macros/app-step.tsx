@@ -149,7 +149,7 @@ export function AppStepEditor({
           {screens?.pkg === app.packageName && screens.error && <span className="text-xs text-[var(--pc-warn)]">{screens.error}</span>}
         </div>
       )}
-      <p className="text-[11px] leading-snug text-[var(--pc-muted)]">
+      <p className="text-meta leading-snug text-[var(--pc-muted)]">
         Empty activity opens the app&apos;s launcher screen. Saved apps come from Apps; their activity and arguments are filled in.
         &ldquo;Then wait&rdquo; gives the app time to open before the next step.
       </p>

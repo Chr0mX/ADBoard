@@ -109,7 +109,7 @@ function OutcomeField({
         <option value="end">End the run (done)</option>
         <option value="fail">Fail the run</option>
       </select>
-      {missing && <span className="text-[11px] text-[var(--pc-warn)]">That step is off or deleted; the run fails here.</span>}
+      {missing && <span className="text-meta text-[var(--pc-warn)]">That step is off or deleted; the run fails here.</span>}
     </label>
   );
 }
@@ -191,10 +191,10 @@ export function TextStepEditor({
           maxLength={MAX_TEXTS * (MAX_TEXT_LENGTH + 1)}
           placeholder={text.action === "read" ? "e.g. Coins: (\\d+)" : "e.g. Sign in"}
           onChange={(event) => patch({ texts: event.target.value.split("\n").slice(0, MAX_TEXTS).map((t) => t.slice(0, MAX_TEXT_LENGTH)) })}
-          className={cn(fieldClass, "py-2 font-mono")}
+          className={cn(fieldClass, "py-2")}
           data-text-texts
         />
-        <span className="text-[11px] leading-snug">One per line; any of them matches. {"{name}"} uses a value a Read step stored.</span>
+        <span className="text-meta leading-snug">One per line; any of them matches. {"{name}"} uses a value a Read step stored.</span>
       </label>
 
       <div className="grid gap-2 @md:grid-cols-[minmax(0,1fr)_auto]">
@@ -237,14 +237,14 @@ export function TextStepEditor({
           onChange={(intervalMs) => patch({ intervalMs })}
         />
         {text.action === "read" && (
-          <label className="flex min-w-0 flex-col gap-1 text-[11px] tracking-wider text-[var(--pc-muted)]">
+          <label className="flex min-w-0 flex-col gap-1 text-meta text-[var(--pc-muted)]">
             Store in
             <input
               value={text.variable}
               maxLength={32}
               placeholder="name"
               onChange={(event) => patch({ variable: event.target.value.replace(/[^A-Za-z0-9_]/g, "").replace(/^\d+/, "") })}
-              className={cn(fieldClass, "h-11 bg-[var(--pc-paper)] font-mono")}
+              className={cn(fieldClass, "h-11 bg-[var(--pc-paper)]")}
               data-text-variable
             />
           </label>
@@ -284,7 +284,7 @@ export function TextStepEditor({
             ))}
           </div>
         )}
-        <p className="text-[11px] leading-snug text-[var(--pc-muted)]">Reference pixels, scaled to each phone like touches. A smaller area reads faster.</p>
+        <p className="text-meta leading-snug text-[var(--pc-muted)]">Reference pixels, scaled to each phone like touches. A smaller area reads faster.</p>
       </div>
 
       <div className="grid gap-2 @md:grid-cols-2">
@@ -298,7 +298,7 @@ export function TextStepEditor({
             <ScanText className="size-3.5" aria-hidden />
             {reading ? "Reading…" : readDevice ? `Read ${readDevice.name}'s screen` : "Read screen"}
           </GhostButton>
-          {!readDevice && <span className="text-[11px] text-[var(--pc-muted)]">Pick a phone in Preview or tick one to read its screen.</span>}
+          {!readDevice && <span className="text-meta text-[var(--pc-muted)]">Pick a phone in Preview or tick one to read its screen.</span>}
         </div>
         {status && !status.available && (
           <p className="rounded-lg bg-[var(--pc-warn-soft)] px-2 py-1.5 text-xs text-[var(--pc-warn)]" data-text-unavailable>
@@ -308,7 +308,7 @@ export function TextStepEditor({
         {result && "error" in result && <p className="text-xs text-[var(--pc-warn)]">{result.error}</p>}
         {result && "screen" in result && (
           <div className="flex flex-col gap-1.5" data-text-result={result.screen.lines.length}>
-            <p className="font-mono text-[11px] text-[var(--pc-muted)]">
+            <p className="font-mono text-meta text-[var(--pc-muted)]">
               {result.screen.lines.length} line{result.screen.lines.length === 1 ? "" : "s"} · {result.screen.ms} ms
               {result.screen.cached ? " · unchanged" : ""}
               {result.screen.matches ? ` · ${result.screen.matches.length ? `found ${quoted(result.screen.matches.map((m) => m.text))}` : "no match"}` : ""}
@@ -321,7 +321,7 @@ export function TextStepEditor({
                   type="button"
                   onClick={() => patch({ texts: [line.text] })}
                   className={cn(
-                    "max-w-full truncate rounded-lg border px-2 py-1 text-left font-mono text-[11px]",
+                    "max-w-full truncate rounded-lg border px-2 py-1 text-left text-meta",
                     matched.has(i) ? "border-[var(--pc-signal)] text-[var(--pc-ink)]" : "border-[var(--pc-line)] text-[var(--pc-muted)] hover:text-[var(--pc-ink)]",
                   )}
                   data-text-line={line.text}

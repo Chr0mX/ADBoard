@@ -109,7 +109,7 @@ export function NotificationsCard({ bare = false }: { bare?: boolean } = {}) {
       className={bare ? "@container flex min-w-0 flex-col gap-2" : "@container flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4"}
       data-settings-notifications
     >
-      <h3 className={bare ? "sr-only" : "font-display text-sm font-semibold text-[var(--pc-ink)]"}>Discord notifications</h3>
+      <h3 className={bare ? "sr-only" : "t-heading text-[var(--pc-ink)]"}>Discord notifications</h3>
       {!agent && <p className="text-xs text-[var(--pc-muted)]">{NO_AGENT}.</p>}
       {agent && !settings && <p className="text-xs text-[var(--pc-muted)]">{error ?? "Loading…"}</p>}
       {settings && (
@@ -179,12 +179,12 @@ export function NotificationsCard({ bare = false }: { bare?: boolean } = {}) {
             data-notifications-enabled
           />
           <div className="flex flex-col gap-1" data-notifications-categories>
-            <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">What to send</h4>
+            <h4 className="t-label text-[var(--pc-ink)]">What to send</h4>
             {(Object.keys(CATEGORY_HINT) as EventCategory[]).map((category) => (
               <label key={category} className={rowClass}>
                 <span className="flex min-w-0 flex-col">
                   <span className="text-sm text-[var(--pc-ink)]">{CATEGORY_LABEL[category]}</span>
-                  <span className="text-[11px] text-[var(--pc-muted)]">{CATEGORY_HINT[category]}</span>
+                  <span className="text-meta text-[var(--pc-muted)]">{CATEGORY_HINT[category]}</span>
                 </span>
                 <select
                   value={settings.categories[category] ?? "off"}
@@ -205,7 +205,7 @@ export function NotificationsCard({ bare = false }: { bare?: boolean } = {}) {
           <label className={rowClass} data-notify-offline>
             <span className="flex min-w-0 flex-col">
               <span className="text-sm text-[var(--pc-ink)]">Phone offline alerts</span>
-              <span className="text-[11px] text-[var(--pc-muted)]">
+              <span className="text-meta text-[var(--pc-muted)]">
                 {settings.offlineAlertMins
                   ? `Only when a phone stays offline ${settings.offlineAlertMins} min, then again when it is back. Short drops stay in Events.`
                   : "Every time a phone drops, as the Phones level allows"}
@@ -252,7 +252,7 @@ export function NotificationsCard({ bare = false }: { bare?: boolean } = {}) {
             </select>
           </label>
           {settings.webhookSet && (
-            <p className="font-mono text-[11px] text-[var(--pc-muted)]" data-notify-status>
+            <p className="text-meta text-[var(--pc-muted)]" data-notify-status>
               Last delivered {when(settings.status.lastOkAt)} · {settings.status.sent} sent
               {settings.status.failed ? ` · ${settings.status.failed} failed` : ""}
               {settings.status.suppressed ? ` · ${settings.status.suppressed} held back by the cooldown` : ""}

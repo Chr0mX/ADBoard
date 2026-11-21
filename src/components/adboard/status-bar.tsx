@@ -63,7 +63,7 @@ export function StatsLine({
   return (
     <p
       className={cn(
-        "flex items-center gap-x-2 overflow-x-auto whitespace-nowrap font-mono text-[11px] leading-4 text-[var(--pc-ink)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "flex items-center gap-x-2 overflow-x-auto whitespace-nowrap font-mono text-meta leading-4 text-[var(--pc-ink)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         marquee && "pc-stats-host",
         className,
       )}
@@ -98,7 +98,7 @@ export function StatusBar({
       <footer
         data-desktop-stats
         className={cn(
-          "flex shrink-0 justify-start border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-[11px] leading-4 text-[var(--pc-muted)]",
+          "flex shrink-0 justify-start border-t border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-meta leading-4 text-[var(--pc-muted)]",
           compact ? "py-0.5" : "pt-1",
           safeBottom
             ? "pb-[env(safe-area-inset-bottom,0px)]"

@@ -69,7 +69,7 @@ export function TargetChecks({
 }) {
   return (
     <fieldset className="flex flex-col gap-1">
- <legend className="mb-1 font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
+ <legend className="mb-1 text-meta text-[var(--pc-muted)]">
         Target devices
       </legend>
       {devices.map((device) => (
@@ -84,7 +84,7 @@ export function TargetChecks({
             }}
           />
           <span className="font-medium">{device.name}</span>
- <span className={`ml-auto font-mono text-[11px] ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}>
+ <span className={`ml-auto text-meta ${device.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]"}`}>
             {sentenceCase(device.status)}
           </span>
         </label>
@@ -137,7 +137,7 @@ export function rowsFromCommand(
 export function ResultList({ rows }: { rows: ResultRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <ul data-op-results className="flex flex-col gap-1 font-mono text-xs">
+    <ul data-op-results className="flex flex-col gap-1 text-xs">
       {rows.map((row) => (
         <li key={row.deviceId} className="flex items-baseline gap-3">
           <span className="w-24 shrink-0 text-[var(--pc-ink)]">{row.deviceName}</span>
@@ -197,14 +197,14 @@ export function ConfirmDialog({
         aria-labelledby={titleId}
         className="w-full max-w-sm rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-4 shadow-lg"
       >
-        <h3 id={titleId} className="font-display text-base font-semibold text-[var(--pc-ink)]">
+        <h3 id={titleId} className="t-heading text-[var(--pc-ink)]">
           {title}
         </h3>
         <div className="mt-2 text-sm text-[var(--pc-muted)]">{body}</div>
         {requirePhrase && (
           <label className="mt-3 flex flex-col gap-1 text-sm text-[var(--pc-ink)]">
             <span>
-              Type <span className="font-mono font-semibold">{requirePhrase}</span> to confirm
+              Type <span className="font-mono font-medium">{requirePhrase}</span> to confirm
             </span>
             <input
               data-confirm-phrase
@@ -212,7 +212,7 @@ export function ConfirmDialog({
               autoComplete="off"
               spellCheck={false}
               onChange={(event) => setTyped(event.target.value)}
-              className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-xs text-[var(--pc-ink)]"
+              className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 text-xs text-[var(--pc-ink)]"
             />
           </label>
         )}
@@ -257,7 +257,7 @@ export function TextField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 font-mono text-xs text-[var(--pc-ink)]"
+        className="h-11 min-h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-2 text-xs text-[var(--pc-ink)]"
       />
     </label>
   );
@@ -282,7 +282,7 @@ export function PrimaryButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "h-11 min-h-11 rounded-xl bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold tracking-wide text-white disabled:opacity-60",
+        "h-11 min-h-11 rounded-xl bg-[var(--pc-accent-fill)] px-4 text-sm font-semibold text-white disabled:opacity-60",
         className,
       )}
     >

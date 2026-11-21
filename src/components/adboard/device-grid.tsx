@@ -63,7 +63,7 @@ export function DeviceGrid({
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3">
       {(multiHost || !hostsHeadingOnly) && (
-        <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
+        <h2 className="t-heading text-[var(--pc-ink)]">
           {multiHost ? "Hosts" : "Devices"}
         </h2>
       )}
@@ -74,10 +74,10 @@ export function DeviceGrid({
             <div key={group.key} className="flex flex-col gap-2">
               {multiHost && (
                 <div className="flex items-baseline justify-between gap-2">
- <h3 className="font-mono text-[11px] tracking-[0.14em] text-[var(--pc-muted)]">
+ <h3 className="text-meta text-[var(--pc-muted)]">
                     {group.label}
                   </h3>
-                  <span className="font-mono text-[11px] text-[var(--pc-muted)]">
+                  <span className="text-meta text-[var(--pc-muted)]">
                     {group.devices.filter((d) => d.status === "online").length}/
                     {group.devices.length}
                   </span>

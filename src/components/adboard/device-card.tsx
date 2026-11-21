@@ -89,11 +89,11 @@ export const DeviceCard = memo(function DeviceCard({
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <span aria-label={statusLabel(device.status)} className={cn("size-1.5 shrink-0 rounded-full", dot)} />
-            <span data-card-name className="min-w-0 truncate font-display text-sm font-semibold leading-5 text-[var(--pc-ink)]">
+            <span data-card-name className="min-w-0 truncate t-device leading-5 text-[var(--pc-ink)]">
               {device.name}
             </span>
             {device.battery != null && (
-              <span data-card-battery className="ml-auto shrink-0 font-mono text-xs text-[var(--pc-muted)]">
+              <span data-card-battery className="ml-auto shrink-0 text-xs text-[var(--pc-muted)]">
                 {device.battery}%
               </span>
             )}
@@ -164,14 +164,14 @@ export const DeviceCard = memo(function DeviceCard({
         className="block min-w-0 flex-1 pr-10 text-left"
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span data-card-name className="min-w-0 break-words font-display text-sm font-semibold leading-5 text-[var(--pc-ink)]">
+          <span data-card-name className="min-w-0 break-words t-device leading-5 text-[var(--pc-ink)]">
             {device.name}
           </span>
         </span>
         <span className="mt-1 flex min-w-0 flex-col items-start gap-0.5 text-xs leading-4 text-[var(--pc-muted)]">
           <span
             className={cn(
- "inline-flex items-center gap-1 font-mono text-[11px] ",
+ "inline-flex items-center gap-1 text-meta ",
               device.status === "online"
                 ? "text-[var(--pc-signal)]"
                 : device.status === "unauthorized"
@@ -194,18 +194,18 @@ export const DeviceCard = memo(function DeviceCard({
           <span data-card-model className="max-w-full break-words">
             {device.model}
           </span>
-          <span data-card-resolution className="max-w-full break-words font-mono text-[11px]">
+          <span data-card-resolution className="max-w-full break-words font-mono text-meta">
             {formatResolution(device.resolution.width, device.resolution.height)}
           </span>
           {(device.battery != null || device.temperatureC != null) && (
             <span className="flex flex-wrap gap-x-2">
               {device.battery != null && (
-                <span data-card-battery className="font-mono text-[11px]">
+                <span data-card-battery className="text-meta">
                   {device.battery}%
                 </span>
               )}
               {device.temperatureC != null && (
-                <span data-card-temperature className="font-mono text-[11px]">
+                <span data-card-temperature className="text-meta">
                   {device.temperatureC.toFixed(1)}°C
                 </span>
               )}
@@ -238,7 +238,7 @@ export const DeviceCard = memo(function DeviceCard({
       )}
 
       {offline && (
-        <p className="mt-1.5 text-[11px] text-[var(--pc-warn)]">
+        <p className="mt-1.5 text-meta text-[var(--pc-warn)]">
           {device.status === "unauthorized"
             ? "Authorize USB debugging on the device."
             : "Device unreachable."}

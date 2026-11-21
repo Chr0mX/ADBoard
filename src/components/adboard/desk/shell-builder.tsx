@@ -37,7 +37,7 @@ export function MechanismBadge({ mechanism }: { mechanism: Mechanism }) {
       title={info.hint}
       data-mechanism={mechanism}
       className={cn(
- "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wider",
+ "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-meta font-semibold",
         mechanism === "touch" && "bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
         mechanism === "shell" && "bg-[color-mix(in_srgb,#ffb86b_18%,transparent)] text-[#ffb86b]",
         mechanism === "key" && "bg-[color-mix(in_srgb,#c3a6ff_18%,transparent)] text-[#c3a6ff]",
@@ -345,7 +345,7 @@ function JobEditor({ macro, focusStepId }: { macro: SavedMacro; focusStepId: str
                     )}
                   </div>
                 )}
-                <p className="text-[11px] text-[var(--pc-muted)]">
+                <p className="text-meta text-[var(--pc-muted)]">
                   Numbers match the step order. Drag a marker, or select a touch step and click the screen. Positions are percent of the phone&apos;s screen, so they land in the same place on every phone.
                 </p>
               </>
@@ -395,7 +395,7 @@ function JobEditor({ macro, focusStepId }: { macro: SavedMacro; focusStepId: str
               </label>
               <ActionPicker id="shell-add-kind" value={addKind} onChange={setAddKind} />
               <PrimaryButton onClick={addStep}>{selected ? `Add after ${selectedIndex + 1}` : "Add step"}</PrimaryButton>
-              <p className="w-full text-[11px] text-[var(--pc-muted)]">{actionOf(addKind)?.description}</p>
+              <p className="w-full text-meta text-[var(--pc-muted)]">{actionOf(addKind)?.description}</p>
             </div>
           </Card>
 
@@ -464,7 +464,7 @@ function JobEditor({ macro, focusStepId }: { macro: SavedMacro; focusStepId: str
                 {notice}
               </p>
             )}
-            <p className="text-[11px] text-[var(--pc-muted)]">Runs from this page: keep it open until the job ends.</p>
+            <p className="text-meta text-[var(--pc-muted)]">Runs from this page: keep it open until the job ends.</p>
             <ul data-macro-progress className="flex flex-col gap-2">
               {devices
                 .filter((d) => progress[d.id] || checked.has(d.id))
@@ -486,7 +486,7 @@ function JobEditor({ macro, focusStepId }: { macro: SavedMacro; focusStepId: str
                             : `Step ${item.step}/${item.total}`;
                   return (
                     <li key={device.id} data-shell-progress={device.id} data-status={item?.status ?? "idle"}>
-                      <div className="flex justify-between gap-2 font-mono text-xs">
+                      <div className="flex justify-between gap-2 text-xs">
                         <span>{device.name}</span>
                         <span className={cn("truncate", item?.status === "failed" && "text-[var(--pc-warn)]", item?.status === "done" && "text-[var(--pc-signal)]")}>{label}</span>
                       </div>
@@ -622,7 +622,7 @@ function StepRow({
         <button type="button" aria-expanded={selected} onClick={onSelect} className="flex min-h-12 min-w-0 flex-1 items-center gap-2 py-1 text-left">
           <span
             className={cn(
-              "flex size-6 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold",
+              "flex size-6 shrink-0 items-center justify-center rounded-full text-meta font-bold",
               touchGeometry(step) ? "text-[#071016]" : "border border-[var(--pc-line)] text-[var(--pc-ink)]",
             )}
             style={touchGeometry(step) ? { backgroundColor: stepColor(index) } : undefined}
@@ -637,7 +637,7 @@ function StepRow({
               {status && (
                 <span
                   className={cn(
- "font-mono text-[11px] ",
+ "text-meta ",
                     status.status === "ok" && "text-[var(--pc-signal)]",
                     status.status === "failed" && "text-[var(--pc-warn)]",
                     (status.status === "skipped" || status.status === "stopped") && "text-[var(--pc-muted)]",
@@ -648,7 +648,7 @@ function StepRow({
                 </span>
               )}
             </span>
-            <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">
+            <span className="truncate font-mono text-meta text-[var(--pc-muted)]">
               {summarizeStep(step)}
               {step.delayAfterMs ? ` · then ${step.delayAfterMs} ms` : ""}
               {broken && !off ? " · needs fixing" : ""}
@@ -775,7 +775,7 @@ function StepField({
           data-shell-field={field.key}
         />
       )}
-      {error ? <span className="text-[11px] text-[var(--pc-warn)]">{error}</span> : field.help ? <span className="text-[11px] text-[var(--pc-muted)]">{field.help}</span> : null}
+      {error ? <span className="text-meta text-[var(--pc-warn)]">{error}</span> : field.help ? <span className="text-meta text-[var(--pc-muted)]">{field.help}</span> : null}
     </div>
   );
 }
@@ -788,7 +788,7 @@ function RunLog({ logs, steps, onClear }: { logs: StepLog[]; steps: MacroStep[];
     <section className="flex flex-col gap-2 border-t border-[var(--pc-line)] pt-3" data-shell-log>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-[var(--pc-ink)]">
-          Log <span className="font-mono text-[11px] text-[var(--pc-muted)]">{logs.length} entries{failed ? ` · ${failed} failed` : ""}</span>
+          Log <span className="text-meta text-[var(--pc-muted)]">{logs.length} entries{failed ? ` · ${failed} failed` : ""}</span>
         </h4>
         <div className="flex items-center gap-2">
           <label className="pc-choice-row gap-2 text-xs">
@@ -803,7 +803,7 @@ function RunLog({ logs, steps, onClear }: { logs: StepLog[]; steps: MacroStep[];
       {shown.length === 0 ? (
         <p className="text-xs text-[var(--pc-muted)]">{logs.length === 0 ? "Each step's result appears here when you run or test." : "No failures."}</p>
       ) : (
-        <ol className="flex max-h-72 flex-col gap-1 overflow-y-auto font-mono text-[11px]">
+        <ol className="flex max-h-72 flex-col gap-1 overflow-y-auto font-mono text-meta">
           {shown.map((entry, n) => (
             <li
               key={`${entry.at}-${entry.deviceId}-${entry.step}-${n}`}

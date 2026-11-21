@@ -21,7 +21,7 @@ export function Card({
       className={cn("flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3", className)}
     >
       <div className="flex min-h-8 items-center justify-between gap-2">
-        <h3 className="font-display text-sm font-semibold tracking-tight text-[var(--pc-ink)]">{title}</h3>
+        <h3 className="t-heading text-[var(--pc-ink)]">{title}</h3>
         {action}
       </div>
       {children}
@@ -65,7 +65,7 @@ export function NumField({
   };
   return (
     <div className={cn("flex min-w-0 flex-col gap-1", className)}>
- <label htmlFor={id} className={cn("text-[var(--pc-muted)]", compact ? "text-[11px] tracking-wider" : "text-xs")}>
+ <label htmlFor={id} className={cn("text-[var(--pc-muted)]", compact ? "text-meta" : "text-xs")}>
         {label}
       </label>
       <div className="relative flex items-center">
@@ -93,12 +93,12 @@ export function NumField({
             }
           }}
           className={cn(
-            "h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 font-mono text-xs text-[var(--pc-ink)] outline-none focus-visible:border-[var(--pc-accent)]",
+            "h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-xs text-[var(--pc-ink)] outline-none focus-visible:border-[var(--pc-accent)]",
             suffix && "pr-9",
           )}
         />
         {suffix && (
-          <span className="pointer-events-none absolute right-2 font-mono text-[11px] text-[var(--pc-muted)]">{suffix}</span>
+          <span className="pointer-events-none absolute right-2 text-meta text-[var(--pc-muted)]">{suffix}</span>
         )}
       </div>
     </div>

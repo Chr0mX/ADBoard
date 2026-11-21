@@ -189,7 +189,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     <DeskProvider
       value={{ section, focusTool, devices, activeDevice, targets: broadcastTargets, sessions, lastSeen, open, selectDevice }}
     >
-      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v8">
+      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v9">
         <div className="pc-atmosphere" aria-hidden />
         <div data-m-top-cap aria-hidden />
         {showHeader && (
@@ -205,14 +205,14 @@ export function MobileApp({ children }: { children?: ReactNode }) {
                 <ChevronLeft className="size-5" aria-hidden />
               </button>
             )}
-            <h1 className="min-w-0 flex-1 truncate py-2.5 font-display text-base font-bold tracking-tight text-[var(--pc-ink)]" data-m-title>
+            <h1 className="min-w-0 flex-1 truncate py-2.5 t-heading text-[var(--pc-ink)]" data-m-title>
               {title}
             </h1>
             <span
               className={`inline-block size-2 rounded-full ${onlineCount > 0 ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-warn)]"}`}
               aria-hidden
             />
-            <span className="font-mono text-xs text-[var(--pc-ink)]">
+            <span className="text-xs text-[var(--pc-ink)]">
               {onlineCount}/{devices.length}
             </span>
           </header>
@@ -224,7 +224,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
         <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden" data-m-section={listOpen ? "more" : section}>
           {children}
           {loading && (
-            <div className="flex flex-1 items-center justify-center font-mono text-sm text-[var(--pc-muted)]">Loading devices…</div>
+            <div className="flex flex-1 items-center justify-center text-sm text-[var(--pc-muted)]">Loading devices…</div>
           )}
           {!loading && listOpen && (
             <MoreScreen

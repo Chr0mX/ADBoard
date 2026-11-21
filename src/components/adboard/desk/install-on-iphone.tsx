@@ -35,7 +35,7 @@ export function InstallOnIphone() {
       data-standalone={platform.standalone ? "1" : "0"}
       className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-3 lg:col-span-2"
     >
-      <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Install on iPhone</h3>
+      <h3 className="t-heading text-[var(--pc-ink)]">Install on iPhone</h3>
       {platform.standalone ? (
         <p className="text-xs text-[var(--pc-muted)]">
           Running as a Home Screen app ✓. After an ADBoard update, remove the icon and add it again from Safari so iOS picks up the new version.

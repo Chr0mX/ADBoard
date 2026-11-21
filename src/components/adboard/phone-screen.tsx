@@ -873,7 +873,7 @@ export function PhoneScreen({
           data-gesture-pick
           value={activeGestureId ?? ""}
           onChange={(event) => setGestureId(event.target.value)}
-          className="h-9 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 font-mono text-xs text-[var(--pc-ink)] lg:mx-auto lg:h-11 lg:w-auto lg:max-w-[9rem]"
+          className="h-9 w-full rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 text-xs text-[var(--pc-ink)] lg:mx-auto lg:h-11 lg:w-auto lg:max-w-[9rem]"
         >
           {gestures.map((macro) => (
             <option key={macro.id} value={macro.id}>
@@ -953,7 +953,7 @@ export function PhoneScreen({
           {recording && (
             <span
               data-gesture-count
-              className="hidden font-mono text-[11px] text-[var(--pc-warn)] lg:inline"
+              className="hidden text-meta text-[var(--pc-warn)] lg:inline"
             >
               {recordedCount}
             </span>
@@ -976,7 +976,7 @@ export function PhoneScreen({
           <ApkFileButton
             disabled={offline || installing}
             onFile={pickApk}
-            className={cn(toolControlClass, "font-mono text-[11px] leading-none lg:text-xs")}
+            className={cn(toolControlClass, "text-meta leading-none lg:text-xs")}
           />
           </div>
           <span aria-hidden data-tool-divider className={sideDock ? "hidden" : "hidden h-5 w-px shrink-0 bg-[var(--pc-line)] lg:block"} />
@@ -1170,7 +1170,7 @@ export function PhoneScreen({
               Pop out
             </Toggle>
           )}
- <span className={cn("font-mono text-[11px] tracking-wider text-[var(--pc-muted)]", sideDock ? "mt-1 px-0.5" : "mx-1")}>Device actions</span>
+ <span className={cn("text-meta text-[var(--pc-muted)]", sideDock ? "mt-1 px-0.5" : "mx-1")}>Device actions</span>
           {QUICK_ACTIONS.map((item) => (
             <button
               key={item.op}
@@ -1204,7 +1204,7 @@ export function PhoneScreen({
       )}
     >
       {!fillWindow && !gridView && (decodeState === "unsupported" || decodeState === "error" || awaitingPicture) && (
- <p className="truncate text-center font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
+ <p className="truncate text-center text-meta text-[var(--pc-muted)]">
           {videoError || streamLabel}
         </p>
       )}
@@ -1320,7 +1320,7 @@ export function PhoneScreen({
             {device && <MacroRipples deviceId={device.id} />}
 
             {awaitingPicture && (
- <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 font-mono text-[11px] tracking-wider text-white/70">
+ <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 text-meta text-white/70">
                 {videoError || status?.note || "Waiting for keyframe…"}
               </p>
             )}
@@ -1344,7 +1344,7 @@ export function PhoneScreen({
                 </div>
 
                 <div className="relative z-10 flex h-full flex-col px-4 pb-6 pt-9 text-white">
-                  <div className="flex items-center justify-between font-mono text-[11px] opacity-80">
+                  <div className="flex items-center justify-between font-mono text-meta opacity-80">
                     <span>09:41</span>
                     <span>
                       {device.battery}% · {device.fps ?? "—"}fps
@@ -1356,7 +1356,7 @@ export function PhoneScreen({
                       {device.name}
                     </p>
                     <p className="text-sm text-white/70">{device.model}</p>
- <p className="font-mono text-[11px] tracking-[0.2em] text-white/50">
+ <p className="text-meta text-white/50">
                       {!configured && "Mock preview (no agent)"}
                       {configured && decodeState === "connecting" && "Connecting video…"}
                       {configured && decodeState === "waiting" && (videoError || "Waiting for H264…")}
@@ -1368,12 +1368,12 @@ export function PhoneScreen({
                       {configured && decodeState === "decoding" && "Live H264"}
                     </p>
                     {videoError && configured && decodeState === "error" && (
-                      <p className="mt-2 max-w-[90%] font-mono text-[11px] leading-relaxed text-white/40">
+                      <p className="mt-2 max-w-[90%] text-meta leading-relaxed text-white/40">
                         {videoError}
                       </p>
                     )}
                     {status?.note && configured && decodeState === "idle" && (
-                      <p className="mt-2 max-w-[90%] font-mono text-[11px] leading-relaxed text-white/40">
+                      <p className="mt-2 max-w-[90%] text-meta leading-relaxed text-white/40">
                         {status.note}
                       </p>
                     )}
@@ -1417,7 +1417,7 @@ export function PhoneScreen({
               !showingVideo && (
                 <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 rounded-xl border border-[var(--pc-warn)]/40 bg-black/55 px-3 py-2 text-left">
                   <p className="font-display text-sm text-[var(--pc-warn)]">Stream error</p>
-                  <p className="mt-0.5 font-mono text-[11px] text-white/70">
+                  <p className="mt-0.5 text-meta text-white/70">
                     {status?.note ||
                       session?.note ||
                       "Video dropped. Tap Refresh, or Reconnect from the device menu."}
@@ -1608,7 +1608,7 @@ export function PhoneScreen({
           data-device-action-note
           role="status"
           className={cn(
-            "mx-auto flex max-w-lg items-center justify-center gap-2 text-center font-mono text-[11px] leading-snug",
+            "mx-auto flex max-w-lg items-center justify-center gap-2 text-center text-meta leading-snug",
             /fail|error|no online|no phone/i.test(actions.note) ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]",
           )}
         >
@@ -1623,7 +1623,7 @@ export function PhoneScreen({
           data-install-note={installNote ? true : undefined}
           data-capture-note={captureNote ? true : undefined}
           className={cn(
-            "mx-auto max-w-lg text-center font-mono text-[11px] leading-snug",
+            "mx-auto max-w-lg text-center text-meta leading-snug",
             (installFailed ||
               (captureNote &&
                 /fail|error|unavailable|no devices/i.test(captureNote)))
@@ -1635,7 +1635,7 @@ export function PhoneScreen({
         </p>
       )}
       {pointerFailed && lastTap && (
-        <p className="truncate text-center font-mono text-[11px] text-[var(--pc-warn)]">
+        <p className="truncate text-center text-meta text-[var(--pc-warn)]">
           {[
             ...new Set(
               lastTap.targets
@@ -1661,7 +1661,7 @@ function ApkFileButton({
   return (
     <label
       className={cn(
-        "inline-flex h-11 min-w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 font-mono text-xs text-[var(--pc-ink)]",
+        "inline-flex h-11 min-w-11 cursor-pointer items-center justify-center rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-3 text-xs text-[var(--pc-ink)]",
         className,
         disabled && "pointer-events-none opacity-50",
       )}

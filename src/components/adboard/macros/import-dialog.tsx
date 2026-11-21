@@ -71,10 +71,10 @@ export function ImportDialog({
         aria-labelledby={titleId}
         className="flex max-h-[90dvh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-2xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-4 shadow-lg"
       >
-        <h3 id={titleId} className="font-display text-base font-semibold text-[var(--pc-ink)]">
+        <h3 id={titleId} className="t-heading text-[var(--pc-ink)]">
           Import macros
         </h3>
-        <p className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{fileName}</p>
+        <p className="truncate font-mono text-meta text-[var(--pc-muted)]">{fileName}</p>
 
         {error && (
           <p role="alert" className="rounded-xl bg-[var(--pc-warn-soft)] p-3 text-sm text-[var(--pc-warn)]">
@@ -92,11 +92,11 @@ export function ImportDialog({
               </p>
               <ul className="mt-2 flex flex-wrap gap-1">
                 {result.tabs.slice(0, 20).map((tab) => (
-                  <li key={tab.id} className="rounded-md bg-[var(--pc-accent-soft)] px-1.5 py-0.5 text-[11px]">
+                  <li key={tab.id} className="rounded-md bg-[var(--pc-accent-soft)] px-1.5 py-0.5 text-meta">
                     {tab.name}
                   </li>
                 ))}
-                {result.tabs.length > 20 && <li className="text-[11px] text-[var(--pc-muted)]">+{result.tabs.length - 20} more</li>}
+                {result.tabs.length > 20 && <li className="text-meta text-[var(--pc-muted)]">+{result.tabs.length - 20} more</li>}
               </ul>
             </div>
 

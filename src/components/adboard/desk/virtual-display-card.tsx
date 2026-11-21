@@ -87,7 +87,7 @@ export function VirtualDisplayCard({ bare = false }: { bare?: boolean } = {}) {
       className={bare ? "@container flex min-w-0 flex-col gap-3" : "@container flex min-w-0 flex-col gap-3 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4"}
       data-settings-virtual-display
     >
-      <h3 className={bare ? "sr-only" : "font-display text-sm font-semibold text-[var(--pc-ink)]"}>Virtual displays</h3>
+      <h3 className={bare ? "sr-only" : "t-heading text-[var(--pc-ink)]"}>Virtual displays</h3>
       <p className="text-xs text-[var(--pc-muted)]">
         An independent Android screen on a phone that runs its own apps. Add one from a phone&apos;s ⋯ menu in Control. Needs Android 13 or newer; no audio yet.
       </p>
@@ -98,7 +98,7 @@ export function VirtualDisplayCard({ bare = false }: { bare?: boolean } = {}) {
         <label className="flex flex-col gap-2 py-1 @md:flex-row @md:items-center @md:justify-between">
           <span className="flex min-w-0 flex-col">
             <span className="text-sm text-[var(--pc-ink)]">Displays per phone</span>
-            <span className="text-[11px] text-[var(--pc-muted)]">Each one is another video stream and encode on the phone. Lowering this keeps the ones that exist.</span>
+            <span className="text-meta text-[var(--pc-muted)]">Each one is another video stream and encode on the phone. Lowering this keeps the ones that exist.</span>
           </span>
           <select
             className={cn(FIELD, "w-full @md:w-48 @md:shrink-0")}
@@ -118,7 +118,7 @@ export function VirtualDisplayCard({ bare = false }: { bare?: boolean } = {}) {
       )}
 
       <div className="flex flex-col gap-2" data-virtual-defaults>
-        <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">New display starts as</h4>
+        <h4 className="t-label text-[var(--pc-ink)]">New display starts as</h4>
         <label className="flex flex-col gap-1 text-xs text-[var(--pc-muted)]">
           Size
           <select
@@ -158,7 +158,7 @@ export function VirtualDisplayCard({ bare = false }: { bare?: boolean } = {}) {
             onChange={(e) => change({ startApp: e.target.value })}
           />
         </label>
-        <p className={cn("text-[11px]", problem ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]")}>
+        <p className={cn("text-meta", problem ? "text-[var(--pc-warn)]" : "text-[var(--pc-muted)]")}>
           {problem ?? "Saved in this browser. The Add dialog also remembers what you used last."}
         </p>
       </div>
@@ -166,7 +166,7 @@ export function VirtualDisplayCard({ bare = false }: { bare?: boolean } = {}) {
       {overview && (
         <div className="flex flex-col gap-1" data-virtual-list>
           <div className="flex items-center justify-between gap-2">
-            <h4 className="font-display text-xs font-semibold text-[var(--pc-ink)]">Running now</h4>
+            <h4 className="t-label text-[var(--pc-ink)]">Running now</h4>
             {displays.length > 1 && (
               <button
                 type="button"
@@ -179,14 +179,14 @@ export function VirtualDisplayCard({ bare = false }: { bare?: boolean } = {}) {
               </button>
             )}
           </div>
-          {displays.length === 0 && <p className="text-[11px] text-[var(--pc-muted)]">None.</p>}
+          {displays.length === 0 && <p className="text-meta text-[var(--pc-muted)]">None.</p>}
           {displays.map((d) => (
             <div key={d.key} className="flex items-center justify-between gap-2 py-1" data-virtual-row={d.key}>
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-sm text-[var(--pc-ink)]">
                   {d.phoneName} · display {d.index}
                 </span>
-                <span className="truncate text-[11px] text-[var(--pc-muted)]">
+                <span className="truncate text-meta text-[var(--pc-muted)]">
                   {d.width} × {d.height}, {d.dpi} dpi{d.startApp ? `, ${d.startApp}` : ""}
                   {d.displayId !== null ? `, id ${d.displayId}` : ""}
                 </span>

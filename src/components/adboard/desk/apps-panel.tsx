@@ -115,7 +115,7 @@ export function AppsPanel() {
             return (
               <section key={group} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="font-display text-sm font-semibold">{group}</h3>
+                  <h3 className="t-heading">{group}</h3>
                   <div className="flex items-center gap-1">
                     <button type="button" className="pc-toggle pc-toggle-sm h-9 px-3 text-sm" onClick={() => setAdding({ group })} data-add-app-in={group}>
                       Add app
@@ -130,11 +130,11 @@ export function AppsPanel() {
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {apps.map((app) => (
                     <article key={app.id} data-app-shortcut={app.name} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-3">
-                      <p className="flex items-center gap-1.5 font-display text-sm font-semibold">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold">
                         <AppIcon icon={app.icon} name={app.name} packageName={app.packageName} serial={iconSerial} />
                         <span className="min-w-0 truncate">{app.name}</span>
                       </p>
-                      <p className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{app.packageName}</p>
+                      <p className="truncate font-mono text-meta text-[var(--pc-muted)]">{app.packageName}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
                         <Mini label="Launch" onClick={() => void launch(app)} />
                         <Mini label="All" onClick={() => void launch(app, online)} />

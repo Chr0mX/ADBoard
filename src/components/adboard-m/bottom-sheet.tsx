@@ -90,7 +90,7 @@ export function BottomSheet({
           onPointerCancel={onUp}
         >
           <span data-m-sheet-grab aria-hidden />
-          <h2 className="font-display text-base font-semibold text-[var(--pc-ink)]">{title}</h2>
+          <h2 className="t-heading text-[var(--pc-ink)]">{title}</h2>
           <button
             type="button"
             onClick={onClose}

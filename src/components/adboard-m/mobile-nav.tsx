@@ -49,7 +49,7 @@ export function MobileNav({
           data-m-tab={id}
           aria-current={active === id ? "page" : undefined}
           onClick={() => onPick(id)}
-          className={`relative flex h-11 flex-col items-center justify-start gap-px pt-1 text-[10px] leading-3 ${
+          className={`relative flex h-11 flex-col items-center justify-start gap-px pt-1 text-meta leading-3 ${
             active === id ? "text-[var(--pc-accent)]" : "text-[var(--pc-muted)]"
           }`}
         >
@@ -58,7 +58,7 @@ export function MobileNav({
           {id === "more" && badge > 0 && (
             <span
               data-m-badge={badge}
-              className="absolute top-1.5 left-1/2 ml-2 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--pc-warn)] px-1 font-mono text-[10px] font-bold text-[#1a0f08]"
+              className="absolute top-1.5 left-1/2 ml-2 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--pc-warn)] px-1 text-meta font-bold text-[#1a0f08]"
             >
               {badge}
             </span>

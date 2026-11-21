@@ -128,7 +128,7 @@ export function FolderHint({ folder, store, itemId }: { folder: "macros" | "shel
   }
   const path = info.folders[folder];
   return (
-    <div className="flex flex-col gap-1 text-[11px] text-[var(--pc-muted)]" data-folder-hint={folder}>
+    <div className="flex flex-col gap-1 text-meta text-[var(--pc-muted)]" data-folder-hint={folder}>
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>
           Saved in <span className="break-all font-mono">{path}</span>
@@ -155,7 +155,7 @@ export function FolderHint({ folder, store, itemId }: { folder: "macros" | "shel
 
 function Warnings({ warnings }: { warnings: string[] }) {
   return (
-    <ul className="rounded-lg bg-[var(--pc-warn-soft)] px-2 py-1 text-[11px] text-[var(--pc-warn)]" data-sync-warnings>
+    <ul className="rounded-lg bg-[var(--pc-warn-soft)] px-2 py-1 text-meta text-[var(--pc-warn)]" data-sync-warnings>
       {warnings.map((w) => (
         <li key={w}>{w}</li>
       ))}
@@ -199,7 +199,7 @@ export function DataStorageCard() {
 
   return (
     <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4 lg:col-span-2" data-settings-data>
-      <h3 className="font-display text-sm font-semibold text-[var(--pc-ink)]">Data &amp; storage</h3>
+      <h3 className="t-heading text-[var(--pc-ink)]">Data &amp; storage</h3>
       {!viaAgent && (
         <p className="text-sm text-[var(--pc-muted)]">In-browser demo: macros and scripts are kept in this browser only. Export the library to keep a copy.</p>
       )}
@@ -366,7 +366,7 @@ function PathRow({
         <span className="text-sm text-[var(--pc-muted)]">
           {[what, size && `${size.files} ${size.files === 1 ? "file" : "files"}, ${formatSize(size.bytes)}`].filter(Boolean).join(" · ")}
         </span>
-        <span className="break-all font-mono text-[11px] text-[var(--pc-muted)]">{path}</span>
+        <span className="break-all font-mono text-meta text-[var(--pc-muted)]">{path}</span>
       </div>
       <button
         type="button"

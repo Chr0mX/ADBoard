@@ -67,7 +67,7 @@ export function DisplayInfo() {
         <ChevronRight className="m-row-chevron m-disclosure-chevron" aria-hidden />
       </summary>
       {info && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-3 pb-3 pl-11 font-mono text-[11px] text-[var(--pc-muted)]">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-3 pb-3 pl-11 font-mono text-meta text-[var(--pc-muted)]">
           {Object.entries({
             Mode: info.mode,
             "Inner (w×h)": info.inner,

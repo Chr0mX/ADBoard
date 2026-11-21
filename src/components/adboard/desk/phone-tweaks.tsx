@@ -120,7 +120,7 @@ export function PhoneTweaksPanel({ devices }: { devices: Device[] }) {
           return (
             <li key={phone.id} className="rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] p-4" data-tweaks-phone={phone.id}>
               <div className="mb-1 flex items-center justify-between gap-2">
-                <h3 className="font-display text-sm font-semibold">{phone.name}</h3>
+                <h3 className="t-heading">{phone.name}</h3>
                 <span className="flex items-center gap-2 text-xs text-[var(--pc-muted)]" data-shizuku-status={phone.id}>
                   Shizuku: {current ? current.shizuku || "unknown" : "…"}
                   {current && !running && current.shizuku !== "not installed" && (
@@ -134,7 +134,7 @@ export function PhoneTweaksPanel({ devices }: { devices: Device[] }) {
                 <label key={tweak.name} className="pc-choice-row -mx-2 justify-between" data-tweak={tweak.name}>
                   <span className="flex min-w-0 flex-col">
                     <span className="text-sm text-[var(--pc-ink)]">{tweak.label}</span>
-                    <span className="text-[11px] leading-snug text-[var(--pc-muted)]">{tweak.description}</span>
+                    <span className="text-meta leading-snug text-[var(--pc-muted)]">{tweak.description}</span>
                   </span>
                   <Switch
                     checked={current?.tweaks?.[tweak.name] ?? false}

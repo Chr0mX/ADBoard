@@ -79,7 +79,7 @@ function Section({
   return (
     <section {...rest} className="flex min-w-0 flex-col gap-3 border-t border-[var(--pc-line)] pt-4 first:border-t-0 first:pt-0">
       <div className="flex min-h-8 items-center justify-between gap-2">
-        <h3 className="font-display text-sm font-semibold tracking-tight text-[var(--pc-ink)]">{title}</h3>
+        <h3 className="t-heading text-[var(--pc-ink)]">{title}</h3>
         {action}
       </div>
       {children}
@@ -395,15 +395,15 @@ function EventRow({
       data-event={event.kind}
       data-severity={event.severity}
     >
-      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className={cn("flex w-full items-center gap-2 px-2 py-1.5 text-left font-sans", flat ? "min-h-10 hover:bg-[var(--pc-accent-soft)]/50" : "min-h-11")}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className={cn("flex w-full items-center gap-2 px-2 py-1.5 text-left", flat ? "min-h-10 hover:bg-[var(--pc-accent-soft)]/50" : "min-h-11")}>
         {open ? <ChevronDown className="size-3.5 shrink-0 text-[var(--pc-muted)]" aria-hidden /> : <ChevronRight className="size-3.5 shrink-0 text-[var(--pc-muted)]" aria-hidden />}
-        <span className={cn("w-16 shrink-0 rounded px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold", SEVERITY_TONE[event.severity])}>{event.severity}</span>
+        <span className={cn("w-16 shrink-0 rounded px-1.5 py-0.5 text-center text-meta font-semibold", SEVERITY_TONE[event.severity])}>{event.severity}</span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-xs text-[var(--pc-ink)]">
             {event.summary}
-            {event.repeats ? <span className="ml-1.5 font-mono text-[11px] text-[var(--pc-muted)]">×{event.repeats + 1}</span> : null}
+            {event.repeats ? <span className="ml-1.5 text-meta text-[var(--pc-muted)]">×{event.repeats + 1}</span> : null}
           </span>
-          <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">
+          <span className="truncate font-mono text-meta text-[var(--pc-muted)]">
             {when(event.at)} · {CATEGORY_LABEL[event.category] ?? event.category}
             {event.deviceName ? ` · ${event.deviceName}` : ""}
           </span>
@@ -412,7 +412,7 @@ function EventRow({
       {open && (
         <div className="flex flex-col gap-2 border-t border-[var(--pc-line)] p-2 text-xs" data-event-detail>
           {event.detail && <p className="whitespace-pre-wrap break-words text-[var(--pc-ink)]">{event.detail}</p>}
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 font-mono text-[11px]">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 font-mono text-meta">
             <dt className="text-[var(--pc-muted)]">kind</dt>
             <dd className="break-all text-[var(--pc-ink)]">{event.kind}</dd>
             <dt className="text-[var(--pc-muted)]">source</dt>
@@ -493,7 +493,7 @@ function SummaryCard({
       <div className={flat ? "grid grid-cols-2 gap-y-3 sm:grid-cols-4" : "grid grid-cols-2 gap-2 sm:grid-cols-4"}>
         <button type="button" onClick={onProblems} className={flat ? FLAT_TILE + " text-left hover:bg-[var(--pc-accent-soft)]/50" : "flex flex-col rounded-xl border border-[var(--pc-line)] p-2 text-left hover:bg-[var(--pc-accent-soft)]"} data-events-stat="problems">
           <span className={cn("font-display text-xl font-semibold", problems ? "text-[var(--pc-warn)]" : "text-[var(--pc-ink)]")}>{problems}</span>
-          <span className="text-[11px] text-[var(--pc-muted)]">
+          <span className="text-meta text-[var(--pc-muted)]">
             warnings & errors{summary.bySeverity.critical ? ` · ${summary.bySeverity.critical} critical` : ""}
           </span>
         </button>
@@ -501,19 +501,19 @@ function SummaryCard({
           <span className="font-display text-xl font-semibold text-[var(--pc-ink)]">
             {finished ? `${Math.round((runs.done / finished) * 100)}%` : "—"}
           </span>
-          <span className="text-[11px] text-[var(--pc-muted)]">
+          <span className="text-meta text-[var(--pc-muted)]">
             macro runs OK · {runs.done} done, {runs.failed} failed, {runs.stopped} stopped
           </span>
         </button>
         <div className={flat ? FLAT_TILE : "flex flex-col rounded-xl border border-[var(--pc-line)] p-2"} data-events-stat="phones">
           <span className="font-display text-xl font-semibold text-[var(--pc-ink)]">{summary.byCategory.device ?? 0}</span>
-          <span className="text-[11px] text-[var(--pc-muted)]">phone connection changes</span>
+          <span className="text-meta text-[var(--pc-muted)]">phone connection changes</span>
         </div>
         <div className={flat ? FLAT_TILE : "flex flex-col rounded-xl border border-[var(--pc-line)] p-2"} data-events-stat="discord">
           <span className="font-display text-xl font-semibold text-[var(--pc-ink)]">
             {!notify?.webhookSet ? "Off" : !notify.enabled ? "Paused" : notify.status.lastError && (notify.status.lastErrorAt ?? 0) > (notify.status.lastOkAt ?? 0) ? "Failing" : "On"}
           </span>
-          <span className="text-[11px] text-[var(--pc-muted)]">
+          <span className="text-meta text-[var(--pc-muted)]">
             Discord{notify?.webhookSet ? ` · ${notify.status.sent} sent${notify.status.failed ? `, ${notify.status.failed} failed` : ""}` : " · set up in Settings"}
           </span>
         </div>
@@ -523,7 +523,7 @@ function SummaryCard({
           <span className="text-[var(--pc-muted)]">Phones with problems:</span>
           {phones.map(([name, count]) => (
             <button key={name} type="button" className="pc-toggle pc-toggle-sm" onClick={() => onDevice(name)}>
-              {name} <span className="font-mono text-[var(--pc-warn)]">{count}</span>
+              {name} <span className="text-[var(--pc-warn)]">{count}</span>
             </button>
           ))}
         </div>
@@ -600,11 +600,11 @@ function MacroStatsCard({
                   <button type="button" className="min-w-0 truncate font-medium text-[var(--pc-ink)] hover:text-[var(--pc-accent)]" onClick={() => onMacro(m.name)} title="Show this macro's events">
                     {m.name}
                   </button>
-                  <span className="font-mono text-[11px] text-[var(--pc-muted)]">
+                  <span className="text-meta text-[var(--pc-muted)]">
                     {m.runs} run{m.runs === 1 ? "" : "s"} · {m.done} done · {m.failed} failed · {m.stopped} stopped · avg {duration(m.avgSeconds)} · last {when(m.lastAt)} ({m.lastStatus})
                   </span>
                   {m.tabId && (
-                    <button type="button" className="ml-auto text-[11px] text-[var(--pc-accent)]" onClick={() => onOpenMacro(m.tabId!)}>
+                    <button type="button" className="ml-auto text-meta text-[var(--pc-accent)]" onClick={() => onOpenMacro(m.tabId!)}>
                       Open macro
                     </button>
                   )}
@@ -613,10 +613,10 @@ function MacroStatsCard({
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--pc-line)]">
                     <div className={cn("h-full", pct >= 90 ? "bg-[var(--pc-signal)]" : pct >= 50 ? "bg-[#f1c40f]" : "bg-[var(--pc-warn)]")} style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="w-10 text-right font-mono text-[11px] text-[var(--pc-ink)]">{pct}%</span>
+                  <span className="w-10 text-right text-meta text-[var(--pc-ink)]">{pct}%</span>
                 </div>
                 {worst && (
-                  <p className="text-[11px] text-[var(--pc-muted)]">
+                  <p className="text-meta text-[var(--pc-muted)]">
                     Fails most at <span className="text-[var(--pc-ink)]">{worst.step ? `step ${worst.step}` : "the start"}</span> ({worst.count}×): {worst.lastReason || "no reason given"}
                     {m.failingSteps.length > 1 && ` · also ${m.failingSteps.slice(1).map((f) => `${f.step ? `step ${f.step}` : "start"} (${f.count}×)`).join(", ")}`}
                     {Object.keys(m.failedPhones).length > 0 &&

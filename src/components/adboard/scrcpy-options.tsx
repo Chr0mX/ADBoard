@@ -202,7 +202,7 @@ export function ScrcpyOptions({
         )}
       >
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
- <span className="hidden text-[11px] tracking-wide text-[var(--pc-muted)] lg:inline">
+ <span className="hidden text-meta text-[var(--pc-muted)] lg:inline">
             Quality
           </span>
           <select
@@ -223,7 +223,7 @@ export function ScrcpyOptions({
           </select>
         </label>
         <label className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2">
- <span className="hidden text-[11px] tracking-wide text-[var(--pc-muted)] lg:inline">
+ <span className="hidden text-meta text-[var(--pc-muted)] lg:inline">
             Size
           </span>
           <select
@@ -306,7 +306,7 @@ export function ScrcpyOptions({
             disabled={disabled}
             data-scrcpy-to-phone
             onClick={() => void sendToPhone(true)}
-            className="h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs"
+            className="h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-xs"
           >
             To phone
           </Button>
@@ -316,7 +316,7 @@ export function ScrcpyOptions({
             disabled={disabled}
             data-scrcpy-from-phone
             onClick={() => void takeFromPhone()}
-            className="h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 font-mono text-xs"
+            className="h-11 rounded-xl border border-[var(--pc-line)] bg-[var(--pc-panel)] px-3 text-xs"
           >
             From phone
           </Button>
@@ -331,7 +331,7 @@ export function ScrcpyOptions({
           onApply={(values) => void apply({ ...options, ...values })}
         />
       ) : (
-        <p data-scrcpy-quality-hint className={cn("font-mono text-[11px] text-[var(--pc-muted)]", start && "px-0.5")}>
+        <p data-scrcpy-quality-hint className={cn("text-meta text-[var(--pc-muted)]", start && "px-0.5")}>
           {QUALITY_HINTS[options.quality] ?? ""}
         </p>
       )}
@@ -345,7 +345,7 @@ export function ScrcpyOptions({
         />
       </div>
       {(note || audioError || audioNote || stayAwake.note || quiet.note || (clipboardSync && clipboardStatus)) && (
-        <p data-scrcpy-note className="max-w-lg truncate text-center font-mono text-[11px] text-[var(--pc-muted)]">
+        <p data-scrcpy-note className="max-w-lg truncate text-center text-meta text-[var(--pc-muted)]">
           {note || audioError || audioNote || stayAwake.note || quiet.note || clipboardStatus}
         </p>
       )}
@@ -387,7 +387,7 @@ function CustomQualityFields({
     setFps(String(next.maxFps));
     onApply(next);
   };
-  const field = "h-9 w-20 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 font-mono text-xs text-[var(--pc-ink)] outline-none";
+  const field = "h-9 w-20 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 text-xs text-[var(--pc-ink)] outline-none";
   return (
     <form
       // Out-of-range values are clamped on Apply rather than blocked.
@@ -399,7 +399,7 @@ function CustomQualityFields({
         submit();
       }}
     >
- <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 text-meta text-[var(--pc-muted)]">
         Max size px
         <input
           type="number"
@@ -416,7 +416,7 @@ function CustomQualityFields({
           className={field}
         />
       </label>
- <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 text-meta text-[var(--pc-muted)]">
         Bitrate Mbps
         <input
           type="number"
@@ -432,7 +432,7 @@ function CustomQualityFields({
           className={field}
         />
       </label>
- <label className="flex flex-col gap-0.5 text-[11px] text-[var(--pc-muted)]">
+ <label className="flex flex-col gap-0.5 text-meta text-[var(--pc-muted)]">
         FPS
         <input
           type="number"

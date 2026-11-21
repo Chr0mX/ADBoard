@@ -80,7 +80,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
               <span
                 data-events-badge={badge}
                 title={`${badge} new warning${badge === 1 ? "" : "s"} or error${badge === 1 ? "" : "s"}`}
-                className={`ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1 font-mono text-[11px] font-bold text-[#1a0f08] ${
+                className={`ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1 text-meta font-bold text-[#1a0f08] ${
                   alerts.worst === "warning" ? "bg-[#f1c40f]" : "bg-[var(--pc-warn)]"
                 }`}
               >
@@ -98,7 +98,7 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
           }`}
           aria-hidden
         />
-        <span className="font-mono text-xs text-[var(--pc-ink)]">
+        <span className="text-xs text-[var(--pc-ink)]">
           <span className="sm:hidden">
             {onlineCount}/{totalCount}
           </span>

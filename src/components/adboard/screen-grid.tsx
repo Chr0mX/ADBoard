@@ -23,13 +23,13 @@ export function ScreenGrid({
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-2" data-screen-grid>
       {showHeading && (
-        <h2 className="font-display text-sm font-semibold tracking-wide text-[var(--pc-ink)]">
+        <h2 className="t-heading text-[var(--pc-ink)]">
           Screens
         </h2>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {online.length === 0 ? (
- <p className="px-1 font-mono text-[11px] tracking-wider text-[var(--pc-muted)]">
+ <p className="px-1 text-meta text-[var(--pc-muted)]">
             No online screens
           </p>
         ) : (
@@ -147,7 +147,7 @@ function ScreenTile({
           />
         )}
       </div>
-      <span className="truncate px-0.5 font-mono text-[11px] text-[var(--pc-ink)]">
+      <span className="truncate px-0.5 text-meta text-[var(--pc-ink)]">
         {device.name}
       </span>
     </button>

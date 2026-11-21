@@ -200,7 +200,7 @@ export function AppEditor({
           save();
         }}
       >
-        <h3 id="add-app-title" className="font-display text-base font-semibold">
+        <h3 id="add-app-title" className="t-heading">
           {initial ? "Edit app" : "Add app"}
         </h3>
 
@@ -394,7 +394,7 @@ function ScanRow({
           <span
             aria-hidden
             style={{ background: badgeColor(pkg) }}
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold uppercase text-white"
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-white"
             data-app-row-badge
           >
             {title[0] ?? "?"}
@@ -404,10 +404,10 @@ function ScanRow({
           <span className="truncate text-sm text-[var(--pc-ink)]" data-app-row-name>
             {title}
           </span>
-          <span className="truncate font-mono text-[11px] text-[var(--pc-muted)]">{pkg}</span>
+          <span className="truncate font-mono text-meta text-[var(--pc-muted)]">{pkg}</span>
         </span>
         {existing && (
-          <span className="shrink-0 text-[11px] text-[var(--pc-muted)]" data-app-row-added>
+          <span className="shrink-0 text-meta text-[var(--pc-muted)]" data-app-row-added>
             Already added ({existing.group || DEFAULT_CATEGORY})
           </span>
         )}

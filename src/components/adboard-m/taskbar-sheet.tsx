@@ -28,7 +28,7 @@ export function TaskbarSheet({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="flex flex-col gap-1">
-        <h3 className="font-display text-xs font-semibold text-[var(--pc-ink)]">Show on the bar</h3>
+        <h3 className="t-heading text-[var(--pc-ink)]">Show on the bar</h3>
         {HIDEABLE_NAV_IDS.map((id) => (
           <label key={id} className="pc-choice-row justify-between">
             <span>{HIDEABLE_NAV_LABELS[id]}</span>
@@ -38,7 +38,7 @@ export function TaskbarSheet({ onClose }: { onClose: () => void }) {
       </div>
       {pins.length > 1 && (
         <div className="flex flex-col gap-1" data-m-taskbar-order>
-          <h3 className="font-display text-xs font-semibold text-[var(--pc-ink)]">Order (left to right)</h3>
+          <h3 className="t-heading text-[var(--pc-ink)]">Order (left to right)</h3>
           {pins.map((id, index) => (
             <div key={id} className="flex items-center justify-between gap-2 text-sm text-[var(--pc-ink)]">
               <span>

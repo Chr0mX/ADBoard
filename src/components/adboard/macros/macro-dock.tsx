@@ -98,8 +98,8 @@ export function MacroDock({
     <div className="flex min-w-0 flex-col gap-3" data-macro-dock data-macro-dock-phone={phone?.id ?? ""}>
       {phone && (
         <div className="flex items-center gap-2" data-macro-dock-header>
-          <span className="font-display text-sm font-semibold text-[var(--pc-ink)]">Macros · {phone.name}</span>
- <span className={cn("font-mono text-[11px] ", phone.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
+          <span className="text-sm font-semibold text-[var(--pc-ink)]">Macros · {phone.name}</span>
+ <span className={cn("text-meta ", phone.status === "online" ? "text-[var(--pc-signal)]" : "text-[var(--pc-muted)]")}>
             {sentenceCase(phone.status)}
           </span>
         </div>
@@ -125,7 +125,7 @@ export function MacroDock({
             </option>
           ))}
         </select>
-        {phone && !assignedTab && <span className="text-[11px]">Not chosen yet: Start keeps it as {phone.name}&apos;s macro.</span>}
+        {phone && !assignedTab && <span className="text-meta">Not chosen yet: Start keeps it as {phone.name}&apos;s macro.</span>}
       </label>
 
       <Segmented
@@ -222,7 +222,7 @@ export function MacroDock({
       {phoneMode ? (
         run && (
           <>
-            <p className="flex flex-wrap gap-x-3 font-mono text-[11px]" data-macro-dock-status={run.status} aria-live="polite">
+            <p className="flex flex-wrap gap-x-3 text-meta" data-macro-dock-status={run.status} aria-live="polite">
    <span className={cn("font-semibold ", STATUS_TONE[run.status] ?? "text-[var(--pc-muted)]")}>{sentenceCase(run.status)}</span>
               <span className="truncate">“{run.tabName}”</span>
               <span>cycle {run.cycle}</span>
@@ -320,14 +320,14 @@ function DockSteps({
               className="flex min-h-10 min-w-0 flex-1 items-center gap-2 text-left"
             >
               <span
-                className="flex size-5 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold text-[#071016]"
+                className="flex size-5 shrink-0 items-center justify-center rounded-full text-meta font-bold text-[#071016]"
                 style={{ backgroundColor: stepColor(index) }}
               >
                 {index + 1}
               </span>
               <span className="min-w-0 truncate text-xs text-[var(--pc-ink)]">
                 {stepTitle(step)}
-                <span className="ml-1.5 font-mono text-[11px] text-[var(--pc-muted)]">
+                <span className="ml-1.5 text-meta text-[var(--pc-muted)]">
                   {isAppStep(step) ? (
                     appStepSummary(step.app, step.delayMs)
                   ) : isTextStep(step) ? (

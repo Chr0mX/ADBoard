@@ -49,7 +49,7 @@ export function PhoneStrip({
           >
             <span className={cn("size-2 shrink-0 rounded-full", online ? "bg-[var(--pc-signal)]" : "bg-[var(--pc-muted)]")} aria-hidden />
             <span className="max-w-24 truncate text-[var(--pc-ink)]">{notes[device.id] || device.name}</span>
-            {device.battery != null && <span className="font-mono text-[11px] text-[var(--pc-muted)]">{device.battery}%</span>}
+            {device.battery != null && <span className="text-meta text-[var(--pc-muted)]">{device.battery}%</span>}
             {favs.has(device.id) && <Star className="size-3 shrink-0 fill-current text-[var(--pc-accent)]" aria-label="Favourite" />}
           </button>
         );
