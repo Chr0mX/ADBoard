@@ -50,12 +50,6 @@ export function QuietRepeat({ className }: { className?: string }) {
   // Start in the phase the phones are in now; a change of interval keeps the current phase.
   const apply = () =>
     run(() => startQuietCycle(intervalMinutes(hours, minutes), running && status ? status.phase : quiet.on ? "quiet" : "normal"));
-  // Stopping leaves the phones as they are, so remember which state that is.
-  const stop = async () => {
-    const was = status?.phase === "quiet";
-    await stopQuietCycle();
-    quiet.adopt(was);
-  };
   const left = status ? secondsLeft(status.phaseEndsAt, status.now, receivedAt, clock || receivedAt) : 0;
   const field =
     "h-9 w-16 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 text-xs text-[var(--pc-ink)] outline-none";
@@ -82,7 +76,7 @@ export function QuietRepeat({ className }: { className?: string }) {
     <div data-quiet-repeat className={className ?? "flex w-full flex-col items-start gap-1.5"}>
       <Toggle
         pressed={running}
-        onPressedChange={(on) => void run(() => (on ? apply() : stop()))}
+        onPressedChange={(on) => void run(() => (on ? apply() : stopQuietCycle()))}
         disabled={!agentBaseUrl() || busy || (!running && !quiet.available)}
         aria-label="Repeat: switch Quiet mode on and off at an interval"
         title="Switch Quiet mode on and off at an interval; the agent keeps the time"

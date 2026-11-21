@@ -43,7 +43,7 @@ export function StreamBody() {
       <p className="text-xs text-[var(--pc-muted)]">
         Quality, screen size, audio and screen-off for {desk.targets.length > 1 ? `${desk.targets.length} target phones` : target?.name ?? "the selected phone"}.
       </p>
-      <ScrcpyOptions targetIds={desk.targets.map((d) => d.id)} serial={target?.serial ?? null} disabled={!target} />
+      <ScrcpyOptions targetIds={desk.targets.map((d) => d.id)} serial={target?.serial ?? null} disabled={!target} repeat />
     </>
   );
 }
