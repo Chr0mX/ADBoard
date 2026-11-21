@@ -1,7 +1,7 @@
-//! "Repeat indefinitely" for Quiet mode: the agent alternates every online phone
-//! between Quiet (screen off, sound muted) and normal for chosen durations, with or
-//! without a browser open. It is not a general scheduler: it only repeats the two
-//! operations Quiet mode already uses (`mute` and the scrcpy screen-off option).
+//! "Repeat" for Quiet mode: the agent flips every online phone between Quiet
+//! (screen off, sound muted) and normal every `interval`, with or without a browser
+//! open. It only repeats the two operations Quiet mode already uses (`mute` and the
+//! scrcpy screen-off option).
 //!
 //! The cycle is saved in the config folder (`quiet-cycle.json`), so after an agent
 //! restart it resumes in the phase the clock says it should be in. A task checks
@@ -20,8 +20,7 @@ use tracing::{info, warn};
 use crate::device_manager::AppState;
 
 const FILE_NAME: &str = "quiet-cycle.json";
-pub const DEFAULT_QUIET_SECS: u64 = 3 * 3600;
-pub const DEFAULT_NORMAL_SECS: u64 = 15 * 60;
+pub const DEFAULT_INTERVAL_SECS: u64 = 3600;
 const MAX_SECS: u64 = 7 * 24 * 3600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,8 +44,7 @@ impl Phase {
 #[serde(rename_all = "camelCase")]
 pub struct Cycle {
     pub enabled: bool,
-    pub quiet_secs: u64,
-    pub normal_secs: u64,
+    pub interval_secs: u64,
     pub phase: Phase,
     pub phase_started_at: u64,
     pub phase_ends_at: u64,
@@ -56,8 +54,7 @@ impl Default for Cycle {
     fn default() -> Self {
         Cycle {
             enabled: false,
-            quiet_secs: DEFAULT_QUIET_SECS,
-            normal_secs: DEFAULT_NORMAL_SECS,
+            interval_secs: DEFAULT_INTERVAL_SECS,
             phase: Phase::Normal,
             phase_started_at: 0,
             phase_ends_at: 0,
@@ -79,46 +76,25 @@ pub fn clamp_secs(secs: u64) -> u64 {
 }
 
 impl Cycle {
-    pub fn duration(&self, phase: Phase) -> u64 {
-        match phase {
-            Phase::Quiet => self.quiet_secs,
-            Phase::Normal => self.normal_secs,
-        }
-    }
-
     /// Begin `phase` at `now`.
-    pub fn started(quiet_secs: u64, normal_secs: u64, phase: Phase, now: u64) -> Cycle {
-        let mut cycle = Cycle {
-            enabled: true,
-            quiet_secs: clamp_secs(quiet_secs),
-            normal_secs: clamp_secs(normal_secs),
-            phase,
-            phase_started_at: now,
-            phase_ends_at: 0,
-        };
-        cycle.phase_ends_at = now + cycle.duration(phase);
-        cycle
+    pub fn started(interval_secs: u64, phase: Phase, now: u64) -> Cycle {
+        let interval_secs = clamp_secs(interval_secs);
+        Cycle { enabled: true, interval_secs, phase, phase_started_at: now, phase_ends_at: now + interval_secs }
     }
 
-    /// Move to the phase the clock says it is `now`. Phases follow on from where the
-    /// last one ended (no drift), and a long gap (the agent was off) skips the whole
-    /// periods in between instead of replaying each flip. Returns whether it changed.
+    /// Move to the phase the clock says it is `now`. Each phase starts where the last
+    /// one ended (no drift), and a long gap (the agent was off) lands in the right
+    /// phase instead of replaying each flip. Returns whether it changed.
     pub fn advance(&mut self, now: u64) -> bool {
         if !self.enabled || now < self.phase_ends_at {
             return false;
         }
-        let period = (self.quiet_secs + self.normal_secs).max(1);
-        // Whole periods (quiet + normal) that passed leave the phase unchanged.
-        let skipped = (now - self.phase_ends_at) / period;
-        let mut end = self.phase_ends_at + skipped * period;
-        let mut phase = self.phase;
-        while now >= end {
-            phase = phase.other();
-            end += self.duration(phase);
+        let steps = (now - self.phase_ends_at) / self.interval_secs + 1;
+        if steps % 2 == 1 {
+            self.phase = self.phase.other();
         }
-        self.phase = phase;
-        self.phase_ends_at = end;
-        self.phase_started_at = end - self.duration(phase);
+        self.phase_ends_at += steps * self.interval_secs;
+        self.phase_started_at = self.phase_ends_at - self.interval_secs;
         true
     }
 }
@@ -162,8 +138,7 @@ pub fn load_from(path: &std::path::Path) -> Cycle {
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Cycle>(&bytes).ok())
         .map(|mut cycle| {
-            cycle.quiet_secs = clamp_secs(cycle.quiet_secs);
-            cycle.normal_secs = clamp_secs(cycle.normal_secs);
+            cycle.interval_secs = clamp_secs(cycle.interval_secs);
             cycle
         })
         .unwrap_or_default()
@@ -214,8 +189,8 @@ pub fn status() -> Status {
 }
 
 /// Start (or restart) the cycle in `phase`.
-pub fn start(quiet_secs: u64, normal_secs: u64, phase: Phase) -> Status {
-    let cycle = Cycle::started(quiet_secs, normal_secs, phase, now_secs());
+pub fn start(interval_secs: u64, phase: Phase) -> Status {
+    let cycle = Cycle::started(interval_secs, phase, now_secs());
     lock(&runtime().applied).clear();
     persist(&cycle);
     *lock(&runtime().cycle) = cycle;
@@ -347,44 +322,38 @@ mod tests {
     use super::*;
 
     fn cycle(phase: Phase, now: u64) -> Cycle {
-        Cycle::started(600, 120, phase, now)
+        Cycle::started(600, phase, now)
     }
 
     #[test]
-    fn durations_are_clamped() {
+    fn interval_is_clamped() {
         assert_eq!(clamp_secs(1), 60);
         assert_eq!(clamp_secs(u64::MAX), MAX_SECS);
         assert_eq!(clamp_secs(300), 300);
     }
 
     #[test]
-    fn quiet_then_normal_then_quiet_without_drift() {
+    fn it_alternates_each_interval_without_drift() {
         let mut c = cycle(Phase::Quiet, 1_000);
         assert_eq!((c.phase_started_at, c.phase_ends_at), (1_000, 1_600));
         assert!(!c.advance(1_599));
         // Checked late: the next phase still starts where the last one ended.
         assert!(c.advance(1_650));
         assert_eq!(c.phase, Phase::Normal);
-        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_600, 1_720));
-        assert!(c.advance(1_720));
+        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_600, 2_200));
+        assert!(c.advance(2_200));
         assert_eq!(c.phase, Phase::Quiet);
-        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_720, 2_320));
-    }
-
-    #[test]
-    fn normal_first_when_quiet_mode_was_off() {
-        let c = cycle(Phase::Normal, 5_000);
-        assert_eq!(c.phase, Phase::Normal);
-        assert_eq!(c.phase_ends_at, 5_120);
+        assert_eq!((c.phase_started_at, c.phase_ends_at), (2_200, 2_800));
     }
 
     #[test]
     fn a_long_gap_lands_in_the_phase_the_clock_says() {
-        // Quiet 600 s + normal 120 s = 720 s period, starting at 0 in quiet.
-        for (now, phase) in [(0u64, Phase::Quiet), (599, Phase::Quiet), (600, Phase::Normal), (719, Phase::Normal), (720, Phase::Quiet), (720 * 50 + 10, Phase::Quiet), (720 * 50 + 650, Phase::Normal), (720 * 1000 + 719, Phase::Normal)] {
+        // Quiet from 0, 600 s each: quiet [0,600), normal [600,1200), quiet [1200,1800)...
+        for now in [0u64, 599, 600, 1199, 1200, 6_000 + 10, 6_000 + 650, 600 * 1001 + 5] {
             let mut c = cycle(Phase::Quiet, 0);
             c.advance(now);
-            assert_eq!(c.phase, phase, "at {now}");
+            let want = if (now / 600) % 2 == 0 { Phase::Quiet } else { Phase::Normal };
+            assert_eq!(c.phase, want, "at {now}");
             assert!(c.phase_started_at <= now && now < c.phase_ends_at, "at {now}");
         }
     }
@@ -408,7 +377,7 @@ mod tests {
         // Restarted in the middle of the normal phase.
         loaded.advance(100 + 600 + 30);
         assert_eq!(loaded.phase, Phase::Normal);
-        assert_eq!(loaded.phase_ends_at, 100 + 600 + 120);
+        assert_eq!(loaded.phase_ends_at, 100 + 1_200);
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -2,151 +2,114 @@
 
 import { useEffect, useState } from "react";
 import { Repeat } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { useQuietMode } from "@/hooks/use-quiet-mode";
-import { useStoredFlag } from "@/hooks/use-stored-flag";
 import { agentBaseUrl } from "@/lib/api/auth";
 import { startQuietCycle, stopQuietCycle, useQuietCycleState } from "@/lib/api/quiet-cycle";
-import {
-  cycleLine,
-  DEFAULT_NORMAL_MINUTES,
-  DEFAULT_QUIET_MINUTES,
-  formatLeft,
-  parseMinutes,
-  secondsLeft,
-} from "@/lib/api/quiet-cycle-core";
-
-const OPEN_KEY = "adboard-quiet-repeat-open";
+import { cycleLine, DEFAULT_INTERVAL_MINUTES, intervalMinutes, secondsLeft } from "@/lib/api/quiet-cycle-core";
 
 /**
- * "Repeat indefinitely", directly under the Quiet mode toggle. The agent does
- * the timing (quiet for N minutes, normal for M, again and again, also with no
- * browser open); this only sets it up and shows what phase it is in.
+ * Repeat, under the Quiet mode toggle: the agent flips Quiet mode on and off
+ * every hours:minutes, with or without a browser open. This only sets it and
+ * shows the state; the agent keeps the interval and the time.
  */
 export function QuietRepeat({ className }: { className?: string }) {
   const quiet = useQuietMode();
   const { status, receivedAt } = useQuietCycleState();
-  const [open, setOpen] = useStoredFlag(OPEN_KEY, false);
-  // null: show what the agent has saved (or the defaults) until the person types.
-  const [quietEdit, setQuietEdit] = useState<string | null>(null);
-  const [normalEdit, setNormalEdit] = useState<string | null>(null);
+  const running = status?.enabled === true;
+  const saved = status ? Math.round(status.intervalSecs / 60) : DEFAULT_INTERVAL_MINUTES;
+  // null: show what the agent has saved until the person types.
+  const [hoursEdit, setHoursEdit] = useState<string | null>(null);
+  const [minutesEdit, setMinutesEdit] = useState<string | null>(null);
+  const hours = hoursEdit ?? String(Math.floor(saved / 60));
+  const minutes = minutesEdit ?? String(saved % 60);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clock, setClock] = useState(0);
-  const running = status?.enabled === true;
-  const supported = agentBaseUrl() !== null;
 
-  // Tick once a second while a cycle runs, only to redraw the countdown.
+  // Redraw the countdown once a second while repeating.
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [running]);
 
-  const quietText = quietEdit ?? String(status ? Math.round(status.quietSecs / 60) : DEFAULT_QUIET_MINUTES);
-  const normalText = normalEdit ?? String(status ? Math.round(status.normalSecs / 60) : DEFAULT_NORMAL_MINUTES);
-  const shown = open || running;
-  const left = status ? secondsLeft(status.phaseEndsAt, status.now, receivedAt, clock || receivedAt) : 0;
-  const quietMinutes = parseMinutes(quietText, DEFAULT_QUIET_MINUTES);
-  const normalMinutes = parseMinutes(normalText, DEFAULT_NORMAL_MINUTES);
-
-  const start = async () => {
+  const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     try {
-      setQuietEdit(String(quietMinutes));
-      setNormalEdit(String(normalMinutes));
-      await startQuietCycle(quietMinutes, normalMinutes, quiet.on ? "quiet" : "normal");
+      await action();
+      setHoursEdit(null);
+      setMinutesEdit(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start");
+      setError(e instanceof Error ? e.message : "Failed");
     } finally {
       setBusy(false);
     }
   };
+  // Start in the phase the phones are in now; a change of interval keeps the current phase.
+  const apply = () =>
+    run(() => startQuietCycle(intervalMinutes(hours, minutes), running && status ? status.phase : quiet.on ? "quiet" : "normal"));
+  // Stopping leaves the phones as they are, so remember which state that is.
   const stop = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const was = status?.phase === "quiet";
-      await stopQuietCycle();
-      quiet.adopt(was);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not stop");
-    } finally {
-      setBusy(false);
-    }
+    const was = status?.phase === "quiet";
+    await stopQuietCycle();
+    quiet.adopt(was);
   };
-
+  const left = status ? secondsLeft(status.phaseEndsAt, status.now, receivedAt, clock || receivedAt) : 0;
   const field =
-    "h-9 w-20 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 text-xs text-[var(--pc-ink)] outline-none";
+    "h-9 w-16 rounded-lg border border-[var(--pc-line)] bg-[var(--pc-panel)]/70 px-2 text-xs text-[var(--pc-ink)] outline-none";
+  const input = (label: string, value: string, set: (v: string) => void, attr: string) => (
+    <label className="flex items-center gap-1 text-meta text-[var(--pc-muted)]">
+      <input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        step={1}
+        value={value}
+        disabled={busy}
+        onChange={(event) => set(event.target.value)}
+        onKeyDown={(event) => event.key === "Enter" && running && void apply()}
+        aria-label={`Repeat interval, ${label}`}
+        {...{ [attr]: true }}
+        className={field}
+      />
+      {label}
+    </label>
+  );
 
   return (
     <div data-quiet-repeat className={className ?? "flex w-full flex-col items-start gap-1.5"}>
       <Toggle
-        pressed={shown}
-        onPressedChange={(on) => {
-          setOpen(on);
-          if (!on && running) void stop();
-        }}
-        disabled={!supported || busy}
-        aria-label="Repeat indefinitely: alternate Quiet mode and normal on a timer"
-        title="Alternate Quiet mode and normal on a timer; the agent keeps the time"
+        pressed={running}
+        onPressedChange={(on) => void run(() => (on ? apply() : stop()))}
+        disabled={!agentBaseUrl() || busy || (!running && !quiet.available)}
+        aria-label="Repeat: switch Quiet mode on and off at an interval"
+        title="Switch Quiet mode on and off at an interval; the agent keeps the time"
         data-quiet-repeat-toggle
         size="md"
       >
         <Repeat className="size-4" />
-        Repeat indefinitely
+        Repeat
       </Toggle>
-      {shown && (
-        <div data-quiet-repeat-panel className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-0.5 text-meta text-[var(--pc-muted)]">
-            Quiet for (min)
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              step={1}
-              value={quietText}
-              disabled={busy}
-              onChange={(event) => setQuietEdit(event.target.value)}
-              aria-label="Quiet duration in minutes"
-              data-quiet-repeat-quiet
-              className={field}
-            />
-          </label>
-          <label className="flex flex-col gap-0.5 text-meta text-[var(--pc-muted)]">
-            Normal for (min)
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              step={1}
-              value={normalText}
-              disabled={busy}
-              onChange={(event) => setNormalEdit(event.target.value)}
-              aria-label="Normal duration in minutes"
-              data-quiet-repeat-normal
-              className={field}
-            />
-          </label>
-          {running ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => void stop()} disabled={busy} data-quiet-repeat-stop>
-              Stop
-            </Button>
-          ) : (
-            <Button type="button" size="sm" onClick={() => void start()} disabled={busy || !quiet.available} data-quiet-repeat-start>
-              Start
-            </Button>
-          )}
+      {running && (
+        <div
+          data-quiet-repeat-panel
+          className="flex flex-wrap items-center gap-2"
+          // Apply when focus leaves both fields (not when moving from hours to minutes).
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) void apply();
+          }}
+        >
+          <span className="text-meta text-[var(--pc-muted)]">Every</span>
+          {input("h", hours, setHoursEdit, "data-quiet-repeat-hours")}
+          {input("min", minutes, setMinutesEdit, "data-quiet-repeat-minutes")}
           <p data-quiet-repeat-status className="w-full text-meta text-[var(--pc-muted)]">
-            {error ??
-              (running && status
-                ? cycleLine(true, status.phase, left)
-                : `Quiet ${formatLeft(quietMinutes * 60)}, then normal ${formatLeft(normalMinutes * 60)}, again and again. Starts in ${quiet.on ? "Quiet" : "normal"}.`)}
+            {error ?? (status ? cycleLine(status.phase, left) : "")}
           </p>
         </div>
       )}
+      {!running && error && <p className="text-meta text-[var(--pc-warn)]">{error}</p>}
     </div>
   );
 }

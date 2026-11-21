@@ -11,8 +11,7 @@ import type { QuietPhase } from "@/lib/api/quiet-cycle-core";
 
 export interface QuietCycleStatus {
   enabled: boolean;
-  quietSecs: number;
-  normalSecs: number;
+  intervalSecs: number;
   phase: QuietPhase;
   phaseStartedAt: number;
   phaseEndsAt: number;
@@ -68,12 +67,12 @@ export async function refreshQuietCycle(): Promise<QuietCycleStatus | null> {
   }
 }
 
-export async function startQuietCycle(quietMinutes: number, normalMinutes: number, phase: QuietPhase) {
+export async function startQuietCycle(intervalMinutes: number, phase: QuietPhase) {
   const status = await read(
     await agentFetch(url(), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quietSecs: quietMinutes * 60, normalSecs: normalMinutes * 60, phase }),
+      body: JSON.stringify({ intervalSecs: intervalMinutes * 60, phase }),
     }),
   );
   publish(status);

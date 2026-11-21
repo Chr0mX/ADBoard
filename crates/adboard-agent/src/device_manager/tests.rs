@@ -533,13 +533,13 @@ async fn quiet_cycle_applies_each_phase_to_every_online_phone() {
     let serials = online_serials(&state).await;
     assert!(serials.len() >= 2, "the mock fleet has several online phones");
 
-    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Quiet);
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Quiet);
     crate::quiet_cycle::reconcile(&state).await;
     assert!(serials.iter().all(|s| muted(s)), "quiet phase mutes all online phones");
     assert!(state.inner.sessions.prefs().await.screen_off, "and turns their screens off");
 
     // The clock moves into the normal phase (as the saved file would say after a restart).
-    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Normal);
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Normal);
     crate::quiet_cycle::reconcile(&state).await;
     assert!(serials.iter().all(|s| !muted(s)), "normal phase restores the sound");
     assert!(!state.inner.sessions.prefs().await.screen_off);
@@ -559,7 +559,7 @@ async fn quiet_cycle_reaches_a_phone_that_appears_later() {
     *state.inner.devices.write().await = without;
     mock_muted().lock().unwrap_or_else(|e| e.into_inner()).remove(&late.serial);
 
-    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Quiet);
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Quiet);
     crate::quiet_cycle::reconcile(&state).await;
     assert!(!muted(&late.serial), "not connected yet");
 
@@ -575,7 +575,7 @@ async fn changing_quiet_mode_by_hand_stops_the_cycle() {
     let state = AppState::new(Role::Controller, "q".into(), "q".into(), 0, None);
     let ids: Vec<String> = state.list_devices().await.into_iter().filter(|d| d.status == DeviceStatus::Online).map(|d| d.id).collect();
 
-    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Quiet);
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Quiet);
     state
         .handle_command(DeviceCommandRequest { target_ids: ids.clone(), op: "mute".into(), arg: Some("off".into()), arg2: None })
         .await
@@ -583,7 +583,7 @@ async fn changing_quiet_mode_by_hand_stops_the_cycle() {
     assert!(!crate::quiet_cycle::status().cycle.enabled, "a manual mute change stops it");
 
     // Other options (same screen power) leave a running cycle alone.
-    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Quiet);
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Quiet);
     let prefs = state.inner.sessions.prefs().await;
     state
         .handle_scrcpy_options(ScrcpyOptionsRequest {
