@@ -155,6 +155,8 @@ export interface MacroTab {
    */
   referenceDpi?: number;
   notes: string;
+  /** Library group (desktop Macros list). Absent means "Ungrouped". */
+  group?: string;
   source?: MacroSource;
   createdAt: number;
   updatedAt: number;
@@ -514,6 +516,13 @@ function num(v: unknown, fallback: number): number {
   return typeof n === "number" && Number.isFinite(n) ? n : fallback;
 }
 
+export const MAX_GROUP_LENGTH = 40;
+
+/** A group name: trimmed text up to 40 characters, or "" for none. */
+export function cleanGroup(v: unknown): string {
+  return typeof v === "string" ? v.trim().slice(0, MAX_GROUP_LENGTH).trim() : "";
+}
+
 function str(v: unknown, fallback: string, max = 120): string {
   return typeof v === "string" ? v.slice(0, max) : fallback;
 }
@@ -712,6 +721,7 @@ export function sanitizeTab(raw: unknown, index: number, warnings: string[]): Ma
       ? { referenceDpi: Math.round(Number(raw.referenceDpi)) }
       : {}),
     notes: str(raw.notes, "", 2000),
+    ...(cleanGroup(raw.group) ? { group: cleanGroup(raw.group) } : {}),
     ...(source ? { source } : {}),
     createdAt: num(raw.createdAt, now),
     updatedAt: num(raw.updatedAt, now),

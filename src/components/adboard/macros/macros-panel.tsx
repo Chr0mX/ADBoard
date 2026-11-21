@@ -96,6 +96,11 @@ const viewState = {
   },
 };
 
+/** Forget a deleted macro's remembered view. */
+export function forgetMacroView(tabId: string) {
+  viewState.delete(tabId);
+}
+
 /** Open `tabId` previewing `deviceId` next time the Macros page shows it (e.g. "Edit in Macros"). */
 export function focusMacroPreview(tabId: string, deviceId: string) {
   viewState.set(tabId, { stepId: viewState.get(tabId)?.stepId ?? null, previewId: deviceId });
@@ -178,11 +183,8 @@ function TabStrip({
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<MacroTab | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const active = tabs.find((t) => t.id === activeId) ?? null;
   const index = active ? tabs.indexOf(active) : -1;
-
-  const download = (text: string, name: string, type = "application/json") => void saveTextFile(text, name, type);
 
   return (
     <div className="flex flex-col gap-2" data-macro-tabs>
@@ -276,73 +278,9 @@ function TabStrip({
           </>
         )}
         <span className="ml-auto flex flex-wrap gap-1.5">
-          <GhostButton onClick={() => fileRef.current?.click()} data-macro-import-button>
-            <Upload className="size-3.5" aria-hidden /> Import
-          </GhostButton>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".json,.txt,application/json,text/plain"
-            className="sr-only"
-            data-macro-file
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (!file) return;
-              if (file.size > 20 * 1024 * 1024) {
-                onNotice(`${file.name} is larger than 20 MB — not a macro file.`);
-                return;
-              }
-              void file.text().then(
-                (text) => onImportFile(file.name, text),
-                () => onNotice(`Could not read ${file.name}.`),
-              );
-            }}
-          />
+          <ImportButton onImportFile={onImportFile} onNotice={onNotice} />
           <VersionsMenu onNotice={onNotice} />
-          <details className="relative" data-macro-export>
-            <summary className="inline-flex h-9 min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-[var(--pc-line)] px-2.5 text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]">
-              <Download className="size-3.5" aria-hidden /> Export
-            </summary>
-            <div className="absolute right-0 z-30 mt-1 flex w-60 flex-col rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg">
-              {[
-                { label: "This tab", disabled: !active, run: () => active && download(exportMacroFile([active]), macroFileName(active.name)) },
-                { label: "All tabs", disabled: tabs.length === 0, run: () => download(exportMacroFile(tabs), ALL_MACROS_FILE) },
-                {
-                  label: "This tab for Auto Clicker",
-                  disabled: !active,
-                  run: () => {
-                    if (!active) return;
-                    const warnings: string[] = [];
-                    download(exportAutoClickerFile([active], warnings), `${safeFileStem(active.name, UNTITLED_MACRO)}-autoclicker.txt`, "text/plain");
-                    if (warnings.length) onNotice(`${warnings[0]}${warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ""}`);
-                  },
-                },
-                {
-                  label: "All tabs for Auto Clicker",
-                  disabled: tabs.length === 0,
-                  run: () => {
-                    const warnings: string[] = [];
-                    download(exportAutoClickerFile(tabs, warnings), "autoclicker-config.txt", "text/plain");
-                    if (warnings.length) onNotice(`${warnings.length} multi-touch step${warnings.length === 1 ? " was" : "s were"} split into single targets for Auto Clicker.`);
-                  },
-                },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  disabled={item.disabled}
-                  className="flex h-10 items-center rounded-lg px-2 text-left text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-50"
-                  onClick={(event) => {
-                    item.run();
-                    (event.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </details>
+          <ExportMenu tabs={tabs} active={active} onNotice={onNotice} />
         </span>
       </div>
 
@@ -371,7 +309,104 @@ function TabStrip({
 
 /* ------------------------------------------------------------------ */
 
-function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: Device[]; activeDevice: Device | null }) {
+/** Import button with its hidden file input (shared by the tab strip and the desktop library). */
+export function ImportButton({ onImportFile, onNotice }: { onImportFile: (name: string, text: string) => void; onNotice: (message: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+    <GhostButton onClick={() => fileRef.current?.click()} data-macro-import-button>
+      <Upload className="size-3.5" aria-hidden /> Import
+    </GhostButton>
+    <input
+      ref={fileRef}
+      type="file"
+      accept=".json,.txt,application/json,text/plain"
+      className="sr-only"
+      data-macro-file
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        if (file.size > 20 * 1024 * 1024) {
+          onNotice(`${file.name} is larger than 20 MB — not a macro file.`);
+          return;
+        }
+        void file.text().then(
+          (text) => onImportFile(file.name, text),
+          () => onNotice(`Could not read ${file.name}.`),
+        );
+      }}
+    />
+    </>
+  );
+}
+
+/** Export menu (this tab / all tabs, ADBoard or Auto Clicker format). */
+export function ExportMenu({ tabs, active, onNotice }: { tabs: MacroTab[]; active: MacroTab | null; onNotice: (message: string) => void }) {
+  const download = (text: string, name: string, type = "application/json") => void saveTextFile(text, name, type);
+  return (
+  <details className="relative" data-macro-export>
+    <summary className="inline-flex h-9 min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-[var(--pc-line)] px-2.5 text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)]">
+      <Download className="size-3.5" aria-hidden /> Export
+    </summary>
+    <div className="absolute right-0 z-30 mt-1 flex w-60 flex-col rounded-xl border border-[var(--pc-line)] bg-[var(--pc-paper)] p-1 shadow-lg">
+      {[
+        { label: "This tab", disabled: !active, run: () => active && download(exportMacroFile([active]), macroFileName(active.name)) },
+        { label: "All tabs", disabled: tabs.length === 0, run: () => download(exportMacroFile(tabs), ALL_MACROS_FILE) },
+        {
+          label: "This tab for Auto Clicker",
+          disabled: !active,
+          run: () => {
+            if (!active) return;
+            const warnings: string[] = [];
+            download(exportAutoClickerFile([active], warnings), `${safeFileStem(active.name, UNTITLED_MACRO)}-autoclicker.txt`, "text/plain");
+            if (warnings.length) onNotice(`${warnings[0]}${warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ""}`);
+          },
+        },
+        {
+          label: "All tabs for Auto Clicker",
+          disabled: tabs.length === 0,
+          run: () => {
+            const warnings: string[] = [];
+            download(exportAutoClickerFile(tabs, warnings), "autoclicker-config.txt", "text/plain");
+            if (warnings.length) onNotice(`${warnings.length} multi-touch step${warnings.length === 1 ? " was" : "s were"} split into single targets for Auto Clicker.`);
+          },
+        },
+      ].map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          disabled={item.disabled}
+          className="flex h-10 items-center rounded-lg px-2 text-left text-xs text-[var(--pc-ink)] hover:bg-[var(--pc-accent-soft)] disabled:opacity-50"
+          onClick={(event) => {
+            item.run();
+            (event.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
+          }}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  </details>
+  );
+}
+
+/**
+ * One macro's editor. `part` "steps" leaves out the Run and Settings cards
+ * (the desktop library shows those in their own places); the default shows
+ * everything, as the phone layout does.
+ */
+export function TabWorkspace({
+  tab,
+  devices,
+  activeDevice,
+  part = "all",
+}: {
+  tab: MacroTab;
+  devices: Device[];
+  activeDevice: Device | null;
+  part?: "all" | "steps";
+}) {
   const saved = viewState.get(tab.id);
   const [selectedStepId, setSelectedStepIdState] = useState<string | null>(saved?.stepId ?? tab.steps[0]?.id ?? null);
   const [previewId, setPreviewIdState] = useState<string>(() => saved?.previewId ?? defaultPreviewId(tab, devices, activeDevice));
@@ -510,7 +545,7 @@ function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: 
               <MacroPreview frame={null} frameLabel="Reference screen" {...previewProps} />
             )}
           </Card>
-          <RunCard tab={tab} devices={devices} targets={targets} />
+          {part === "all" && <RunCard tab={tab} devices={devices} targets={targets} />}
         </div>
 
         <div className="flex min-w-0 flex-col gap-3">
@@ -537,7 +572,7 @@ function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: 
               onTest={(stepId) => void startRun(tab, targets, stepId)}
             />
           </Card>
-          <SettingsCard tab={tab} devices={devices} onChange={update} />
+          {part === "all" && <SettingsCard tab={tab} devices={devices} onChange={update} />}
         </div>
       </div>
     </div>
@@ -546,7 +581,7 @@ function TabWorkspace({ tab, devices, activeDevice }: { tab: MacroTab; devices: 
 
 /* ------------------------------------------------------------------ */
 
-function SettingsCard({
+export function SettingsCard({
   tab,
   devices,
   onChange,
@@ -742,7 +777,7 @@ function useNow(active: boolean) {
   return now;
 }
 
-function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; targets: Device[] }) {
+export function RunCard({ tab, devices, targets }: { tab: MacroTab; devices: Device[]; targets: Device[] }) {
   useRunVersion();
   const running = isRunning(tab.id);
   const snapshot: RunSnapshot | null = runFor(tab.id);
@@ -922,7 +957,7 @@ function ReferenceDensity({
  * browser keeps its own copy whenever another copy replaced it. Restoring is
  * itself a new version, so it can be undone too.
  */
-function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
+export function VersionsMenu({ onNotice }: { onNotice: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   const [agent, setAgent] = useState<Array<{ rev: number; savedAt: number; items: number }> | null>(null);
   const [error, setError] = useState<string | null>(null);

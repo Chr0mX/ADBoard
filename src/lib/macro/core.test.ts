@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   MacroImportError,
   buildStrokes,
+  cleanGroup,
   cloneTab,
   exportAutoClickerFile,
   exportMacroFile,
@@ -138,6 +139,24 @@ describe("ADBoard format", () => {
     assert.deepEqual(parsed.warnings, []);
     assert.deepEqual(strip(parsed.tabs[0]), strip(tab));
     assert.equal(parsed.tabs[1].steps.length, 0);
+  });
+
+  it("keeps a macro's group through export, import and cloning, and ignores bad values", () => {
+    const grouped = newTab("Quests", { group: "Games" });
+    const parsed = parseMacroFile(exportMacroFile([grouped, newTab("Plain")]));
+    assert.equal(parsed.tabs[0].group, "Games");
+    assert.equal("group" in parsed.tabs[1], false);
+    assert.equal(cloneTab(grouped).group, "Games");
+    // A file from before groups has none; junk values are dropped, long names are cut.
+    const old = JSON.parse(exportMacroFile([newTab("Old")]));
+    delete old.tabs[0].group;
+    assert.equal("group" in parseMacroFile(JSON.stringify(old)).tabs[0], false);
+    old.tabs[0].group = 7;
+    assert.equal("group" in parseMacroFile(JSON.stringify(old)).tabs[0], false);
+    old.tabs[0].group = "  " + "x".repeat(80);
+    assert.equal(parseMacroFile(JSON.stringify(old)).tabs[0].group, "x".repeat(40));
+    assert.equal(cleanGroup("  Games  "), "Games");
+    assert.equal(cleanGroup(undefined), "");
   });
 
   it("rejects corrupt and incompatible files with a reason", () => {
