@@ -20,6 +20,7 @@ mod mock;
 mod notify;
 mod ocr;
 mod paths;
+mod quiet_cycle;
 mod scrcpy_control;
 mod scrcpy_video;
 mod session;
@@ -105,6 +106,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Macro schedules run on the agent, with or without a browser open.
     macro_automation::spawn_scheduler(state.clone());
+    // The repeating Quiet / normal cycle also runs here, and survives a restart.
+    quiet_cycle::init();
+    quiet_cycle::spawn(state.clone());
     // Record phone and stream changes; send chosen events to Discord.
     notify::start(host_name.clone());
     events::spawn_watch(state.clone());

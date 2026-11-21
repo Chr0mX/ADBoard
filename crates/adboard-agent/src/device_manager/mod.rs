@@ -665,6 +665,19 @@ impl AppState {
         &self,
         request: DeviceCommandRequest,
     ) -> Result<DeviceCommandResponse, String> {
+        // Someone changing the sound by hand ends the repeating Quiet cycle.
+        if request.op.trim() == "mute" {
+            crate::quiet_cycle::manual_change();
+        }
+        self.run_command(request).await
+    }
+
+    /// The command fan-out itself; the Quiet cycle calls this directly so its own
+    /// mute calls do not count as a manual change.
+    pub async fn run_command(
+        &self,
+        request: DeviceCommandRequest,
+    ) -> Result<DeviceCommandResponse, String> {
         let op = request.op.trim().to_string();
         if op.is_empty() {
             return Err("missing operation".into());
@@ -1151,6 +1164,18 @@ impl AppState {
     }
 
     pub async fn handle_scrcpy_options(
+        &self,
+        body: ScrcpyOptionsRequest,
+    ) -> Result<ScrcpyOptionsResponse, String> {
+        // Turning screens off or on by hand ends the repeating Quiet cycle.
+        if self.inner.sessions.prefs().await.screen_off != body.screen_off {
+            crate::quiet_cycle::manual_change();
+        }
+        self.run_scrcpy_options(body).await
+    }
+
+    /// Apply scrcpy options; the Quiet cycle calls this directly (not a manual change).
+    pub async fn run_scrcpy_options(
         &self,
         body: ScrcpyOptionsRequest,
     ) -> Result<ScrcpyOptionsResponse, String> {

@@ -21,6 +21,7 @@ import {
 } from "@/hooks/use-scrcpy-options";
 import { useStayAwake } from "@/hooks/use-stay-awake";
 import { useQuietMode } from "@/hooks/use-quiet-mode";
+import { QuietRepeat } from "@/components/adboard/quiet-repeat";
 import { Moon } from "lucide-react";
 import { useStoredFlag } from "@/hooks/use-stored-flag";
 import { CLIPBOARD_SYNC_KEY, useClipboardSyncStatus } from "@/hooks/use-clipboard-sync";
@@ -290,6 +291,7 @@ export function ScrcpyOptions({
           <Moon className="size-4" />
           Quiet mode
         </Toggle>
+        <QuietRepeat />
         <div className={start ? "grid w-full grid-cols-2 gap-1.5 [&>input]:col-span-2 [&>input]:min-w-0" : "max-lg:hidden lg:flex lg:w-full lg:items-center lg:gap-1.5"}>
           <input
             aria-label="Clipboard"

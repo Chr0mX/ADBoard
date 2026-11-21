@@ -185,6 +185,8 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/events/clear", post(events_clear))
         .route("/api/notifications", get(notifications_get).put(notifications_put))
         .route("/api/notifications/test", post(notifications_test))
+        .route("/api/quiet-cycle", get(quiet_cycle_get).put(quiet_cycle_put))
+        .route("/api/quiet-cycle/stop", post(quiet_cycle_stop))
         .route("/api/ocr/status", get(ocr_status))
         .route("/api/ocr/read", post(ocr_read))
         .route("/api/system/storage", get(crate::system_api::storage))
@@ -1114,6 +1116,34 @@ async fn events_clear(body: Option<Json<ClearBody>>) -> Response {
             .source("settings"),
     );
     Json(serde_json::json!({ "removed": removed })).into_response()
+}
+
+/// GET /api/quiet-cycle — the repeating Quiet / normal cycle and the time left in this phase.
+async fn quiet_cycle_get() -> Response {
+    Json(crate::quiet_cycle::status()).into_response()
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuietCycleBody {
+    quiet_secs: u64,
+    normal_secs: u64,
+    /// The phase to begin in: `quiet` when Quiet mode is on now, otherwise `normal`.
+    phase: crate::quiet_cycle::Phase,
+}
+
+/// PUT /api/quiet-cycle — start (or restart) repeating. The phones are not touched
+/// until the phase changes, so starting while Quiet mode is already on or off changes nothing yet.
+async fn quiet_cycle_put(Json(body): Json<QuietCycleBody>) -> Response {
+    if body.quiet_secs == 0 || body.normal_secs == 0 {
+        return auth_error(StatusCode::BAD_REQUEST, "durations must be above zero");
+    }
+    Json(crate::quiet_cycle::start(body.quiet_secs, body.normal_secs, body.phase)).into_response()
+}
+
+/// POST /api/quiet-cycle/stop — stop repeating; the phones stay as they are.
+async fn quiet_cycle_stop() -> Response {
+    Json(crate::quiet_cycle::stop()).into_response()
 }
 
 /// GET /api/notifications — Discord settings and delivery status (never the URL).

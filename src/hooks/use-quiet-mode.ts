@@ -5,6 +5,7 @@ import { devicesClient } from "@/lib/api/client";
 import { postScrcpyOptions } from "@/lib/scrcpy/client";
 import { patchScrcpyOptions, useScrcpyOptions } from "@/hooks/use-scrcpy-options";
 import { useStoredFlag } from "@/hooks/use-stored-flag";
+import { refreshQuietCycle, stopQuietCycle, useQuietCycleState } from "@/lib/api/quiet-cycle";
 import { useDeskOptional } from "@/components/adboard/desk/desk-context";
 
 export const QUIET_MODE_KEY = "adboard-quiet-mode";
@@ -36,7 +37,10 @@ export function useQuietModeStatus() {
  */
 export function useQuietMode() {
   const desk = useDeskOptional();
-  const [on, setOn] = useStoredFlag(QUIET_MODE_KEY, false);
+  const [stored, setOn] = useStoredFlag(QUIET_MODE_KEY, false);
+  // While the agent repeats Quiet / normal, the phase is what the phones are in.
+  const cycle = useQuietCycleState().status;
+  const on = cycle?.enabled ? cycle.phase === "quiet" : stored;
   const [busy, setBusy] = useState(false);
   const note = useQuietModeStatus();
   const { options } = useScrcpyOptions({ targetIds: [], serial: null });
@@ -49,7 +53,10 @@ export function useQuietMode() {
     }
     setBusy(true);
     const failures: string[] = [];
+    const repeating = cycle?.enabled === true;
     try {
+      // A manual change ends the repeating cycle.
+      if (repeating) await stopQuietCycle().catch(() => refreshQuietCycle());
       const [screen, mute] = await Promise.allSettled([
         postScrcpyOptions(
           online.map((d) => d.id),
@@ -76,13 +83,21 @@ export function useQuietMode() {
         failures.length > 0
           ? failures.join(" · ")
           : next
-            ? `Quiet mode on: ${count} screen off and muted`
-            : `Quiet mode off: ${count} screen on, sound restored`,
+            ? `Quiet mode on: ${count} screen off and muted${repeating ? ". Repeat stopped" : ""}`
+            : `Quiet mode off: ${count} screen on, sound restored${repeating ? ". Repeat stopped" : ""}`,
       );
     } finally {
       setBusy(false);
     }
   };
 
-  return { on, busy, note, available: online.length > 0, toggle: (next: boolean) => void toggle(next) };
+  return {
+    on,
+    busy,
+    note,
+    available: online.length > 0,
+    toggle: (next: boolean) => void toggle(next),
+    /** Remember the phones' state after the cycle was stopped by hand. */
+    adopt: (value: boolean) => setOn(value),
+  };
 }

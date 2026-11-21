@@ -163,10 +163,57 @@ pub fn parse_media_volume(raw: &str) -> Option<(u32, u32)> {
 }
 
 /// Media volume before Quiet mode muted each phone, to put back afterwards.
+/// Kept in a file in the config folder (set by `init_saved_volumes`), so a phone
+/// muted before the agent restarted still gets its own volume back.
 fn saved_volumes() -> &'static std::sync::Mutex<std::collections::HashMap<String, u32>> {
     static SAVED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, u32>>> =
         std::sync::OnceLock::new();
     SAVED.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+static VOLUMES_FILE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Read the saved volumes from `path` and keep writing there (the real process
+/// only; tests keep them in memory).
+pub fn init_saved_volumes(path: PathBuf) {
+    let loaded = load_volumes(&path);
+    if VOLUMES_FILE.set(path).is_ok() {
+        *saved_volumes().lock().unwrap_or_else(|e| e.into_inner()) = loaded;
+    }
+}
+
+pub fn load_volumes(path: &Path) -> std::collections::HashMap<String, u32> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+pub fn store_volumes(path: &Path, volumes: &std::collections::HashMap<String, u32>) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let body = serde_json::to_vec_pretty(volumes).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, body).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+fn remember_volume(serial: &str, volume: Option<u32>) -> Option<u32> {
+    let mut map = saved_volumes().lock().unwrap_or_else(|e| e.into_inner());
+    let previous = match volume {
+        Some(level) => map.insert(serial.to_string(), level),
+        None => map.remove(serial),
+    };
+    if let Some(path) = VOLUMES_FILE.get() {
+        if let Err(error) = store_volumes(path, &map) {
+            tracing::warn!(%error, "cannot save the phone volumes");
+        }
+    }
+    match volume {
+        Some(_) => None,
+        None => previous,
+    }
 }
 
 /// Mute / restore the phone's media sound (music stream 3), which is what
@@ -194,15 +241,12 @@ async fn mute_media(adb: &Path, serial: &str, arg: Option<&str>) -> Result<Strin
     match want {
         Some(true) => {
             if volume > 0 {
-                saved_volumes()
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .insert(serial.to_string(), volume);
+                remember_volume(serial, Some(volume));
             }
             set(0).await?;
         }
         Some(false) => {
-            let saved = saved_volumes().lock().unwrap_or_else(|e| e.into_inner()).remove(serial);
+            let saved = remember_volume(serial, None);
             // Unknown (e.g. the agent restarted while muted): half volume.
             let level = saved.unwrap_or((max / 2).max(1)).min(max.max(1));
             if volume == 0 {

@@ -504,3 +504,114 @@ fn other_adb_errors_do_not_touch_the_server_and_name_a_version_fight() {
     assert!(step.notice.unwrap().contains("different version"));
     assert!(describe_adb_failure("adb exited 1: boom").ends_with("boom"));
 }
+
+// ---- Quiet cycle (repeat indefinitely) on the mock fleet ----
+
+fn quiet_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn muted(serial: &str) -> bool {
+    mock_muted().lock().unwrap_or_else(|e| e.into_inner()).get(serial).copied().unwrap_or(false)
+}
+
+async fn online_serials(state: &AppState) -> Vec<String> {
+    state
+        .list_devices()
+        .await
+        .into_iter()
+        .filter(|d| d.status == DeviceStatus::Online)
+        .map(|d| d.serial)
+        .collect()
+}
+
+#[tokio::test]
+async fn quiet_cycle_applies_each_phase_to_every_online_phone() {
+    let _guard = quiet_lock();
+    let state = AppState::new(Role::Controller, "q".into(), "q".into(), 0, None);
+    let serials = online_serials(&state).await;
+    assert!(serials.len() >= 2, "the mock fleet has several online phones");
+
+    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Quiet);
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(serials.iter().all(|s| muted(s)), "quiet phase mutes all online phones");
+    assert!(state.inner.sessions.prefs().await.screen_off, "and turns their screens off");
+
+    // The clock moves into the normal phase (as the saved file would say after a restart).
+    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Normal);
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(serials.iter().all(|s| !muted(s)), "normal phase restores the sound");
+    assert!(!state.inner.sessions.prefs().await.screen_off);
+    assert!(crate::quiet_cycle::status().cycle.enabled, "its own changes do not stop the cycle");
+    crate::quiet_cycle::stop();
+}
+
+#[tokio::test]
+async fn quiet_cycle_reaches_a_phone_that_appears_later() {
+    let _guard = quiet_lock();
+    let state = AppState::new(Role::Controller, "q".into(), "q".into(), 0, None);
+    let all = state.list_devices().await;
+    let late = all.iter().find(|d| d.status == DeviceStatus::Online).cloned().expect("online phone");
+    // Start with that phone missing from the fleet, then bring it back.
+    let without: Vec<_> = state.inner.devices.read().await.iter().filter(|d| d.serial != late.serial).cloned().collect();
+    let full = state.inner.devices.read().await.clone();
+    *state.inner.devices.write().await = without;
+    mock_muted().lock().unwrap_or_else(|e| e.into_inner()).remove(&late.serial);
+
+    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Quiet);
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(!muted(&late.serial), "not connected yet");
+
+    *state.inner.devices.write().await = full;
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(muted(&late.serial), "muted once it reconnects mid-quiet");
+    crate::quiet_cycle::stop();
+}
+
+#[tokio::test]
+async fn changing_quiet_mode_by_hand_stops_the_cycle() {
+    let _guard = quiet_lock();
+    let state = AppState::new(Role::Controller, "q".into(), "q".into(), 0, None);
+    let ids: Vec<String> = state.list_devices().await.into_iter().filter(|d| d.status == DeviceStatus::Online).map(|d| d.id).collect();
+
+    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Quiet);
+    state
+        .handle_command(DeviceCommandRequest { target_ids: ids.clone(), op: "mute".into(), arg: Some("off".into()), arg2: None })
+        .await
+        .expect("mute runs");
+    assert!(!crate::quiet_cycle::status().cycle.enabled, "a manual mute change stops it");
+
+    // Other options (same screen power) leave a running cycle alone.
+    crate::quiet_cycle::start(600, 120, crate::quiet_cycle::Phase::Quiet);
+    let prefs = state.inner.sessions.prefs().await;
+    state
+        .handle_scrcpy_options(ScrcpyOptionsRequest {
+            mode: ControlMode::Selected,
+            target_ids: ids.clone(),
+            quality: prefs.quality.clone(),
+            audio: prefs.audio,
+            screen_off: prefs.screen_off,
+            max_size: prefs.max_size,
+            video_bit_rate: prefs.video_bit_rate,
+            max_fps: prefs.max_fps,
+        })
+        .await
+        .expect("options apply");
+    assert!(crate::quiet_cycle::status().cycle.enabled);
+
+    state
+        .handle_scrcpy_options(ScrcpyOptionsRequest {
+            mode: ControlMode::Selected,
+            target_ids: ids,
+            quality: prefs.quality,
+            audio: prefs.audio,
+            screen_off: !prefs.screen_off,
+            max_size: prefs.max_size,
+            video_bit_rate: prefs.video_bit_rate,
+            max_fps: prefs.max_fps,
+        })
+        .await
+        .expect("options apply");
+    assert!(!crate::quiet_cycle::status().cycle.enabled, "a manual screen change stops it");
+}
