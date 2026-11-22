@@ -52,4 +52,4 @@ Application
 ## Operator vs developer
 
 - Operators run `dist/windows/run.bat` (or Linux `adboard-agent` with `dist/windows/ui` beside it). The binary serves the static UI from disk and does not embed it or load `.env`.
-- Developers run the agent and `NEXT_PUBLIC_AGENT_URL=… npm run dev` as described in the root README.
+- Developers run the agent and `NEXT_PUBLIC_AGENT_URL=… npm run dev` as described in the root README (and, for several computers, [deployment.md](deployment.md)).

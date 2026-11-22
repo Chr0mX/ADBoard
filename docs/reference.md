@@ -1,0 +1,148 @@
+# Reference: environment flags, API and video
+
+Back to the [README](../README.md). The agent is `crates/adboard-agent`; its router is `crates/adboard-agent/src/api/mod.rs`.
+
+## Environment flags
+
+Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set; the log warns once.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ADBOARD_DATA_DIR` | see [storage.md](storage.md) | Data folder (macros, scripts, settings, logs, backups); set it for portable mode |
+| `ADBOARD_ROLE` / `--role` | `controller` | `controller` or `agent` |
+| `ADBOARD_BIND` | `0.0.0.0` | Listen address. Use `127.0.0.1` for this computer only, `0.0.0.0` for LAN and LXC agents |
+| `ADBOARD_PORT` | `3848` / `3849` | Listen port (agent defaults to 3849) |
+| `ADBOARD_HOST` | OS hostname | Host display label on devices |
+| `ADBOARD_HOST_ID` | same as host | Stable mesh id |
+| `ADBOARD_CONTROLLER_URL` | `ws://127.0.0.1:3848/ws/agent` | Agent → controller |
+| `ADBOARD_HTTP_BASE` | `http://127.0.0.1:$PORT` | Advertised for controller video proxy |
+| `ADBOARD_MOCK_PROFILE` | `all` (agent → `lxc`) | `all` / `windows` / `lxc` |
+| `ADBOARD_VIDEO_SOURCE` | `auto` | `auto`, `testpattern`, `scrcpy` or `off`. `auto` uses scrcpy when ADB and scrcpy-server are ready |
+| `FFMPEG_PATH` | `which ffmpeg` | Live testsrc encoder for testpattern |
+| `ADB_PATH` | vendored `tools/…` / `vendor/…`, else `which adb` | Override ADB binary |
+| `SCRCPY_PATH` | vendored scrcpy, else `which scrcpy` | Optional scrcpy CLI (version probe / sibling server jar) |
+| `SCRCPY_SERVER_PATH` | next to the binary, vendored, or distro paths | **Required for real frames.** The standalone server jar |
+| `SCRCPY_SERVER_VERSION` | from filename / `scrcpy --version` | First arg to `com.genymobile.scrcpy.Server` |
+| `SCRCPY_MAX_SIZE` | `1280` | Server `max_size=` |
+| `SCRCPY_SERVER_OPTS` | none | Extra `key=value` server options |
+| `SCRCPY_EXTRA_ARGS` | none | Also maps `--max-size`, `-b` and `--max-fps` to server options |
+| `ADBOARD_SCRCPY_FIXTURE` | unset | `1` → mock scrcpy backend with embedded H264 (no USB) |
+| `ADBOARD_FORCE_MOCK` | unset | `1`/`true` → ignore ADB, use mock fleet |
+| `ADBOARD_AUTO_SESSION` | unset | Auto-start session when a device comes online |
+| `ADBOARD_ALLOWED_HOSTS` | unset | Comma-separated host names (for example `adboard.local`) allowed to load the token without a password. IP addresses and `localhost` are always allowed |
+| `ADBOARD_MAX_VIRTUAL_DISPLAYS` | `1` | Extra Android displays (virtual displays) allowed per phone, 1 to 4. Can also be set in Settings, which takes priority. See [virtual-display.md](virtual-display.md) |
+| `ADBOARD_OCR_MODELS` | vendored `tools/ocr` / `vendor/ocr` | Folder with `text-detection.rten` and `text-recognition.rten` for macro text steps |
+| `NEXT_PUBLIC_AGENT_URL` | unset | UI → **controller** base URL |
+
+More flags the agent reads (checked against `crates/adboard-agent/src`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ADBOARD_TOKEN` | unset | API token clients must send (`x-adboard-token`). Set it when the bind is not loopback |
+| `ADBOARD_PASSWORD` / `ADBOARD_USERNAME` | unset / `admin` | First account; see [Remote access](remote-access.md) |
+| `ADBOARD_RESET_PASSWORD` | unset | `1` with `ADBOARD_PASSWORD` replaces a forgotten password |
+| `ADBOARD_AUTH_FILE` | `config\auth.json` in the data folder | Where the account hash is stored |
+| `ADBOARD_ALLOW_PROXY_WITHOUT_PASSWORD` | unset | `1` skips the password requirement behind a proxy (for example Cloudflare Access) |
+| `ADBOARD_DEV_ORIGINS` | `http://127.0.0.1:3847,http://localhost:3847` | Comma-separated origins allowed by CORS (the dev UI) |
+| `ADBOARD_CONNECT_DISPLAY_SIZE` | unset | `WxH` (for example `1080x1920`) set with `wm size` when a phone comes online; `native` or `reset` leaves phones alone. The agent resets it when the phone disconnects |
+| `ADBOARD_WIRELESS` | `config\wireless_devices.json` | File of saved wireless endpoints restored at start |
+| `ADBOARD_FILES` | `files` in the data folder | Folder for Downloads, APKs, Recordings and Screenshots |
+| `ADBOARD_TEMP` | `temp` in the data folder | Staged APKs, file transfers and upload chunks |
+
+Testing only: `ADBOARD_MOCK_COUNT` (number of mock phones), `ADBOARD_MOCK_VITALS=1` (change one mock phone's CPU every 2 s), `ADBOARD_TESTPATTERN_FPS` (test pattern frame rate), `ADBOARD_QUIET_MIN_SECS` and `ADBOARD_QUIET_TICK_MS` (shorten the Quiet Mode Loop's minimum interval and check period).
+
+## API surface
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/health` | Role, host id, adb/scrcpy/inject, registered agent count |
+| GET | `/api/devices` | Merged fleet (local + agents) |
+| GET | `/api/hosts` | Local + registered agents |
+| GET | `/api/sessions` | Local + remote session snapshot |
+| GET | `/api/sessions/{serial}` | One session (`id` or serial) |
+| POST | `/api/sessions/{serial}/start\|stop\|restart` | Proxied to owning agent when remote |
+| POST | `/api/input/tap` | Normalized 0–1 → pixels; local inject + remote proxy |
+| POST | `/api/input/nav` | `back`/`home`/`recent` → keyevent (proxied) |
+| POST | `/api/input/gesture` | Timed single/multi-touch strokes (finger slots 0–9), played on the agent; every finger released (proxied) |
+| GET | `/api/events` · `/api/events/summary` | Event history (filters, paging) and 24-hour counts; `POST /api/events/clear` deletes it |
+| GET / PUT | `/api/notifications` | Discord settings and delivery status (the webhook URL is never returned); `POST /api/notifications/test` sends a test |
+| GET | `/api/ocr/status` | Whether text steps can read screens here (models installed) |
+| POST | `/api/ocr/read` | Text on a phone's screen now: `{deviceId, area?, query?}` → lines with 0–1 boxes, and the query's matches (proxied) |
+| GET / PUT | `/api/store/{name}` | Shared macros, scripts, queue, schedules and settings (revisions; a stale save gets 409 with the current copy) |
+| GET / POST | `/api/store/{name}/history` · `/restore` | Earlier saved versions, and restoring one |
+| GET | `/api/system/storage` | Data folder paths, saved files, migration result |
+| POST | `/api/system/open-folder` · `/backup` | Open a data folder on the ADBoard PC; back up the data folder |
+| GET | `/api/apps/icon` · `/api/apps/meta` | An app's icon and name, read from the phone's APK and cached (`?serial=&package=`) |
+| WS | `/ws` | UI: `devices`, `hosts`, `session_updated`, tap/nav |
+| WS | `/ws/agent` | Agent registration / heartbeats / command proxy |
+| WS | `/ws/devices/{serial}/video` | Status JSON + Annex-B H264; remote proxied via agent `http_base` |
+| WS | `/ws/devices/{serial}/logcat` | Live logcat: first message `{package, level}`, then `{lines}` batches (proxied) |
+| POST | `/api/device/command` | Device ops on many phones, incl. `appDetail`, `appop`, `permission`, `standby`, `batteryExempt`, `netBlock`, `appState`, `activities`, `assistLaunch`, `intent`, `shizuku`, `tweak` ([phone-controls.md](phone-controls.md)) |
+
+This is the main part of the surface, not all of it. Also in the router: `/api/bootstrap`, `/api/session`, `/api/login`, `/api/input/pointer`, `/api/scrcpy/options`, `/api/devices/wireless`, `/api/macro/*`, `/api/quiet-cycle` (the Quiet Mode Loop: `GET`, `PUT`, `POST /stop`) and `/api/device/pull`.
+
+## Video (H264 over WebSocket)
+
+`WS /ws/devices/{serial}/video`:
+
+| Frame | Meaning |
+|---|---|
+| **Text** JSON | `VideoStatusFrame`: `stream`, `backend`, and optional `codec`, `codecString`, `width`, `height` and `framing` |
+| **Binary** | One **Annex-B** H264 access unit (start-code NALs; keyframes carry SPS/PPS + IDR) |
+
+The UI decodes the frames with **WebCodecs** `VideoDecoder` and draws them on a canvas. Switching the active device only changes the video subscription, so agent sessions stay up.
+
+### Synthetic test pattern (no phones / no scrcpy)
+
+Default when scrcpy is missing (`ADBOARD_VIDEO_SOURCE=auto`):
+
+```bash
+ADBOARD_FORCE_MOCK=1 \
+ADBOARD_VIDEO_SOURCE=testpattern \
+cargo run -p adboard-agent
+```
+
+- Prefers live **ffmpeg** `testsrc` → raw H264 on stdout when `ffmpeg` is on `PATH` (or `FFMPEG_PATH`)
+- Falls back to embedded fixture `crates/adboard-agent/fixtures/testpattern.h264` (360×640 loop)
+- The session reports `backend` = `testpattern` and `stream` = `streaming`. It is a real video stream, not a placeholder image.
+
+Opening the phone screen (or any client on the video WS) auto-starts the pump; closing the WS does **not** stop the session.
+
+### Real scrcpy (raw H264 → WebSocket)
+
+When **ADB** and **scrcpy-server** are available and `ADBOARD_VIDEO_SOURCE=auto|scrcpy`, session start:
+
+1. `adb push` the server jar to the device  
+2. `adb forward tcp:PORT localabstract:scrcpy`  
+3. Runs the **standalone server** (not the GUI client) with:
+
+```bash
+CLASSPATH=/data/local/tmp/adboard-scrcpy-server.jar \
+  app_process / com.genymobile.scrcpy.Server <version> \
+  tunnel_forward=true audio=false control=true cleanup=false \
+  raw_stream=true send_dummy_byte=true video_codec=h264 max_size=1280
+```
+
+4. TCP-connects the video socket and the control socket, then reads the one-byte handshake on the video socket (`adb forward` accepts before the device is listening, and scrcpy writes that byte only after both sockets are accepted). The bytes after that are **Annex-B access units**, published on the video hub (`backend: scrcpy`). Finger down, move, and up on the page are written to the control socket as scrcpy touch messages, in the decoded video's pixel size.
+
+`raw_stream=true` is the current scrcpy-supported way to get a bare H264 socket (the client no longer supports `--record-format=h264`). Override version with `SCRCPY_SERVER_VERSION` if the jar filename does not include `vX.Y.Z`.
+
+**USB host verify:**
+
+```bash
+# on a machine with adb + a phone + scrcpy release extracted
+export ADB_PATH=$(which adb)
+export SCRCPY_PATH=/path/to/scrcpy
+export SCRCPY_SERVER_PATH=/path/to/scrcpy-server   # or scrcpy-server-v4.1
+export ADBOARD_VIDEO_SOURCE=auto
+cargo run -p adboard-agent
+# UI → open online device → status shows backend: scrcpy / streaming + canvas frames
+```
+
+Without phones in this VM, CI uses the Annex-B reader + fixture path (`ADBOARD_SCRCPY_FIXTURE=1` forces `backend: scrcpy` with the embedded H264 loop).
+
+## Temporary files and APK installs
+
+Staged APKs, file pushes/pulls and upload chunks go to `temp/` in the data folder. Set `ADBOARD_TEMP` to use another folder.
+
+APK installs use adb's normal (streamed) install first. If a phone rejects that (`splice failed: EINVAL … Performing Streamed Install`), ADBoard retries with `--no-streaming`, then with push + `pm install`.

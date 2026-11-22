@@ -47,4 +47,4 @@ Short version: **Macros are about where a finger goes and when. Shell Automation
 | [Troubleshooting](troubleshooting.md) | When a phone doesn't show up, the screen is black, or a run does nothing |
 | [Macros reference](../macros.md) | How macros are timed and played back, and their file format |
 | [Shell Automation reference](../shell-automation.md) | Each action, its fields, and how a job runs |
-| [Remote access](../../README.md#remote-access-nginx-proxy-manager--cloudflare) | Using ADBoard from outside your network |
+| [Remote access](../remote-access.md) | Using ADBoard from outside your network |

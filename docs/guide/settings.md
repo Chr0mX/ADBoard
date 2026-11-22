@@ -131,7 +131,7 @@ This card only appears when a password is in use, or when you can still set one.
 - **Set password** (no account yet) or **Change password** opens a form. A first password needs a username and a new password you type twice. Changing it also asks for the current password. You can only set the first password when you open ADBoard directly on the PC's own network, not through a proxy.
 - **Sign out** ends your session on this browser. It is shown when a password is set.
 
-A password is required to reach ADBoard from outside your home network. See [Remote access](../../README.md#remote-access-nginx-proxy-manager--cloudflare) for the full steps with Nginx Proxy Manager and Cloudflare. Your password is never stored in a readable form, only as a salted hash.
+A password is required to reach ADBoard from outside your home network. See [Remote access](../remote-access.md) for the full steps with Nginx Proxy Manager and Cloudflare. Your password is never stored in a readable form, only as a salted hash.
 
 ## Storage
 

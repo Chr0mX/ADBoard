@@ -44,7 +44,7 @@ Nothing is deleted without being kept: look in the `backups` folder of the data 
 
 ## I forgot my password
 
-Start ADBoard once with `ADBOARD_PASSWORD` set to a new password and `ADBOARD_RESET_PASSWORD=1`. See [Remote access](../../README.md#remote-access-nginx-proxy-manager--cloudflare).
+Start ADBoard once with `ADBOARD_PASSWORD` set to a new password and `ADBOARD_RESET_PASSWORD=1`. See [Remote access](../remote-access.md).
 
 ## A virtual display won't start
 
