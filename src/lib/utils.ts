@@ -2,7 +2,7 @@ import { createCn } from "cn/config";
 
 /**
  * Class merging that knows the app's own size class `text-meta` (see docs/typography.md);
- * without it `text-meta` would be taken for a colour and dropped next to a `text-[var(--...)]` colour.
+ * without it `text-meta` would be taken for a colour and dropped next to an arbitrary-value colour class. (Keep literal class-like text out of comments: Tailwind scans source files for class names.)
  */
 export const cn = createCn({ extend: { classGroups: { "font-size": [{ text: ["meta"] }] } } });
 
