@@ -234,6 +234,14 @@ pub fn status() -> Status {
     }
 }
 
+/// A phone has just (re)connected: treat it as new at the loop's next check, even when it was
+/// gone for less time than that takes.
+pub fn note_connected(serial: &str) {
+    if let Some(known) = lock(&runtime().seen).as_mut() {
+        known.remove(serial);
+    }
+}
+
 /// The loop is running. A phone that connects meanwhile is put into Quiet mode by it.
 pub fn loop_running() -> bool {
     status().cycle.enabled
@@ -504,7 +512,12 @@ pub async fn reconcile(state: &AppState) {
         applied.retain(|serial, _| serials.contains(serial));
         if phase == Phase::Normal {
             for serial in &newcomers {
-                applied.entry(serial.clone()).or_default().quiet_override = Some(started_at);
+                // What was done for the Normal phase no longer counts: the phone wants quiet now.
+                let entry = applied.entry(serial.clone()).or_default();
+                *entry = Done {
+                    quiet_override: Some(started_at),
+                    ..Done::default()
+                };
             }
         }
     }

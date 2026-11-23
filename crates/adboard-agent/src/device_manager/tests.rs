@@ -787,3 +787,37 @@ async fn a_phone_that_connects_during_a_normal_phase_goes_quiet_at_once() {
     assert!(muted(&late.serial), "a reconnecting phone goes quiet too");
     crate::quiet_cycle::stop();
 }
+
+#[tokio::test]
+async fn a_quick_replug_is_still_a_new_phone_for_the_loop() {
+    let _guard = quiet_lock();
+    let state = AppState::new(Role::Controller, "q".into(), "q".into(), 0, None);
+    let serial = online_serials(&state).await.remove(0);
+    mock_muted().lock().unwrap_or_else(|e| e.into_inner()).clear();
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Normal);
+    crate::quiet_cycle::reconcile(&state).await; // baseline: nobody is new
+    assert!(!muted(&serial));
+    // The phone is unplugged and back between two checks: the watcher tells the loop.
+    crate::quiet_cycle::note_connected(&serial);
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(muted(&serial), "the replugged phone goes quiet");
+    crate::quiet_cycle::stop();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_returning_phone_keeps_its_screen_off_while_quiet_mode_is_on() {
+    let _guard = quiet_lock();
+    crate::quiet_cycle::stop();
+    let (adb, log) = recording_adb();
+    let state = AppState::new(Role::Controller, "rec".into(), "rec".into(), 0, Some(adb));
+    let mut prefs = state.inner.sessions.prefs().await;
+    prefs.screen_off = true;
+    state.inner.sessions.apply_options(prefs.clone(), &[]).await.unwrap();
+    state.restore_screen_after_reconnect("FAKE1").await;
+    assert!(!calls(&log).contains("KEYCODE_WAKEUP"), "Quiet mode on: not woken");
+    prefs.screen_off = false;
+    state.inner.sessions.apply_options(prefs, &[]).await.unwrap();
+    state.restore_screen_after_reconnect("FAKE1").await;
+    assert!(calls(&log).contains("KEYCODE_WAKEUP"), "Quiet mode off: woken");
+}
