@@ -18,6 +18,36 @@ impl RecoveryAction {
     }
 }
 
+/// Phones that just connected (online now, not online at the previous poll, or never seen)
+/// and phones that just dropped (online at the previous poll, not online now, or gone from
+/// the list). The Quiet Mode Loop is told about each, so it never has to rely on its own check.
+pub(super) fn connection_events(
+    previous: &HashMap<String, DeviceStatus>,
+    next: &[Device],
+) -> (Vec<String>, Vec<String>) {
+    let mut connected = Vec::new();
+    let mut disconnected = Vec::new();
+    let mut listed = std::collections::HashSet::new();
+    for device in next {
+        listed.insert(device.serial.as_str());
+        let was_online = previous.get(&device.serial) == Some(&DeviceStatus::Online);
+        let online = device.status == DeviceStatus::Online;
+        if online && !was_online {
+            connected.push(device.serial.clone());
+        } else if !online && was_online {
+            disconnected.push(device.serial.clone());
+        }
+    }
+    for (serial, status) in previous {
+        if *status == DeviceStatus::Online && !listed.contains(serial.as_str()) {
+            disconnected.push(serial.clone());
+        }
+    }
+    connected.sort();
+    disconnected.sort();
+    (connected, disconnected)
+}
+
 /// What to do after an ADB poll. One device dropping must not reconnect the others.
 /// `restart_new` also restarts scrcpy for phones seen for the first time, so a
 /// configured connect size is applied before the stream starts.
@@ -314,6 +344,14 @@ impl AppState {
                             if device.status != DeviceStatus::Offline {
                                 reconnects.recovered(&device.serial);
                             }
+                        }
+                        // Tell the Quiet Mode Loop about every connect and disconnect right away.
+                        let (connected, disconnected) = connection_events(&previous, &next);
+                        for serial in &disconnected {
+                            crate::quiet_cycle::note_disconnected(serial);
+                        }
+                        for serial in &connected {
+                            crate::quiet_cycle::note_connected(serial);
                         }
                         for action in
                             recovery_actions(&previous, &next, connect_display_size().is_some())

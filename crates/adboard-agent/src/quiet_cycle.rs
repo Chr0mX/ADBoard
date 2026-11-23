@@ -12,7 +12,11 @@
 //! (`quiet-cycle.json`) so a restart resumes in the right phase, and applies the current
 //! phase to every online phone. Sound and screen are tracked separately per phone, so one
 //! failing operation is retried without repeating the other. A phone that connects, or
-//! reconnects even between two checks, gets the current phase at once.
+//! reconnects even between two checks, gets the current phase at once: the device watcher and
+//! the session restarts report such events (`note_connected` / `note_disconnected`), which
+//! bump the phone's generation, forget what was done for it and wake the background task, so
+//! the loop never relies only on its periodic check. Starting, stopping or changing the loop
+//! wakes the task too.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -179,6 +183,15 @@ struct Runtime {
     path: OnceLock<PathBuf>,
     /// serial → which of the phone's two operations are done, and for what.
     applied: Mutex<HashMap<String, Done>>,
+    /// serial → connection generation, bumped by every connect or disconnect event. A result
+    /// that was started under an older generation is stale and never counts.
+    gens: Mutex<HashMap<String, u64>>,
+    /// Wakes the background task now (the loop started, stopped, changed, or a phone
+    /// connected). A wake sent while the task is busy is kept, so it is never lost.
+    wake: tokio::sync::Notify,
+    /// Held while a round of changes (or the restore when turning off) is sent, so the two
+    /// never interleave.
+    ops: tokio::sync::Mutex<()>,
 }
 
 fn runtime() -> &'static Runtime {
@@ -187,6 +200,9 @@ fn runtime() -> &'static Runtime {
         cycle: Mutex::new(Cycle::default()),
         path: OnceLock::new(),
         applied: Mutex::new(HashMap::new()),
+        gens: Mutex::new(HashMap::new()),
+        wake: tokio::sync::Notify::new(),
+        ops: tokio::sync::Mutex::new(()),
     })
 }
 
@@ -281,6 +297,8 @@ pub fn start(quiet_secs: u64, peek_secs: u64) -> Status {
     lock(&runtime().applied).clear();
     persist(&cycle);
     *lock(&runtime().cycle) = cycle;
+    // The task may be sleeping until its next check: phones should go quiet now.
+    runtime().wake.notify_one();
     status()
 }
 
@@ -291,6 +309,7 @@ pub fn stop() -> Status {
     persist(&cycle);
     drop(cycle);
     lock(&runtime().applied).clear();
+    runtime().wake.notify_one();
     status()
 }
 
@@ -300,6 +319,9 @@ pub async fn stop_and_restore(state: &AppState) -> Status {
     let was_running = lock(&runtime().cycle).enabled;
     let result = stop();
     if was_running {
+        // Wait for a round that is already sending changes to finish (it sees the loop is off
+        // and records nothing), so the restore is the last word.
+        let _ops = runtime().ops.lock().await;
         let devices = state.list_devices().await;
         let online: Vec<&Device> = devices
             .iter()
@@ -322,10 +344,24 @@ pub fn manual_change() {
     }
 }
 
-/// A phone has just (re)connected: forget what was done for it, so the next check gives it
-/// the current phase, even when it was gone for less time than a check takes.
-pub fn note_connected(serial: &str) {
+/// A connect or disconnect event for `serial`: it starts a new connection generation, so what was
+/// done for the phone (and any result still on its way) no longer counts, and the task is woken
+/// to bring the phone into the current phase now. Duplicate events are harmless. Nothing here
+/// touches the loop's timing.
+fn new_generation(serial: &str) {
+    *lock(&runtime().gens).entry(serial.to_string()).or_insert(0) += 1;
     lock(&runtime().applied).remove(serial);
+    runtime().wake.notify_one();
+}
+
+/// A phone has just (re)connected, even if it was gone for less time than a check takes.
+pub fn note_connected(serial: &str) {
+    new_generation(serial);
+}
+
+/// A phone has dropped: whatever was done for it is forgotten.
+pub fn note_disconnected(serial: &str) {
+    new_generation(serial);
 }
 
 /// The loop is running (it puts any phone that connects into the current phase itself).
@@ -405,6 +441,44 @@ pub fn record(
     }
     if screen == Some(true) {
         entry.screen = Some(phase_started);
+    }
+}
+
+/// Record the outcome of one round, ignoring what is stale: a phone whose connection
+/// generation changed while its operations were running (it reconnected) is skipped, and a
+/// screen result only counts for the phase it was sent for. Sound is per run (the caller has
+/// checked the run is the same).
+#[allow(clippy::too_many_arguments)]
+pub fn settle(
+    done: &mut HashMap<String, Done>,
+    gens_then: &HashMap<String, u64>,
+    gens_now: &HashMap<String, u64>,
+    run_id: u64,
+    phase_started_then: u64,
+    phase_started_now: u64,
+    audio_out: &HashMap<String, bool>,
+    screen_out: &HashMap<String, bool>,
+) {
+    let mut serials: Vec<&String> = audio_out.keys().chain(screen_out.keys()).collect();
+    serials.sort();
+    serials.dedup();
+    for serial in serials {
+        if gens_then.get(serial) != gens_now.get(serial) {
+            continue;
+        }
+        let screen = if phase_started_then == phase_started_now {
+            screen_out.get(serial).copied()
+        } else {
+            None
+        };
+        record(
+            done,
+            serial,
+            run_id,
+            phase_started_then,
+            audio_out.get(serial).copied(),
+            screen,
+        );
     }
 }
 
@@ -546,6 +620,8 @@ async fn run_group(
 /// holds back another. Sound is muted once per run and stays muted in both phases; only the
 /// screen changes between them.
 pub async fn reconcile(state: &AppState) {
+    // One round at a time, and never while the restore for turning the loop off is running.
+    let _ops = runtime().ops.lock().await;
     let status = status();
     if !status.cycle.enabled {
         return;
@@ -571,6 +647,7 @@ pub async fn reconcile(state: &AppState) {
     if audio_todo.is_empty() && screen_todo.is_empty() {
         return;
     }
+    let gens_then = lock(&runtime().gens).clone();
     let (audio_out, screen_out) = run_group(
         state,
         &online,
@@ -583,34 +660,24 @@ pub async fn reconcile(state: &AppState) {
 
     let mut applied = lock(&runtime().applied);
     // The loop may have been stopped or restarted while the calls ran.
-    {
+    let phase_started_now = {
         let now = lock(&runtime().cycle);
         if !now.enabled || now.run_id != run_id {
             return;
         }
-    }
-    for device in &online {
-        let (audio, screen) = (
-            audio_out.get(&device.serial).copied(),
-            screen_out.get(&device.serial).copied(),
-        );
-        if audio.is_some() || screen.is_some() {
-            // A result for a phase that has already ended must not count for the new one.
-            let screen = if lock(&runtime().cycle).phase_started_ms == phase_started {
-                screen
-            } else {
-                None
-            };
-            record(
-                &mut applied,
-                &device.serial,
-                run_id,
-                phase_started,
-                audio,
-                screen,
-            );
-        }
-    }
+        now.phase_started_ms
+    };
+    let gens_now = lock(&runtime().gens).clone();
+    settle(
+        &mut applied,
+        &gens_then,
+        &gens_now,
+        run_id,
+        phase_started,
+        phase_started_now,
+        &audio_out,
+        &screen_out,
+    );
 }
 
 /// How long the background task sleeps: until the phase ends (so a 1 to 5 second screen-on
@@ -623,7 +690,23 @@ pub fn next_wait(enabled: bool, now_ms: u64, phase_ends_ms: u64, tick: Duration)
     until.min(tick).max(Duration::from_millis(100))
 }
 
-/// The background task: follow the clock and the phones; one task for the whole agent.
+/// The task's loop: a round, then sleep until the phase ends, the check period passes, or
+/// something wakes it (the loop started, stopped or changed, or a phone connected).
+async fn run_loop(state: AppState, tick: Duration) {
+    loop {
+        reconcile(&state).await;
+        let (enabled, ends) = {
+            let cycle = lock(&runtime().cycle);
+            (cycle.enabled, cycle.phase_ends_ms)
+        };
+        tokio::select! {
+            _ = tokio::time::sleep(next_wait(enabled, now_ms(), ends, tick)) => {}
+            _ = runtime().wake.notified() => {}
+        }
+    }
+}
+
+/// The background task: one for the whole agent.
 pub fn spawn(state: AppState) {
     static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
@@ -636,16 +719,14 @@ pub fn spawn(state: AppState) {
             .filter(|n| *n >= 100)
             .unwrap_or(5_000),
     );
-    tokio::spawn(async move {
-        loop {
-            reconcile(&state).await;
-            let (enabled, ends) = {
-                let cycle = lock(&runtime().cycle);
-                (cycle.enabled, cycle.phase_ends_ms)
-            };
-            tokio::time::sleep(next_wait(enabled, now_ms(), ends, tick)).await;
-        }
-    });
+    tokio::spawn(run_loop(state, tick));
+}
+
+/// Test only: the task's loop with a chosen check period, so a test can prove a wake works
+/// even when the normal check is far away.
+#[cfg(test)]
+pub fn spawn_for_test(state: AppState, tick: Duration) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(run_loop(state, tick))
 }
 
 #[cfg(test)]
@@ -927,6 +1008,100 @@ mod tests {
             Done {
                 audio: Some(7),
                 screen: Some(100)
+            }
+        );
+    }
+
+    fn gens(pairs: &[(&str, u64)]) -> HashMap<String, u64> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+
+    fn outcomes(pairs: &[(&str, bool)]) -> HashMap<String, bool> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+
+    #[test]
+    fn a_result_for_a_phone_that_reconnected_meanwhile_is_stale_and_ignored() {
+        let mut done = HashMap::new();
+        // A reconnected while its operations ran (generation 1 -> 2); B did not.
+        settle(
+            &mut done,
+            &gens(&[("A", 1), ("B", 1)]),
+            &gens(&[("A", 2), ("B", 1)]),
+            7,
+            100,
+            100,
+            &outcomes(&[("A", true), ("B", true)]),
+            &outcomes(&[("A", true), ("B", true)]),
+        );
+        assert!(!done.contains_key("A"), "A stays pending and is redone");
+        assert_eq!(
+            done["B"],
+            Done {
+                audio: Some(7),
+                screen: Some(100)
+            },
+            "B is unaffected"
+        );
+    }
+
+    #[test]
+    fn a_screen_result_never_marks_a_newer_phase_done() {
+        let mut done = HashMap::new();
+        // The phase changed (100 -> 200) while the screen change for phase 100 was in flight.
+        settle(
+            &mut done,
+            &gens(&[("A", 1)]),
+            &gens(&[("A", 1)]),
+            7,
+            100,
+            200,
+            &outcomes(&[("A", true)]),
+            &outcomes(&[("A", true)]),
+        );
+        assert_eq!(
+            done["A"],
+            Done {
+                audio: Some(7),
+                screen: None
+            },
+            "the mute still counts, the screen does not"
+        );
+        assert_eq!(pending(&[s("A")], &done, 7, 200), vec![s("A")]);
+    }
+
+    #[test]
+    fn a_failure_for_one_phone_leaves_the_others_recorded() {
+        let mut done = HashMap::new();
+        settle(
+            &mut done,
+            &gens(&[]),
+            &gens(&[]),
+            7,
+            100,
+            100,
+            &outcomes(&[("A", true), ("B", false), ("C", true)]),
+            &outcomes(&[("A", true), ("B", true), ("C", false)]),
+        );
+        assert_eq!(
+            done["A"],
+            Done {
+                audio: Some(7),
+                screen: Some(100)
+            }
+        );
+        assert_eq!(
+            done["B"],
+            Done {
+                audio: None,
+                screen: Some(100)
+            }
+        );
+        assert_eq!(
+            done["C"],
+            Done {
+                audio: Some(7),
+                screen: None
             }
         );
     }

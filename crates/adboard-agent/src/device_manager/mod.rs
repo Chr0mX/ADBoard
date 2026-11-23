@@ -379,6 +379,9 @@ impl AppState {
     pub async fn restart_session_local(&self, serial: &str) -> Result<SessionStatus, String> {
         self.require_local_serial(serial).await?;
         let session = self.inner.sessions.restart(serial).await;
+        // A restarted stream is a new connection to the phone: the Quiet Mode Loop puts it
+        // back into the current phase.
+        crate::quiet_cycle::note_connected(serial);
         self.publish(ServerEvent::SessionUpdated {
             session: session.clone(),
         });
