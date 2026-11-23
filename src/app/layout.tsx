@@ -16,6 +16,7 @@ import {
 } from "next/font/google";
 import { MonoFontSync } from "@/components/adboard/mono-font-sync";
 import { ThemeSync } from "@/components/adboard/theme-sync";
+import { VideoSettingsSync } from "@/components/adboard/video-settings-sync";
 import { themeBootScript } from "@/lib/ui/themes";
 import { themeCss } from "@/lib/ui/themes";
 import { DEFAULT_MONO_FONT, MONO_FONT_KEY } from "@/lib/ui/mono-fonts";
@@ -169,6 +170,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="flex min-h-dvh flex-col font-sans">
         <ThemeSync />
+        <VideoSettingsSync />
         <MonoFontSync />
         <TooltipProvider>
           {children}

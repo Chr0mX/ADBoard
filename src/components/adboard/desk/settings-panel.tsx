@@ -13,6 +13,8 @@ import {
   type ThemeModeChoice,
 } from "@/lib/ui/themes";
 import { DARK_THEMES, LIGHT_THEMES, themeFor, type ThemeMeta, type ThemeMode } from "@/lib/ui/themes";
+import { BG_FPS_KEY, BG_PAUSE_KEY } from "@/lib/video/hub";
+import { MAX_BACKGROUND_FPS, MIN_BACKGROUND_FPS, clampBackgroundFps } from "@/lib/video/stream-policy-core";
 import { DEFAULT_MONO_FONT, MONO_FONTS, MONO_FONT_KEY, MONO_FONT_SAMPLE, parseMonoFont } from "@/lib/ui/mono-fonts";
 import { formatGridLayout, parseGridLayout } from "@/lib/ui/grid-layout";
 import { parseMobileStatsMode } from "@/lib/ui/mobile-stats-mode";
@@ -115,6 +117,56 @@ export function ControlBody() {
         data-settings-stats
       />
     </>
+  );
+}
+
+/** Background video: what the live pictures do while this browser window is hidden (Alt-Tab, another tab). */
+export function VideoBody() {
+  const [pause, setPause] = useStoredFlag(BG_PAUSE_KEY, true);
+  const [fpsRaw, setFpsRaw] = useStoredString(BG_FPS_KEY);
+  const fps = clampBackgroundFps(fpsRaw);
+  return (
+    <div className="flex flex-col gap-3 py-1" data-settings-video>
+      <SwitchRow
+        label="Pause video in background"
+        description="While this window is hidden, stop receiving the phones' video after a few seconds and bring it back when you return. This is how ADBoard has always behaved."
+        checked={pause}
+        onChange={(event) => setPause(event.target.checked)}
+        data-settings-video-pause
+      />
+      <div className="flex flex-col gap-1.5" data-settings-video-fps>
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor="video-bg-fps" className="text-sm text-[var(--pc-ink)]">
+            Background FPS
+          </label>
+          <output htmlFor="video-bg-fps" className="t-tech text-sm text-[var(--pc-ink)]" data-settings-video-fps-value>
+            {fps} FPS
+          </output>
+        </div>
+        <input
+          id="video-bg-fps"
+          type="range"
+          min={MIN_BACKGROUND_FPS}
+          max={MAX_BACKGROUND_FPS}
+          step={1}
+          value={fps}
+          disabled={pause}
+          onChange={(event) => setFpsRaw(String(clampBackgroundFps(event.target.value)))}
+          aria-valuetext={`${fps} frames per second`}
+          className="h-6 w-full accent-[var(--pc-accent)] disabled:opacity-45"
+          data-settings-video-slider
+        />
+        <p className="text-xs text-[var(--pc-muted)]">
+          {pause
+            ? "Turn Pause off to keep the video connected in the background at this rate."
+            : fps <= 1
+              ? "In the background only keyframes are decoded, about one picture a second; the other frames are dropped before decoding."
+              : `In the background about ${fps} pictures a second are painted. Every frame is still decoded, because each depends on the one before it.`}{" "}
+          The phones still send their full stream; the reduction happens in this browser. The picture you are looking at is never limited, and
+          controlling the phones is not affected. A phone scrolled out of sight is paused on its own, whatever this says.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -411,6 +463,11 @@ export function SettingsPanel() {
             <TaskbarReset />
           </div>
           <TaskbarBody />
+        </section>
+
+        <section className={CARD} data-settings-video-card>
+          <h3 className={CARD_TITLE}>Video / Performance</h3>
+          <VideoBody />
         </section>
 
         <section className={CARD} data-settings-appearance>

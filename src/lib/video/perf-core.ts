@@ -28,6 +28,11 @@ export interface StreamPerf {
   suspends: number;
   resumes: number;
   decoderErrors: number;
+  /** Decoded pictures not painted because the window is in the background at a reduced FPS. */
+  backgroundSkipped: number;
+  /** Coming back to full speed: keyframes asked for, and connections started over, because no picture came. */
+  recoveryAsks: number;
+  recoveryReconnects: number;
   /** "hardware" | "software" | "auto" | "mse" | "" (none yet). */
   decoder: string;
   /** Time spent handling one socket message, newest `RING` samples (ms). */
@@ -53,6 +58,9 @@ export function newStreamPerf(): StreamPerf {
     suspends: 0,
     resumes: 0,
     decoderErrors: 0,
+    backgroundSkipped: 0,
+    recoveryAsks: 0,
+    recoveryReconnects: 0,
     decoder: "",
     messageMs: [],
     inputMs: [],

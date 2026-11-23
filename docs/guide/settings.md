@@ -16,6 +16,7 @@ The **Settings** tab is one place for the choices that change how ADBoard looks 
 - [Control](#control)
 - [Grid view](#grid-view)
 - [Phone taskbar](#phone-taskbar)
+- [Video / Performance](#video--performance)
 - [Appearance](#appearance)
 - [Virtual displays](#virtual-displays)
 - [Discord notifications](#discord-notifications)
@@ -108,6 +109,15 @@ Three switches and one choice:
 The row of pinned tools that sits beside **Back / Home / Recent** on phones. Each tool has a switch: **Keyboard**, **Touch**, **Record**, **Replay**, **Refresh**, **APK**, **Grid**, **Stats**, **Devices**, **Manage**, **Cursor**, **Restart device**, **Device info**, **Device actions**, **Rotate**, **Fullscreen**, **Pop out**, **Quiet mode**, **Macros**, **Screenshot** and **Screen record**. Once a tool is pinned, **Order (left to right)** lists the pinned tools with **Up** and **Down** buttons to change their order. Back, Home, Recent and Minimize always stay. **Show on the bar** lets you hide Volume down, Volume up and Power. Tools that this browser can't run, such as Fullscreen in some browsers, are marked as not available.
 
 You can pin up to 21 tools. When you reach the limit the remaining switches are greyed out until you turn one off. **Reset** removes all pins (it is greyed out when none are pinned). By default nothing is pinned and the taskbar only has Back, Home and Recent.
+
+## Video / Performance
+
+What the live video does while this browser window is hidden (Alt-Tab, another tab, a minimised window). It is saved for this browser.
+
+- **Pause video in background** (on by default): after 3 seconds hidden, ADBoard closes the video connection and decoder, and brings them back when you return. This is the behaviour ADBoard has always had.
+- **Background FPS** (1 to 60, one step at a time, value shown beside the slider): used when Pause is off. The video stays connected and ADBoard does less work with it. At 1 FPS only keyframes are decoded, about one picture a second, and the frames in between are dropped before decoding. Above 1 FPS every frame is still decoded, because each depends on the one before it, but only about that many pictures a second are drawn.
+
+The phones still send their full stream: the limit is applied in the browser, so network use is not reduced. The picture you are looking at is never limited. Touch, keys and macros do not use the video connection, so they work in both modes. A phone whose tile is scrolled out of sight is paused on its own, whatever these say, and the other phones are not affected. On return the picture is restored at full speed without a refresh; if no picture arrives within about a second, ADBoard asks the phone for a new keyframe and, if needed, reconnects once.
 
 ## Appearance
 

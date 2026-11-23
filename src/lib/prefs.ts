@@ -50,6 +50,9 @@ export const BROWSER_KEYS = [
   "adboard-grid-view",
   "adboard-macro-dock",
   "adboard-files-path",
+  // Background video (Settings → Video / Performance): a property of this browser and machine.
+  "adboard-video-bg-pause",
+  "adboard-video-bg-fps",
   // The mobile app (/m) keeps its own layout so the two UIs never move each other.
   "adboard-m-section",
   "adboard-m-macro-dock",

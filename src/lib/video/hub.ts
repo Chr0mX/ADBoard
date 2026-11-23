@@ -20,7 +20,20 @@ import type { StreamStats } from "@/lib/devices/types";
 import { createFrameSlot } from "@/lib/video/frame-slot-core";
 import { fittedSize, nextCanvasSize } from "@/lib/video/canvas-size-core";
 import { accelPreference, createErrorWindow, fallbackMode, parseAccelMode } from "@/lib/video/decoder-config-core";
-import { SUSPEND_GRACE_MS, onVisibilityChange, shouldSuspend } from "@/lib/video/stream-policy-core";
+import {
+  DEFAULT_BACKGROUND_POLICY,
+  SUSPEND_GRACE_MS,
+  backgroundFrameDue,
+  keepsSocketInBackground,
+  needsKeyframeAfter,
+  onVisibilityChange,
+  readBackgroundPolicy,
+  recoveryStep,
+  shouldSuspend,
+  streamMode,
+  type BackgroundPolicy,
+  type StreamMode,
+} from "@/lib/video/stream-policy-core";
 import { createBackoff, isStale } from "@/lib/api/reconnect-core";
 import {
   markInput,
@@ -119,6 +132,30 @@ function pipActive() {
 
 function pageHidden() {
   return typeof document !== "undefined" && document.visibilityState === "hidden" && !pipActive();
+}
+
+/** Saved by Settings → Video / Performance (per browser); read here so the first stream already follows it. */
+export const BG_PAUSE_KEY = "adboard-video-bg-pause";
+export const BG_FPS_KEY = "adboard-video-bg-fps";
+
+let backgroundPolicy: BackgroundPolicy = (() => {
+  if (typeof window === "undefined") return DEFAULT_BACKGROUND_POLICY;
+  try {
+    return readBackgroundPolicy(window.localStorage.getItem(BG_PAUSE_KEY), window.localStorage.getItem(BG_FPS_KEY));
+  } catch {
+    return DEFAULT_BACKGROUND_POLICY;
+  }
+})();
+
+export function getBackgroundVideoPolicy(): BackgroundPolicy {
+  return backgroundPolicy;
+}
+
+/** The setting changed: every stream looks at its situation again (the foreground is untouched). */
+export function setBackgroundVideoPolicy(next: BackgroundPolicy) {
+  if (next.pause === backgroundPolicy.pause && next.fps === backgroundPolicy.fps) return;
+  backgroundPolicy = next;
+  for (const stream of streams.values()) stream.policyChanged();
 }
 
 /** "hardware" | "software" forces a decoder kind (benchmarks); anything else lets the browser pick. */
@@ -252,6 +289,15 @@ class SharedStream {
   /** No view on screen for a while: socket and decoder are closed until one shows again. */
   private suspended = false;
   private suspendTimer: ReturnType<typeof setTimeout> | null = null;
+  /** What this stream should be doing now (see stream-policy-core). Kept current by `onVisibility`. */
+  private mode: StreamMode = "full";
+  /** Background rate limiting: when the last picture was painted / the last keyframe was decoded. */
+  private lastBackgroundPaintAt = 0;
+  private lastSampleAt = 0;
+  private sampleTimer: ReturnType<typeof setInterval> | null = null;
+  /** After coming back to full speed: watches that a picture really arrives. */
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private recoveryAsked = false;
   // The newest decoded frame, painted once per display refresh.
   private slot = createFrameSlot<VideoFrame>(
     (run) => requestAnimationFrame(run),
@@ -267,6 +313,7 @@ class SharedStream {
       return;
     }
     document.addEventListener("visibilitychange", this.onVisibility);
+    this.mode = this.computeMode();
     this.meter = { t: performance.now(), frames: 0, bytes: 0 };
     this.statsTimer = setInterval(this.measure, 500);
     this.connect();
@@ -279,6 +326,8 @@ class SharedStream {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.suspendTimer) clearTimeout(this.suspendTimer);
     if (this.statsTimer) clearInterval(this.statsTimer);
+    this.stopSampling();
+    this.clearRecovery();
     document.removeEventListener("visibilitychange", this.onVisibility);
     this.disconnect();
     publishStats(this.serial, null);
@@ -291,6 +340,7 @@ class SharedStream {
     if (this.suspendTimer) clearTimeout(this.suspendTimer);
     this.suspendTimer = null;
     this.suspended = false;
+    this.clearRecovery();
     this.disconnect();
     this.refreshAsked = false;
     this.backoff.reset();
@@ -442,24 +492,40 @@ class SharedStream {
   };
 
   /** The agent's encoder sends the next keyframe now instead of seconds later. */
-  private askKeyframe() {
+  private askKeyframe(force = false) {
     if (this.state.status?.backend !== "scrcpy") return;
     const now = Date.now();
-    if (now - this.lastKeyframeAsk < KEYFRAME_ASK_MS) return;
+    // `force` (recovery, background sampling) only skips the long throttle, never asks twice within a second.
+    if (now - this.lastKeyframeAsk < (force ? 900 : KEYFRAME_ASK_MS)) return;
     this.lastKeyframeAsk = now;
     this.perf.keyframeAsks += 1;
     void postVideoRefresh([this.serial]).catch(() => {});
   }
 
+  /** The situation of this stream: showing, nothing to show, or hidden window with a background rate. */
+  private computeMode(): StreamMode {
+    return streamMode({
+      pageHidden: pageHidden(),
+      anyViewVisible: anyViewVisible(this.views),
+      policy: backgroundPolicy,
+      canThrottle: webCodecsSupported() && !this.mse,
+    });
+  }
+
   private onVisibility = () => {
     if (this.closed) return;
-    const shown = !this.hiddenNow();
+    const previous = this.mode;
+    const next = this.computeMode();
+    this.mode = next;
+    // A stream that keeps its socket in the background (thinned) is not suspended.
+    const shown = next === "full" || keepsSocketInBackground(next);
+    if (previous !== next) this.modeChanged(previous, next);
     const state = { suspended: this.suspended, armed: this.suspendTimer !== null };
     switch (onVisibilityChange(state, shown)) {
       case "arm":
         this.suspendTimer = setTimeout(() => {
           this.suspendTimer = null;
-          if (!this.closed && shouldSuspend({ suspended: this.suspended, armed: true }, !this.hiddenNow())) this.suspend();
+          if (!this.closed && shouldSuspend({ suspended: this.suspended, armed: true }, this.mode === "full" || keepsSocketInBackground(this.mode))) this.suspend();
         }, SUSPEND_GRACE_MS);
         break;
       case "disarm":
@@ -471,12 +537,89 @@ class SharedStream {
         this.perf.resumes += 1;
         this.backoff.reset();
         this.connect();
+        // A fresh connection must produce a picture; if it does not, ask and then start over.
+        if (next === "full") this.armRecovery();
         return;
       default:
         break;
     }
-    if (shown && this.gate.dropping) this.askKeyframe();
+    if (next === "full" && this.gate.dropping) this.askKeyframe();
   };
+
+  /** The stream's mode changed (the window hid or showed, a view moved, or the setting changed). */
+  private modeChanged(previous: StreamMode, next: StreamMode) {
+    if (next === "sample-keyframes") this.startSampling();
+    else this.stopSampling();
+    if (keepsSocketInBackground(next)) {
+      // Nothing shows while thinned: do not keep a queued picture around.
+      this.slot.clear();
+      this.lastBackgroundPaintAt = 0;
+      this.lastSampleAt = 0;
+    }
+    if (next === "full" && previous !== "full") {
+      // Back at full speed (Alt-Tab back, the tile scrolled in): the decoder may have missed frames,
+      // so wait for a keyframe (and ask for one), then check that a picture really arrives.
+      if (needsKeyframeAfter(previous, next) && this.decoder) this.gate.dropping = true;
+      if (!this.suspended) {
+        this.askKeyframe(true);
+        this.armRecovery();
+      }
+    }
+  }
+
+  /** The background setting changed. */
+  policyChanged() {
+    this.onVisibility();
+  }
+
+  /** 1 FPS in the background: one keyframe a second is enough, so ask for exactly that. */
+  private startSampling() {
+    if (this.sampleTimer) return;
+    this.sampleTimer = setInterval(() => {
+      if (this.closed || this.mode !== "sample-keyframes" || !this.socket || !this.acceptVideo) return;
+      this.askKeyframe(true);
+    }, 1000);
+  }
+
+  private stopSampling() {
+    if (this.sampleTimer) clearInterval(this.sampleTimer);
+    this.sampleTimer = null;
+  }
+
+  private clearRecovery() {
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = null;
+  }
+
+  /** After returning to full speed: if no picture arrives, ask for a keyframe once, then start the connection over once. */
+  private armRecovery() {
+    this.clearRecovery();
+    this.recoveryAsked = false;
+    const framesBefore = this.perf.decoded;
+    const started = performance.now();
+    const tick = () => {
+      this.recoveryTimer = null;
+      if (this.closed || this.mode !== "full") return;
+      const step = recoveryStep({
+        elapsedMs: performance.now() - started,
+        framesSince: this.perf.decoded - framesBefore,
+        asked: this.recoveryAsked,
+      });
+      if (step === "done") return;
+      if (step === "ask-keyframe") {
+        this.recoveryAsked = true;
+        this.perf.recoveryAsks += 1;
+        this.askKeyframe(true);
+      } else if (step === "reconnect") {
+        // One restart per return: the backoff in reconnect() spaces it, and it does not arm itself again.
+        this.perf.recoveryReconnects += 1;
+        this.reconnect();
+        return;
+      }
+      this.recoveryTimer = setTimeout(tick, 300);
+    };
+    this.recoveryTimer = setTimeout(tick, 300);
+  }
 
   /** Nobody has looked at this stream for a while: stop receiving it. Views stay attached. */
   private suspend() {
@@ -495,11 +638,6 @@ class SharedStream {
     this.refreshAsked = false;
     this.perf.reconnects += 1;
     this.retryTimer = setTimeout(this.connect, this.backoff.next());
-  }
-
-  /** The page is hidden, or no view of this stream is on screen. */
-  private hiddenNow() {
-    return pageHidden() || !anyViewVisible(this.views);
   }
 
   /** A view scrolled into or out of sight. Coming back needs a fresh keyframe. */
@@ -555,7 +693,19 @@ class SharedStream {
         }
         this.perf.decoded += 1;
         this.setState({ decodeState: "decoding", error: null });
-        if (document.visibilityState === "hidden") {
+        if (this.mode === "throttle-paint") {
+          // Hidden window at a reduced rate: every picture had to be decoded, but only about
+          // FPS of them are painted.
+          const now = performance.now();
+          if (!backgroundFrameDue(now - this.lastBackgroundPaintAt, backgroundPolicy.fps)) {
+            this.perf.backgroundSkipped += 1;
+            frame.close();
+            return;
+          }
+          this.lastBackgroundPaintAt = now;
+          this.paintFrame(frame);
+          frame.close();
+        } else if (document.visibilityState === "hidden") {
           // Animation frames do not run in a hidden page; a picture-in-picture
           // window still shows the stream, so paint it now.
           this.paintFrame(frame);
@@ -604,6 +754,8 @@ class SharedStream {
 
   private connect = () => {
     if (this.closed || this.suspended) return;
+    this.mode = this.computeMode();
+    this.lastSampleAt = 0;
     const generation = ++this.generation;
     if (!webCodecsSupported()) {
       // LAN http:// has no WebCodecs. MSE plays the same Annex-B access units.
@@ -720,7 +872,7 @@ class SharedStream {
 
     // Nothing is shown (hidden page, or every view off screen): skip parsing
     // and decoding. The next keyframe is asked for when a view comes back.
-    if (this.decoder && this.hiddenNow()) {
+    if (this.decoder && this.mode === "hold-then-suspend") {
       this.gate.dropping = true;
       this.gate.dropped += 1;
       this.perf.dropped += 1;
@@ -752,6 +904,16 @@ class SharedStream {
 
     if (!annexBHasVcl(nals)) return;
     const isKey = annexBIsIdr(nals);
+    if (this.mode === "sample-keyframes") {
+      // 1 FPS in the background: decode a keyframe about once a second and nothing else.
+      // Keyframes decode on their own, so the dropped delta frames cost nothing later.
+      const now = performance.now();
+      if (!isKey || !backgroundFrameDue(now - this.lastSampleAt, backgroundPolicy.fps)) {
+        this.perf.dropped += 1;
+        return;
+      }
+      this.lastSampleAt = now;
+    }
     // An earlier SPS/PPS AU is enough; the IDR does not have to repeat it.
     if (!this.description) return; // wait for SPS/PPS
 
@@ -777,7 +939,7 @@ class SharedStream {
     const verdict = admitFrame(this.gate, {
       isKey,
       queueSize: decoder.decodeQueueSize,
-      hidden: this.hiddenNow(),
+      hidden: this.mode === "hold-then-suspend",
     });
     recordQueue(this.perf, decoder.decodeQueueSize);
     if (verdict === "drop-ask-keyframe") this.askKeyframe();
