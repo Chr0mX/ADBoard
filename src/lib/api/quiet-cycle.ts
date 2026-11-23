@@ -11,7 +11,10 @@ import type { QuietPhase } from "@/lib/api/quiet-cycle-core";
 
 export interface QuietCycleStatus {
   enabled: boolean;
+  /** How long phones stay quiet (the quiet duration). */
   intervalSecs: number;
+  /** The brief screen-on time between quiet periods, 1 to 5 seconds. */
+  peekSecs: number;
   phase: QuietPhase;
   phaseStartedAt: number;
   phaseEndsAt: number;
@@ -38,7 +41,7 @@ function publish(status: QuietCycleStatus) {
 
 function url(path = "") {
   const base = agentBaseUrl();
-  if (base === null) throw new Error("Repeating Quiet mode needs the ADBoard agent");
+  if (base === null) throw new Error("The Quiet Mode Loop needs the ADBoard agent");
   return `${base}/api/quiet-cycle${path}`;
 }
 
@@ -67,12 +70,12 @@ export async function refreshQuietCycle(): Promise<QuietCycleStatus | null> {
   }
 }
 
-export async function startQuietCycle(intervalMinutes: number, phase: QuietPhase) {
+export async function startQuietCycle(quietMinutes: number, peekSecs: number) {
   const status = await read(
     await agentFetch(url(), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intervalSecs: intervalMinutes * 60, phase }),
+      body: JSON.stringify({ intervalSecs: quietMinutes * 60, peekSecs }),
     }),
   );
   publish(status);

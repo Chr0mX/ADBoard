@@ -1,12 +1,18 @@
-//! "Quiet Mode Loop": every `interval` the agent puts every online phone into Quiet mode
-//! (screen off, sound muted) for a short pulse, then back to normal, with or without a
-//! browser open. A phone that connects while the loop runs goes quiet at once. It only repeats the two operations Quiet mode already uses (`mute` and the
-//! scrcpy screen-off option).
+//! "Quiet Mode Loop": phones are kept quiet (screen off, sound muted) for the whole quiet
+//! duration, then the screen comes on for a few seconds (sound stays muted), then the screen
+//! goes off again and a new quiet duration starts, until the loop is turned off:
 //!
-//! The cycle is saved in the config folder (`quiet-cycle.json`), so after an agent
-//! restart it resumes in the phase the clock says it should be in. A task checks
-//! every few seconds and applies the current phase to each online phone that has not
-//! had it yet, which also covers phones that connect or reconnect later.
+//! ```text
+//! 00:00  Quiet  screen off, muted  ┐ quiet duration (the full time, never shortened)
+//! 30:00  Peek   screen ON,  muted  ┘ screen-on duration (1 to 5 s, default 3 s)
+//! 30:03  Quiet  screen off, muted  ... and so on
+//! ```
+//!
+//! The agent keeps the time (with or without a browser), saves it in the config folder
+//! (`quiet-cycle.json`) so a restart resumes in the right phase, and applies the current
+//! phase to every online phone. Sound and screen are tracked separately per phone, so one
+//! failing operation is retried without repeating the other. A phone that connects, or
+//! reconnects even between two checks, gets the current phase at once.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,51 +28,70 @@ use tracing::{info, warn};
 use crate::device_manager::AppState;
 
 const FILE_NAME: &str = "quiet-cycle.json";
-pub const DEFAULT_INTERVAL_SECS: u64 = 3600;
-/// How long each Quiet pulse lasts (shorter when the interval is very short).
-pub const PULSE_SECS: u64 = 60;
+pub const DEFAULT_QUIET_SECS: u64 = 3600;
+pub const DEFAULT_PEEK_SECS: u64 = 3;
+pub const MIN_PEEK_SECS: u64 = 1;
+pub const MAX_PEEK_SECS: u64 = 5;
 const MAX_SECS: u64 = 7 * 24 * 3600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Phase {
+    /// Screen off, sound muted, for the quiet duration.
     Quiet,
-    Normal,
+    /// Screen on, sound still muted, for the screen-on duration.
+    #[serde(alias = "normal")]
+    Peek,
 }
 
 impl Phase {
     pub fn other(self) -> Phase {
         match self {
-            Phase::Quiet => Phase::Normal,
-            Phase::Normal => Phase::Quiet,
+            Phase::Quiet => Phase::Peek,
+            Phase::Peek => Phase::Quiet,
         }
     }
 }
 
-/// What is saved: the settings and where in the cycle we are (unix seconds).
+/// What is saved: the settings and where in the cycle we are (unix milliseconds).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cycle {
     pub enabled: bool,
+    /// The quiet duration in seconds (the setting the loop always had).
     pub interval_secs: u64,
+    /// The screen-on duration in seconds, 1 to 5.
+    #[serde(default = "default_peek")]
+    pub peek_secs: u64,
     pub phase: Phase,
-    pub phase_started_at: u64,
-    pub phase_ends_at: u64,
+    #[serde(default)]
+    pub phase_started_ms: u64,
+    #[serde(default)]
+    pub phase_ends_ms: u64,
+    /// When this run of the loop began; sound is muted once per run, not once per phase.
+    #[serde(default)]
+    pub run_id: u64,
+}
+
+fn default_peek() -> u64 {
+    DEFAULT_PEEK_SECS
 }
 
 impl Default for Cycle {
     fn default() -> Self {
         Cycle {
             enabled: false,
-            interval_secs: DEFAULT_INTERVAL_SECS,
-            phase: Phase::Normal,
-            phase_started_at: 0,
-            phase_ends_at: 0,
+            interval_secs: DEFAULT_QUIET_SECS,
+            peek_secs: DEFAULT_PEEK_SECS,
+            phase: Phase::Quiet,
+            phase_started_ms: 0,
+            phase_ends_ms: 0,
+            run_id: 0,
         }
     }
 }
 
-/// The shortest allowed phase; `ADBOARD_QUIET_MIN_SECS` lowers it for testing.
+/// The shortest quiet duration; `ADBOARD_QUIET_MIN_SECS` lowers it for testing.
 fn min_secs() -> u64 {
     crate::env::var("QUIET_MIN_SECS")
         .ok()
@@ -79,75 +104,81 @@ pub fn clamp_secs(secs: u64) -> u64 {
     secs.clamp(min_secs(), MAX_SECS)
 }
 
-impl Cycle {
-    /// The Quiet pulse for an interval: a minute, or half the interval when that is shorter.
-    pub fn pulse_secs(interval_secs: u64) -> u64 {
-        PULSE_SECS.min(interval_secs / 2).max(1)
-    }
+/// A screen-on duration must be 1 to 5 seconds.
+pub fn valid_peek(secs: u64) -> bool {
+    (MIN_PEEK_SECS..=MAX_PEEK_SECS).contains(&secs)
+}
 
-    /// How long `phase` lasts: the pulse for Quiet, the rest of the interval for Normal.
-    pub fn duration(&self, phase: Phase) -> u64 {
-        let pulse = Self::pulse_secs(self.interval_secs);
-        match phase {
-            Phase::Quiet => pulse,
-            Phase::Normal => self.interval_secs - pulse,
+impl Cycle {
+    /// How long `phase` lasts, in milliseconds.
+    pub fn duration_ms(&self, phase: Phase) -> u64 {
+        1000 * match phase {
+            Phase::Quiet => self.interval_secs,
+            Phase::Peek => self.peek_secs,
         }
     }
 
-    /// Begin `phase` at `now`.
-    pub fn started(interval_secs: u64, phase: Phase, now: u64) -> Cycle {
-        let interval_secs = clamp_secs(interval_secs);
+    /// Begin the loop at `now_ms`: quiet immediately, for the full quiet duration.
+    pub fn started(quiet_secs: u64, peek_secs: u64, now_ms: u64) -> Cycle {
         let mut cycle = Cycle {
             enabled: true,
-            interval_secs,
-            phase,
-            phase_started_at: now,
-            phase_ends_at: 0,
+            interval_secs: clamp_secs(quiet_secs),
+            peek_secs: peek_secs.clamp(MIN_PEEK_SECS, MAX_PEEK_SECS),
+            phase: Phase::Quiet,
+            phase_started_ms: now_ms,
+            phase_ends_ms: 0,
+            run_id: now_ms,
         };
-        cycle.phase_ends_at = now + cycle.duration(phase);
+        cycle.phase_ends_ms = now_ms + cycle.duration_ms(Phase::Quiet);
         cycle
     }
 
-    /// Move to the phase the clock says it is `now`. Each phase starts where the last
-    /// one ended (no drift), and a long gap (the agent was off) lands in the right
-    /// phase instead of replaying each flip. Returns whether it changed.
-    pub fn advance(&mut self, now: u64) -> bool {
-        if !self.enabled || now < self.phase_ends_at {
+    /// Move to the phase the clock says it is `now_ms`. Each phase starts where the last one
+    /// ended (no drift, and the quiet time is never shortened by the screen-on time), and a
+    /// long gap (the agent was off) lands in the right phase instead of replaying each flip.
+    /// Returns whether it changed.
+    pub fn advance(&mut self, now_ms: u64) -> bool {
+        if !self.enabled || now_ms < self.phase_ends_ms {
             return false;
         }
-        // Whole intervals that passed leave the phase unchanged.
-        let skipped = (now - self.phase_ends_at) / self.interval_secs;
-        let mut end = self.phase_ends_at + skipped * self.interval_secs;
+        let period = self.duration_ms(Phase::Quiet) + self.duration_ms(Phase::Peek);
+        // Whole periods (quiet + screen-on) that passed leave the phase unchanged.
+        let skipped = (now_ms - self.phase_ends_ms) / period;
+        let mut end = self.phase_ends_ms + skipped * period;
         let mut phase = self.phase;
-        while now >= end {
+        while now_ms >= end {
             phase = phase.other();
-            end += self.duration(phase);
+            end += self.duration_ms(phase);
         }
         self.phase = phase;
-        self.phase_ends_at = end;
-        self.phase_started_at = end - self.duration(phase);
+        self.phase_ends_ms = end;
+        self.phase_started_ms = end - self.duration_ms(phase);
         true
     }
 }
 
+/// What the API returns (times in seconds, for the UI).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    #[serde(flatten)]
+    #[serde(skip)]
     pub cycle: Cycle,
+    pub enabled: bool,
+    pub interval_secs: u64,
+    pub peek_secs: u64,
+    pub phase: Phase,
+    pub phase_started_at: u64,
+    pub phase_ends_at: u64,
     pub now: u64,
-    /// Seconds until the phase changes (0 when the cycle is off).
+    /// Seconds until the phase changes (0 when the loop is off).
     pub seconds_left: u64,
 }
 
 struct Runtime {
     cycle: Mutex<Cycle>,
     path: OnceLock<PathBuf>,
-    /// serial → which of the phone's two operations are done for which phase.
+    /// serial → which of the phone's two operations are done, and for what.
     applied: Mutex<HashMap<String, Done>>,
-    /// Phones the loop has already looked at; `None` until the first look after the loop starts
-    /// (or the agent restarts), so phones that were already connected are not "new".
-    seen: Mutex<Option<std::collections::HashSet<String>>>,
 }
 
 fn runtime() -> &'static Runtime {
@@ -156,7 +187,6 @@ fn runtime() -> &'static Runtime {
         cycle: Mutex::new(Cycle::default()),
         path: OnceLock::new(),
         applied: Mutex::new(HashMap::new()),
-        seen: Mutex::new(None),
     })
 }
 
@@ -164,10 +194,10 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-pub fn now_secs() -> u64 {
+pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }
 
@@ -177,6 +207,7 @@ pub fn load_from(path: &std::path::Path) -> Cycle {
         .and_then(|bytes| serde_json::from_slice::<Cycle>(&bytes).ok())
         .map(|mut cycle| {
             cycle.interval_secs = clamp_secs(cycle.interval_secs);
+            cycle.peek_secs = cycle.peek_secs.clamp(MIN_PEEK_SECS, MAX_PEEK_SECS);
             cycle
         })
         .unwrap_or_default()
@@ -208,7 +239,7 @@ pub fn init() {
     let mut cycle = load_from(&path);
     if cycle.enabled {
         info!(phase = ?cycle.phase, "Quiet cycle resumes");
-        cycle.advance(now_secs());
+        cycle.advance(now_ms());
     }
     if runtime().path.set(path).is_ok() {
         *lock(&runtime().cycle) = cycle.clone();
@@ -216,63 +247,73 @@ pub fn init() {
     }
 }
 
-pub fn status() -> Status {
-    let now = now_secs();
-    let mut cycle = lock(&runtime().cycle);
-    if cycle.advance(now) {
-        persist(&cycle);
-    }
-    let seconds_left = if cycle.enabled {
-        cycle.phase_ends_at.saturating_sub(now)
+fn status_at(cycle: &Cycle, now: u64) -> Status {
+    let left_ms = if cycle.enabled {
+        cycle.phase_ends_ms.saturating_sub(now)
     } else {
         0
     };
     Status {
         cycle: cycle.clone(),
-        now,
-        seconds_left,
+        enabled: cycle.enabled,
+        interval_secs: cycle.interval_secs,
+        peek_secs: cycle.peek_secs,
+        phase: cycle.phase,
+        phase_started_at: cycle.phase_started_ms / 1000,
+        phase_ends_at: cycle.phase_ends_ms.div_ceil(1000),
+        now: now / 1000,
+        seconds_left: left_ms.div_ceil(1000),
     }
 }
 
-/// A phone has just (re)connected: treat it as new at the loop's next check, even when it was
-/// gone for less time than that takes.
-pub fn note_connected(serial: &str) {
-    if let Some(known) = lock(&runtime().seen).as_mut() {
-        known.remove(serial);
+pub fn status() -> Status {
+    let now = now_ms();
+    let mut cycle = lock(&runtime().cycle);
+    if cycle.advance(now) {
+        persist(&cycle);
     }
+    status_at(&cycle, now)
 }
 
-/// The loop is running. A phone that connects meanwhile is put into Quiet mode by it.
-pub fn loop_running() -> bool {
-    status().cycle.enabled
-}
-
-/// Start (or restart) the cycle in `phase`.
-pub fn start(interval_secs: u64, phase: Phase) -> Status {
-    let cycle = Cycle::started(interval_secs, phase, now_secs());
-    {
-        lock(&runtime().applied).clear();
-        *lock(&runtime().seen) = None;
-    }
+/// Start (or restart) the loop: phones go quiet at the next check, which is immediate.
+pub fn start(quiet_secs: u64, peek_secs: u64) -> Status {
+    let cycle = Cycle::started(quiet_secs, peek_secs, now_ms());
+    lock(&runtime().applied).clear();
     persist(&cycle);
     *lock(&runtime().cycle) = cycle;
     status()
 }
 
-/// Stop repeating; the phones stay as they are.
+/// Stop repeating. The phones stay as they are (see `stop_and_restore` for putting them back).
 pub fn stop() -> Status {
     let mut cycle = lock(&runtime().cycle);
     cycle.enabled = false;
     persist(&cycle);
     drop(cycle);
-    {
-        lock(&runtime().applied).clear();
-        *lock(&runtime().seen) = None;
-    }
+    lock(&runtime().applied).clear();
     status()
 }
 
-/// A person changed Quiet mode (sound or screen) outside the cycle: stop repeating.
+/// Turn the loop off and put every online phone back: sound restored (each phone's own
+/// volume, through the existing restore logic) and the screen on.
+pub async fn stop_and_restore(state: &AppState) -> Status {
+    let was_running = lock(&runtime().cycle).enabled;
+    let result = stop();
+    if was_running {
+        let devices = state.list_devices().await;
+        let online: Vec<&Device> = devices
+            .iter()
+            .filter(|d| d.status == DeviceStatus::Online)
+            .collect();
+        let serials: Vec<String> = online.iter().map(|d| d.serial.clone()).collect();
+        if !serials.is_empty() {
+            run_group(state, &online, &serials, &serials, false, false).await;
+        }
+    }
+    result
+}
+
+/// A person changed Quiet mode (sound or screen) outside the loop: stop repeating.
 pub fn manual_change() {
     let running = lock(&runtime().cycle).enabled;
     if running {
@@ -281,30 +322,38 @@ pub fn manual_change() {
     }
 }
 
-/// What has been done for one phone, as the `phase_started_at` of the phase each of its
-/// two operations last succeeded for. A phone is finished only when both match.
+/// A phone has just (re)connected: forget what was done for it, so the next check gives it
+/// the current phase, even when it was gone for less time than a check takes.
+pub fn note_connected(serial: &str) {
+    lock(&runtime().applied).remove(serial);
+}
+
+/// The loop is running (it puts any phone that connects into the current phase itself).
+pub fn loop_running() -> bool {
+    status().cycle.enabled
+}
+
+/// What has been done for one phone: the run the sound was muted for, and the phase the
+/// screen was set for. A phone is finished only when both are current.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Done {
     audio: Option<u64>,
     screen: Option<u64>,
-    /// Set (to the phase's start) for a phone that connected during a Normal phase: it goes
-    /// quiet now and joins the loop from the next phase on.
-    quiet_override: Option<u64>,
 }
 
 impl Done {
-    /// Should this phone be quiet during the phase that began at `started_at`?
-    fn wants_quiet(&self, phase: Phase, started_at: u64) -> bool {
-        phase == Phase::Quiet || self.quiet_override == Some(started_at)
-    }
-
-    fn complete(&self, started_at: u64) -> bool {
-        self.audio == Some(started_at) && self.screen == Some(started_at)
+    fn complete(&self, run_id: u64, phase_started: u64) -> bool {
+        self.audio == Some(run_id) && self.screen == Some(phase_started)
     }
 }
 
-/// Phones that are online and have not had both operations done for the current phase.
-pub fn pending(online: &[String], done: &HashMap<String, Done>, started_at: u64) -> Vec<String> {
+/// Phones that are online and are missing a muted sound or the screen state of this phase.
+pub fn pending(
+    online: &[String],
+    done: &HashMap<String, Done>,
+    run_id: u64,
+    phase_started: u64,
+) -> Vec<String> {
     online
         .iter()
         .filter(|serial| {
@@ -312,28 +361,29 @@ pub fn pending(online: &[String], done: &HashMap<String, Done>, started_at: u64)
                 .get(*serial)
                 .copied()
                 .unwrap_or_default()
-                .complete(started_at)
+                .complete(run_id, phase_started)
         })
         .cloned()
         .collect()
 }
 
-/// For the pending phones: who still needs the sound change, and who still needs the screen
-/// change. An operation that already succeeded is not sent again.
+/// For the pending phones: who still needs muting (once per run) and who still needs the
+/// screen change for this phase. An operation that already succeeded is not sent again.
 pub fn plan(
     pending: &[String],
     done: &HashMap<String, Done>,
-    started_at: u64,
+    run_id: u64,
+    phase_started: u64,
 ) -> (Vec<String>, Vec<String>) {
     let get = |serial: &String| done.get(serial).copied().unwrap_or_default();
     let audio = pending
         .iter()
-        .filter(|s| get(s).audio != Some(started_at))
+        .filter(|s| get(s).audio != Some(run_id))
         .cloned()
         .collect();
     let screen = pending
         .iter()
-        .filter(|s| get(s).screen != Some(started_at))
+        .filter(|s| get(s).screen != Some(phase_started))
         .cloned()
         .collect();
     (audio, screen)
@@ -344,35 +394,51 @@ pub fn plan(
 pub fn record(
     done: &mut HashMap<String, Done>,
     serial: &str,
-    started_at: u64,
+    run_id: u64,
+    phase_started: u64,
     audio: Option<bool>,
     screen: Option<bool>,
 ) {
     let entry = done.entry(serial.to_string()).or_default();
     if audio == Some(true) {
-        entry.audio = Some(started_at);
+        entry.audio = Some(run_id);
     }
     if screen == Some(true) {
-        entry.screen = Some(started_at);
+        entry.screen = Some(phase_started);
     }
 }
 
 #[cfg(test)]
 pub fn done_for(serial: &str) -> Option<(bool, bool)> {
-    let started = lock(&runtime().cycle).phase_started_at;
-    lock(&runtime().applied)
-        .get(serial)
-        .map(|d| (d.audio == Some(started), d.screen == Some(started)))
+    let cycle = lock(&runtime().cycle).clone();
+    lock(&runtime().applied).get(serial).map(|d| {
+        (
+            d.audio == Some(cycle.run_id),
+            d.screen == Some(cycle.phase_started_ms),
+        )
+    })
 }
 
-/// Send the sound and screen changes for one group of phones that all want the same state.
-/// Returns, per phone, whether each operation succeeded (only for the ones asked for).
+/// Test only: jump the running loop to `phase`, starting now.
+#[cfg(test)]
+pub fn force_phase(phase: Phase) {
+    let mut cycle = lock(&runtime().cycle);
+    let now = now_ms();
+    cycle.phase = phase;
+    cycle.phase_started_ms = now;
+    cycle.phase_ends_ms = now + cycle.duration_ms(phase);
+}
+
+/// Send the sound and screen changes for one group of phones that all want the same state:
+/// sound muted (`mute_on`) or restored, screen off (`screen_off`) or on. Returns, per phone,
+/// whether each operation succeeded (only for the ones asked for).
 async fn run_group(
     state: &AppState,
     online: &[&Device],
     audio_todo: &[String],
     screen_todo: &[String],
-    quiet: bool,
+    mute_on: bool,
+    screen_off: bool,
 ) -> (HashMap<String, bool>, HashMap<String, bool>) {
     let ids_of = |serials: &[String]| -> Vec<String> {
         online
@@ -389,7 +455,7 @@ async fn run_group(
             .run_command(DeviceCommandRequest {
                 target_ids: ids_of(audio_todo),
                 op: "mute".into(),
-                arg: Some(if quiet { "on" } else { "off" }.into()),
+                arg: Some(if mute_on { "on" } else { "off" }.into()),
                 arg2: None,
             })
             .await;
@@ -427,7 +493,7 @@ async fn run_group(
                 target_ids: ids_of(screen_todo),
                 quality: prefs.quality.clone(),
                 audio: prefs.audio,
-                screen_off: quiet,
+                screen_off,
                 max_size: prefs.max_size,
                 video_bit_rate: prefs.video_bit_rate,
                 max_fps: prefs.max_fps,
@@ -455,7 +521,7 @@ async fn run_group(
                         match state
                             .inner
                             .sessions
-                            .set_display_power(&device.serial, !quiet)
+                            .set_display_power(&device.serial, !screen_off)
                             .await
                         {
                             Ok(()) => true,
@@ -475,103 +541,51 @@ async fn run_group(
     (audio_out, screen_out)
 }
 
-/// Apply the current phase to every online phone that does not have it yet. Each phone
-/// has its own record: only the operation that failed is retried, and one phone's failure
-/// never holds back another. A phone that connects while the loop runs goes quiet at once,
-/// even in a Normal phase, and follows the loop from the next phase.
+/// Apply the current phase to every online phone that does not have it yet. Each phone has
+/// its own record: only the operation that failed is retried, and one phone's failure never
+/// holds back another. Sound is muted once per run and stays muted in both phases; only the
+/// screen changes between them.
 pub async fn reconcile(state: &AppState) {
     let status = status();
     if !status.cycle.enabled {
         return;
     }
-    let started_at = status.cycle.phase_started_at;
-    let phase = status.cycle.phase;
+    let (run_id, phase_started, phase) = (
+        status.cycle.run_id,
+        status.cycle.phase_started_ms,
+        status.cycle.phase,
+    );
     let devices = state.list_devices().await;
     let online: Vec<&Device> = devices
         .iter()
         .filter(|d| d.status == DeviceStatus::Online)
         .collect();
     let serials: Vec<String> = online.iter().map(|d| d.serial.clone()).collect();
-    // A phone that went away is looked at again when it returns, as a new phone.
-    let newcomers: Vec<String> = {
-        let mut seen = lock(&runtime().seen);
-        let newcomers = match seen.as_ref() {
-            // First look since the loop started: the phones already here are not new.
-            None => Vec::new(),
-            Some(known) => serials
-                .iter()
-                .filter(|s| !known.contains(*s))
-                .cloned()
-                .collect(),
-        };
-        *seen = Some(serials.iter().cloned().collect());
-        newcomers
-    };
-    {
+    let (audio_todo, screen_todo) = {
         let mut applied = lock(&runtime().applied);
+        // A phone that went away is looked at again when it returns, as a new phone.
         applied.retain(|serial, _| serials.contains(serial));
-        if phase == Phase::Normal {
-            for serial in &newcomers {
-                // What was done for the Normal phase no longer counts: the phone wants quiet now.
-                let entry = applied.entry(serial.clone()).or_default();
-                *entry = Done {
-                    quiet_override: Some(started_at),
-                    ..Done::default()
-                };
-            }
-        }
-    }
-    let (audio_todo, screen_todo, wants) = {
-        let applied = lock(&runtime().applied);
-        let todo = pending(&serials, &applied, started_at);
-        let (audio, screen) = plan(&todo, &applied, started_at);
-        let wants: HashMap<String, bool> = serials
-            .iter()
-            .map(|s| {
-                let quiet = applied
-                    .get(s)
-                    .copied()
-                    .unwrap_or_default()
-                    .wants_quiet(phase, started_at);
-                (s.clone(), quiet)
-            })
-            .collect();
-        (audio, screen, wants)
+        let todo = pending(&serials, &applied, run_id, phase_started);
+        plan(&todo, &applied, run_id, phase_started)
     };
     if audio_todo.is_empty() && screen_todo.is_empty() {
         return;
     }
-
-    // Phones that want quiet and phones that want normal are sent their own changes. In a
-    // Normal phase the quiet group goes first, so the saved screen setting ends as normal.
-    let mut audio_out: HashMap<String, bool> = HashMap::new();
-    let mut screen_out: HashMap<String, bool> = HashMap::new();
-    let groups: [bool; 2] = if phase == Phase::Normal {
-        [true, false]
-    } else {
-        [false, true]
-    };
-    for quiet in groups {
-        let pick = |list: &[String]| -> Vec<String> {
-            list.iter()
-                .filter(|s| wants.get(*s).copied().unwrap_or(false) == quiet)
-                .cloned()
-                .collect()
-        };
-        let (audio_group, screen_group) = (pick(&audio_todo), pick(&screen_todo));
-        if audio_group.is_empty() && screen_group.is_empty() {
-            continue;
-        }
-        let (a, c) = run_group(state, &online, &audio_group, &screen_group, quiet).await;
-        audio_out.extend(a);
-        screen_out.extend(c);
-    }
+    let (audio_out, screen_out) = run_group(
+        state,
+        &online,
+        &audio_todo,
+        &screen_todo,
+        true,
+        phase == Phase::Quiet,
+    )
+    .await;
 
     let mut applied = lock(&runtime().applied);
-    // The cycle may have been stopped or restarted while the calls ran.
+    // The loop may have been stopped or restarted while the calls ran.
     {
         let now = lock(&runtime().cycle);
-        if !now.enabled || now.phase_started_at != started_at {
+        if !now.enabled || now.run_id != run_id {
             return;
         }
     }
@@ -581,28 +595,55 @@ pub async fn reconcile(state: &AppState) {
             screen_out.get(&device.serial).copied(),
         );
         if audio.is_some() || screen.is_some() {
-            record(&mut applied, &device.serial, started_at, audio, screen);
+            // A result for a phase that has already ended must not count for the new one.
+            let screen = if lock(&runtime().cycle).phase_started_ms == phase_started {
+                screen
+            } else {
+                None
+            };
+            record(
+                &mut applied,
+                &device.serial,
+                run_id,
+                phase_started,
+                audio,
+                screen,
+            );
         }
     }
 }
 
-/// The background task: every few seconds, follow the clock and the phones.
+/// How long the background task sleeps: until the phase ends (so a 1 to 5 second screen-on
+/// phase is not missed), but never longer than the normal check period, and never a busy loop.
+pub fn next_wait(enabled: bool, now_ms: u64, phase_ends_ms: u64, tick: Duration) -> Duration {
+    if !enabled {
+        return tick;
+    }
+    let until = Duration::from_millis(phase_ends_ms.saturating_sub(now_ms));
+    until.min(tick).max(Duration::from_millis(100))
+}
+
+/// The background task: follow the clock and the phones; one task for the whole agent.
 pub fn spawn(state: AppState) {
     static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
-    let tick = crate::env::var("QUIET_TICK_MS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|n| *n >= 100)
-        .unwrap_or(5_000);
+    let tick = Duration::from_millis(
+        crate::env::var("QUIET_TICK_MS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .filter(|n| *n >= 100)
+            .unwrap_or(5_000),
+    );
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(tick));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            interval.tick().await;
             reconcile(&state).await;
+            let (enabled, ends) = {
+                let cycle = lock(&runtime().cycle);
+                (cycle.enabled, cycle.phase_ends_ms)
+            };
+            tokio::time::sleep(next_wait(enabled, now_ms(), ends, tick)).await;
         }
     });
 }
@@ -611,103 +652,171 @@ pub fn spawn(state: AppState) {
 mod tests {
     use super::*;
 
-    fn cycle(phase: Phase, now: u64) -> Cycle {
-        Cycle::started(600, phase, now)
+    const QUIET: u64 = 600; // seconds
+    const T0: u64 = 1_000_000; // ms
+
+    fn running(peek: u64) -> Cycle {
+        Cycle::started(QUIET, peek, T0)
     }
 
-    #[test]
-    fn interval_is_clamped() {
-        assert_eq!(clamp_secs(1), 60);
-        assert_eq!(clamp_secs(u64::MAX), MAX_SECS);
-        assert_eq!(clamp_secs(300), 300);
+    fn s(name: &str) -> String {
+        name.to_string()
     }
 
-    #[test]
-    fn the_pulse_is_a_minute_or_half_a_short_interval() {
-        assert_eq!(Cycle::pulse_secs(3600), 60);
-        assert_eq!(Cycle::pulse_secs(600), 60);
-        assert_eq!(Cycle::pulse_secs(100), 50);
-        assert_eq!(Cycle::pulse_secs(4), 2);
-    }
+    // ---- timing ----
 
     #[test]
-    fn quiet_is_a_brief_pulse_once_per_interval_without_drift() {
-        // Interval 600: quiet for 60 s, then normal for 540 s, and again.
-        let mut c = cycle(Phase::Quiet, 1_000);
-        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_000, 1_060));
-        assert!(!c.advance(1_059));
-        // Checked late: the next phase still starts where the last one ended.
-        assert!(c.advance(1_100));
-        assert_eq!(c.phase, Phase::Normal);
-        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_060, 1_600));
-        assert!(c.advance(1_600));
+    fn it_starts_quiet_immediately_for_the_full_quiet_duration() {
+        let c = running(3);
+        assert!(c.enabled);
         assert_eq!(c.phase, Phase::Quiet);
-        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_600, 1_660));
+        assert_eq!(c.phase_started_ms, T0);
+        assert_eq!(c.phase_ends_ms, T0 + 600_000);
+        assert_eq!(c.run_id, T0);
     }
 
     #[test]
-    fn starting_in_normal_waits_out_the_rest_of_the_interval() {
-        let c = cycle(Phase::Normal, 5_000);
-        assert_eq!(c.phase_ends_at, 5_540);
+    fn the_screen_on_time_is_not_part_of_the_quiet_time() {
+        // 600 s quiet, 3 s screen on, 600 s quiet, 3 s screen on ...
+        let mut c = running(3);
+        assert!(!c.advance(T0 + 599_999));
+        assert!(c.advance(T0 + 600_000));
+        assert_eq!(c.phase, Phase::Peek);
+        assert_eq!(
+            (c.phase_started_ms, c.phase_ends_ms),
+            (T0 + 600_000, T0 + 603_000)
+        );
+        assert!(!c.advance(T0 + 602_999));
+        assert!(c.advance(T0 + 603_000));
+        assert_eq!(c.phase, Phase::Quiet);
+        // The new quiet countdown starts after the screen-on phase: another full 600 s.
+        assert_eq!(
+            (c.phase_started_ms, c.phase_ends_ms),
+            (T0 + 603_000, T0 + 1_203_000)
+        );
+        assert!(c.advance(T0 + 1_203_000));
+        assert_eq!(c.phase, Phase::Peek);
+        assert_eq!(c.phase_ends_ms, T0 + 1_206_000);
     }
 
     #[test]
-    fn a_long_gap_lands_in_the_phase_the_clock_says() {
-        // From 0: quiet [0,60), normal [60,600), quiet [600,660), ... every 600 s.
-        for now in [
-            0u64,
-            59,
-            60,
-            599,
-            600,
-            659,
-            660,
-            6_000 + 10,
-            6_000 + 70,
-            600 * 1001 + 5,
-            600 * 1001 + 100,
-        ] {
-            let mut c = cycle(Phase::Quiet, 0);
-            c.advance(now);
-            let want = if now % 600 < 60 {
-                Phase::Quiet
-            } else {
-                Phase::Normal
-            };
-            assert_eq!(c.phase, want, "at {now}");
-            assert!(
-                c.phase_started_at <= now && now < c.phase_ends_at,
-                "at {now}"
+    fn screen_on_durations_of_one_three_and_five_seconds() {
+        for peek in [1u64, 3, 5] {
+            let mut c = running(peek);
+            c.advance(T0 + 600_000);
+            assert_eq!(c.phase, Phase::Peek, "peek {peek}");
+            assert_eq!(c.phase_ends_ms - c.phase_started_ms, peek * 1000);
+            c.advance(c.phase_ends_ms);
+            assert_eq!(c.phase, Phase::Quiet);
+            assert_eq!(
+                c.phase_ends_ms - c.phase_started_ms,
+                600_000,
+                "quiet is always the full time"
             );
         }
     }
 
     #[test]
-    fn a_stopped_cycle_never_moves() {
-        let mut c = cycle(Phase::Quiet, 0);
+    fn a_late_check_does_not_drift_the_schedule() {
+        let mut c = running(3);
+        assert!(c.advance(T0 + 601_700)); // checked 1.7 s late
+        assert_eq!(c.phase, Phase::Peek);
+        assert_eq!(
+            c.phase_ends_ms,
+            T0 + 603_000,
+            "the next change is still on schedule"
+        );
+    }
+
+    #[test]
+    fn it_repeats_indefinitely_and_lands_on_the_right_phase_after_a_long_gap() {
+        // The period is 603 s: quiet [0,600), screen on [600,603), repeating.
+        for peek_us in [
+            0u64,
+            599_999,
+            600_000,
+            602_999,
+            603_000,
+            1_202_999,
+            1_203_000,
+            603_000 * 1_000 + 1,
+            603_000 * 1_000 + 600_500,
+        ] {
+            let mut c = running(3);
+            c.advance(T0 + peek_us);
+            let in_period = peek_us % 603_000;
+            let want = if in_period < 600_000 {
+                Phase::Quiet
+            } else {
+                Phase::Peek
+            };
+            assert_eq!(c.phase, want, "at +{peek_us} ms");
+            assert!(c.phase_started_ms <= T0 + peek_us && T0 + peek_us < c.phase_ends_ms);
+        }
+    }
+
+    #[test]
+    fn a_stopped_loop_never_moves() {
+        let mut c = running(3);
         c.enabled = false;
-        assert!(!c.advance(1_000_000));
+        assert!(!c.advance(T0 + 99_999_999));
         assert_eq!(c.phase, Phase::Quiet);
     }
 
     #[test]
-    fn the_saved_cycle_resumes_after_a_restart() {
+    fn settings_are_limited() {
+        assert_eq!(clamp_secs(1), 60);
+        assert_eq!(clamp_secs(u64::MAX), MAX_SECS);
+        assert!(valid_peek(1) && valid_peek(3) && valid_peek(5));
+        assert!(!valid_peek(0) && !valid_peek(6));
+        assert_eq!(Cycle::started(600, 99, T0).peek_secs, 5);
+        assert_eq!(Cycle::started(600, 0, T0).peek_secs, 1);
+    }
+
+    // ---- saving and restarts ----
+
+    #[test]
+    fn a_saved_loop_resumes_after_a_restart_in_the_right_phase() {
         let dir = std::env::temp_dir().join(format!("adboard-quiet-{}", uuid::Uuid::new_v4()));
         let path = dir.join(FILE_NAME);
-        let c = cycle(Phase::Quiet, 100);
+        let c = running(5);
         save_to(&path, &c).unwrap();
         let mut loaded = load_from(&path);
-        assert_eq!(loaded, c);
-        // Restarted in the middle of the normal phase.
-        // Quiet [100,160), normal [160,700), quiet [700,760): restarted 30 s into the second pulse.
-        loaded.advance(100 + 600 + 30);
+        assert_eq!(
+            loaded, c,
+            "the quiet duration and the screen-on duration are both saved"
+        );
+        // Restarted in the middle of the screen-on phase, then in the next quiet phase.
+        loaded.advance(T0 + 600_000 + 2_000);
+        assert_eq!(loaded.phase, Phase::Peek);
+        loaded.advance(T0 + 605_000 + 10_000);
         assert_eq!(loaded.phase, Phase::Quiet);
-        assert_eq!(loaded.phase_ends_at, 760);
+        assert_eq!(loaded.phase_started_ms, T0 + 605_000);
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn a_missing_or_broken_file_means_no_cycle() {
+    fn an_older_saved_file_still_loads() {
+        let dir = std::env::temp_dir().join(format!("adboard-quiet-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.json");
+        std::fs::write(
+            &path,
+            br#"{"enabled":true,"intervalSecs":1800,"phase":"normal","phaseStartedAt":1,"phaseEndsAt":2}"#,
+        )
+        .unwrap();
+        let loaded = load_from(&path);
+        assert!(loaded.enabled);
+        assert_eq!(loaded.interval_secs, 1800);
+        assert_eq!(
+            loaded.peek_secs, DEFAULT_PEEK_SECS,
+            "the screen-on time defaults to 3 s"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_missing_or_broken_file_means_no_loop() {
         let dir = std::env::temp_dir().join(format!("adboard-quiet-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         assert!(!load_from(&dir.join("none.json")).enabled);
@@ -716,106 +825,121 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    fn done(audio: bool, screen: bool, started: u64) -> Done {
-        Done {
-            audio: audio.then_some(started),
-            screen: screen.then_some(started),
-            quiet_override: None,
-        }
+    #[test]
+    fn the_status_reports_seconds_for_the_screen() {
+        let c = running(3);
+        let status = status_at(&c, T0 + 1_500);
+        assert_eq!(status.seconds_left, 599);
+        assert_eq!(status.peek_secs, 3);
+        assert_eq!(status.interval_secs, 600);
+        assert_eq!(status_at(&Cycle::default(), T0).seconds_left, 0);
     }
 
     #[test]
-    fn a_phone_wants_quiet_in_a_quiet_phase_or_when_it_connected_during_normal() {
-        let plain = Done::default();
-        assert!(plain.wants_quiet(Phase::Quiet, 100));
-        assert!(!plain.wants_quiet(Phase::Normal, 100));
-        let newcomer = Done {
-            quiet_override: Some(100),
-            ..Done::default()
-        };
-        assert!(newcomer.wants_quiet(Phase::Normal, 100));
-        // The override belongs to that phase only: the next normal phase is normal again.
-        assert!(!newcomer.wants_quiet(Phase::Normal, 700));
-    }
-
-    fn s(name: &str) -> String {
-        name.to_string()
-    }
-
-    #[test]
-    fn only_phones_without_both_operations_done_are_pending() {
-        let mut applied = HashMap::new();
-        applied.insert(s("A"), done(true, true, 100));
-        applied.insert(s("B"), done(true, true, 50)); // an older phase
-        applied.insert(s("D"), done(true, false, 100)); // sound done, screen not
-        let online = vec![s("A"), s("B"), s("C"), s("D")];
+    fn the_task_wakes_for_the_end_of_a_short_screen_on_phase() {
+        let tick = Duration::from_secs(5);
         assert_eq!(
-            pending(&online, &applied, 100),
-            vec![s("B"), s("C"), s("D")]
+            next_wait(true, 1_000, 1_800, tick),
+            Duration::from_millis(800)
         );
+        assert_eq!(
+            next_wait(true, 1_000, 99_000, tick),
+            tick,
+            "never longer than a normal check"
+        );
+        assert_eq!(
+            next_wait(true, 1_000, 900, tick),
+            Duration::from_millis(100),
+            "never a busy loop"
+        );
+        assert_eq!(next_wait(false, 1_000, 1_100, tick), tick);
+    }
+
+    // ---- per-phone tracking ----
+
+    #[test]
+    fn a_phone_is_finished_only_with_the_run_muted_and_this_phase_screen_set() {
+        let mut done = HashMap::new();
+        record(&mut done, "A", 7, 100, Some(true), Some(true));
+        record(&mut done, "B", 7, 100, Some(true), Some(false));
+        let online = vec![s("A"), s("B"), s("C")];
+        assert_eq!(pending(&online, &done, 7, 100), vec![s("B"), s("C")]);
+        // A new phase: only the screen is needed again; the sound stays muted for the run.
+        let next = pending(&online, &done, 7, 200);
+        assert_eq!(next, online);
+        let (audio, screen) = plan(&next, &done, 7, 200);
+        assert_eq!(
+            audio,
+            vec![s("C")],
+            "A and B are already muted for this run"
+        );
+        assert_eq!(screen, online);
     }
 
     #[test]
     fn audio_ok_screen_failed_stays_pending_and_only_the_screen_is_retried() {
-        let mut applied = HashMap::new();
-        record(&mut applied, "A", 100, Some(true), Some(false));
-        assert_eq!(
-            pending(&[s("A")], &applied, 100),
-            vec![s("A")],
-            "still pending"
-        );
-        let (audio, screen) = plan(&[s("A")], &applied, 100);
-        assert!(audio.is_empty(), "the sound change is not sent again");
-        assert_eq!(screen, vec![s("A")], "the screen change is retried");
-        // The retry works: now it is complete and nothing more is planned.
-        record(&mut applied, "A", 100, None, Some(true));
-        assert!(pending(&[s("A")], &applied, 100).is_empty());
-        assert_eq!(plan(&[], &applied, 100), (vec![], vec![]));
+        let mut done = HashMap::new();
+        record(&mut done, "A", 7, 100, Some(true), Some(false));
+        assert_eq!(pending(&[s("A")], &done, 7, 100), vec![s("A")]);
+        let (audio, screen) = plan(&[s("A")], &done, 7, 100);
+        assert!(audio.is_empty(), "the mute is not sent again");
+        assert_eq!(screen, vec![s("A")]);
+        record(&mut done, "A", 7, 100, None, Some(true));
+        assert!(pending(&[s("A")], &done, 7, 100).is_empty());
     }
 
     #[test]
     fn audio_failed_screen_ok_stays_pending_and_only_the_sound_is_retried() {
-        let mut applied = HashMap::new();
-        record(&mut applied, "A", 100, Some(false), Some(true));
-        assert_eq!(pending(&[s("A")], &applied, 100), vec![s("A")]);
-        let (audio, screen) = plan(&[s("A")], &applied, 100);
+        let mut done = HashMap::new();
+        record(&mut done, "A", 7, 100, Some(false), Some(true));
+        assert_eq!(pending(&[s("A")], &done, 7, 100), vec![s("A")]);
+        let (audio, screen) = plan(&[s("A")], &done, 7, 100);
         assert_eq!(audio, vec![s("A")]);
         assert!(screen.is_empty());
-        record(&mut applied, "A", 100, Some(true), None);
-        assert!(pending(&[s("A")], &applied, 100).is_empty());
+        record(&mut done, "A", 7, 100, Some(true), None);
+        assert!(pending(&[s("A")], &done, 7, 100).is_empty());
     }
 
     #[test]
-    fn both_ok_is_applied_and_not_retried() {
-        let mut applied = HashMap::new();
-        record(&mut applied, "A", 100, Some(true), Some(true));
-        assert!(pending(&[s("A")], &applied, 100).is_empty());
-        assert_eq!(
-            plan(&pending(&[s("A")], &applied, 100), &applied, 100),
-            (vec![], vec![])
+    fn phones_keep_their_own_state() {
+        let mut done = HashMap::new();
+        record(&mut done, "A", 7, 100, Some(true), Some(true));
+        record(&mut done, "B", 7, 100, Some(true), Some(false));
+        record(&mut done, "C", 7, 100, Some(false), Some(false));
+        let (audio, screen) = plan(
+            &pending(&[s("A"), s("B"), s("C")], &done, 7, 100),
+            &done,
+            7,
+            100,
         );
-        // A new phase starts from scratch.
-        assert_eq!(pending(&[s("A")], &applied, 200), vec![s("A")]);
-        assert_eq!(plan(&[s("A")], &applied, 200), (vec![s("A")], vec![s("A")]));
-    }
-
-    #[test]
-    fn a_failure_is_per_phone_and_a_later_failure_keeps_an_earlier_success() {
-        let mut applied = HashMap::new();
-        record(&mut applied, "A", 100, Some(true), Some(true));
-        record(&mut applied, "B", 100, Some(true), Some(false));
-        record(&mut applied, "C", 100, Some(false), Some(false));
-        assert_eq!(
-            pending(&[s("A"), s("B"), s("C")], &applied, 100),
-            vec![s("B"), s("C")]
-        );
-        let (audio, screen) = plan(&[s("B"), s("C")], &applied, 100);
         assert_eq!(audio, vec![s("C")]);
         assert_eq!(screen, vec![s("B"), s("C")]);
-        // B's screen fails again: its sound success stays recorded.
-        record(&mut applied, "B", 100, None, Some(false));
-        assert_eq!(applied["B"], done(true, false, 100));
-        assert_eq!(applied["A"], done(true, true, 100), "A is untouched");
+        record(&mut done, "B", 7, 100, None, Some(false)); // B fails again: its mute stays recorded
+        assert_eq!(
+            done["B"],
+            Done {
+                audio: Some(7),
+                screen: None
+            }
+        );
+        assert_eq!(
+            done["A"],
+            Done {
+                audio: Some(7),
+                screen: Some(100)
+            }
+        );
+    }
+
+    #[test]
+    fn a_new_run_mutes_again() {
+        let mut done = HashMap::new();
+        record(&mut done, "A", 7, 100, Some(true), Some(true));
+        assert_eq!(
+            plan(&[s("A")], &done, 8, 100).0,
+            vec![s("A")],
+            "a restarted loop mutes again"
+        );
     }
 
     #[test]

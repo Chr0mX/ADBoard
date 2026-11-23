@@ -84,5 +84,13 @@ export function useQuietMode() {
     }
   };
 
-  return { on, busy, note, available: online.length > 0, toggle: (next: boolean) => void toggle(next) };
+  return {
+    on,
+    busy,
+    note,
+    available: online.length > 0,
+    toggle: (next: boolean) => void toggle(next),
+    /** Show the state the Quiet Mode Loop put the phones in (without sending anything). */
+    adopt: (value: boolean) => setOn(value),
+  };
 }

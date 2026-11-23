@@ -1,9 +1,21 @@
 /*
- * Pure helpers for the Quiet mode Repeat. The agent owns
+ * Pure helpers for the Quiet Mode Loop. The agent owns
  * the timing; the browser only shows how long is left.
  */
 
-export type QuietPhase = "quiet" | "normal";
+export type QuietPhase = "quiet" | "peek";
+
+/** The brief screen-on time between quiet periods, in seconds. */
+export const DEFAULT_PEEK_SECONDS = 3;
+export const MIN_PEEK_SECONDS = 1;
+export const MAX_PEEK_SECONDS = 5;
+
+/** A screen-on field's text to whole seconds, 1 to 5 (the default when empty or not a number). */
+export function parsePeekSeconds(text: string): number {
+  const n = Number(text.trim());
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_PEEK_SECONDS;
+  return Math.min(MAX_PEEK_SECONDS, Math.max(MIN_PEEK_SECONDS, Math.round(n)));
+}
 
 export const DEFAULT_INTERVAL_MINUTES = 60;
 export const MIN_MINUTES = 1;
@@ -45,5 +57,7 @@ export function secondsLeft(phaseEndsAt: number, agentNow: number, receivedAtMs:
 
 /** The line under the toggle. */
 export function cycleLine(phase: QuietPhase, left: number): string {
-  return phase === "quiet" ? `Quiet now · back to normal in ${formatLeft(left)}` : `Normal now · next Quiet in ${formatLeft(left)}`;
+  return phase === "quiet"
+    ? `Quiet now · screen on briefly in ${formatLeft(left)}`
+    : `Screen on, still muted · quiet again in ${formatLeft(left)}`;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cycleLine, formatLeft, intervalMinutes, secondsLeft, splitInterval } from "./quiet-cycle-core.ts";
+import { cycleLine, formatLeft, intervalMinutes, parsePeekSeconds, secondsLeft, splitInterval } from "./quiet-cycle-core.ts";
 
 test("a number and a unit make whole minutes in range", () => {
   assert.equal(intervalMinutes("90", "min"), 90);
@@ -36,8 +36,19 @@ test("the countdown runs from the agent's clock", () => {
 });
 
 test("status line", () => {
-  assert.equal(cycleLine("quiet", 9660), "Quiet now · back to normal in 2 h 41 m");
-  assert.equal(cycleLine("normal", 900), "Normal now · next Quiet in 15 m");
+  assert.equal(cycleLine("quiet", 9660), "Quiet now · screen on briefly in 2 h 41 m");
+  assert.equal(cycleLine("peek", 2), "Screen on, still muted · quiet again in 2 s");
+});
+
+test("the screen-on time is 1 to 5 seconds, 3 by default", () => {
+  assert.equal(parsePeekSeconds("3"), 3);
+  assert.equal(parsePeekSeconds("1"), 1);
+  assert.equal(parsePeekSeconds("5"), 5);
+  assert.equal(parsePeekSeconds("0"), 3);
+  assert.equal(parsePeekSeconds(""), 3);
+  assert.equal(parsePeekSeconds("abc"), 3);
+  assert.equal(parsePeekSeconds("99"), 5);
+  assert.equal(parsePeekSeconds("2.4"), 2);
 });
 
 test("the Quiet Mode Loop toggle checks for 'no agent' with === null (same-origin is the empty string)", async () => {

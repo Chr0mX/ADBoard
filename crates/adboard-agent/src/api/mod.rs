@@ -1126,23 +1126,30 @@ async fn quiet_cycle_get() -> Response {
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QuietCycleBody {
+    /// The quiet duration, in seconds.
     interval_secs: u64,
-    /// The phase to begin in: `quiet` when Quiet mode is on now, otherwise `normal`.
-    phase: crate::quiet_cycle::Phase,
+    /// The screen-on duration between quiet periods, 1 to 5 seconds (3 when missing).
+    #[serde(default)]
+    peek_secs: Option<u64>,
 }
 
-/// PUT /api/quiet-cycle — start (or restart) repeating every interval. The phones are not touched
-/// until the phase changes, so starting while Quiet mode is already on or off changes nothing yet.
+/// PUT /api/quiet-cycle — start (or restart) the Quiet Mode Loop: phones go quiet at once,
+/// stay quiet for `intervalSecs`, then the screen comes on for `peekSecs` (sound stays muted),
+/// and so on until stopped.
 async fn quiet_cycle_put(Json(body): Json<QuietCycleBody>) -> Response {
     if body.interval_secs == 0 {
-        return auth_error(StatusCode::BAD_REQUEST, "the interval must be above zero");
+        return auth_error(StatusCode::BAD_REQUEST, "the quiet duration must be above zero");
     }
-    Json(crate::quiet_cycle::start(body.interval_secs, body.phase)).into_response()
+    let peek = body.peek_secs.unwrap_or(crate::quiet_cycle::DEFAULT_PEEK_SECS);
+    if !crate::quiet_cycle::valid_peek(peek) {
+        return auth_error(StatusCode::BAD_REQUEST, "the screen-on duration must be 1 to 5 seconds");
+    }
+    Json(crate::quiet_cycle::start(body.interval_secs, peek)).into_response()
 }
 
-/// POST /api/quiet-cycle/stop — stop repeating; the phones stay as they are.
-async fn quiet_cycle_stop() -> Response {
-    Json(crate::quiet_cycle::stop()).into_response()
+/// POST /api/quiet-cycle/stop — stop the loop and put the phones back (sound restored, screens on).
+async fn quiet_cycle_stop(State(state): State<AppState>) -> Response {
+    Json(crate::quiet_cycle::stop_and_restore(&state).await).into_response()
 }
 
 /// GET /api/notifications — Discord settings and delivery status (never the URL).

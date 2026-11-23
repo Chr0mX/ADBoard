@@ -49,7 +49,7 @@ More flags the agent reads (checked against `crates/adboard-agent/src`):
 | `ADBOARD_FILES` | `files` in the data folder | Folder for Downloads, APKs, Recordings and Screenshots |
 | `ADBOARD_TEMP` | `temp` in the data folder | Staged APKs, file transfers and upload chunks |
 
-Testing only: `ADBOARD_MOCK_COUNT` (number of mock phones), `ADBOARD_MOCK_VITALS=1` (change one mock phone's CPU every 2 s), `ADBOARD_TESTPATTERN_FPS` (test pattern frame rate), `ADBOARD_QUIET_MIN_SECS` and `ADBOARD_QUIET_TICK_MS` (shorten the Quiet Mode Loop's minimum interval and check period).
+Testing only: `ADBOARD_MOCK_COUNT` (number of mock phones), `ADBOARD_MOCK_VITALS=1` (change one mock phone's CPU every 2 s), `ADBOARD_TESTPATTERN_FPS` (test pattern frame rate), `ADBOARD_QUIET_MIN_SECS` and `ADBOARD_QUIET_TICK_MS` (shorten the Quiet Mode Loop's minimum quiet time and its check period).
 
 ## API surface
 
@@ -79,7 +79,7 @@ Testing only: `ADBOARD_MOCK_COUNT` (number of mock phones), `ADBOARD_MOCK_VITALS
 | WS | `/ws/devices/{serial}/logcat` | Live logcat: first message `{package, level}`, then `{lines}` batches (proxied) |
 | POST | `/api/device/command` | Device ops on many phones, incl. `appDetail`, `appop`, `permission`, `standby`, `batteryExempt`, `netBlock`, `appState`, `activities`, `assistLaunch`, `intent`, `shizuku`, `tweak` ([phone-controls.md](phone-controls.md)) |
 
-This is the main part of the surface, not all of it. Also in the router: `/api/bootstrap`, `/api/session`, `/api/login`, `/api/input/pointer`, `/api/scrcpy/options`, `/api/devices/wireless`, `/api/macro/*`, `/api/quiet-cycle` (the Quiet Mode Loop: `GET`, `PUT`, `POST /stop`) and `/api/device/pull`.
+This is the main part of the surface, not all of it. Also in the router: `/api/bootstrap`, `/api/session`, `/api/login`, `/api/input/pointer`, `/api/scrcpy/options`, `/api/devices/wireless`, `/api/macro/*`, `/api/quiet-cycle` (the Quiet Mode Loop: `GET`, `PUT {intervalSecs, peekSecs}` where `intervalSecs` is the quiet time and `peekSecs` the 1 to 5 second screen-on time, and `POST /stop`, which puts the phones back) and `/api/device/pull`.
 
 ## Video (H264 over WebSocket)
 

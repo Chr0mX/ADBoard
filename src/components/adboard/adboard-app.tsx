@@ -217,7 +217,7 @@ export function ADBoardApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v87"
+      data-ui-build="pc-shell-v88"
     >
       <div className="pc-atmosphere" aria-hidden />
       {/* Keyboard users: jump past the section bar. Visible only when focused. */}
