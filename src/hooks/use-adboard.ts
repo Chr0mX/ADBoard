@@ -415,6 +415,11 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
                 height: d.resolution.height,
                 inject: "stub" as const,
               }));
+        // A key that no phone accepted must not look like it worked.
+        const failedNav = targets.filter((t) => t.inject === "error");
+        if (failedNav.length > 0) {
+          setError(`${action.toUpperCase()} failed on ${failedNav.map((t) => t.deviceName.split(" · ")[0]).join(", ")}${"injectDetail" in failedNav[0] && failedNav[0].injectDetail ? `: ${failedNav[0].injectDetail}` : ""}`);
+        }
         setTapLog((prev) =>
           [
             {

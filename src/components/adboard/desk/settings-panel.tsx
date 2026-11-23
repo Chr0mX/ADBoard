@@ -51,7 +51,7 @@ export function StreamBody() {
   return (
     <>
       <p className="text-xs text-[var(--pc-muted)]">
-        Quality, screen size, audio and screen-off for {desk.targets.length > 1 ? `${desk.targets.length} target phones` : target?.name ?? "the selected phone"}.
+        Quality, audio and screen-off for {desk.targets.length > 1 ? `${desk.targets.length} target phones` : target?.name ?? "the selected phone"}. Screen size and Quiet Mode change every online phone.
       </p>
       <ScrcpyOptions targetIds={desk.targets.map((d) => d.id)} serial={target?.serial ?? null} disabled={!target} repeat />
     </>

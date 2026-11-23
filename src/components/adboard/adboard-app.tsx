@@ -78,7 +78,7 @@ export function ADBoardApp() {
     lastTap,
     sessions,
   } = useADBoard({ keyboardScope: section === "control" });
-  useClipboardSync({ targets: broadcastTargets, mode: controlMode });
+  useClipboardSync({ targets: broadcastTargets, mode: controlMode, active: section === "control" });
   // Macro scheduler tick + device list for the task queue.
   useMacroAutomation(devices);
   useConnectionAlerts(devices);
@@ -217,7 +217,7 @@ export function ADBoardApp() {
     >
     <div
       className="pc-shell fixed flex flex-col overflow-hidden"
-      data-ui-build="pc-shell-v88"
+      data-ui-build="pc-shell-v89"
     >
       <div className="pc-atmosphere" aria-hidden />
       {/* Keyboard users: jump past the section bar. Visible only when focused. */}

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Toggle } from "@/components/ui/toggle";
 import { useDesk } from "@/components/adboard/desk/desk-context";
+import { ConfirmDialog } from "@/components/adboard/desk/bits";
 import { devicesClient } from "@/lib/api/client";
 import {
   eventsWsUrlAsync,
@@ -20,6 +21,7 @@ import {
   useScrcpyOptions,
 } from "@/hooks/use-scrcpy-options";
 import { useStayAwake } from "@/hooks/use-stay-awake";
+import { allFailed } from "@/lib/ui/op-results";
 import { useQuietMode } from "@/hooks/use-quiet-mode";
 import { QuietRepeat } from "@/components/adboard/quiet-repeat";
 import { Moon } from "lucide-react";
@@ -69,6 +71,8 @@ export function ScrcpyOptions({
     return "native";
   });
   const [sizing, setSizing] = useState(false);
+  // A size choice waits here for a yes: it changes every online phone, not only the targets.
+  const [pendingSize, setPendingSize] = useState<string | null>(null);
   const desk = useDesk();
   const targetDevices = desk.devices.filter((device) => targetIds.includes(device.id));
   const stayAwake = useStayAwake(targetDevices);
@@ -122,12 +126,6 @@ export function ScrcpyOptions({
 
   const matchSize = async (id: string) => {
     const choice = DISPLAY_SIZES.find((item) => item.id === id) ?? DISPLAY_SIZES[0];
-    setDisplaySize(choice.id);
-    try {
-      localStorage.setItem(SIZE_KEY, choice.id);
-    } catch {
-      // private mode
-    }
     const online = desk.devices.filter((device) => device.status === "online");
     if (online.length === 0) {
       setNote("No online phones to resize.");
@@ -137,6 +135,15 @@ export function ScrcpyOptions({
     try {
       const result = await devicesClient.runCommand(online, "displaySize", choice.arg);
       const error = firstError(result.results);
+      // The choice is remembered only if at least one phone took it.
+      if (!allFailed(result.results)) {
+        setDisplaySize(choice.id);
+        try {
+          localStorage.setItem(SIZE_KEY, choice.id);
+        } catch {
+          // private mode
+        }
+      }
       if (error) setNote(error);
       else if (choice.id === "native") setNote("Each phone is back to its own screen.");
       else setNote(`Every online phone is ${choice.label}. Streams restart on the new size.`);
@@ -197,6 +204,26 @@ export function ScrcpyOptions({
 
   return (
     <div className={cn("flex w-full shrink-0 flex-col gap-1", start ? "items-stretch" : "items-center")} data-scrcpy-options data-align={align}>
+      {pendingSize && (
+        <ConfirmDialog
+          title="Change the screen size of every online phone?"
+          body={
+            <>
+              This sets <b>{DISPLAY_SIZES.find((item) => item.id === pendingSize)?.label ?? pendingSize}</b> on all{" "}
+              {desk.devices.filter((device) => device.status === "online").length} online phones, not only the ones you are controlling
+              (it runs <code>wm size</code> on each). Choose Native to put them back.
+            </>
+          }
+          confirmLabel="Change size"
+          busy={sizing}
+          onCancel={() => setPendingSize(null)}
+          onConfirm={() => {
+            const id = pendingSize;
+            setPendingSize(null);
+            void matchSize(id);
+          }}
+        />
+      )}
       <div
         className={cn(
           "flex w-full items-center gap-1.5",
@@ -236,7 +263,7 @@ export function ScrcpyOptions({
             disabled={disabled || sizing || desk.devices.every((device) => device.status !== "online")}
             value={displaySize}
             onChange={(event) => {
-              void matchSize(event.target.value);
+              if (event.target.value !== displaySize) setPendingSize(event.target.value);
             }}
             className="h-8 bg-transparent text-xs text-[var(--pc-ink)] outline-none"
           >

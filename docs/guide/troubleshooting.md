@@ -61,3 +61,7 @@ If the display starts but an app won't open on it, or shows black, that app may 
 ## Still stuck
 
 The file `logs\adboard.log` in the data folder records what ADBoard did. **Developer → Logs** shows a phone's own log.
+
+## "Cannot reach the ADBoard agent"
+
+The page lost contact with the ADBoard program. It keeps showing the phones it knew about, but any that were online are shown as unreachable (the "online" count drops to 0) and their controls stay off, because the last answer is old. It keeps trying and comes back by itself when the program answers again, and the line disappears. If it does not, check that ADBoard is still running on the PC (`http://<the PC>:3848/health` should answer) and that the address has not changed.

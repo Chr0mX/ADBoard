@@ -52,11 +52,19 @@ export function DeveloperPanel() {
 
   async function run() {
     const targets = picked(desk.devices, checked);
-    if (!command.trim() || targets.length === 0) return;
+    if (!command.trim()) return;
+    if (targets.length === 0) {
+      setRows([{ deviceId: "none", deviceName: "No phone", state: "skipped", detail: "Tick at least one phone first." }]);
+      return;
+    }
     setBusy(true);
     const nextHistory = [command, ...history.filter((item) => item !== command)].slice(0, 40);
     setHistory(nextHistory);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(nextHistory));
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(nextHistory));
+    } catch {
+      // private mode: the history just is not kept
+    }
     try {
       const response = await devicesClient.runCommand(targets, "shell", command);
       const next = rowsFromCommand(desk.devices, checked, response.results);

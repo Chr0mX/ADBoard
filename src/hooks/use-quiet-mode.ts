@@ -5,6 +5,7 @@ import { devicesClient } from "@/lib/api/client";
 import { postScrcpyOptions } from "@/lib/scrcpy/client";
 import { patchScrcpyOptions, useScrcpyOptions } from "@/hooks/use-scrcpy-options";
 import { useStoredFlag } from "@/hooks/use-stored-flag";
+import { quietOutcome } from "@/lib/ui/op-results";
 import { useDeskOptional } from "@/components/adboard/desk/desk-context";
 
 export const QUIET_MODE_KEY = "adboard-quiet-mode";
@@ -58,7 +59,6 @@ export function useQuietMode() {
         devicesClient.runCommand(online, "mute", next ? "on" : "off"),
       ]);
       if (screen.status === "fulfilled") {
-        patchScrcpyOptions({ screenOff: next });
         for (const row of screen.value.results ?? []) {
           if (!row.ok) failures.push(`${row.deviceName || "phone"} screen: ${row.error || "failed"}`);
         }
@@ -70,11 +70,22 @@ export function useQuietMode() {
       } else {
         failures.push(`mute: ${mute.reason instanceof Error ? mute.reason.message : "failed"}`);
       }
-      setOn(next);
+      // The switch shows a state only if at least one phone is really in it.
+      const outcome = quietOutcome(
+        online.map((d) => d.id),
+        screen.status === "fulfilled" ? (screen.value.results ?? []) : null,
+        mute.status === "fulfilled" ? mute.value.results : null,
+      );
+      if (!outcome.failed) {
+        patchScrcpyOptions({ screenOff: next });
+        setOn(next);
+      }
       const count = `${online.length} phone${online.length === 1 ? "" : "s"}`;
       setStatus(
-        failures.length > 0
-          ? failures.join(" · ")
+        outcome.failed
+          ? `Quiet mode did not change: ${failures.join(" · ") || "no phone answered"}`
+          : failures.length > 0
+          ? `${outcome.partial ? "Partly done: " : ""}${failures.join(" · ")}`
           : next
             ? `Quiet mode on: ${count} screen off and muted`
             : `Quiet mode off: ${count} screen on, sound restored`,

@@ -90,7 +90,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     lastTap,
     sessions,
   } = useADBoard({ keyboardScope: route.view === "control" || route.view === "devices" });
-  useClipboardSync({ targets: broadcastTargets, mode: controlMode });
+  useClipboardSync({ targets: broadcastTargets, mode: controlMode, active: route.view === "control" || route.view === "devices" });
   useMacroAutomation(devices);
   useConnectionAlerts(devices);
   useVisualViewportLock(true);
@@ -191,7 +191,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     <DeskProvider
       value={{ section, focusTool, devices, activeDevice, targets: broadcastTargets, sessions, lastSeen, open, selectDevice }}
     >
-      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v19">
+      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v20">
         <div className="pc-atmosphere" aria-hidden />
         <div data-m-top-cap aria-hidden />
         {showHeader && (

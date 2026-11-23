@@ -1,6 +1,6 @@
 # ADBoard — notes
 
-Start with the repo root `README.md`. Architecture: [architecture.md](./architecture.md). Running on several computers and building the Windows pack: [deployment.md](./deployment.md). Environment flags, API and video framing: [reference.md](./reference.md). Using ADBoard from outside your network: [remote-access.md](./remote-access.md). Themes: [themes.md](./themes.md). Windows pack: `dist/windows/README.md`.
+Start with the repo root `README.md`. Architecture: [architecture.md](./architecture.md). Running on several computers and building the Windows pack: [deployment.md](./deployment.md). Environment flags, API and video framing: [reference.md](./reference.md). Using ADBoard from outside your network: [remote-access.md](./remote-access.md). Themes: [themes.md](./themes.md). UI audit and open items: [ui-audit.md](./ui-audit.md). Windows pack: `dist/windows/README.md`.
 
 ## Client API seam
 

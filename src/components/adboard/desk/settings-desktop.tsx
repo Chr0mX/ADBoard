@@ -36,9 +36,9 @@ export function SettingsDesktop() {
   const hasAccount = session.authRequired || session.canSetPassword;
 
   const entries: Entry[] = [
-    { id: "stream", label: "Stream", group: "Phones", title: "Stream", blurb: "Quality, screen size, audio and screen-off for the target phones.", body: <StreamBody /> },
+    { id: "stream", label: "Stream", group: "Phones", title: "Stream", blurb: "Quality, audio and screen-off for the target phones. Screen size and Quiet Mode change every online phone.", body: <StreamBody /> },
     { id: "virtual", label: "Virtual displays", group: "Phones", title: "Virtual displays", blurb: "Extra Android screens that run their own apps.", body: <VirtualDisplayCard bare /> },
-    { id: "control", label: "Control", group: "Controls", title: "Control", blurb: "Keyboard, touch, cursor and the edge tab.", body: <ControlBody /> },
+    { id: "control", label: "Control", group: "Controls", title: "Control", blurb: "Keyboard, touch diagnostics, cursor, stats and the edge tab.", body: <ControlBody /> },
     { id: "grid", label: "Grid view", group: "Controls", title: "Grid view", blurb: "How the phone tiles are arranged.", body: <GridBody /> },
     { id: "taskbar", label: "Phone taskbar", group: "Controls", title: "Phone taskbar", blurb: "Which tools sit beside Back, Home and Recent.", action: <TaskbarReset />, body: <TaskbarBody /> },
     { id: "appearance", label: "Appearance", group: "Look", title: "Appearance", blurb: "Dark or light, the colour theme, and the font used for technical values.", body: <AppearanceBody /> },

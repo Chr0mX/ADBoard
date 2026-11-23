@@ -61,16 +61,30 @@ export function AppsPanelMobile() {
   const online = desk.devices.filter((device) => device.status === "online");
   const iconSerial = (desk.activeDevice?.status === "online" ? desk.activeDevice : online[0])?.serial ?? null;
 
+  const [deleting, setDeleting] = useState<AppShortcut | null>(null);
+
   async function launch(app: AppShortcut, devices = targets) {
-    if (devices.length === 0) return;
+    if (devices.length === 0) {
+      setRows([{ deviceId: "none", deviceName: "No phone", state: "skipped", detail: "Tick at least one online phone first." }]);
+      return;
+    }
     const activity = [app.activity, app.arguments].filter(Boolean).join(" ");
-    const response = await devicesClient.runCommand(devices, "launch", app.packageName, activity || undefined);
-    setRows(rowsFromCommand(desk.devices, new Set(devices.map((device) => device.id)), response.results));
+    try {
+      const response = await devicesClient.runCommand(devices, "launch", app.packageName, activity || undefined);
+      setRows(rowsFromCommand(desk.devices, new Set(devices.map((device) => device.id)), response.results));
+    } catch (error) {
+      setRows(errorRow(app.name, error));
+    }
   }
 
   async function launchGroup(group: string) {
+    if (targets.length === 0) {
+      setRows([{ deviceId: "none", deviceName: "No phone", state: "skipped", detail: "Tick at least one online phone first." }]);
+      return;
+    }
     const merged: ResultRow[] = [];
     for (const app of library.apps.filter((item) => (item.group || "Custom") === group)) {
+      try {
       const response = await devicesClient.runCommand(
         targets,
         "launch",
@@ -84,12 +98,28 @@ export function AppsPanelMobile() {
           detail: `${app.name} ${row.detail ?? ""}`.trim(),
         })),
       );
+      } catch (error) {
+        merged.push(...errorRow(app.name, error));
+      }
     }
     setRows(merged);
   }
 
   return (
     <section data-desk-panel="apps" data-m-apps className="pc-clean flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto pb-2">
+      {deleting && (
+        <ConfirmDialog
+          title="Delete this app button?"
+          body={`${deleting.name} is removed from your saved apps (the app on the phones is not touched).`}
+          confirmLabel="Delete"
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => {
+            const id = deleting.id;
+            setDeleting(null);
+            updateLibrary((lib) => ({ ...lib, apps: lib.apps.filter((item) => item.id !== id) }));
+          }}
+        />
+      )}
       <div className="grid grid-cols-2 gap-2">
         {TABS.map(([id, label]) => (
           <button key={id} type="button" aria-pressed={tab === id} className={btn} onClick={() => setTab(id)}>
@@ -140,7 +170,7 @@ export function AppsPanelMobile() {
                       <button
                         type="button"
                         className={btn}
-                        onClick={() => updateLibrary((lib) => ({ ...lib, apps: lib.apps.filter((item) => item.id !== app.id) }))}
+                        onClick={() => setDeleting(app)}
                       >
                         Delete
                       </button>
@@ -229,39 +259,43 @@ function InstallBox({ devices, checked, onChange, onDone, rows }: BoxProps) {
 }
 
 function PackageOps({ devices, checked, onChange, scanDevice, onDone, rows }: BoxProps & { scanDevice: Device | null }) {
-  const [pkg, setPkg] = useState("com.example.app");
-  const [confirm, setConfirm] = useState(false);
+  const [pkg, setPkg] = useState("");
+  const [confirm, setConfirm] = useState<null | "uninstall" | "forceStop" | "clearData">(null);
   const [busy, setBusy] = useState(false);
   const targets = picked(devices, checked);
+  const blocked = busy || targets.length === 0 || pkg.trim() === "";
 
   async function run(op: "uninstall" | "launch" | "forceStop" | "clearData") {
     setBusy(true);
     try {
-      const response = await devicesClient.runCommand(targets, op, pkg);
+      const response = await devicesClient.runCommand(targets, op, pkg.trim());
       onDone(rowsFromCommand(devices, checked, response.results));
     } catch (error) {
       onDone(errorRow(op, error));
     } finally {
       setBusy(false);
-      setConfirm(false);
+      setConfirm(null);
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <TextField label="Package" value={pkg} onChange={setPkg} />
+      <TextField label="Package (for example com.example.app)" value={pkg} onChange={setPkg} />
       {scanDevice && (
         <button
           type="button"
           className="min-h-11 self-start text-sm text-[var(--pc-accent)]"
           onClick={() => {
-            void devicesClient.runCommand([scanDevice], "packages").then((response) => {
-              const line = response.results[0]?.output
-                ?.split("\n")
-                .map((item) => item.replace(/^package:/, "").trim())
-                .find(Boolean);
-              if (line) setPkg(line);
-            });
+            void devicesClient
+              .runCommand([scanDevice], "packages")
+              .then((response) => {
+                const line = response.results[0]?.output
+                  ?.split("\n")
+                  .map((item) => item.replace(/^package:/, "").trim())
+                  .find(Boolean);
+                if (line) setPkg(line);
+              })
+              .catch((error) => onDone(errorRow("scan", error)));
           }}
         >
           Scan {scanDevice.name}
@@ -269,33 +303,47 @@ function PackageOps({ devices, checked, onChange, scanDevice, onDone, rows }: Bo
       )}
       <TargetChecks devices={devices} checked={checked} onChange={onChange} />
       <div className="grid grid-cols-2 gap-2">
-        <PrimaryButton disabled={busy} onClick={() => void run("launch")}>
+        <PrimaryButton disabled={blocked} onClick={() => void run("launch")}>
           Launch
         </PrimaryButton>
-        <button type="button" className="min-h-11 rounded-lg border px-3 text-sm" disabled={busy} onClick={() => void run("forceStop")}>
+        <button type="button" className="min-h-11 rounded-lg border px-3 text-sm" disabled={blocked} onClick={() => setConfirm("forceStop")}>
           Force Stop
         </button>
-        <button type="button" className="min-h-11 rounded-lg border px-3 text-sm" disabled={busy} onClick={() => void run("uninstall")}>
+        <button type="button" className="min-h-11 rounded-lg border px-3 text-sm" disabled={blocked} onClick={() => setConfirm("uninstall")}>
           Uninstall
         </button>
-        <button type="button" className="min-h-11 rounded-lg border px-3 text-sm" disabled={busy} onClick={() => setConfirm(true)}>
+        <button type="button" className="min-h-11 rounded-lg border px-3 text-sm" disabled={blocked} onClick={() => setConfirm("clearData")}>
           Clear Data
         </button>
       </div>
+      {blocked && !busy && (
+        <p className="text-xs text-[var(--pc-muted)]" data-package-hint>
+          {targets.length === 0 ? "Tick at least one phone" : "Type a package name"} to use these buttons.
+        </p>
+      )}
       <ResultList rows={rows} />
       {confirm && (
         <ConfirmDialog
-          title="Clear application data?"
+          title={
+            confirm === "clearData" ? "Clear application data?" : confirm === "uninstall" ? "Uninstall this app?" : "Force stop this app?"
+          }
           body={
             <>
               <p className="font-mono text-xs text-[var(--pc-ink)]">{pkg}</p>
-              <p className="mt-2">This will remove the application&apos;s local data.</p>
+              <p className="mt-2">
+                On {targets.length} phone{targets.length === 1 ? "" : "s"}:{" "}
+                {confirm === "clearData"
+                  ? "this removes the application's local data."
+                  : confirm === "uninstall"
+                    ? "the app is removed."
+                    : "the app is stopped and anything unsaved in it is lost."}
+              </p>
             </>
           }
-          confirmLabel="Clear Data"
+          confirmLabel={confirm === "clearData" ? "Clear Data" : confirm === "uninstall" ? "Uninstall" : "Force Stop"}
           busy={busy}
-          onCancel={() => setConfirm(false)}
-          onConfirm={() => void run("clearData")}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => void run(confirm)}
         />
       )}
     </div>

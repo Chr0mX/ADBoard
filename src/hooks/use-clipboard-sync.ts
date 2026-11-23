@@ -65,8 +65,18 @@ async function sendText(targets: Device[], text: string) {
  *   the clipboard, the key is forwarded as before.
  * Typing in a page field is never intercepted.
  */
-export function useClipboardSync({ targets, mode }: { targets: Device[]; mode: ControlMode }) {
-  const [enabled] = useStoredFlag(CLIPBOARD_SYNC_KEY, false);
+export function useClipboardSync({
+  targets,
+  mode,
+  active = true,
+}: {
+  targets: Device[];
+  mode: ControlMode;
+  /** False on screens without a phone (Files, Manage, Settings...): Ctrl+V there must not paste on the phones. */
+  active?: boolean;
+}) {
+  const [syncOn] = useStoredFlag(CLIPBOARD_SYNC_KEY, false);
+  const enabled = syncOn && active;
   const [keyboardOn] = useStoredFlag("adboard-keyboard", true);
   const targetsRef = useRef(targets);
   const modeRef = useRef(mode);

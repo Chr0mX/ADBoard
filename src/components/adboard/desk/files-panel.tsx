@@ -6,7 +6,7 @@ import { readUiState, writeUiState } from "@/lib/ui-state";
 import { devicesClient } from "@/lib/api/client";
 import type { Device, HostFileEntry } from "@/lib/devices/types";
 import { useDesk } from "@/components/adboard/desk/desk-context";
-import { PanelFrame, PrimaryButton, ResultList, TargetChecks, picked, rowsFromCommand, useChecked, type ResultRow } from "@/components/adboard/desk/bits";
+import { ConfirmDialog, PanelFrame, PrimaryButton, ResultList, TargetChecks, picked, rowsFromCommand, useChecked, type ResultRow } from "@/components/adboard/desk/bits";
 
 interface PhoneEntry {
   name: string;
@@ -33,6 +33,8 @@ export function FilesPanel() {
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [selectedPc, setSelectedPc] = useState<HostFileEntry | null>(null);
   const [rows, setRows] = useState<ResultRow[]>([]);
+  // A delete waits here for a yes; nothing on the PC or the phone is removed without it.
+  const [confirm, setConfirm] = useState<{ title: string; body: string; run: () => Promise<void> } | null>(null);
   const [pcFolder, setPcFolder] = useState("");
   const [phoneFolder, setPhoneFolder] = useState("");
   const phone = picked(desk.devices, checked).find((device) => device.status === "online") ?? desk.activeDevice;
@@ -88,6 +90,19 @@ export function FilesPanel() {
 
   return (
     <PanelFrame title="Files" panel="files" clean>
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel="Delete"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            const run = confirm.run;
+            setConfirm(null);
+            void run();
+          }}
+        />
+      )}
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         <Pane title="PC" path={pcPath || "/"} pane="pc">
           <div className="mb-2 flex flex-wrap gap-1">
@@ -149,7 +164,12 @@ export function FilesPanel() {
                   <button
                     type="button"
                     className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
-                    onClick={() => void devicesClient.fetchHostFile(entry.path).then((blob) => saveBlob(blob, entry.name))}
+                    onClick={() =>
+                      void devicesClient
+                        .fetchHostFile(entry.path)
+                        .then((blob) => saveBlob(blob, entry.name))
+                        .catch((error) => setPcError(error instanceof Error ? error.message : "Download failed"))
+                    }
                   >
                     Download
                   </button>
@@ -157,7 +177,21 @@ export function FilesPanel() {
                 <button
                   type="button"
                   className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
-                  onClick={() => void devicesClient.deleteHostFile(entry.path).then(() => loadPc(pcPath))}
+                  onClick={() =>
+                    setConfirm({
+                      title: "Delete from the PC?",
+                      body: `${entry.name}${entry.dir ? " and everything in it" : ""} will be deleted from the ADBoard computer. This cannot be undone.`,
+                      run: async () => {
+                        try {
+                          await devicesClient.deleteHostFile(entry.path);
+                          loadPc(pcPath);
+                        } catch (error) {
+                          setPcError(error instanceof Error ? error.message : "Delete failed");
+                        }
+                      },
+                    })
+                  }
+                  aria-label={`Delete ${entry.name} from the PC`}
                 >
                   Delete
                 </button>
@@ -255,14 +289,19 @@ export function FilesPanel() {
                   <button
                     type="button"
                     className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
+                    title="Copies the file from the phone into the Downloads folder on the ADBoard computer"
+                    aria-label={`Save ${entry.name} to the PC's Downloads folder`}
                     onClick={() => {
-                      void devicesClient.pullFromDevice(phone.id, entry.path).then(async (blob) => {
-                        await devicesClient.uploadHostFile(new File([blob], entry.name), "Downloads");
-                        loadPc("");
-                      });
+                      void devicesClient
+                        .pullFromDevice(phone.id, entry.path)
+                        .then(async (blob) => {
+                          await devicesClient.uploadHostFile(new File([blob], entry.name), "Downloads");
+                          loadPc("");
+                        })
+                        .catch((error) => setPhoneError(error instanceof Error ? error.message : "Could not copy the file to the PC"));
                     }}
                   >
-                    Download
+                    Save to PC
                   </button>
                 )}
                 <button
@@ -273,7 +312,10 @@ export function FilesPanel() {
                     const next = window.prompt("Rename to", entry.name);
                     if (!next) return;
                     const dest = `${parentPath(entry.path)}/${next}`.replace(/\/+/g, "/");
-                    void devicesClient.runCommand([phone], "rename", entry.path, dest).then(() => loadPhone(phone, phonePath));
+                    void devicesClient
+                      .runCommand([phone], "rename", entry.path, dest)
+                      .then(() => loadPhone(phone, phonePath))
+                      .catch((error) => setPhoneError(error instanceof Error ? error.message : "Rename failed"));
                   }}
                 >
                   Rename
@@ -281,9 +323,23 @@ export function FilesPanel() {
                 <button
                   type="button"
                   className="pc-toggle pc-toggle-sm shrink-0 px-3 text-xs"
+                  aria-label={`Delete ${entry.name} from the phone`}
                   onClick={() => {
                     if (!phone) return;
-                    void devicesClient.runCommand([phone], "delete", entry.path).then(() => loadPhone(phone, phonePath));
+                    setConfirm({
+                      title: "Delete from the phone?",
+                      body: `${entry.name}${entry.dir ? " and everything in it" : ""} will be deleted from ${phone.name}. This cannot be undone.`,
+                      run: async () => {
+                        try {
+                          const result = await devicesClient.runCommand([phone], "delete", entry.path);
+                          const failed = result.results.find((r) => !r.ok);
+                          if (failed) setPhoneError(failed.error || "Delete failed");
+                          loadPhone(phone, phonePath);
+                        } catch (error) {
+                          setPhoneError(error instanceof Error ? error.message : "Delete failed");
+                        }
+                      },
+                    });
                   }}
                 >
                   Delete

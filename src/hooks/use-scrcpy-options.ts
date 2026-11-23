@@ -1,5 +1,6 @@
 "use client";
 
+import { allFailed } from "@/lib/ui/op-results";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useDeviceAudio } from "@/hooks/use-device-audio";
 import {
@@ -133,13 +134,18 @@ export function useScrcpyOptions({
     try {
       const result = await postScrcpyOptions(targetIds, next);
       const error = firstError(result.results);
-      if (error) setNote(error);
+      if (allFailed(result.results)) {
+        // No phone took the change: put the switch back instead of showing a state nothing is in.
+        writeOpts(prev);
+        setNote(error ?? "No phone accepted the change");
+      } else if (error) setNote(error);
       else if (result.restarted && result.restarted.length > 0) {
         setNote("Stream restarted for the new setting.");
       } else if (next.screenOff !== prev.screenOff) {
         setNote(next.screenOff ? "Device screen off. The mirror stays on." : "Device screen on.");
       } else setNote(null);
     } catch (err) {
+      writeOpts(prev);
       setNote(err instanceof Error ? err.message : "Could not update scrcpy");
     }
   };

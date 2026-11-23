@@ -49,13 +49,16 @@ More flags the agent reads (checked against `crates/adboard-agent/src`):
 | `ADBOARD_FILES` | `files` in the data folder | Folder for Downloads, APKs, Recordings and Screenshots |
 | `ADBOARD_TEMP` | `temp` in the data folder | Staged APKs, file transfers and upload chunks |
 
+| `ADBOARD_ADB_TRACK` | on | `0` / `off` turns off the `adb track-devices` stream (the poll then runs alone, every 2 s) |
+| `ADBOARD_ADB_TRACK_ADDR` | `127.0.0.1:5037` (or `ANDROID_ADB_SERVER_PORT`) | Where the adb server listens, for the `track-devices` stream |
+
 Testing only: `ADBOARD_MOCK_COUNT` (number of mock phones), `ADBOARD_MOCK_VITALS=1` (change one mock phone's CPU every 2 s), `ADBOARD_TESTPATTERN_FPS` (test pattern frame rate), `ADBOARD_QUIET_MIN_SECS` and `ADBOARD_QUIET_TICK_MS` (shorten the Quiet Mode Loop's minimum quiet time and its check period).
 
 ## API surface
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/health` | Role, host id, adb/scrcpy/inject, registered agent count |
+| GET | `/health` | Role, host id, adb/scrcpy/inject, registered agent count; on an agent also `controllerLink` (`state` connecting / connected / retrying, `failures`, `connections`, `lastError`, `lastConnectedMs`, `nextAttemptMs`) |
 | GET | `/api/devices` | Merged fleet (local + agents) |
 | GET | `/api/hosts` | Local + registered agents |
 | GET | `/api/sessions` | Local + remote session snapshot |

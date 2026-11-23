@@ -45,7 +45,11 @@ export function ManagePanel() {
   const targets = picked(desk.devices, checked);
 
   async function run(op: string, arg?: string, arg2?: string) {
-    if (targets.length === 0) return;
+    if (targets.length === 0) {
+      setRows([{ deviceId: "none", deviceName: "No phone", state: "skipped", detail: "Tick at least one phone first." }]);
+      setConfirm(null);
+      return;
+    }
     setBusy(true);
     try {
       const response = await devicesClient.runCommand(targets, op, arg, arg2);
@@ -381,6 +385,21 @@ function parseInfo(text: string) {
 function RecoveryList() {
   const desk = useDesk();
   const offline = desk.devices.filter((device) => device.status !== "online");
+  // What each recovery button did, per phone: it used to be fired and forgotten.
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const recover = async (device: Device, op: "reconnect" | "restartAdb") => {
+    setBusyId(device.id);
+    try {
+      const response = await devicesClient.runCommand([device], op);
+      const failed = response.results.find((r) => !r.ok);
+      setNotes((prev) => ({ ...prev, [device.id]: failed ? failed.error || "Failed" : op === "reconnect" ? "Reconnect sent." : "ADB restart sent." }));
+    } catch (error) {
+      setNotes((prev) => ({ ...prev, [device.id]: error instanceof Error ? error.message : "Request failed" }));
+    } finally {
+      setBusyId(null);
+    }
+  };
   if (offline.length === 0) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -397,10 +416,11 @@ function RecoveryList() {
             Last seen: {formatSeen(desk.lastSeen[device.id])}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <Action label="Reconnect" onClick={() => void devicesClient.runCommand([device], "reconnect")} />
-            <Action label="Restart ADB" onClick={() => void devicesClient.runCommand([device], "restartAdb")} />
+            <Action label="Reconnect" disabled={busyId === device.id} onClick={() => void recover(device, "reconnect")} />
+            <Action label="Restart ADB" disabled={busyId === device.id} onClick={() => void recover(device, "restartAdb")} />
             <Action label="View Logs" onClick={() => desk.open("developer", "logs", device.id)} />
           </div>
+          {notes[device.id] && <p className="mt-1 text-xs text-[var(--pc-muted)]">{notes[device.id]}</p>}
         </article>
       ))}
     </div>
