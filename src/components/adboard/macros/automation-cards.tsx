@@ -85,7 +85,7 @@ export function QueueCard({ tabs, activeTab }: { tabs: MacroTab[]; activeTab: Ma
           <button
             type="button"
             onClick={stopQueue}
-            className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08]"
+            className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[var(--pc-on-warn)]"
             data-macro-queue-stop
           >
             <Square className="size-4" aria-hidden />

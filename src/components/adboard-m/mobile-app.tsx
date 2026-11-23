@@ -191,7 +191,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     <DeskProvider
       value={{ section, focusTool, devices, activeDevice, targets: broadcastTargets, sessions, lastSeen, open, selectDevice }}
     >
-      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v15">
+      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v16">
         <div className="pc-atmosphere" aria-hidden />
         <div data-m-top-cap aria-hidden />
         {showHeader && (

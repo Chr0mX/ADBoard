@@ -15,6 +15,9 @@ import {
   Red_Hat_Mono,
 } from "next/font/google";
 import { MonoFontSync } from "@/components/adboard/mono-font-sync";
+import { ThemeSync } from "@/components/adboard/theme-sync";
+import { themeBootScript } from "@/lib/ui/themes";
+import { themeCss } from "@/lib/ui/themes";
 import { DEFAULT_MONO_FONT, MONO_FONT_KEY } from "@/lib/ui/mono-fonts";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -159,9 +162,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <head>
+        {/* Theme colours, then the saved choice applied before the first paint (src/lib/ui/themes.ts). */}
+        <style id="adboard-themes" dangerouslySetInnerHTML={{ __html: themeCss() }} />
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript() }} />
         <script dangerouslySetInnerHTML={{ __html: MONO_FONT_SCRIPT }} />
       </head>
       <body className="flex min-h-dvh flex-col font-sans">
+        <ThemeSync />
         <MonoFontSync />
         <TooltipProvider>
           {children}

@@ -58,7 +58,7 @@ export function MobileNav({
           {id === "more" && badge > 0 && (
             <span
               data-m-badge={badge}
-              className="absolute top-1.5 left-1/2 ml-2 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--pc-warn)] px-1 text-meta font-bold text-[#1a0f08]"
+              className="absolute top-1.5 left-1/2 ml-2 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--pc-warn)] px-1 text-meta font-bold text-[var(--pc-on-warn)]"
             >
               {badge}
             </span>

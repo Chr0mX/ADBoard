@@ -498,7 +498,7 @@ function Editor({
               type="button"
               onClick={() => stopRun(tab.id)}
               disabled={snapshot?.status === "stopping"}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--pc-warn)] px-3 text-sm font-semibold text-[#1a0f08] disabled:opacity-70"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--pc-warn)] px-3 text-sm font-semibold text-[var(--pc-on-warn)] disabled:opacity-70"
               data-macro-quick-stop
             >
               <Square className="size-3.5" aria-hidden /> {snapshot?.status === "stopping" ? "Stopping…" : "Stop"}

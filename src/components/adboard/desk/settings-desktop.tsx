@@ -41,7 +41,7 @@ export function SettingsDesktop() {
     { id: "control", label: "Control", group: "Controls", title: "Control", blurb: "Keyboard, touch, cursor and the edge tab.", body: <ControlBody /> },
     { id: "grid", label: "Grid view", group: "Controls", title: "Grid view", blurb: "How the phone tiles are arranged.", body: <GridBody /> },
     { id: "taskbar", label: "Phone taskbar", group: "Controls", title: "Phone taskbar", blurb: "Which tools sit beside Back, Home and Recent.", action: <TaskbarReset />, body: <TaskbarBody /> },
-    { id: "appearance", label: "Appearance", group: "Look", title: "Appearance", blurb: "The font used for technical values.", body: <AppearanceBody /> },
+    { id: "appearance", label: "Appearance", group: "Look", title: "Appearance", blurb: "Dark or light, the colour theme, and the font used for technical values.", body: <AppearanceBody /> },
     { id: "notifications", label: "Notifications", group: "Alerts and account", title: "Discord notifications", blurb: "Send problems and finished macro runs to a Discord channel.", body: <NotificationsCard bare /> },
     ...(hasAccount
       ? [{ id: "account", label: "Account", group: "Alerts and account", title: "Account", blurb: "Password and sign-in.", body: <AccountBody /> } satisfies Entry]

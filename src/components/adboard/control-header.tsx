@@ -80,8 +80,8 @@ export function ControlHeader({ onlineCount, totalCount, section, onSection }: C
               <span
                 data-events-badge={badge}
                 title={`${badge} new warning${badge === 1 ? "" : "s"} or error${badge === 1 ? "" : "s"}`}
-                className={`ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1 text-meta font-bold text-[#1a0f08] ${
-                  alerts.worst === "warning" ? "bg-[#f1c40f]" : "bg-[var(--pc-warn)]"
+                className={`ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1 text-meta font-bold text-[var(--pc-on-warn)] ${
+                  alerts.worst === "warning" ? "bg-[var(--pc-caution)]" : "bg-[var(--pc-warn)]"
                 }`}
               >
                 {badge}

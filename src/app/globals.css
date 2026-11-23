@@ -89,20 +89,61 @@ html[data-mono-font="consolas"] { --font-mono: Consolas, ui-monospace, monospace
 html[data-mono-font="sf-mono"] { --font-mono: "SF Mono", SFMono-Regular, ui-monospace, monospace; }
 
 :root {
-  /* ADBoard palette — dark desk, teal signal */
-  --pc-paper: #0e141b;
-  --pc-ink: #e8eef2;
-  --pc-muted: #9aadb8;
-  --pc-line: color-mix(in srgb, #e8eef2 14%, transparent);
-  --pc-panel: #1a242e;
-  --pc-accent: #8eeadf;
-  --pc-accent-fill: #0e7a73;
-  --pc-accent-soft: color-mix(in srgb, #8eeadf 16%, #121a22);
-  --pc-signal: #3dcc8a;
-  --pc-signal-soft: color-mix(in srgb, #3dcc8a 18%, #121a22);
-  --pc-warn: #ff9b63;
-  --pc-warn-soft: color-mix(in srgb, #ff9b63 16%, #121a22);
-  --pc-frame: #070b0f;
+  /* Theme colours (src/lib/ui/themes.ts). These are the default dark theme, ADBoard; the other
+     themes override only these --th-* values with html[data-theme="…"] rules, and every token
+     below is derived from them. */
+  --th-paper: #0e141b;
+  --th-panel: #1a242e;
+  --th-popover: #182229;
+  --th-secondary: #24303a;
+  --th-ink: #e8eef2;
+  --th-muted: #9aadb8;
+  --th-accent: #8eeadf;
+  --th-accent-fill: #0e7a73;
+  --th-on-accent: #f4fffe;
+  --th-signal: #3dcc8a;
+  --th-warn: #ff9b63;
+  --th-danger: oklch(0.704 0.191 22.216);
+  --th-danger-text: #ff8a8a;
+  --th-frame: #070b0f;
+  --th-soft-base: #121a22;
+  --th-atmos-a: #0c1218;
+  --th-atmos-b: #121a22;
+  --th-atmos-c: #0d1614;
+  --th-glow: #4678b4;
+  --th-shadow: 45%;
+  /* The strip over the iPhone status bar (white text in standalone mode): dark on light themes. */
+  --th-cap: #0e141b;
+  --th-chart-1: oklch(0.72 0.1 190);
+  --th-chart-2: oklch(0.74 0.12 160);
+  --th-chart-3: oklch(0.75 0.1 40);
+  --th-chart-4: oklch(0.68 0.06 240);
+  --th-chart-5: oklch(0.6 0.04 220);
+  /* Fixed accent hues for kinds of steps (shell / key / file); darker on light themes. */
+  --pc-hue-a: #ffb86b;
+  --pc-hue-b: #c3a6ff;
+  --pc-hue-c: #7cc4ff;
+  --pc-caution: #f1c40f;
+  --pc-caution-text: #d4a20a;
+  /* Text on a warn / signal fill. */
+  --pc-on-warn: #1a0f08;
+  --pc-on-signal: #04140c;
+
+  /* ADBoard palette — derived from the theme colours above */
+  --pc-paper: var(--th-paper);
+  --pc-ink: var(--th-ink);
+  --pc-muted: var(--th-muted);
+  --pc-line: color-mix(in srgb, var(--th-ink) 14%, transparent);
+  --pc-panel: var(--th-panel);
+  --pc-accent: var(--th-accent);
+  --pc-accent-fill: var(--th-accent-fill);
+  --pc-accent-soft: color-mix(in srgb, var(--th-accent) 16%, var(--th-soft-base));
+  --pc-signal: var(--th-signal);
+  --pc-signal-soft: color-mix(in srgb, var(--th-signal) 18%, var(--th-soft-base));
+  --pc-warn: var(--th-warn);
+  --pc-warn-soft: color-mix(in srgb, var(--th-warn) 16%, var(--th-soft-base));
+  --pc-frame: var(--th-frame);
+  --pc-cap: var(--th-cap);
 
   /* Spacing rhythm + Control chrome (PWA Tools HIT is the reference). */
   --pc-space-1: 0.25rem;
@@ -118,30 +159,30 @@ html[data-mono-font="sf-mono"] { --font-mono: "SF Mono", SFMono-Regular, ui-mono
   --foreground: var(--pc-ink);
   --card: var(--pc-panel);
   --card-foreground: var(--pc-ink);
-  --popover: #182229;
+  --popover: var(--th-popover);
   --popover-foreground: var(--pc-ink);
   --primary: var(--pc-accent-fill);
-  --primary-foreground: #f4fffe;
-  --secondary: #24303a;
+  --primary-foreground: var(--th-on-accent);
+  --secondary: var(--th-secondary);
   --secondary-foreground: var(--pc-ink);
-  --muted: #24303a;
+  --muted: var(--th-secondary);
   --muted-foreground: var(--pc-muted);
   --accent: var(--pc-accent-soft);
   --accent-foreground: var(--pc-accent);
-  --destructive: oklch(0.704 0.191 22.216);
+  --destructive: var(--th-danger);
   --border: var(--pc-line);
-  --input: color-mix(in srgb, #e8eef2 16%, #0e141b);
+  --input: color-mix(in srgb, var(--th-ink) 16%, var(--th-paper));
   --ring: var(--pc-accent);
-  --chart-1: oklch(0.72 0.1 190);
-  --chart-2: oklch(0.74 0.12 160);
-  --chart-3: oklch(0.75 0.1 40);
-  --chart-4: oklch(0.68 0.06 240);
-  --chart-5: oklch(0.6 0.04 220);
+  --chart-1: var(--th-chart-1);
+  --chart-2: var(--th-chart-2);
+  --chart-3: var(--th-chart-3);
+  --chart-4: var(--th-chart-4);
+  --chart-5: var(--th-chart-5);
   --radius: 0.625rem;
   --sidebar: var(--pc-panel);
   --sidebar-foreground: var(--pc-ink);
   --sidebar-primary: var(--pc-accent-fill);
-  --sidebar-primary-foreground: #f4fffe;
+  --sidebar-primary-foreground: var(--th-on-accent);
   --sidebar-accent: var(--pc-accent-soft);
   --sidebar-accent-foreground: var(--pc-accent);
   --sidebar-border: var(--pc-line);
@@ -157,6 +198,9 @@ html[data-mono-font="sf-mono"] { --font-mono: "SF Mono", SFMono-Regular, ui-mono
   }
   html {
     @apply font-sans;
+    color-scheme: light;
+  }
+  html.dark {
     color-scheme: dark;
   }
   input,
@@ -259,6 +303,17 @@ html[data-mono-font="sf-mono"] { --font-mono: "SF Mono", SFMono-Regular, ui-mono
   --pc-safe-left: env(safe-area-inset-left, 0px);
 }
 
+/* Light themes: the step hues and the caution colour need more depth to read on a light page. */
+html:not(.dark) {
+  --pc-hue-a: #a8560a;
+  --pc-hue-b: #6a47c2;
+  --pc-hue-c: #12609c;
+  --pc-caution: #d4a20a;
+  --pc-caution-text: #8a6700;
+  --pc-on-warn: #ffffff;
+  --pc-on-signal: #ffffff;
+}
+
 html {
   height: 100%;
   height: -webkit-fill-available;
@@ -284,10 +339,10 @@ body {
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(ellipse 90% 60% at 12% -10%, rgba(142, 234, 223, 0.14), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 95% 10%, rgba(70, 120, 180, 0.12), transparent 50%),
-    radial-gradient(ellipse 60% 40% at 50% 110%, rgba(61, 204, 138, 0.08), transparent 45%),
-    linear-gradient(165deg, #0c1218 0%, #121a22 48%, #0d1614 100%);
+    radial-gradient(ellipse 90% 60% at 12% -10%, color-mix(in srgb, var(--th-accent) 14%, transparent), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 95% 10%, color-mix(in srgb, var(--th-glow) 12%, transparent), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 50% 110%, color-mix(in srgb, var(--th-signal) 8%, transparent), transparent 45%),
+    linear-gradient(165deg, var(--th-atmos-a) 0%, var(--th-atmos-b) 48%, var(--th-atmos-c) 100%);
 }
 
 .pc-atmosphere::before {
@@ -296,8 +351,8 @@ body {
   inset: 0;
   opacity: 0.4;
   background-image:
-    linear-gradient(rgba(232, 238, 242, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(232, 238, 242, 0.035) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--th-ink) 3.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--th-ink) 3.5%, transparent) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black, transparent);
 }
@@ -403,7 +458,7 @@ body {
   color: var(--pc-ink);
   box-shadow:
     0 1px 0 color-mix(in srgb, #ffffff 6%, transparent) inset,
-    0 10px 28px color-mix(in srgb, #000000 45%, transparent);
+    0 10px 28px color-mix(in srgb, #000000 var(--th-shadow), transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   transition:
@@ -417,13 +472,13 @@ body {
   border-color: color-mix(in srgb, var(--pc-accent) 55%, var(--pc-line));
   box-shadow:
     0 1px 0 color-mix(in srgb, var(--pc-accent) 12%, transparent) inset,
-    0 10px 28px color-mix(in srgb, #000000 45%, transparent);
+    0 10px 28px color-mix(in srgb, #000000 var(--th-shadow), transparent);
 }
 
 .pc-float-shell[data-dragging="1"] {
   box-shadow:
     0 1px 0 color-mix(in srgb, #ffffff 8%, transparent) inset,
-    0 16px 36px color-mix(in srgb, #000000 55%, transparent);
+    0 16px 36px color-mix(in srgb, #000000 calc(var(--th-shadow) + 10%), transparent);
 }
 
 .pc-float-chrome-btn {
@@ -478,7 +533,7 @@ body {
   background-color: color-mix(in srgb, var(--pc-panel) 92%, transparent);
   box-shadow:
     0 1px 0 color-mix(in srgb, #ffffff 5%, transparent) inset,
-    0 8px 22px color-mix(in srgb, #000000 40%, transparent);
+    0 8px 22px color-mix(in srgb, #000000 calc(var(--th-shadow) - 5%), transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 0.25rem 0.375rem;
@@ -1193,7 +1248,7 @@ html:has([data-m-app]) body::after {
   left: 0;
   right: 0;
   height: env(safe-area-inset-top, 0px);
-  background: var(--pc-paper);
+  background: var(--pc-cap);
   z-index: 30;
   pointer-events: none;
 }
@@ -1516,14 +1571,14 @@ html[data-m-text="standard"] [data-m-sheet] {
   border-radius: 999px;
   padding-inline: 0.375rem;
   background-color: var(--pc-warn);
-  color: #1a0f08;
+  color: var(--pc-on-warn);
   font-size: var(--t-meta);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 [data-m-section="more"] [data-m-more-list] .m-row-danger {
   justify-content: center;
-  color: #ff8a8a;
+  color: var(--th-danger-text);
 }
 [data-m-more-list] .m-row-danger .m-row-icon {
   color: currentColor;

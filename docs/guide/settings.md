@@ -111,6 +111,8 @@ You can pin up to 21 tools. When you reach the limit the remaining switches are 
 
 ## Appearance
 
+**Theme** chooses how ADBoard looks. **Dark**, **Light** or **System** (follows your device), then a **Dark theme** and a **Light theme** from the swatches: ADBoard (the original look), Catppuccin, Dracula, Nord, Tokyo Night, Gruvbox, Solarized, One Dark, GitHub, Rosé Pine and more. It changes at once and is the same on the desktop page and the phone app. Choosing a theme of the other mode switches to that mode. On an iPhone's Home Screen app the strip over the status bar stays dark on a light theme, so the time and battery stay readable. See [themes.md](../themes.md).
+
 **Font for technical values** changes the font used for serials, addresses, logs, sizes and fps. The default is JetBrains Mono. The other choices are System Monospace, Fira Code, Source Code Pro, Cascadia Code, IBM Plex Mono, Roboto Mono, Ubuntu Mono, Space Mono, Inconsolata, Anonymous Pro, DM Mono, Red Hat Mono, Menlo, Consolas and SF Mono. Cascadia Code, Menlo, Consolas and SF Mono come from your device; if one is not installed, your device's own monospace font is used. Buttons, headings and the rest of the interface do not change. A sample line shows the font. The choice is saved with your other settings.
 
 ## Virtual displays
@@ -189,7 +191,7 @@ ADBoard saves your choices in the data folder on the ADBoard computer, so they f
 - Keyboard injection, Cursor mode and Touch diagnostics
 - Stream: quality (and the custom values), audio, screen off, the Size choice, Sync clipboard and Quiet mode
 - Stats on phones
-- The font for technical values
+- The theme (mode, dark theme and light theme) and the font for technical values
 - Grid arrangement and whether the grid bar is shown
 - Phone taskbar pins
 - The control mode and the Shell Automation run history

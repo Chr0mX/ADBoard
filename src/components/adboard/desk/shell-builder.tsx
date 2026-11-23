@@ -39,9 +39,9 @@ export function MechanismBadge({ mechanism }: { mechanism: Mechanism }) {
       className={cn(
  "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-meta font-semibold",
         mechanism === "touch" && "bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
-        mechanism === "shell" && "bg-[color-mix(in_srgb,#ffb86b_18%,transparent)] text-[#ffb86b]",
-        mechanism === "key" && "bg-[color-mix(in_srgb,#c3a6ff_18%,transparent)] text-[#c3a6ff]",
-        mechanism === "file" && "bg-[color-mix(in_srgb,#7cc4ff_18%,transparent)] text-[#7cc4ff]",
+        mechanism === "shell" && "bg-[color-mix(in_srgb,var(--pc-hue-a)_18%,transparent)] text-[var(--pc-hue-a)]",
+        mechanism === "key" && "bg-[color-mix(in_srgb,var(--pc-hue-b)_18%,transparent)] text-[var(--pc-hue-b)]",
+        mechanism === "file" && "bg-[color-mix(in_srgb,var(--pc-hue-c)_18%,transparent)] text-[var(--pc-hue-c)]",
         mechanism === "wait" && "bg-[var(--pc-line)] text-[var(--pc-muted)]",
       )}
     >
@@ -439,7 +439,7 @@ function JobEditor({ macro, focusStepId }: { macro: SavedMacro; focusStepId: str
                 <button
                   type="button"
                   onClick={() => controllerRef.current?.abort()}
-                  className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08]"
+                  className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[var(--pc-on-warn)]"
                   data-shell-stop
                 >
                   <Square className="size-4" aria-hidden />

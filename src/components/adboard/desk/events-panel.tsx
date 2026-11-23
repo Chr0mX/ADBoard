@@ -34,9 +34,9 @@ const POLL_MS = 5000;
 const SEVERITY_TONE: Record<Severity, string> = {
   debug: "bg-[var(--pc-line)] text-[var(--pc-muted)]",
   info: "bg-[var(--pc-accent-soft)] text-[var(--pc-accent)]",
-  warning: "bg-[#f1c40f]/20 text-[#d4a20a]",
+  warning: "bg-[color-mix(in_srgb,var(--pc-caution)_20%,transparent)] text-[var(--pc-caution-text)]",
   error: "bg-[var(--pc-warn-soft)] text-[var(--pc-warn)]",
-  critical: "bg-[var(--pc-warn)] text-[#1a0f08]",
+  critical: "bg-[var(--pc-warn)] text-[var(--pc-on-warn)]",
 };
 
 const RANGES = [

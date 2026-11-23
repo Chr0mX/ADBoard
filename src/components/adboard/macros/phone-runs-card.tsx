@@ -141,7 +141,7 @@ function PhoneRow({
               type="button"
               onClick={() => stopPhone(device.id)}
               disabled={run!.status === "stopping"}
-              className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08] disabled:opacity-70"
+              className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[var(--pc-on-warn)] disabled:opacity-70"
               data-macro-phone-stop
             >
               <Square className="size-4" aria-hidden />

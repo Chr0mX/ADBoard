@@ -36,6 +36,9 @@ export const USER_KEYS = [
   "adboard-touch-diagnostics",
   "adboard-shell-history",
   "adboard-mono-font",
+  "adboard-theme-mode",
+  "adboard-theme-dark",
+  "adboard-theme-light",
 ] as const;
 
 export const BROWSER_KEYS = [

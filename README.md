@@ -126,7 +126,7 @@ Each tab has a page in the [user guide](docs/guide/README.md), with screenshots 
 | **Hosts** | The computers that run ADB and their phones; a second PC or an LXC joins as an agent | [hosts.md](docs/guide/hosts.md) |
 | **Events** | History of phones connecting and dropping, macro runs, installs, crashes and failures, with optional Discord notifications | [monitoring.md](docs/monitoring.md) |
 | **Storage** | Where your data lives; move it, back it up, export or import the whole library | [storage.md](docs/storage.md) |
-| **Settings** | Stream quality and size, Quiet Mode and the Quiet Mode Loop, keyboard and touch, grid and taskbar options, the account, and installing ADBoard on an iPhone | [settings.md](docs/guide/settings.md) |
+| **Settings** | Stream quality and size, Quiet Mode and the Quiet Mode Loop, keyboard and touch, grid and taskbar options, the account, dark / light / system themes and the technical-value font, and installing ADBoard on an iPhone | [settings.md](docs/guide/settings.md) |
 
 Good to know:
 
@@ -165,7 +165,7 @@ On the Windows pack the data is kept in the `ADBoard` folder in the repository r
 | [docs/macros.md](docs/macros.md) · [docs/shell-automation.md](docs/shell-automation.md) | Macros and Shell Automation |
 | [docs/phone-controls.md](docs/phone-controls.md) · [docs/virtual-display.md](docs/virtual-display.md) | App controls and extra Android displays |
 | [docs/monitoring.md](docs/monitoring.md) | Events and Discord |
-| [docs/performance.md](docs/performance.md) · [docs/typography.md](docs/typography.md) | Performance work and the type system |
+| [docs/performance.md](docs/performance.md) · [docs/typography.md](docs/typography.md) · [docs/themes.md](docs/themes.md) | Performance work, the type system and the colour themes |
 
 ## Limits
 

@@ -248,7 +248,7 @@ export function MacrosMobile() {
               );
             })}
           </span>
-          <button type="button" onClick={() => stopAllRuns()} className="inline-flex min-h-11 items-center rounded-lg bg-[var(--pc-warn)] px-3 text-sm font-semibold text-[#1a0f08]" data-macro-stop-all>
+          <button type="button" onClick={() => stopAllRuns()} className="inline-flex min-h-11 items-center rounded-lg bg-[var(--pc-warn)] px-3 text-sm font-semibold text-[var(--pc-on-warn)]" data-macro-stop-all>
             Stop all
           </button>
         </div>
@@ -399,7 +399,7 @@ function Editor({
             type="button"
             onClick={() => stopRun(tab.id)}
             disabled={snapshot?.status === "stopping"}
-            className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08] disabled:opacity-70"
+            className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[var(--pc-on-warn)] disabled:opacity-70"
             data-macro-quick-stop
           >
             <Square className="size-4" aria-hidden /> {snapshot?.status === "stopping" ? "Stopping…" : "Stop"}

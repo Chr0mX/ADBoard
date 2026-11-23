@@ -162,7 +162,7 @@ export function MacroDock({
               type="button"
               onClick={() => stopPhone(phone.id)}
               disabled={run!.status === "stopping"}
-              className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08] disabled:opacity-70"
+              className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[var(--pc-on-warn)] disabled:opacity-70"
               data-macro-dock-stop
             >
               <Square className="size-4" aria-hidden />
@@ -188,7 +188,7 @@ export function MacroDock({
             type="button"
             onClick={() => stopRun(tab.id)}
             disabled={snapshot?.status === "stopping"}
-            className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[#1a0f08] disabled:opacity-70"
+            className="inline-flex h-11 min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--pc-warn)] px-4 text-sm font-semibold text-[var(--pc-on-warn)] disabled:opacity-70"
             data-macro-dock-stop
           >
             <Square className="size-4" aria-hidden />

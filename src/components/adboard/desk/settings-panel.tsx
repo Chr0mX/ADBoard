@@ -4,6 +4,15 @@ import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
 import { useTaskbarHidden } from "@/hooks/use-taskbar-hidden";
 import { useEdgeTabStyle } from "@/hooks/use-edge-tab-style";
+import {
+  MODE_CHOICES,
+  parseModeChoice,
+  THEME_DARK_KEY,
+  THEME_LIGHT_KEY,
+  THEME_MODE_KEY,
+  type ThemeModeChoice,
+} from "@/lib/ui/themes";
+import { DARK_THEMES, LIGHT_THEMES, themeFor, type ThemeMeta, type ThemeMode } from "@/lib/ui/themes";
 import { DEFAULT_MONO_FONT, MONO_FONTS, MONO_FONT_KEY, MONO_FONT_SAMPLE, parseMonoFont } from "@/lib/ui/mono-fonts";
 import { formatGridLayout, parseGridLayout } from "@/lib/ui/grid-layout";
 import { parseMobileStatsMode } from "@/lib/ui/mobile-stats-mode";
@@ -109,6 +118,85 @@ export function ControlBody() {
   );
 }
 
+/** One theme as a swatch: its own page colour, text colour and the accent / status dots. */
+function ThemeSwatch({ theme, selected, onSelect }: { theme: ThemeMeta; selected: boolean; onSelect: () => void }) {
+  const p = theme.palette;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      data-theme-swatch={theme.id}
+      className="flex min-w-0 flex-col gap-1.5 rounded-lg border-2 px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--pc-accent)]"
+      // The swatch shows the theme's own colours, not the current theme's.
+      style={{ background: p.paper, color: p.ink, borderColor: selected ? p.accent : `color-mix(in srgb, ${p.ink} 18%, ${p.paper})` }}
+    >
+      <span className="flex items-center gap-1" aria-hidden>
+        {[p.accent, p.signal, p.warn, p.danger].map((color, i) => (
+          <span key={i} className="size-3 rounded-full" style={{ background: color }} />
+        ))}
+        <span className="ml-auto h-3 w-6 rounded-sm" style={{ background: p.panel, border: `1px solid color-mix(in srgb, ${p.ink} 20%, ${p.paper})` }} />
+      </span>
+      <span className="truncate text-sm font-medium">{theme.name}</span>
+    </button>
+  );
+}
+
+/** Mode (Dark / Light / System) and the colour theme for each mode. Applies at once. */
+export function ThemeBody() {
+  const [modeRaw, setModeRaw] = useStoredString(THEME_MODE_KEY);
+  const [darkRaw, setDarkRaw] = useStoredString(THEME_DARK_KEY);
+  const [lightRaw, setLightRaw] = useStoredString(THEME_LIGHT_KEY);
+  const mode = parseModeChoice(modeRaw);
+  const pick = (list: ThemeMode, id: string) => {
+    if (list === "dark") setDarkRaw(id);
+    else setLightRaw(id);
+    // Choosing a theme of the other mode shows it, unless the mode follows the system.
+    if (mode !== "system" && mode !== list) setModeRaw(list);
+  };
+  const group = (list: ThemeMode, themes: ReadonlyArray<ThemeMeta>, saved: string | null, label: string) => {
+    const current = themeFor(list, saved).id;
+    return (
+      <div className="flex flex-col gap-1.5" data-settings-theme-list={list}>
+        <p className="text-sm text-[var(--pc-ink)]">{label}</p>
+        <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {themes.map((theme) => (
+            <ThemeSwatch key={theme.id} theme={theme} selected={theme.id === current} onSelect={() => pick(list, theme.id)} />
+          ))}
+        </div>
+      </div>
+    );
+  };
+  return (
+    <div className="flex flex-col gap-3 py-1" data-settings-theme>
+      <div className="flex flex-col gap-1.5" data-settings-theme-mode>
+        <div>
+          <p className="text-sm text-[var(--pc-ink)]">Theme</p>
+          <p className="text-xs text-[var(--pc-muted)]">Dark or light, or follow this device. The same on the desktop page and the phone app.</p>
+        </div>
+        <div className="pc-segmented" role="radiogroup" aria-label="Theme mode">
+          {MODE_CHOICES.map((choice) => (
+            <button
+              key={choice.id}
+              type="button"
+              role="radio"
+              aria-checked={mode === choice.id}
+              className="pc-segment"
+              data-theme-mode={choice.id}
+              onClick={() => setModeRaw((choice.id satisfies ThemeModeChoice) === "dark" ? null : choice.id)}
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {group("dark", DARK_THEMES, darkRaw, "Dark theme")}
+      {group("light", LIGHT_THEMES, lightRaw, "Light theme")}
+    </div>
+  );
+}
+
 /** The font for technical values (serials, addresses, logs, sizes, fps). */
 export function AppearanceBody() {
   const [raw, setRaw] = useStoredString(MONO_FONT_KEY);
@@ -116,6 +204,7 @@ export function AppearanceBody() {
   const current = MONO_FONTS.find((font) => font.id === id);
   return (
     <>
+      <ThemeBody />
       <div className="flex flex-col gap-1.5 py-1" data-settings-mono-font>
         <div>
           <p className="text-sm text-[var(--pc-ink)]">Font for technical values</p>

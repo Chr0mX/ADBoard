@@ -316,10 +316,10 @@ export function useLiveScreen(device: Device, live: boolean) {
       data-macro-live={state.key}
       className={cn(
  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta font-semibold",
-        playing ? "bg-[var(--pc-signal)] text-[#04140c]" : "bg-[var(--pc-panel)]/90 text-[var(--pc-muted)]",
+        playing ? "bg-[var(--pc-signal)] text-[var(--pc-on-signal)]" : "bg-[var(--pc-panel)]/90 text-[var(--pc-muted)]",
       )}
     >
-      {playing && <span className="size-1.5 animate-pulse rounded-full bg-[#04140c]" />}
+      {playing && <span className="size-1.5 animate-pulse rounded-full bg-[var(--pc-on-signal)]" />}
       {state.text}
     </span>
   ) : null;
