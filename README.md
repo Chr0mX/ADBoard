@@ -131,7 +131,7 @@ Each tab has a page in the [user guide](docs/guide/README.md), with screenshots 
 Good to know:
 
 - **Macro runs live in ADBoard**, so they keep going when the browser closes. They stop when ADBoard itself is closed.
-- **Quiet Mode** turns every online phone's screen off and mutes it. **Quiet Mode Loop** (Settings → Stream) repeats that on and off at an interval you set in minutes or hours. The agent keeps the time, so it carries on with the browser closed and after an agent restart.
+- **Quiet Mode** turns every online phone's screen off and mutes it. **Quiet Mode Loop** (Settings → Stream) puts every phone into Quiet mode for about a minute at an interval you set in minutes or hours (a phone that connects meanwhile goes quiet at once). The agent keeps the time, so it carries on with the browser closed and after an agent restart.
 - **When a phone is unplugged**, the agent resets a display size it had changed, tries to turn the screen on, and retries `adb reconnect` on a growing delay. A small alert tells you once when a phone disconnects and once when it is back.
 - **Keyboard shortcuts** use Alt+Shift (⌥⇧ on a Mac) so they still work while typing goes to the phone; the list is in the [Control guide](docs/guide/control.md#keyboard-shortcuts).
 

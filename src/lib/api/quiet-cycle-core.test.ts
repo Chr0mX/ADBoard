@@ -36,8 +36,8 @@ test("the countdown runs from the agent's clock", () => {
 });
 
 test("status line", () => {
-  assert.equal(cycleLine("quiet", 9660), "Quiet now · next change in 2 h 41 m");
-  assert.equal(cycleLine("normal", 900), "Normal now · next change in 15 m");
+  assert.equal(cycleLine("quiet", 9660), "Quiet now · back to normal in 2 h 41 m");
+  assert.equal(cycleLine("normal", 900), "Normal now · next Quiet in 15 m");
 });
 
 test("the Quiet Mode Loop toggle checks for 'no agent' with === null (same-origin is the empty string)", async () => {

@@ -1,6 +1,6 @@
-//! "Repeat" for Quiet mode: the agent flips every online phone between Quiet
-//! (screen off, sound muted) and normal every `interval`, with or without a browser
-//! open. It only repeats the two operations Quiet mode already uses (`mute` and the
+//! "Quiet Mode Loop": every `interval` the agent puts every online phone into Quiet mode
+//! (screen off, sound muted) for a short pulse, then back to normal, with or without a
+//! browser open. A phone that connects while the loop runs goes quiet at once. It only repeats the two operations Quiet mode already uses (`mute` and the
 //! scrcpy screen-off option).
 //!
 //! The cycle is saved in the config folder (`quiet-cycle.json`), so after an agent
@@ -13,7 +13,9 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use adboard_protocol::{ControlMode, DeviceCommandRequest, DeviceStatus, ScrcpyOptionsRequest};
+use adboard_protocol::{
+    ControlMode, Device, DeviceCommandRequest, DeviceStatus, ScrcpyOptionsRequest,
+};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -21,6 +23,8 @@ use crate::device_manager::AppState;
 
 const FILE_NAME: &str = "quiet-cycle.json";
 pub const DEFAULT_INTERVAL_SECS: u64 = 3600;
+/// How long each Quiet pulse lasts (shorter when the interval is very short).
+pub const PULSE_SECS: u64 = 60;
 const MAX_SECS: u64 = 7 * 24 * 3600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,16 +80,32 @@ pub fn clamp_secs(secs: u64) -> u64 {
 }
 
 impl Cycle {
+    /// The Quiet pulse for an interval: a minute, or half the interval when that is shorter.
+    pub fn pulse_secs(interval_secs: u64) -> u64 {
+        PULSE_SECS.min(interval_secs / 2).max(1)
+    }
+
+    /// How long `phase` lasts: the pulse for Quiet, the rest of the interval for Normal.
+    pub fn duration(&self, phase: Phase) -> u64 {
+        let pulse = Self::pulse_secs(self.interval_secs);
+        match phase {
+            Phase::Quiet => pulse,
+            Phase::Normal => self.interval_secs - pulse,
+        }
+    }
+
     /// Begin `phase` at `now`.
     pub fn started(interval_secs: u64, phase: Phase, now: u64) -> Cycle {
         let interval_secs = clamp_secs(interval_secs);
-        Cycle {
+        let mut cycle = Cycle {
             enabled: true,
             interval_secs,
             phase,
             phase_started_at: now,
-            phase_ends_at: now + interval_secs,
-        }
+            phase_ends_at: 0,
+        };
+        cycle.phase_ends_at = now + cycle.duration(phase);
+        cycle
     }
 
     /// Move to the phase the clock says it is `now`. Each phase starts where the last
@@ -95,12 +115,17 @@ impl Cycle {
         if !self.enabled || now < self.phase_ends_at {
             return false;
         }
-        let steps = (now - self.phase_ends_at) / self.interval_secs + 1;
-        if steps % 2 == 1 {
-            self.phase = self.phase.other();
+        // Whole intervals that passed leave the phase unchanged.
+        let skipped = (now - self.phase_ends_at) / self.interval_secs;
+        let mut end = self.phase_ends_at + skipped * self.interval_secs;
+        let mut phase = self.phase;
+        while now >= end {
+            phase = phase.other();
+            end += self.duration(phase);
         }
-        self.phase_ends_at += steps * self.interval_secs;
-        self.phase_started_at = self.phase_ends_at - self.interval_secs;
+        self.phase = phase;
+        self.phase_ends_at = end;
+        self.phase_started_at = end - self.duration(phase);
         true
     }
 }
@@ -120,6 +145,9 @@ struct Runtime {
     path: OnceLock<PathBuf>,
     /// serial → which of the phone's two operations are done for which phase.
     applied: Mutex<HashMap<String, Done>>,
+    /// Phones the loop has already looked at; `None` until the first look after the loop starts
+    /// (or the agent restarts), so phones that were already connected are not "new".
+    seen: Mutex<Option<std::collections::HashSet<String>>>,
 }
 
 fn runtime() -> &'static Runtime {
@@ -128,6 +156,7 @@ fn runtime() -> &'static Runtime {
         cycle: Mutex::new(Cycle::default()),
         path: OnceLock::new(),
         applied: Mutex::new(HashMap::new()),
+        seen: Mutex::new(None),
     })
 }
 
@@ -205,16 +234,18 @@ pub fn status() -> Status {
     }
 }
 
-/// The loop is running and its current phase is Quiet.
-pub fn wants_quiet() -> bool {
-    let status = status();
-    status.cycle.enabled && status.cycle.phase == Phase::Quiet
+/// The loop is running. A phone that connects meanwhile is put into Quiet mode by it.
+pub fn loop_running() -> bool {
+    status().cycle.enabled
 }
 
 /// Start (or restart) the cycle in `phase`.
 pub fn start(interval_secs: u64, phase: Phase) -> Status {
     let cycle = Cycle::started(interval_secs, phase, now_secs());
-    lock(&runtime().applied).clear();
+    {
+        lock(&runtime().applied).clear();
+        *lock(&runtime().seen) = None;
+    }
     persist(&cycle);
     *lock(&runtime().cycle) = cycle;
     status()
@@ -226,7 +257,10 @@ pub fn stop() -> Status {
     cycle.enabled = false;
     persist(&cycle);
     drop(cycle);
-    lock(&runtime().applied).clear();
+    {
+        lock(&runtime().applied).clear();
+        *lock(&runtime().seen) = None;
+    }
     status()
 }
 
@@ -245,9 +279,17 @@ pub fn manual_change() {
 pub struct Done {
     audio: Option<u64>,
     screen: Option<u64>,
+    /// Set (to the phase's start) for a phone that connected during a Normal phase: it goes
+    /// quiet now and joins the loop from the next phase on.
+    quiet_override: Option<u64>,
 }
 
 impl Done {
+    /// Should this phone be quiet during the phase that began at `started_at`?
+    fn wants_quiet(&self, phase: Phase, started_at: u64) -> bool {
+        phase == Phase::Quiet || self.quiet_override == Some(started_at)
+    }
+
     fn complete(&self, started_at: u64) -> bool {
         self.audio == Some(started_at) && self.screen == Some(started_at)
     }
@@ -315,35 +357,15 @@ pub fn done_for(serial: &str) -> Option<(bool, bool)> {
         .map(|d| (d.audio == Some(started), d.screen == Some(started)))
 }
 
-/// Apply the current phase to every online phone that does not have it yet. Each phone
-/// has its own record: only the operation that failed is retried, and one phone's failure
-/// never holds back another.
-pub async fn reconcile(state: &AppState) {
-    let status = status();
-    if !status.cycle.enabled {
-        return;
-    }
-    let started_at = status.cycle.phase_started_at;
-    let phase = status.cycle.phase;
-    let devices = state.list_devices().await;
-    let online: Vec<_> = devices
-        .iter()
-        .filter(|d| d.status == DeviceStatus::Online)
-        .collect();
-    // A phone that went away is looked at again when it returns.
-    {
-        let mut applied = lock(&runtime().applied);
-        applied.retain(|serial, _| online.iter().any(|d| &d.serial == serial));
-    }
-    let (audio_todo, screen_todo) = {
-        let applied = lock(&runtime().applied);
-        let serials: Vec<String> = online.iter().map(|d| d.serial.clone()).collect();
-        let todo = pending(&serials, &applied, started_at);
-        plan(&todo, &applied, started_at)
-    };
-    if audio_todo.is_empty() && screen_todo.is_empty() {
-        return;
-    }
+/// Send the sound and screen changes for one group of phones that all want the same state.
+/// Returns, per phone, whether each operation succeeded (only for the ones asked for).
+async fn run_group(
+    state: &AppState,
+    online: &[&Device],
+    audio_todo: &[String],
+    screen_todo: &[String],
+    quiet: bool,
+) -> (HashMap<String, bool>, HashMap<String, bool>) {
     let ids_of = |serials: &[String]| -> Vec<String> {
         online
             .iter()
@@ -351,14 +373,13 @@ pub async fn reconcile(state: &AppState) {
             .map(|d| d.id.clone())
             .collect()
     };
-    let quiet = phase == Phase::Quiet;
 
     // Sound: only the phones that still need it.
     let mut audio_out: HashMap<String, bool> = HashMap::new();
     if !audio_todo.is_empty() {
         let mute = state
             .run_command(DeviceCommandRequest {
-                target_ids: ids_of(&audio_todo),
+                target_ids: ids_of(audio_todo),
                 op: "mute".into(),
                 arg: Some(if quiet { "on" } else { "off" }.into()),
                 arg2: None,
@@ -395,7 +416,7 @@ pub async fn reconcile(state: &AppState) {
         let options = state
             .run_scrcpy_options(ScrcpyOptionsRequest {
                 mode: ControlMode::Selected,
-                target_ids: ids_of(&screen_todo),
+                target_ids: ids_of(screen_todo),
                 quality: prefs.quality.clone(),
                 audio: prefs.audio,
                 screen_off: quiet,
@@ -442,6 +463,95 @@ pub async fn reconcile(state: &AppState) {
             };
             screen_out.insert(device.serial.clone(), ok);
         }
+    }
+    (audio_out, screen_out)
+}
+
+/// Apply the current phase to every online phone that does not have it yet. Each phone
+/// has its own record: only the operation that failed is retried, and one phone's failure
+/// never holds back another. A phone that connects while the loop runs goes quiet at once,
+/// even in a Normal phase, and follows the loop from the next phase.
+pub async fn reconcile(state: &AppState) {
+    let status = status();
+    if !status.cycle.enabled {
+        return;
+    }
+    let started_at = status.cycle.phase_started_at;
+    let phase = status.cycle.phase;
+    let devices = state.list_devices().await;
+    let online: Vec<&Device> = devices
+        .iter()
+        .filter(|d| d.status == DeviceStatus::Online)
+        .collect();
+    let serials: Vec<String> = online.iter().map(|d| d.serial.clone()).collect();
+    // A phone that went away is looked at again when it returns, as a new phone.
+    let newcomers: Vec<String> = {
+        let mut seen = lock(&runtime().seen);
+        let newcomers = match seen.as_ref() {
+            // First look since the loop started: the phones already here are not new.
+            None => Vec::new(),
+            Some(known) => serials
+                .iter()
+                .filter(|s| !known.contains(*s))
+                .cloned()
+                .collect(),
+        };
+        *seen = Some(serials.iter().cloned().collect());
+        newcomers
+    };
+    {
+        let mut applied = lock(&runtime().applied);
+        applied.retain(|serial, _| serials.contains(serial));
+        if phase == Phase::Normal {
+            for serial in &newcomers {
+                applied.entry(serial.clone()).or_default().quiet_override = Some(started_at);
+            }
+        }
+    }
+    let (audio_todo, screen_todo, wants) = {
+        let applied = lock(&runtime().applied);
+        let todo = pending(&serials, &applied, started_at);
+        let (audio, screen) = plan(&todo, &applied, started_at);
+        let wants: HashMap<String, bool> = serials
+            .iter()
+            .map(|s| {
+                let quiet = applied
+                    .get(s)
+                    .copied()
+                    .unwrap_or_default()
+                    .wants_quiet(phase, started_at);
+                (s.clone(), quiet)
+            })
+            .collect();
+        (audio, screen, wants)
+    };
+    if audio_todo.is_empty() && screen_todo.is_empty() {
+        return;
+    }
+
+    // Phones that want quiet and phones that want normal are sent their own changes. In a
+    // Normal phase the quiet group goes first, so the saved screen setting ends as normal.
+    let mut audio_out: HashMap<String, bool> = HashMap::new();
+    let mut screen_out: HashMap<String, bool> = HashMap::new();
+    let groups: [bool; 2] = if phase == Phase::Normal {
+        [true, false]
+    } else {
+        [false, true]
+    };
+    for quiet in groups {
+        let pick = |list: &[String]| -> Vec<String> {
+            list.iter()
+                .filter(|s| wants.get(*s).copied().unwrap_or(false) == quiet)
+                .cloned()
+                .collect()
+        };
+        let (audio_group, screen_group) = (pick(&audio_todo), pick(&screen_todo));
+        if audio_group.is_empty() && screen_group.is_empty() {
+            continue;
+        }
+        let (a, c) = run_group(state, &online, &audio_group, &screen_group, quiet).await;
+        audio_out.extend(a);
+        screen_out.extend(c);
     }
 
     let mut applied = lock(&runtime().applied);
@@ -500,35 +610,53 @@ mod tests {
     }
 
     #[test]
-    fn it_alternates_each_interval_without_drift() {
+    fn the_pulse_is_a_minute_or_half_a_short_interval() {
+        assert_eq!(Cycle::pulse_secs(3600), 60);
+        assert_eq!(Cycle::pulse_secs(600), 60);
+        assert_eq!(Cycle::pulse_secs(100), 50);
+        assert_eq!(Cycle::pulse_secs(4), 2);
+    }
+
+    #[test]
+    fn quiet_is_a_brief_pulse_once_per_interval_without_drift() {
+        // Interval 600: quiet for 60 s, then normal for 540 s, and again.
         let mut c = cycle(Phase::Quiet, 1_000);
-        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_000, 1_600));
-        assert!(!c.advance(1_599));
+        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_000, 1_060));
+        assert!(!c.advance(1_059));
         // Checked late: the next phase still starts where the last one ended.
-        assert!(c.advance(1_650));
+        assert!(c.advance(1_100));
         assert_eq!(c.phase, Phase::Normal);
-        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_600, 2_200));
-        assert!(c.advance(2_200));
+        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_060, 1_600));
+        assert!(c.advance(1_600));
         assert_eq!(c.phase, Phase::Quiet);
-        assert_eq!((c.phase_started_at, c.phase_ends_at), (2_200, 2_800));
+        assert_eq!((c.phase_started_at, c.phase_ends_at), (1_600, 1_660));
+    }
+
+    #[test]
+    fn starting_in_normal_waits_out_the_rest_of_the_interval() {
+        let c = cycle(Phase::Normal, 5_000);
+        assert_eq!(c.phase_ends_at, 5_540);
     }
 
     #[test]
     fn a_long_gap_lands_in_the_phase_the_clock_says() {
-        // Quiet from 0, 600 s each: quiet [0,600), normal [600,1200), quiet [1200,1800)...
+        // From 0: quiet [0,60), normal [60,600), quiet [600,660), ... every 600 s.
         for now in [
             0u64,
+            59,
+            60,
             599,
             600,
-            1199,
-            1200,
+            659,
+            660,
             6_000 + 10,
-            6_000 + 650,
+            6_000 + 70,
             600 * 1001 + 5,
+            600 * 1001 + 100,
         ] {
             let mut c = cycle(Phase::Quiet, 0);
             c.advance(now);
-            let want = if (now / 600) % 2 == 0 {
+            let want = if now % 600 < 60 {
                 Phase::Quiet
             } else {
                 Phase::Normal
@@ -558,9 +686,10 @@ mod tests {
         let mut loaded = load_from(&path);
         assert_eq!(loaded, c);
         // Restarted in the middle of the normal phase.
+        // Quiet [100,160), normal [160,700), quiet [700,760): restarted 30 s into the second pulse.
         loaded.advance(100 + 600 + 30);
-        assert_eq!(loaded.phase, Phase::Normal);
-        assert_eq!(loaded.phase_ends_at, 100 + 1_200);
+        assert_eq!(loaded.phase, Phase::Quiet);
+        assert_eq!(loaded.phase_ends_at, 760);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -578,7 +707,22 @@ mod tests {
         Done {
             audio: audio.then_some(started),
             screen: screen.then_some(started),
+            quiet_override: None,
         }
+    }
+
+    #[test]
+    fn a_phone_wants_quiet_in_a_quiet_phase_or_when_it_connected_during_normal() {
+        let plain = Done::default();
+        assert!(plain.wants_quiet(Phase::Quiet, 100));
+        assert!(!plain.wants_quiet(Phase::Normal, 100));
+        let newcomer = Done {
+            quiet_override: Some(100),
+            ..Done::default()
+        };
+        assert!(newcomer.wants_quiet(Phase::Normal, 100));
+        // The override belongs to that phase only: the next normal phase is normal again.
+        assert!(!newcomer.wants_quiet(Phase::Normal, 700));
     }
 
     fn s(name: &str) -> String {

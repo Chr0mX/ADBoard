@@ -45,5 +45,5 @@ export function secondsLeft(phaseEndsAt: number, agentNow: number, receivedAtMs:
 
 /** The line under the toggle. */
 export function cycleLine(phase: QuietPhase, left: number): string {
-  return `${phase === "quiet" ? "Quiet" : "Normal"} now · next change in ${formatLeft(left)}`;
+  return phase === "quiet" ? `Quiet now · back to normal in ${formatLeft(left)}` : `Normal now · next Quiet in ${formatLeft(left)}`;
 }

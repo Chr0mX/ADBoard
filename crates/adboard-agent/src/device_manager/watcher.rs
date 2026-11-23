@@ -219,9 +219,9 @@ fn battery_is_fresh(batteries: &HashMap<String, CachedBattery>, serial: &str) ->
 
 impl AppState {
     /// A phone that came back goes back to normal: screen on and awake, unless the
-    /// Quiet mode loop is in its Quiet phase (which then keeps it off).
+    /// Quiet Mode Loop is running (which then puts it into Quiet mode itself).
     pub(super) async fn restore_screen_after_reconnect(&self, serial: &str) {
-        if crate::quiet_cycle::wants_quiet() {
+        if crate::quiet_cycle::loop_running() {
             return;
         }
         if let Err(error) = self.inner.sessions.set_display_power(serial, true).await {

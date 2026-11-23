@@ -72,7 +72,7 @@ export function QuietRepeat({ className }: { className?: string }) {
         onPressedChange={(on) => void run(() => (on ? apply() : stopQuietCycle()))}
         disabled={agentBaseUrl() === null || busy || (!running && !quiet.available)}
         aria-label="Quiet Mode Loop: repeat Quiet Mode at an interval"
-        title="Repeat Quiet Mode on and off at this interval; the agent keeps the time, also with the browser closed"
+        title="Every interval, all phones go quiet (screen off, muted) for about a minute, then back to normal. A phone that connects meanwhile goes quiet at once. The agent keeps the time, also with the browser closed."
         data-quiet-repeat-toggle
         size="md"
       >
@@ -81,7 +81,7 @@ export function QuietRepeat({ className }: { className?: string }) {
       </Toggle>
       {running && (
         <div data-quiet-repeat-panel className="flex flex-wrap items-center gap-2">
-          <span className="text-meta text-[var(--pc-muted)]">Every</span>
+          <span className="text-meta text-[var(--pc-muted)]">Quiet for a minute, every</span>
           <input
             type="number"
             inputMode="numeric"

@@ -698,23 +698,21 @@ fn calls(log: &std::path::Path) -> String {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn a_returning_phone_gets_its_screen_on_unless_the_loop_is_quiet() {
+async fn a_returning_phone_gets_its_screen_on_unless_the_loop_is_running() {
     let _guard = quiet_lock();
     let (adb, log) = recording_adb();
     let state = AppState::new(Role::Controller, "rec".into(), "rec".into(), 0, Some(adb));
 
-    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Quiet);
-    state.restore_screen_after_reconnect("FAKE1").await;
-    assert!(!calls(&log).contains("KEYCODE_WAKEUP"), "the Quiet phase keeps the screen off");
-
-    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Normal);
-    state.restore_screen_after_reconnect("FAKE1").await;
-    assert!(calls(&log).contains("-s FAKE1 shell input keyevent KEYCODE_WAKEUP"));
+    // The loop quiets a phone itself, so a returning phone is not woken, in either phase.
+    for phase in [crate::quiet_cycle::Phase::Quiet, crate::quiet_cycle::Phase::Normal] {
+        crate::quiet_cycle::start(600, phase);
+        state.restore_screen_after_reconnect("FAKE1").await;
+        assert!(!calls(&log).contains("KEYCODE_WAKEUP"), "{phase:?}");
+    }
 
     crate::quiet_cycle::stop();
-    let before = calls(&log).lines().count();
     state.restore_screen_after_reconnect("FAKE2").await;
-    assert!(calls(&log).lines().count() > before, "no loop: a returning phone is woken");
+    assert!(calls(&log).contains("-s FAKE2 shell input keyevent KEYCODE_WAKEUP"), "no loop: a returning phone is woken");
 }
 
 #[cfg(unix)]
@@ -756,5 +754,36 @@ async fn quiet_cycle_keeps_a_phone_pending_until_both_sound_and_screen_succeed()
     crate::quiet_cycle::reconcile(&state).await;
     assert!(serials.iter().all(|s| !muted(s)), "an operation that already succeeded is not repeated");
     assert!(serials.iter().all(|s| crate::quiet_cycle::done_for(s) == Some((true, false))), "the screen is still pending");
+    crate::quiet_cycle::stop();
+}
+
+#[tokio::test]
+async fn a_phone_that_connects_during_a_normal_phase_goes_quiet_at_once() {
+    let _guard = quiet_lock();
+    let state = AppState::new(Role::Controller, "q".into(), "q".into(), 0, None);
+    let full = state.inner.devices.read().await.clone();
+    let late = full.iter().find(|d| d.status == DeviceStatus::Online).cloned().expect("online phone");
+    let others: Vec<String> = online_serials(&state).await.into_iter().filter(|s| *s != late.serial).collect();
+    mock_muted().lock().unwrap_or_else(|e| e.into_inner()).clear();
+
+    // The loop starts in its Normal phase with the late phone not yet connected.
+    *state.inner.devices.write().await = full.iter().filter(|d| d.serial != late.serial).cloned().collect();
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Normal);
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(others.iter().all(|s| !muted(s)), "phones that were already here stay normal in a Normal phase");
+
+    // It connects: quiet right away, while the others are untouched.
+    *state.inner.devices.write().await = full.clone();
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(muted(&late.serial), "the new phone is muted at once");
+    assert!(others.iter().all(|s| !muted(s)), "the others stay normal");
+
+    // It drops and comes back: new again, quiet again.
+    mock_muted().lock().unwrap_or_else(|e| e.into_inner()).insert(late.serial.clone(), false);
+    *state.inner.devices.write().await = full.iter().filter(|d| d.serial != late.serial).cloned().collect();
+    crate::quiet_cycle::reconcile(&state).await;
+    *state.inner.devices.write().await = full;
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(muted(&late.serial), "a reconnecting phone goes quiet too");
     crate::quiet_cycle::stop();
 }
