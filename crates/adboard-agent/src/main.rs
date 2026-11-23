@@ -3,6 +3,7 @@ mod api;
 mod app_controls;
 mod app_icon;
 mod audio;
+mod backoff;
 mod cron;
 mod device_manager;
 mod device_models;

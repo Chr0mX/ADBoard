@@ -744,6 +744,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         inject: state.inject_mode(),
         port: state.inner.port,
         registered_hosts: registered,
+        controller_link: (state.role() == Role::Agent).then(crate::mesh_client::link_status),
     })
 }
 
@@ -1816,7 +1817,9 @@ async fn handle_agent_socket(socket: WebSocket, state: AppState) {
         return;
     }
 
-    let registered_host = std::sync::Arc::new(tokio::sync::Mutex::new(None::<String>));
+    let registered_host = std::sync::Arc::new(tokio::sync::Mutex::new(None::<(String, u64)>));
+    // Wakes this connection's tasks when it is replaced by a newer one or goes silent.
+    let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
 
     // Forward controller→agent commands.
     let mut send_task = tokio::spawn(async move {
@@ -1829,13 +1832,14 @@ async fn handle_agent_socket(socket: WebSocket, state: AppState) {
 
     let state_in = state.clone();
     let registered_in = registered_host.clone();
+    let cancel_in = cancel.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 Message::Text(text) => match serde_json::from_str::<AgentToController>(&text) {
                     Ok(frame) => {
                         if let Err(e) =
-                            handle_agent_frame(&state_in, &mesh, &cmd_tx, &registered_in, frame)
+                            handle_agent_frame(&state_in, &mesh, &cmd_tx, &cancel_in, &registered_in, frame)
                                 .await
                         {
                             warn!(error = %e, "agent frame handling failed");
@@ -1851,17 +1855,40 @@ async fn handle_agent_socket(socket: WebSocket, state: AppState) {
         }
     });
 
+    // An agent sends a heartbeat every few seconds; a connection that has gone silent for this
+    // long (a half-open TCP connection after a network change or a crash) is closed, so the host
+    // does not linger as connected and the agent's next attempt registers cleanly.
+    let silent = async {
+        let mut check = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            check.tick().await;
+            let registered = registered_host.lock().await.clone();
+            if let Some((id, conn)) = registered {
+                if let Some(age) = state.mesh().silence_of(&id, conn).await {
+                    if age > crate::mesh::AGENT_DEAD_AFTER {
+                        warn!(host_id = %id, silent_secs = age.as_secs(), "agent went silent; closing its connection");
+                        return;
+                    }
+                }
+            }
+        }
+    };
     tokio::select! {
         _ = &mut send_task => recv_task.abort(),
         _ = &mut recv_task => send_task.abort(),
+        _ = cancel.notified() => { send_task.abort(); recv_task.abort(); }
+        _ = silent => { send_task.abort(); recv_task.abort(); }
     }
 
-    if let Some(id) = registered_host.lock().await.clone() {
-        state.mesh().unregister(&id).await;
-        state.publish_fleet().await;
-        state.publish(ServerEvent::Notice {
-            message: format!("agent {id} disconnected"),
-        });
+    let registered = registered_host.lock().await.clone();
+    if let Some((id, conn)) = registered {
+        // Only the connection that is still the registered one removes the host.
+        if state.mesh().unregister_conn(&id, conn).await {
+            state.publish_fleet().await;
+            state.publish(ServerEvent::Notice {
+                message: format!("agent {id} disconnected"),
+            });
+        }
     }
     info!("agent websocket disconnected");
 }
@@ -1870,20 +1897,23 @@ async fn handle_agent_frame(
     state: &AppState,
     mesh: &std::sync::Arc<crate::mesh::MeshRegistry>,
     cmd_tx: &mpsc::UnboundedSender<ControllerToAgent>,
-    registered_host: &std::sync::Arc<tokio::sync::Mutex<Option<String>>>,
+    cancel: &std::sync::Arc<tokio::sync::Notify>,
+    registered_host: &std::sync::Arc<tokio::sync::Mutex<Option<(String, u64)>>>,
     frame: AgentToController,
 ) -> Result<(), String> {
     match frame {
         AgentToController::Hello(hello) => {
-            mesh.register(
-                hello.host_id.clone(),
-                hello.host_name.clone(),
-                hello.os.clone(),
-                cmd_tx.clone(),
-                hello.http_base.clone(),
-            )
-            .await?;
-            *registered_host.lock().await = Some(hello.host_id.clone());
+            let conn_id = mesh
+                .register(
+                    hello.host_id.clone(),
+                    hello.host_name.clone(),
+                    hello.os.clone(),
+                    cmd_tx.clone(),
+                    hello.http_base.clone(),
+                    cancel.clone(),
+                )
+                .await?;
+            *registered_host.lock().await = Some((hello.host_id.clone(), conn_id));
             state.publish(ServerEvent::Notice {
                 message: format!(
                     "agent registered: {} ({}){}",

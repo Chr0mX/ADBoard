@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { alertDetail, diffConnections, type SeenMap } from "./connection-alerts-core.ts";
 
-const phone = (id: string, status: "online" | "offline" | "unauthorized", serial = `SER-${id}`) => ({ id, serial, status });
+const phone = (id: string, status: "online" | "offline" | "unauthorized" | "stale", serial = `SER-${id}`) => ({ id, serial, status });
 
 test("the first list gives no alerts, only a starting point", () => {
   const { alerts, next } = diffConnections(null, [phone("a", "online"), phone("b", "offline")]);
@@ -55,4 +55,14 @@ test("waiting for USB debugging approval is not a reconnection", () => {
 test("the detail line carries the serial", () => {
   assert.equal(alertDetail({ id: "a", kind: "disconnected", serial: "SM-G998B" }), "SM-G998B · ADB connection lost");
   assert.equal(alertDetail({ id: "a", kind: "connected", serial: "R5CW" }), "R5CW · ADB connection restored");
+});
+
+test("an unreachable agent (stale phones) gives no alert, and recovery gives none for unchanged phones", () => {
+  let seen: SeenMap = diffConnections(null, [phone("a", "online"), phone("b", "online")]).next;
+  const down = diffConnections(seen, [phone("a", "stale"), phone("b", "stale")]);
+  assert.deepEqual(down.alerts, []);
+  seen = down.next;
+  // The agent is back: a is still online, b really dropped meanwhile.
+  const back = diffConnections(seen, [phone("a", "online"), phone("b", "offline")]);
+  assert.deepEqual(back.alerts, [{ id: "b", kind: "disconnected", serial: "SER-b" }]);
 });

@@ -1,5 +1,9 @@
 export type ConnectionType = "usb" | "network";
-export type DeviceStatus = "online" | "offline" | "unauthorized";
+/**
+ * `stale` is made by the page, never sent by the agent: the phone was online at the last answer, but
+ * the agent cannot be reached now, so that answer is old.
+ */
+export type DeviceStatus = "online" | "offline" | "unauthorized" | "stale";
 export type ControlMode = "selected" | "multi" | "all";
 export type InjectStatus = "ok" | "stub" | "error";
 export type StreamState = "idle" | "starting" | "streaming" | "error";

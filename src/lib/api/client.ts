@@ -107,6 +107,8 @@ export interface DevicesClient {
   subscribeDevices?(
     onDevices: (devices: Device[]) => void,
     onSession?: (session: SessionStatus) => void,
+    /** The live socket opened (true) or was lost (false). The list is re-checked over HTTP on loss. */
+    onLink?: (up: boolean) => void,
   ): () => void;
 }
 
@@ -701,7 +703,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       return (await res.json()) as SessionStatus[];
     },
 
-    subscribeDevices(onDevices, onSession) {
+    subscribeDevices(onDevices, onSession, onLink) {
       let closed = false;
       let socket: WebSocket | null = null;
       let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -709,7 +711,13 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
       const backoff = createBackoff();
       // One list fetch at a time, however many device_updated events arrive.
       const refresh = createCoalescedRefresh(
-        () => agentFetch(`${base}/api/devices`, { cache: "no-store" }).then((r) => r.json() as Promise<Device[]>),
+        () =>
+          agentFetch(`${base}/api/devices`, { cache: "no-store" }).then(async (r) => {
+            if (!r.ok) throw new Error(`the agent answered ${r.status}`);
+            const list = (await r.json()) as unknown;
+            if (!Array.isArray(list)) throw new Error("the agent sent an unexpected device list");
+            return list as Device[];
+          }),
         (devices) => {
           if (!closed) onDevices(devices);
         },
@@ -741,9 +749,13 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
                 // ignore malformed frames
               }
             };
-            socket.onopen = () => backoff.reset();
+            socket.onopen = () => {
+              backoff.reset();
+              onLink?.(true);
+            };
             socket.onclose = () => {
               if (!closed) {
+                onLink?.(false);
                 // Usually the agent restarted, and with it the token: fetch it again.
                 forgetAgentToken();
                 retryTimer = setTimeout(connect, backoff.next());
@@ -755,6 +767,7 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
           })
           .catch(() => {
             if (!closed) {
+              onLink?.(false);
               retryTimer = setTimeout(connect, backoff.next());
             }
           });

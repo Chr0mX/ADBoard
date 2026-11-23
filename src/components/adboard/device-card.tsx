@@ -27,6 +27,8 @@ function statusLabel(status: Device["status"]) {
       return "Online";
     case "unauthorized":
       return "Unauthorized";
+    case "stale":
+      return "Unreachable";
     default:
       return "Offline";
   }

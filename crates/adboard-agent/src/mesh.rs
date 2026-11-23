@@ -12,6 +12,8 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 const AGENT_STALE_SECS: u64 = 15;
+/// An agent connection silent for this long is closed by the controller (heartbeats come every 5 s).
+pub const AGENT_DEAD_AFTER: Duration = Duration::from_secs(45);
 const PROXY_TIMEOUT: Duration = Duration::from_secs(8);
 
 pub type CmdTx = mpsc::UnboundedSender<ControllerToAgent>;
@@ -44,6 +46,11 @@ pub struct RemoteHost {
     pub cmd_tx: CmdTx,
     /// Agent HTTP base for video WS proxy (`http://host:port`).
     pub http_base: Option<String>,
+    /// Which connection registered this host. A connection that has been replaced must not
+    /// remove its successor when it finally ends (`unregister_conn`).
+    pub conn_id: u64,
+    /// Wakes the connection's socket task so it stops (it was replaced, or went silent).
+    pub cancel: Arc<tokio::sync::Notify>,
 }
 
 /// Controller-side registry of connected agents.
@@ -92,15 +99,21 @@ impl MeshRegistry {
         os: String,
         cmd_tx: CmdTx,
         http_base: Option<String>,
-    ) -> Result<(), String> {
+        cancel: Arc<tokio::sync::Notify>,
+    ) -> Result<u64, String> {
+        static CONNECTIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let conn_id = CONNECTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut hosts = self.hosts.write().await;
         if let Some(existing) = hosts.get(&host_id) {
-            // Replace stale connection for the same host id.
+            // The same agent connected again (it restarted, or its old connection died silently):
+            // the old connection is finished, so stop its tasks instead of leaving them running.
             warn!(
                 host_id = %host_id,
+                old_connection = existing.conn_id,
+                new_connection = conn_id,
                 "replacing existing agent connection"
             );
-            let _ = existing.cmd_tx.send(ControllerToAgent::Ping { at: now_ms() });
+            existing.cancel.notify_one();
         }
         hosts.insert(
             host_id.clone(),
@@ -113,10 +126,21 @@ impl MeshRegistry {
                 sessions: HashMap::new(),
                 cmd_tx,
                 http_base,
+                conn_id,
+                cancel,
             },
         );
-        info!(%host_id, "agent registered");
-        Ok(())
+        info!(%host_id, conn_id, "agent registered");
+        Ok(conn_id)
+    }
+
+    /// How long since the agent last sent anything (None when it is not registered).
+    pub async fn silence_of(&self, host_id: &str, conn_id: u64) -> Option<Duration> {
+        let hosts = self.hosts.read().await;
+        hosts
+            .get(host_id)
+            .filter(|h| h.conn_id == conn_id)
+            .map(|h| h.last_seen.elapsed())
     }
 
     pub async fn http_base(&self, host_id: &str) -> Option<String> {
@@ -127,10 +151,21 @@ impl MeshRegistry {
             .and_then(|h| h.http_base.clone())
     }
 
-    pub async fn unregister(&self, host_id: &str) {
+    /// Remove `host_id` only if it is still registered by connection `conn_id`. A connection that
+    /// was replaced by a newer one (the agent reconnected) ends later and must not remove it.
+    pub async fn unregister_conn(&self, host_id: &str, conn_id: u64) -> bool {
         let mut hosts = self.hosts.write().await;
-        if hosts.remove(host_id).is_some() {
-            info!(%host_id, "agent unregistered");
+        match hosts.get(host_id) {
+            Some(host) if host.conn_id == conn_id => {
+                hosts.remove(host_id);
+                info!(%host_id, conn_id, "agent unregistered");
+                true
+            }
+            Some(host) => {
+                info!(%host_id, conn_id, current = host.conn_id, "an old agent connection ended; the newer one stays");
+                false
+            }
+            None => false,
         }
     }
 
@@ -507,6 +542,61 @@ pub fn controller_ws_url() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn registry() -> Arc<MeshRegistry> {
+        MeshRegistry::new("ctl".into(), "controller".into())
+    }
+
+    async fn register(mesh: &MeshRegistry, id: &str) -> (u64, Arc<tokio::sync::Notify>) {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let cancel = Arc::new(tokio::sync::Notify::new());
+        let conn = mesh
+            .register(id.into(), id.into(), "linux".into(), tx, None, cancel.clone())
+            .await
+            .unwrap();
+        (conn, cancel)
+    }
+
+    #[tokio::test]
+    async fn an_old_connection_ending_does_not_remove_the_newer_one() {
+        let mesh = registry();
+        let (old, old_cancel) = register(&mesh, "lxc").await;
+        let (new, _new_cancel) = register(&mesh, "lxc").await; // the agent reconnected
+        assert_ne!(old, new);
+        // The old connection is told to stop...
+        tokio::time::timeout(Duration::from_secs(1), old_cancel.notified()).await.expect("the old connection is cancelled");
+        // ...and when it finally ends it must not take the new registration with it.
+        assert!(!mesh.unregister_conn("lxc", old).await);
+        assert!(mesh.silence_of("lxc", new).await.is_some(), "the host is still registered");
+        assert!(mesh.unregister_conn("lxc", new).await);
+        assert!(mesh.silence_of("lxc", new).await.is_none());
+        assert!(!mesh.unregister_conn("lxc", new).await, "removing twice is harmless");
+    }
+
+    #[tokio::test]
+    async fn several_agents_disconnecting_together_do_not_affect_each_other() {
+        let mesh = registry();
+        let mut conns = Vec::new();
+        for id in ["a", "b", "c"] {
+            conns.push((id, register(&mesh, id).await.0));
+        }
+        // a and b drop at the same moment; c keeps running.
+        let (ra, rb) = tokio::join!(mesh.unregister_conn("a", conns[0].1), mesh.unregister_conn("b", conns[1].1));
+        assert!(ra && rb);
+        assert!(mesh.silence_of("c", conns[2].1).await.is_some());
+        assert_eq!(mesh.registered_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn the_silence_of_a_connection_resets_when_the_agent_is_heard() {
+        let mesh = registry();
+        let (conn, _) = register(&mesh, "lxc").await;
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert!(mesh.silence_of("lxc", conn).await.unwrap() >= Duration::from_millis(80));
+        mesh.touch("lxc").await;
+        assert!(mesh.silence_of("lxc", conn).await.unwrap() < Duration::from_millis(80));
+        assert!(mesh.silence_of("lxc", conn + 1).await.is_none(), "another connection's number is not this host's");
+    }
 
     #[test]
     fn parses_controller_url_variants() {

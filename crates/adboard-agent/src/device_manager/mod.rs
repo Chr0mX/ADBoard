@@ -1,9 +1,11 @@
 //! Device manager — owns the live fleet, ADB polling, mesh merge, and event fan-out.
 
+mod connections;
 mod fanout;
 mod input;
 use input::frame_tap;
 mod virtual_displays;
+mod tracker;
 mod watcher;
 
 use crate::adb::{self, AdbDeviceLine};
@@ -29,6 +31,8 @@ use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 
 const ADB_POLL_SECS: u64 = 2;
+/// The poll interval while the `adb track-devices` stream is delivering (the poll is then a safety net).
+const ADB_POLL_SECS_WITH_TRACKER: u64 = 6;
 const SESSION_REAP_SECS: u64 = 3;
 /// Optional `wm size` applied whenever a phone comes online, from
 /// `ADBOARD_CONNECT_DISPLAY_SIZE` (e.g. `900x1600`). Off by default:
@@ -80,6 +84,8 @@ pub struct InnerState {
     pub qr_pairs: Mutex<HashMap<String, QrPairSlot>>,
     /// Shared secret for HTTP and WebSocket API calls (`ADBOARD_TOKEN`).
     pub api_token: String,
+    /// Which phones are connected, their connection generations, and the poll wake-up.
+    pub connections: connections::ConnectionHub,
 }
 
 pub struct QrPairSlot {
@@ -175,6 +181,7 @@ impl AppState {
                 display_size_overrides: Mutex::new(HashSet::new()),
                 qr_pairs: Mutex::new(HashMap::new()),
                 api_token,
+                connections: connections::ConnectionHub::default(),
             }),
         };
         let events = app.inner.events.clone();

@@ -37,12 +37,18 @@ export function diffConnections(
   devices: ReadonlyArray<{ id: string; serial: string; status: DeviceStatus }>,
 ): { alerts: ConnectionAlert[]; next: SeenMap } {
   const next = new Map<string, Seen>();
-  for (const device of devices) next.set(device.id, { status: device.status, serial: device.serial });
+  // A "stale" phone means the agent cannot be reached, not that the phone dropped: no alert either way,
+  // and the state from before is kept so the real change shows up once the agent answers.
+  for (const device of devices) {
+    const before = previous?.get(device.id);
+    next.set(device.id, device.status === "stale" && before ? before : { status: device.status, serial: device.serial });
+  }
   const alerts: ConnectionAlert[] = [];
   if (previous === null) return { alerts, next };
   for (const [id, now] of next) {
     const before = previous.get(id);
     if (!before) continue;
+    if (now.status === "stale") continue;
     if (before.status === "online" && now.status !== "online") alerts.push({ id, kind: "disconnected", serial: now.serial });
     else if (before.status !== "online" && now.status === "online") alerts.push({ id, kind: "connected", serial: now.serial });
   }

@@ -815,7 +815,7 @@ const TouchScreenTile = memo(function TouchScreenTile({
             )}
             {offline && (
               <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center text-meta text-white/70">
-                {device.status === "unauthorized" ? "Unauthorized" : "ADB offline"}
+                {device.status === "unauthorized" ? "Unauthorized" : device.status === "stale" ? "Agent unreachable" : "ADB offline"}
               </p>
             )}
           </div>
@@ -959,7 +959,7 @@ const TouchScreenTile = memo(function TouchScreenTile({
         )}
         {offline && (
           <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center text-meta text-white/70">
-            {device.status === "unauthorized" ? "Unauthorized" : "ADB offline"}
+            {device.status === "unauthorized" ? "Unauthorized" : device.status === "stale" ? "Agent unreachable" : "ADB offline"}
           </p>
         )}
       </div>

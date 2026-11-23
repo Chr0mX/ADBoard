@@ -362,6 +362,28 @@ pub struct HealthResponse {
     pub port: u16,
     #[serde(default)]
     pub registered_hosts: usize,
+    /// On an agent: how its connection to the controller is doing (absent on a controller).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_link: Option<ControllerLink>,
+}
+
+/// An agent's connection to its controller, for diagnostics (`GET /health`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControllerLink {
+    /// `connecting`, `connected` or `retrying`.
+    pub state: String,
+    /// Failed attempts in a row (0 while connected).
+    pub failures: u32,
+    /// Connections made since the agent started.
+    pub connections: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_connected_ms: Option<u64>,
+    /// When the next attempt is due (ms since the epoch), while retrying.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_attempt_ms: Option<u64>,
 }
 
 /// Server → UI WebSocket frames.

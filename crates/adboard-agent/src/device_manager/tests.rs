@@ -1,5 +1,5 @@
 use super::watcher::{
-    connection_events, describe_adb_failure, reconnect_delay, recovery_actions, FailureStep, PollHealth, RecoveryAction, Reconnects, ServerFix,
+    describe_adb_failure, reconnect_delay, recovery_actions, FailureStep, PollHealth, RecoveryAction, Reconnects, ServerFix,
     RECONNECT_MAX_ATTEMPTS,
 };
 use super::*;
@@ -880,33 +880,6 @@ fn device_at(template: &Device, serial: &str, status: DeviceStatus) -> Device {
     d
 }
 
-#[tokio::test]
-async fn connection_events_name_new_and_dropped_phones_only() {
-    let state = AppState::new(Role::Controller, "e".into(), "e".into(), 0, None);
-    let template = state.list_devices().await.remove(0);
-    let mut previous = HashMap::new();
-    previous.insert("A".to_string(), DeviceStatus::Online);
-    previous.insert("B".to_string(), DeviceStatus::Online);
-    previous.insert("C".to_string(), DeviceStatus::Offline);
-    previous.insert("GONE".to_string(), DeviceStatus::Online);
-    let next = vec![
-        device_at(&template, "A", DeviceStatus::Online),  // unchanged
-        device_at(&template, "B", DeviceStatus::Offline), // dropped
-        device_at(&template, "C", DeviceStatus::Online),  // came back
-        device_at(&template, "NEW", DeviceStatus::Online), // first seen
-    ];
-    let (connected, disconnected) = connection_events(&previous, &next);
-    assert_eq!(connected, vec!["C".to_string(), "NEW".to_string()]);
-    assert_eq!(disconnected, vec!["B".to_string(), "GONE".to_string()], "a phone gone from the list dropped too");
-    // Polling the same state again reports nothing.
-    let mut again = HashMap::new();
-    for d in &next {
-        again.insert(d.serial.clone(), d.status);
-    }
-    let (c, d) = connection_events(&again, &next);
-    assert!(c.is_empty() || c == vec![] as Vec<String>);
-    assert_eq!(d, Vec::<String>::new());
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn enabling_the_loop_wakes_a_sleeping_task_and_phones_go_quiet_at_once() {
@@ -1020,4 +993,222 @@ async fn turning_the_loop_off_while_a_round_runs_still_ends_restored() {
     assert!(!status.enabled);
     assert!(serials.iter().all(|s| !muted(s)), "restored, not left quiet by the round");
     assert!(!screen_off_now(&state));
+}
+
+// ---- adb track-devices, connection generations ----
+
+mod tracking {
+    use super::super::connections::{ConnectionBook, Transition};
+    use super::super::tracker::{apply_frame, parse_track_payload, read_frame, track_once};
+    use super::super::watcher::generation_restarts;
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn state() -> AppState {
+        AppState::new(Role::Controller, "t".into(), "t".into(), 0, None)
+    }
+
+    fn frame(lines: &[(&str, DeviceStatus)]) -> Vec<(String, DeviceStatus)> {
+        lines.iter().map(|(s, st)| (s.to_string(), *st)).collect()
+    }
+
+    #[test]
+    fn a_track_payload_is_parsed_and_malformed_lines_are_skipped() {
+        let parsed = parse_track_payload("R5CW\tdevice\nAAA\toffline\nBBB\tunauthorized\ngarbage\n\n192.168.1.5:5555\tdevice\nXYZ\trecovery\n");
+        assert_eq!(
+            parsed,
+            vec![
+                ("R5CW".to_string(), DeviceStatus::Online),
+                ("AAA".to_string(), DeviceStatus::Offline),
+                ("BBB".to_string(), DeviceStatus::Unauthorized),
+                ("192.168.1.5:5555".to_string(), DeviceStatus::Online),
+                ("XYZ".to_string(), DeviceStatus::Offline),
+            ]
+        );
+        assert!(parse_track_payload("").is_empty());
+    }
+
+    #[tokio::test]
+    async fn frames_are_read_and_a_malformed_or_cut_frame_is_an_error() {
+        let mut ok: &[u8] = b"000bR5CW\tdevice";
+        assert_eq!(read_frame(&mut ok).await.unwrap(), "R5CW\tdevice");
+        let mut bad_hex: &[u8] = b"zzzzabc";
+        assert!(read_frame(&mut bad_hex).await.unwrap_err().contains("malformed"));
+        // The longest possible frame (0xffff) announced but not delivered: the stream ended mid-frame.
+        let mut huge: &[u8] = b"ffffabc";
+        assert!(read_frame(&mut huge).await.unwrap_err().contains("ended"));
+        let mut cut: &[u8] = b"0010short";
+        assert!(read_frame(&mut cut).await.unwrap_err().contains("ended"));
+        let mut empty: &[u8] = b"";
+        assert!(read_frame(&mut empty).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn the_handshake_asks_for_track_devices_and_delivers_each_frame() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let server_task = tokio::spawn(async move {
+            let mut request = vec![0u8; 22];
+            server.read_exact(&mut request).await.unwrap();
+            assert_eq!(&request, b"0012host:track-devices");
+            server.write_all(b"OKAY").await.unwrap();
+            server.write_all(b"000bR5CW\tdevice").await.unwrap();
+            server.write_all(b"0000").await.unwrap(); // an empty list: everything dropped
+            // dropping the stream ends it
+        });
+        let mut seen: Vec<usize> = Vec::new();
+        let result = track_once(&mut client, |f| seen.push(f.len())).await;
+        server_task.await.unwrap();
+        assert!(result.unwrap_err().contains("ended"), "the end of the stream is reported, so the caller reconnects");
+        assert_eq!(seen, vec![1, 0]);
+    }
+
+    #[tokio::test]
+    async fn a_refusal_from_adb_is_an_error() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            let mut request = vec![0u8; 22];
+            server.read_exact(&mut request).await.unwrap();
+            server.write_all(b"FAIL0005nope!").await.unwrap();
+        });
+        let error = track_once(&mut client, |_| {}).await.unwrap_err();
+        assert!(error.contains("refused") && error.contains("nope!"), "{error}");
+    }
+
+    #[test]
+    fn the_connection_book_counts_each_change_once() {
+        let book = ConnectionBook::default();
+        assert_eq!(book.observe("A", true), Some((Transition::Connected, 1)));
+        assert_eq!(book.observe("A", true), None, "the same event again is nothing");
+        assert_eq!(book.observe("A", false), Some((Transition::Disconnected, 2)));
+        assert_eq!(book.observe("A", false), None);
+        assert_eq!(book.observe("A", true), Some((Transition::Connected, 3)));
+        assert_eq!(book.generation("A"), 3);
+        assert_eq!(book.observe("B", false), None, "first seen offline is only recorded");
+        assert_eq!(book.generation("B"), 0);
+        assert_eq!(book.observe("B", true), Some((Transition::Connected, 1)));
+        assert_eq!(book.generation("A"), 3, "each phone has its own generation");
+    }
+
+    #[tokio::test]
+    async fn a_disconnect_and_reconnect_between_two_polls_is_caught_by_the_stream() {
+        let state = state();
+        let mut last = HashMap::new();
+        apply_frame(&state, &mut last, frame(&[("A", DeviceStatus::Online)]));
+        let before = state.connection_generation("A");
+        // Unplugged and replugged: two frames, then the poll only ever sees A online.
+        apply_frame(&state, &mut last, frame(&[]));
+        apply_frame(&state, &mut last, frame(&[("A", DeviceStatus::Online)]));
+        assert_eq!(state.connection_generation("A"), before + 2, "a drop and a return are both counted");
+        // The poll sees A online and reports nothing new: it is the same connection state.
+        assert!(state.observe_connection("A", true, "poll").is_none());
+        // And the watcher turns the generation change into one restart.
+        let mut handled = HashMap::from([("A".to_string(), before)]);
+        let restarts = generation_restarts(&["A"], &mut handled, &|s| state.connection_generation(s), &Default::default());
+        assert_eq!(restarts, vec!["A".to_string()]);
+        let again = generation_restarts(&["A"], &mut handled, &|s| state.connection_generation(s), &Default::default());
+        assert!(again.is_empty(), "handled once");
+    }
+
+    #[tokio::test]
+    async fn duplicate_frames_and_a_stream_plus_poll_report_nothing_twice() {
+        let state = state();
+        let mut last = HashMap::new();
+        let f = frame(&[("A", DeviceStatus::Online), ("B", DeviceStatus::Unauthorized)]);
+        apply_frame(&state, &mut last, f.clone());
+        let (ga, gb) = (state.connection_generation("A"), state.connection_generation("B"));
+        for _ in 0..5 {
+            apply_frame(&state, &mut last, f.clone());
+        }
+        assert_eq!((state.connection_generation("A"), state.connection_generation("B")), (ga, gb));
+        assert!(state.observe_connection("A", true, "poll").is_none());
+        assert!(state.observe_connection("B", false, "poll").is_none());
+    }
+
+    #[tokio::test]
+    async fn after_the_stream_restarts_a_phone_missing_from_the_first_new_frame_dropped() {
+        let state = state();
+        let mut last = HashMap::new();
+        apply_frame(&state, &mut last, frame(&[("A", DeviceStatus::Online), ("B", DeviceStatus::Online)]));
+        // The stream broke and came back (`last` is kept by the caller): B is gone from its first list.
+        apply_frame(&state, &mut last, frame(&[("A", DeviceStatus::Online)]));
+        assert!(!state.inner.connections.book.is_online("B"));
+        assert!(state.inner.connections.book.is_online("A"));
+        assert_eq!(state.connection_generation("A"), 1, "A was untouched");
+    }
+
+    #[test]
+    fn a_planned_restart_is_not_doubled_and_a_new_phone_is_only_recorded() {
+        let mut handled = HashMap::new();
+        let generations = |s: &str| if s == "A" { 5 } else { 1 };
+        assert!(generation_restarts(&["A", "B"], &mut handled, &generations, &Default::default()).is_empty(), "first sight");
+        let planned: std::collections::HashSet<String> = ["A".to_string()].into();
+        let moved = |s: &str| if s == "A" { 7 } else { 1 };
+        assert!(generation_restarts(&["A", "B"], &mut handled, &moved, &planned).is_empty(), "the poll already plans A");
+        assert_eq!(handled["A"], 7, "but it is marked as handled");
+        let both = |s: &str| if s == "B" { 3 } else { 7 };
+        assert_eq!(generation_restarts(&["A", "B"], &mut handled, &both, &Default::default()), vec!["B".to_string()], "only the phone that moved");
+    }
+
+    /// A fake adb server: each connection gets the script's next entry (frames to send, then the
+    /// connection is closed), so a test can break the stream and watch the tracker come back.
+    async fn fake_adb(script: Vec<Vec<String>>) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let handle = tokio::spawn(async move {
+            for frames in script {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = vec![0u8; 22];
+                if socket.read_exact(&mut request).await.is_err() {
+                    continue;
+                }
+                let _ = socket.write_all(b"OKAY").await;
+                for payload in frames {
+                    let wire = if payload.starts_with("RAW:") { payload[4..].to_string() } else { format!("{:04x}{payload}", payload.len()) };
+                    let _ = socket.write_all(wire.as_bytes()).await;
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        (addr, handle)
+    }
+
+    async fn until(mut check: impl FnMut() -> bool, secs: u64) -> bool {
+        let start = std::time::Instant::now();
+        while !check() && start.elapsed() < Duration::from_secs(secs) {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        check()
+    }
+
+    #[tokio::test]
+    async fn the_tracker_follows_a_real_stream_wakes_the_poll_and_recovers_after_failures() {
+        let (addr, server) = fake_adb(vec![
+            // 1st connection: A appears, then the stream ends.
+            vec!["AAA\tdevice\n".into()],
+            // 2nd: garbage that is not a frame length: the tracker must give up on it and reconnect.
+            vec!["RAW:zzzzgarbage".into()],
+            // 3rd: A is gone from the first list, B appears.
+            vec!["BBB\tdevice\n".into()],
+        ])
+        .await;
+        let state = state();
+        state.spawn_tracker(addr);
+        let woke = tokio::time::timeout(Duration::from_secs(5), state.inner.connections.poll_wake.notified()).await.is_ok();
+        assert!(woke, "an event wakes the poll loop");
+        assert!(until(|| state.inner.connections.book.is_online("AAA"), 5).await, "the first frame is applied");
+        assert!(until(|| state.inner.connections.book.is_online("BBB"), 20).await, "after a broken stream and a malformed frame it reconnects");
+        assert!(!state.inner.connections.book.is_online("AAA"), "AAA was missing from the list after the restart: dropped");
+        assert_eq!(state.connection_generation("AAA"), 2);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_adb_server_is_retried_quietly_and_changes_nothing() {
+        let state = state();
+        state.spawn_tracker("127.0.0.1:1".into());
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!state.inner.connections.tracker_up.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(state.connection_generation("AAA"), 0);
+    }
 }

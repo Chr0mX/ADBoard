@@ -18,34 +18,25 @@ impl RecoveryAction {
     }
 }
 
-/// Phones that just connected (online now, not online at the previous poll, or never seen)
-/// and phones that just dropped (online at the previous poll, not online now, or gone from
-/// the list). The Quiet Mode Loop is told about each, so it never has to rely on its own check.
-pub(super) fn connection_events(
-    previous: &HashMap<String, DeviceStatus>,
-    next: &[Device],
-) -> (Vec<String>, Vec<String>) {
-    let mut connected = Vec::new();
-    let mut disconnected = Vec::new();
-    let mut listed = std::collections::HashSet::new();
-    for device in next {
-        listed.insert(device.serial.as_str());
-        let was_online = previous.get(&device.serial) == Some(&DeviceStatus::Online);
-        let online = device.status == DeviceStatus::Online;
-        if online && !was_online {
-            connected.push(device.serial.clone());
-        } else if !online && was_online {
-            disconnected.push(device.serial.clone());
+/// Online phones whose connection generation moved since the last poll that handled them: they
+/// reconnected between two polls (the track-devices stream saw them drop and return), so their
+/// stream must be restarted once. A phone seen for the first time is only recorded, and one that
+/// already has a restart planned from the poll's own view is not planned twice.
+pub(super) fn generation_restarts(
+    online: &[&str],
+    handled: &mut HashMap<String, u64>,
+    current: &dyn Fn(&str) -> u64,
+    already_planned: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let mut restart = Vec::new();
+    for serial in online {
+        let generation = current(serial);
+        let before = handled.insert((*serial).to_string(), generation);
+        if matches!(before, Some(old) if old != generation) && !already_planned.contains(*serial) {
+            restart.push((*serial).to_string());
         }
     }
-    for (serial, status) in previous {
-        if *status == DeviceStatus::Online && !listed.contains(serial.as_str()) {
-            disconnected.push(serial.clone());
-        }
-    }
-    connected.sort();
-    disconnected.sort();
-    (connected, disconnected)
+    restart
 }
 
 /// What to do after an ADB poll. One device dropping must not reconnect the others.
@@ -327,8 +318,19 @@ impl AppState {
             let mut previous: HashMap<String, DeviceStatus> = HashMap::new();
             let mut last_recovery: HashMap<String, std::time::Instant> = HashMap::new();
             let mut reconnects = Reconnects::default();
+            // The connection generation of each phone as of the last poll that handled it.
+            let mut handled_generation: HashMap<String, u64> = HashMap::new();
+            // The adb server's own connect / disconnect stream; the poll below stays the authority.
+            if let Some(addr) = super::tracker::track_addr() {
+                state.spawn_tracker(addr);
+            }
             loop {
-                let mut wait = Duration::from_secs(ADB_POLL_SECS);
+                // With the stream delivering, the poll is only a safety net and can relax.
+                let mut wait = if state.inner.connections.tracker_up.load(std::sync::atomic::Ordering::Relaxed) {
+                    Duration::from_secs(ADB_POLL_SECS_WITH_TRACKER)
+                } else {
+                    Duration::from_secs(ADB_POLL_SECS)
+                };
                 match adb::list_adb_devices(&adb).await {
                     Ok(lines) => {
                         if let Some(message) = health.success() {
@@ -345,26 +347,50 @@ impl AppState {
                                 reconnects.recovered(&device.serial);
                             }
                         }
-                        // Tell the Quiet Mode Loop about every connect and disconnect right away.
-                        let (connected, disconnected) = connection_events(&previous, &next);
-                        for serial in &disconnected {
-                            crate::quiet_cycle::note_disconnected(serial);
+                        // Record every connect and disconnect. This is idempotent: the track-devices stream
+                        // may have reported the same change already, and it counts once.
+                        for device in &next {
+                            state.observe_connection(&device.serial, device.status == DeviceStatus::Online, "poll");
                         }
-                        for serial in &connected {
-                            crate::quiet_cycle::note_connected(serial);
+                        for (serial, status) in &previous {
+                            if *status == DeviceStatus::Online && !next.iter().any(|d| &d.serial == serial) {
+                                state.observe_connection(serial, false, "poll");
+                            }
                         }
-                        for action in
-                            recovery_actions(&previous, &next, connect_display_size().is_some())
-                        {
+                        let mut actions = recovery_actions(&previous, &next, connect_display_size().is_some());
+                        // A phone whose connection generation moved since we last looked reconnected between
+                        // two polls (the stream saw it drop and return): restart its stream once, as for a
+                        // reconnect the poll saw itself.
+                        let already: std::collections::HashSet<String> = actions
+                            .iter()
+                            .filter_map(|a| match a {
+                                RecoveryAction::RestartSession { serial } => Some(serial.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        let online: Vec<&str> = next
+                            .iter()
+                            .filter(|d| d.status == DeviceStatus::Online)
+                            .map(|d| d.serial.as_str())
+                            .collect();
+                        let forced: std::collections::HashSet<String> =
+                            generation_restarts(&online, &mut handled_generation, &|serial| state.connection_generation(serial), &already)
+                                .into_iter()
+                                .collect();
+                        for serial in &forced {
+                            actions.push(RecoveryAction::RestartSession { serial: serial.clone() });
+                        }
+                        for action in actions {
                             let serial = action.serial();
                             if let RecoveryAction::RestartAdb { serial } = &action {
                                 reconnects.lost(serial, std::time::Instant::now());
                                 continue;
                             }
-                            let due = last_recovery
-                                .get(serial)
-                                .map(|at| at.elapsed() > Duration::from_secs(20))
-                                .unwrap_or(true);
+                            let due = forced.contains(serial)
+                                || last_recovery
+                                    .get(serial)
+                                    .map(|at| at.elapsed() > Duration::from_secs(20))
+                                    .unwrap_or(true);
                             if !due {
                                 continue;
                             }
@@ -376,11 +402,21 @@ impl AppState {
                                     // Restarting a stream takes several adb calls; it
                                     // must not hold up the poll for the other phones.
                                     let state = state.clone();
+                                    let generation = state.connection_generation(&serial);
                                     tokio::spawn(async move {
+                                        let current = |state: &AppState| state.connection_generation(&serial) == generation;
                                         // The reset sent when the phone dropped fails if the cable was
                                         // pulled first; do it now that adb can reach the phone again.
                                         state.reset_overridden_display_size(&serial).await;
+                                        if !current(&state) {
+                                            info!(%serial, "phone reconnected again; this restart is out of date");
+                                            return;
+                                        }
                                         state.apply_connect_display_size(&serial).await;
+                                        if !current(&state) {
+                                            info!(%serial, "phone reconnected again; this restart is out of date");
+                                            return;
+                                        }
                                         match state.restart_session_local(&serial).await {
                                             Ok(session) => {
                                                 state.publish(ServerEvent::SessionUpdated { session });
@@ -398,8 +434,13 @@ impl AppState {
                         for (serial, tries) in reconnects.due(std::time::Instant::now()) {
                             let adb = adb.clone();
                             let state = state.clone();
+                            let generation = state.connection_generation(&serial);
                             info!(%serial, tries, "phone disconnected — trying to reconnect");
                             tokio::spawn(async move {
+                                // The phone came back (or dropped again) since this try was planned: skip it.
+                                if state.connection_generation(&serial) != generation {
+                                    return;
+                                }
                                 if tries == 0 {
                                     // Once per disconnect; best-effort, often fails if the cable is already gone.
                                     state.reset_overridden_display_size(&serial).await;
@@ -450,7 +491,11 @@ impl AppState {
                         wait = step.wait;
                     }
                 }
-                tokio::time::sleep(wait).await;
+                // An event (a connect or disconnect from the stream) cuts the wait short.
+                tokio::select! {
+                    _ = tokio::time::sleep(wait) => {}
+                    _ = state.inner.connections.poll_wake.notified() => {}
+                }
             }
         });
     }

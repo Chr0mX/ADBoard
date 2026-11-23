@@ -3,7 +3,17 @@
 import { sameSession } from "@/lib/ui/tile-flags";
 import { reuseUnchanged } from "@/lib/devices/fleet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { devicesClient } from "@/lib/api/client";
+import { devicesClient, isAgentConfigured } from "@/lib/api/client";
+import { createBackoff } from "@/lib/api/reconnect-core";
+import {
+  applyFailure,
+  applySnapshot,
+  createSnapshotGate,
+  initialFleet,
+  unreachableMessage,
+  withFreshness,
+  type FleetState,
+} from "@/lib/devices/fleet-state";
 import { MOCK_DEVICES } from "@/lib/devices/mock-data";
 import type {
   ControlMode,
@@ -79,9 +89,18 @@ export interface ADBoardOptions {
 }
 
 export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
-  const [devices, setDevices] = useState<Device[]>([]);
+  // Sample phones only in explicit demo mode (no agent configured); a real fleet is never replaced by them.
+  const demo = !isAgentConfigured();
+  const [fleet, setFleet] = useState<FleetState>(() =>
+    initialFleet(demo, demo ? MOCK_DEVICES.map((d) => ({ ...d })) : []),
+  );
+  const lastOkRef = useRef<number | null>(null);
+  const gateRef = useRef(createSnapshotGate());
+  // While the agent cannot be reached an online phone is shown as stale, so nothing treats it as ready.
+  const devices = useMemo(() => withFreshness(fleet.devices, fleet.connection), [fleet]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setError] = useState<string | null>(null);
+  const error = unreachableMessage(fleet) ?? actionError;
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [storedControlMode, writeControlMode] = useStoredString("adboard-control-mode");
@@ -103,7 +122,13 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
   const applyFleet = useCallback((next: Device[]) => {
     // Keep the previous objects for phones that did not change, so a fleet
     // update that changed nothing visible does not re-render the whole UI.
-    setDevices((prev) => reuseUnchanged(prev, next));
+    const now = Date.now();
+    lastOkRef.current = now;
+    setFleet((prev) => {
+      const merged = reuseUnchanged(prev.devices, next);
+      if (prev.connection === "live" && merged === prev.devices && prev.lastError === null) return prev;
+      return applySnapshot(prev, merged, now);
+    });
     setActiveId((prev) => {
       if (prev && next.some((d) => d.id === prev)) return prev;
       const saved = readSavedDevice();
@@ -134,50 +159,56 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
     });
   }, []);
 
+  // One place that asks the agent for the list. A response only counts if no newer answer arrived
+  // meanwhile; a failure keeps the last known phones and marks them stale until the agent answers.
+  const fetchFleet = useCallback(async (): Promise<boolean> => {
+    const gate = gateRef.current;
+    const token = gate.begin();
+    try {
+      const list = await devicesClient.listDevices();
+      if (gate.accept(token)) applyFleet(list);
+      return true;
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "request failed";
+      if (demo) return false;
+      console.error("[adboard] listDevices failed", err);
+      setFleet((prev) => applyFailure({ ...prev, lastOkAt: lastOkRef.current ?? prev.lastOkAt }, reason));
+      return false;
+    }
+  }, [applyFleet, demo]);
+
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       setLoading(true);
-      try {
-        const list = await devicesClient.listDevices();
-        if (cancelled) return;
-        applyFleet(list);
-        setError(null);
-        if (devicesClient.listSessions) {
-          try {
-            const sess = await devicesClient.listSessions();
-            if (!cancelled) {
-              setSessions(new Map(sess.map((s) => [s.serial, s])));
-            }
-          } catch {
-            // sessions optional
-          }
+      const ok = await fetchFleet();
+      if (cancelled) return;
+      if (ok && devicesClient.listSessions) {
+        try {
+          const sess = await devicesClient.listSessions();
+          if (!cancelled) setSessions(new Map(sess.map((s) => [s.serial, s])));
+        } catch {
+          // sessions optional
         }
-      } catch (err) {
-        if (cancelled) return;
-        console.error("[adboard] listDevices failed", err);
-        // Keep the desk usable if the agent is down.
-        applyFleet(MOCK_DEVICES.map((d) => ({ ...d })));
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to reach control agent — showing mock fleet",
-        );
-      } finally {
-        if (!cancelled) setLoading(false);
       }
+      if (!cancelled) setLoading(false);
     })();
 
     const unsubscribe = devicesClient.subscribeDevices?.(
       (next) => {
-        if (!cancelled) {
-          applyFleet(next);
-          setError(null);
-        }
+        if (cancelled) return;
+        // The agent pushed its list: anything still on its way is older.
+        gateRef.current.markPush();
+        applyFleet(next);
       },
       (session) => {
         if (!cancelled) applySession(session);
+      },
+      (up) => {
+        // The live socket was lost: confirm over HTTP (it fails, and the phones turn stale, only if
+        // the agent really is unreachable). When it opens again the agent sends a fresh list.
+        if (!up && !cancelled) void fetchFleet();
       },
     );
 
@@ -185,7 +216,25 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [applyFleet, applySession]);
+  }, [applyFleet, applySession, fetchFleet]);
+
+  // While the agent is unreachable keep asking, slowly and with jitter, so the page recovers on its own.
+  useEffect(() => {
+    if (demo || fleet.connection !== "unreachable") return;
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const backoff = createBackoff({ baseMs: 1000, maxMs: 10000 });
+    const tick = async () => {
+      if (stop) return;
+      const ok = await fetchFleet();
+      if (!stop && !ok) timer = setTimeout(tick, backoff.next());
+    };
+    timer = setTimeout(tick, backoff.next());
+    return () => {
+      stop = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [demo, fleet.connection, fetchFleet]);
 
   const onlineCount = useMemo(
     () => devices.filter((d) => d.status === "online").length,

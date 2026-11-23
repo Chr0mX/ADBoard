@@ -6,6 +6,7 @@ export function connectionProblemLabel(
   session?: SessionStatus | null,
 ): string | null {
   if (device.status === "unauthorized") return "unauthorized — unlock USB debugging";
+  if (device.status === "stale") return "agent unreachable — last known state";
   if (device.status === "offline") return "ADB offline — reconnect";
   if (device.status !== "online") return device.status;
 
@@ -38,6 +39,13 @@ export function offlineOverlayCopy(device: Device | null): {
       title: "Unauthorized",
       body: "Accept the USB debugging prompt on the phone, then tap Reconnect.",
       showReconnect: true,
+    };
+  }
+  if (device.status === "stale") {
+    return {
+      title: "Agent unreachable",
+      body: "ADBoard cannot reach its agent, so this phone's state is the last one known. Controls come back when the agent answers.",
+      showReconnect: false,
     };
   }
   if (device.status !== "online") {
