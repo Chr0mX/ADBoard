@@ -70,7 +70,7 @@ export function QuietRepeat({ className }: { className?: string }) {
       <Toggle
         pressed={running}
         onPressedChange={(on) => void run(() => (on ? apply() : stopQuietCycle()))}
-        disabled={!agentBaseUrl() || busy || (!running && !quiet.available)}
+        disabled={agentBaseUrl() === null || busy || (!running && !quiet.available)}
         aria-label="Quiet Mode Loop: repeat Quiet Mode at an interval"
         title="Repeat Quiet Mode on and off at this interval; the agent keeps the time, also with the browser closed"
         data-quiet-repeat-toggle

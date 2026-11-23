@@ -39,3 +39,10 @@ test("status line", () => {
   assert.equal(cycleLine("quiet", 9660), "Quiet now · next change in 2 h 41 m");
   assert.equal(cycleLine("normal", 900), "Normal now · next change in 15 m");
 });
+
+test("the Quiet Mode Loop toggle checks for 'no agent' with === null (same-origin is the empty string)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../components/adboard/quiet-repeat.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("agentBaseUrl() === null"));
+  assert.ok(!/!agentBaseUrl\(\)/.test(src), "an empty base URL (the Windows pack) must not disable the toggle");
+});
