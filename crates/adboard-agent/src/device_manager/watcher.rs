@@ -339,6 +339,9 @@ impl AppState {
                                     // must not hold up the poll for the other phones.
                                     let state = state.clone();
                                     tokio::spawn(async move {
+                                        // The reset sent when the phone dropped fails if the cable was
+                                        // pulled first; do it now that adb can reach the phone again.
+                                        state.reset_overridden_display_size(&serial).await;
                                         state.apply_connect_display_size(&serial).await;
                                         match state.restart_session_local(&serial).await {
                                             Ok(session) => {

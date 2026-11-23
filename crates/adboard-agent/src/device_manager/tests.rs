@@ -821,3 +821,26 @@ async fn a_returning_phone_keeps_its_screen_off_while_quiet_mode_is_on() {
     state.restore_screen_after_reconnect("FAKE1").await;
     assert!(calls(&log).contains("KEYCODE_WAKEUP"), "Quiet mode off: woken");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_size_reset_is_remembered_and_done_when_the_phone_is_back() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("adboard-fail-adb-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let failing = dir.join("adb");
+    std::fs::write(&failing, "#!/bin/sh\necho 'device not found' >&2\nexit 1\n").unwrap();
+    std::fs::set_permissions(&failing, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let state = AppState::new(Role::Controller, "f".into(), "f".into(), 0, Some(failing));
+    state.inner.display_size_overrides.lock().unwrap().insert("FAKE1".into());
+    // Cable pulled first: the reset cannot reach the phone, so the override is kept.
+    state.reset_overridden_display_size("FAKE1").await;
+    assert!(state.inner.display_size_overrides.lock().unwrap().contains("FAKE1"));
+    // The phone is back (adb answers): the same call now resets it and forgets the override.
+    let (adb, log) = recording_adb();
+    let back = AppState::new(Role::Controller, "b".into(), "b".into(), 0, Some(adb));
+    back.inner.display_size_overrides.lock().unwrap().insert("FAKE1".into());
+    back.reset_overridden_display_size("FAKE1").await;
+    assert!(calls(&log).contains("-s FAKE1 shell wm size reset"));
+    assert!(!back.inner.display_size_overrides.lock().unwrap().contains("FAKE1"));
+}
