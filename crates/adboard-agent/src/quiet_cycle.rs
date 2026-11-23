@@ -79,7 +79,13 @@ impl Cycle {
     /// Begin `phase` at `now`.
     pub fn started(interval_secs: u64, phase: Phase, now: u64) -> Cycle {
         let interval_secs = clamp_secs(interval_secs);
-        Cycle { enabled: true, interval_secs, phase, phase_started_at: now, phase_ends_at: now + interval_secs }
+        Cycle {
+            enabled: true,
+            interval_secs,
+            phase,
+            phase_started_at: now,
+            phase_ends_at: now + interval_secs,
+        }
     }
 
     /// Move to the phase the clock says it is `now`. Each phase starts where the last
@@ -112,8 +118,8 @@ pub struct Status {
 struct Runtime {
     cycle: Mutex<Cycle>,
     path: OnceLock<PathBuf>,
-    /// serial → `phase_started_at` of the phase last applied to that phone.
-    applied: Mutex<HashMap<String, u64>>,
+    /// serial → which of the phone's two operations are done for which phase.
+    applied: Mutex<HashMap<String, Done>>,
 }
 
 fn runtime() -> &'static Runtime {
@@ -130,7 +136,10 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 pub fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 pub fn load_from(path: &std::path::Path) -> Cycle {
@@ -184,8 +193,16 @@ pub fn status() -> Status {
     if cycle.advance(now) {
         persist(&cycle);
     }
-    let seconds_left = if cycle.enabled { cycle.phase_ends_at.saturating_sub(now) } else { 0 };
-    Status { cycle: cycle.clone(), now, seconds_left }
+    let seconds_left = if cycle.enabled {
+        cycle.phase_ends_at.saturating_sub(now)
+    } else {
+        0
+    };
+    Status {
+        cycle: cycle.clone(),
+        now,
+        seconds_left,
+    }
 }
 
 /// The loop is running and its current phase is Quiet.
@@ -222,12 +239,85 @@ pub fn manual_change() {
     }
 }
 
-/// Phones that are online and have not had the current phase applied yet.
-pub fn pending(online: &[String], applied: &HashMap<String, u64>, started_at: u64) -> Vec<String> {
-    online.iter().filter(|serial| applied.get(*serial) != Some(&started_at)).cloned().collect()
+/// What has been done for one phone, as the `phase_started_at` of the phase each of its
+/// two operations last succeeded for. A phone is finished only when both match.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Done {
+    audio: Option<u64>,
+    screen: Option<u64>,
 }
 
-/// Apply the current phase to every online phone that does not have it yet.
+impl Done {
+    fn complete(&self, started_at: u64) -> bool {
+        self.audio == Some(started_at) && self.screen == Some(started_at)
+    }
+}
+
+/// Phones that are online and have not had both operations done for the current phase.
+pub fn pending(online: &[String], done: &HashMap<String, Done>, started_at: u64) -> Vec<String> {
+    online
+        .iter()
+        .filter(|serial| {
+            !done
+                .get(*serial)
+                .copied()
+                .unwrap_or_default()
+                .complete(started_at)
+        })
+        .cloned()
+        .collect()
+}
+
+/// For the pending phones: who still needs the sound change, and who still needs the screen
+/// change. An operation that already succeeded is not sent again.
+pub fn plan(
+    pending: &[String],
+    done: &HashMap<String, Done>,
+    started_at: u64,
+) -> (Vec<String>, Vec<String>) {
+    let get = |serial: &String| done.get(serial).copied().unwrap_or_default();
+    let audio = pending
+        .iter()
+        .filter(|s| get(s).audio != Some(started_at))
+        .cloned()
+        .collect();
+    let screen = pending
+        .iter()
+        .filter(|s| get(s).screen != Some(started_at))
+        .cloned()
+        .collect();
+    (audio, screen)
+}
+
+/// Remember what succeeded for `serial`. `None` means the operation was not tried this time;
+/// `Some(false)` is a failure and leaves it pending (an older success is kept).
+pub fn record(
+    done: &mut HashMap<String, Done>,
+    serial: &str,
+    started_at: u64,
+    audio: Option<bool>,
+    screen: Option<bool>,
+) {
+    let entry = done.entry(serial.to_string()).or_default();
+    if audio == Some(true) {
+        entry.audio = Some(started_at);
+    }
+    if screen == Some(true) {
+        entry.screen = Some(started_at);
+    }
+}
+
+#[cfg(test)]
+pub fn done_for(serial: &str) -> Option<(bool, bool)> {
+    let started = lock(&runtime().cycle).phase_started_at;
+    lock(&runtime().applied)
+        .get(serial)
+        .map(|d| (d.audio == Some(started), d.screen == Some(started)))
+}
+
+/// Apply the current phase to every online phone that does not have it yet. Each phone
+/// has its own record: only the operation that failed is retried, and one phone's failure
+/// never holds back another.
 pub async fn reconcile(state: &AppState) {
     let status = status();
     if !status.cycle.enabled {
@@ -236,45 +326,124 @@ pub async fn reconcile(state: &AppState) {
     let started_at = status.cycle.phase_started_at;
     let phase = status.cycle.phase;
     let devices = state.list_devices().await;
-    let online: Vec<_> = devices.iter().filter(|d| d.status == DeviceStatus::Online).collect();
+    let online: Vec<_> = devices
+        .iter()
+        .filter(|d| d.status == DeviceStatus::Online)
+        .collect();
     // A phone that went away is looked at again when it returns.
     {
         let mut applied = lock(&runtime().applied);
         applied.retain(|serial, _| online.iter().any(|d| &d.serial == serial));
     }
-    let todo: Vec<String> = {
+    let (audio_todo, screen_todo) = {
         let applied = lock(&runtime().applied);
         let serials: Vec<String> = online.iter().map(|d| d.serial.clone()).collect();
-        pending(&serials, &applied, started_at)
+        let todo = pending(&serials, &applied, started_at);
+        plan(&todo, &applied, started_at)
     };
-    if todo.is_empty() {
+    if audio_todo.is_empty() && screen_todo.is_empty() {
         return;
     }
-    let targets: Vec<_> = online.iter().filter(|d| todo.contains(&d.serial)).collect();
-    let ids: Vec<String> = targets.iter().map(|d| d.id.clone()).collect();
+    let ids_of = |serials: &[String]| -> Vec<String> {
+        online
+            .iter()
+            .filter(|d| serials.contains(&d.serial))
+            .map(|d| d.id.clone())
+            .collect()
+    };
     let quiet = phase == Phase::Quiet;
-    let mute = state
-        .run_command(DeviceCommandRequest {
-            target_ids: ids.clone(),
-            op: "mute".into(),
-            arg: Some(if quiet { "on" } else { "off" }.into()),
-            arg2: None,
-        })
-        .await;
-    let prefs = state.inner.sessions.prefs().await;
-    let screen = state
-        .run_scrcpy_options(ScrcpyOptionsRequest {
-            mode: ControlMode::Selected,
-            target_ids: ids,
-            quality: prefs.quality.clone(),
-            audio: prefs.audio,
-            screen_off: quiet,
-            max_size: prefs.max_size,
-            video_bit_rate: prefs.video_bit_rate,
-            max_fps: prefs.max_fps,
-        })
-        .await;
-    // A phone counts as done when its mute answered; a failed one is tried again next time.
+
+    // Sound: only the phones that still need it.
+    let mut audio_out: HashMap<String, bool> = HashMap::new();
+    if !audio_todo.is_empty() {
+        let mute = state
+            .run_command(DeviceCommandRequest {
+                target_ids: ids_of(&audio_todo),
+                op: "mute".into(),
+                arg: Some(if quiet { "on" } else { "off" }.into()),
+                arg2: None,
+            })
+            .await;
+        for device in online.iter().filter(|d| audio_todo.contains(&d.serial)) {
+            let ok = match &mute {
+                Ok(response) => match response.results.iter().find(|r| r.device_id == device.id) {
+                    Some(result) if result.ok => true,
+                    Some(result) => {
+                        warn!(phone = %device.name, error = ?result.error, "Quiet cycle: mute failed");
+                        false
+                    }
+                    None => {
+                        warn!(phone = %device.name, "Quiet cycle: mute gave no answer");
+                        false
+                    }
+                },
+                Err(error) => {
+                    warn!(phone = %device.name, %error, "Quiet cycle: mute failed");
+                    false
+                }
+            };
+            audio_out.insert(device.serial.clone(), ok);
+        }
+    }
+
+    // Screen: only the phones that still need it. The options call also records the wanted
+    // state for streams that start later; it reports a result only for phones whose screen
+    // state changed, so a retry for a local phone sends the power message itself.
+    let mut screen_out: HashMap<String, bool> = HashMap::new();
+    if !screen_todo.is_empty() {
+        let prefs = state.inner.sessions.prefs().await;
+        let options = state
+            .run_scrcpy_options(ScrcpyOptionsRequest {
+                mode: ControlMode::Selected,
+                target_ids: ids_of(&screen_todo),
+                quality: prefs.quality.clone(),
+                audio: prefs.audio,
+                screen_off: quiet,
+                max_size: prefs.max_size,
+                video_bit_rate: prefs.video_bit_rate,
+                max_fps: prefs.max_fps,
+            })
+            .await;
+        let locals: Vec<String> = state
+            .list_local_devices()
+            .await
+            .into_iter()
+            .map(|d| d.serial)
+            .collect();
+        for device in online.iter().filter(|d| screen_todo.contains(&d.serial)) {
+            let ok = match &options {
+                Err(error) => {
+                    warn!(phone = %device.name, %error, "Quiet cycle: screen power failed");
+                    false
+                }
+                Ok(response) => match response.results.iter().find(|r| r.device_id == device.id) {
+                    Some(result) if result.ok => true,
+                    Some(result) => {
+                        warn!(phone = %device.name, error = ?result.error, "Quiet cycle: screen power failed");
+                        false
+                    }
+                    None if locals.contains(&device.serial) => {
+                        match state
+                            .inner
+                            .sessions
+                            .set_display_power(&device.serial, !quiet)
+                            .await
+                        {
+                            Ok(()) => true,
+                            Err(error) => {
+                                warn!(phone = %device.name, %error, "Quiet cycle: screen power failed");
+                                false
+                            }
+                        }
+                    }
+                    // A phone on another host reports for itself; no report means nothing changed there.
+                    None => true,
+                },
+            };
+            screen_out.insert(device.serial.clone(), ok);
+        }
+    }
+
     let mut applied = lock(&runtime().applied);
     // The cycle may have been stopped or restarted while the calls ran.
     {
@@ -283,22 +452,14 @@ pub async fn reconcile(state: &AppState) {
             return;
         }
     }
-    match &mute {
-        Ok(response) => {
-            for result in &response.results {
-                if let Some(device) = targets.iter().find(|d| d.id == result.device_id) {
-                    if result.ok {
-                        applied.insert(device.serial.clone(), started_at);
-                    } else {
-                        warn!(phone = %device.name, error = ?result.error, "Quiet cycle: mute failed");
-                    }
-                }
-            }
+    for device in &online {
+        let (audio, screen) = (
+            audio_out.get(&device.serial).copied(),
+            screen_out.get(&device.serial).copied(),
+        );
+        if audio.is_some() || screen.is_some() {
+            record(&mut applied, &device.serial, started_at, audio, screen);
         }
-        Err(error) => warn!(%error, "Quiet cycle: mute failed"),
-    }
-    if let Err(error) = screen {
-        warn!(%error, "Quiet cycle: screen power failed");
     }
 }
 
@@ -355,12 +516,28 @@ mod tests {
     #[test]
     fn a_long_gap_lands_in_the_phase_the_clock_says() {
         // Quiet from 0, 600 s each: quiet [0,600), normal [600,1200), quiet [1200,1800)...
-        for now in [0u64, 599, 600, 1199, 1200, 6_000 + 10, 6_000 + 650, 600 * 1001 + 5] {
+        for now in [
+            0u64,
+            599,
+            600,
+            1199,
+            1200,
+            6_000 + 10,
+            6_000 + 650,
+            600 * 1001 + 5,
+        ] {
             let mut c = cycle(Phase::Quiet, 0);
             c.advance(now);
-            let want = if (now / 600) % 2 == 0 { Phase::Quiet } else { Phase::Normal };
+            let want = if (now / 600) % 2 == 0 {
+                Phase::Quiet
+            } else {
+                Phase::Normal
+            };
             assert_eq!(c.phase, want, "at {now}");
-            assert!(c.phase_started_at <= now && now < c.phase_ends_at, "at {now}");
+            assert!(
+                c.phase_started_at <= now && now < c.phase_ends_at,
+                "at {now}"
+            );
         }
     }
 
@@ -397,14 +574,91 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    fn done(audio: bool, screen: bool, started: u64) -> Done {
+        Done {
+            audio: audio.then_some(started),
+            screen: screen.then_some(started),
+        }
+    }
+
+    fn s(name: &str) -> String {
+        name.to_string()
+    }
+
     #[test]
-    fn only_phones_without_the_current_phase_are_pending() {
+    fn only_phones_without_both_operations_done_are_pending() {
         let mut applied = HashMap::new();
-        applied.insert("A".to_string(), 100u64);
-        applied.insert("B".to_string(), 50u64);
-        let online = vec!["A".to_string(), "B".to_string(), "C".to_string()];
-        // A has this phase; B has an older one; C just connected.
-        assert_eq!(pending(&online, &applied, 100), vec!["B".to_string(), "C".to_string()]);
+        applied.insert(s("A"), done(true, true, 100));
+        applied.insert(s("B"), done(true, true, 50)); // an older phase
+        applied.insert(s("D"), done(true, false, 100)); // sound done, screen not
+        let online = vec![s("A"), s("B"), s("C"), s("D")];
+        assert_eq!(
+            pending(&online, &applied, 100),
+            vec![s("B"), s("C"), s("D")]
+        );
+    }
+
+    #[test]
+    fn audio_ok_screen_failed_stays_pending_and_only_the_screen_is_retried() {
+        let mut applied = HashMap::new();
+        record(&mut applied, "A", 100, Some(true), Some(false));
+        assert_eq!(
+            pending(&[s("A")], &applied, 100),
+            vec![s("A")],
+            "still pending"
+        );
+        let (audio, screen) = plan(&[s("A")], &applied, 100);
+        assert!(audio.is_empty(), "the sound change is not sent again");
+        assert_eq!(screen, vec![s("A")], "the screen change is retried");
+        // The retry works: now it is complete and nothing more is planned.
+        record(&mut applied, "A", 100, None, Some(true));
+        assert!(pending(&[s("A")], &applied, 100).is_empty());
+        assert_eq!(plan(&[], &applied, 100), (vec![], vec![]));
+    }
+
+    #[test]
+    fn audio_failed_screen_ok_stays_pending_and_only_the_sound_is_retried() {
+        let mut applied = HashMap::new();
+        record(&mut applied, "A", 100, Some(false), Some(true));
+        assert_eq!(pending(&[s("A")], &applied, 100), vec![s("A")]);
+        let (audio, screen) = plan(&[s("A")], &applied, 100);
+        assert_eq!(audio, vec![s("A")]);
+        assert!(screen.is_empty());
+        record(&mut applied, "A", 100, Some(true), None);
+        assert!(pending(&[s("A")], &applied, 100).is_empty());
+    }
+
+    #[test]
+    fn both_ok_is_applied_and_not_retried() {
+        let mut applied = HashMap::new();
+        record(&mut applied, "A", 100, Some(true), Some(true));
+        assert!(pending(&[s("A")], &applied, 100).is_empty());
+        assert_eq!(
+            plan(&pending(&[s("A")], &applied, 100), &applied, 100),
+            (vec![], vec![])
+        );
+        // A new phase starts from scratch.
+        assert_eq!(pending(&[s("A")], &applied, 200), vec![s("A")]);
+        assert_eq!(plan(&[s("A")], &applied, 200), (vec![s("A")], vec![s("A")]));
+    }
+
+    #[test]
+    fn a_failure_is_per_phone_and_a_later_failure_keeps_an_earlier_success() {
+        let mut applied = HashMap::new();
+        record(&mut applied, "A", 100, Some(true), Some(true));
+        record(&mut applied, "B", 100, Some(true), Some(false));
+        record(&mut applied, "C", 100, Some(false), Some(false));
+        assert_eq!(
+            pending(&[s("A"), s("B"), s("C")], &applied, 100),
+            vec![s("B"), s("C")]
+        );
+        let (audio, screen) = plan(&[s("B"), s("C")], &applied, 100);
+        assert_eq!(audio, vec![s("C")]);
+        assert_eq!(screen, vec![s("B"), s("C")]);
+        // B's screen fails again: its sound success stays recorded.
+        record(&mut applied, "B", 100, None, Some(false));
+        assert_eq!(applied["B"], done(true, false, 100));
+        assert_eq!(applied["A"], done(true, true, 100), "A is untouched");
     }
 
     #[test]
@@ -414,7 +668,10 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("SERIAL1".to_string(), 9u32);
         crate::device_ops::store_volumes(&path, &map).unwrap();
-        assert_eq!(crate::device_ops::load_volumes(&path).get("SERIAL1"), Some(&9));
+        assert_eq!(
+            crate::device_ops::load_volumes(&path).get("SERIAL1"),
+            Some(&9)
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }

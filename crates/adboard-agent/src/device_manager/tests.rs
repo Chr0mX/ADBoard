@@ -732,3 +732,29 @@ async fn an_unplugged_phone_gets_its_display_size_reset_once_and_only_that_phone
     state.reset_overridden_display_size("FAKE2").await;
     assert_eq!(calls(&log).lines().count(), sent);
 }
+
+#[tokio::test]
+async fn quiet_cycle_keeps_a_phone_pending_until_both_sound_and_screen_succeed() {
+    let _guard = quiet_lock();
+    let state = AppState::new(Role::Controller, "q".into(), "q".into(), 0, None);
+    let serials = online_serials(&state).await;
+    crate::quiet_cycle::start(600, crate::quiet_cycle::Phase::Quiet);
+    crate::quiet_cycle::reconcile(&state).await;
+    // The mock phones have no live scrcpy control, so the screen change fails for each of them
+    // while the sound change succeeds: every phone is pending, with only the sound done.
+    for serial in &serials {
+        assert!(muted(serial));
+        assert_eq!(crate::quiet_cycle::done_for(serial), Some((true, false)), "{serial}");
+    }
+    // The sound is not sent again on the retry: change it by hand and let the cycle run once more.
+    {
+        let mut map = mock_muted().lock().unwrap_or_else(|e| e.into_inner());
+        for serial in &serials {
+            map.insert(serial.clone(), false);
+        }
+    }
+    crate::quiet_cycle::reconcile(&state).await;
+    assert!(serials.iter().all(|s| !muted(s)), "an operation that already succeeded is not repeated");
+    assert!(serials.iter().all(|s| crate::quiet_cycle::done_for(s) == Some((true, false))), "the screen is still pending");
+    crate::quiet_cycle::stop();
+}
