@@ -16,6 +16,7 @@ The **Settings** tab is one place for the choices that change how ADBoard looks 
 - [Control](#control)
 - [Grid view](#grid-view)
 - [Phone taskbar](#phone-taskbar)
+- [Appearance](#appearance)
 - [Virtual displays](#virtual-displays)
 - [Discord notifications](#discord-notifications)
 - [Account](#account)
@@ -108,6 +109,10 @@ The row of pinned tools that sits beside **Back / Home / Recent** on phones. Eac
 
 You can pin up to 21 tools. When you reach the limit the remaining switches are greyed out until you turn one off. **Reset** removes all pins (it is greyed out when none are pinned). By default nothing is pinned and the taskbar only has Back, Home and Recent.
 
+## Appearance
+
+**Font for technical values** changes the font used for serials, addresses, logs, sizes and fps. The default is JetBrains Mono. The other choices are System Monospace, Fira Code, Source Code Pro, Cascadia Code, IBM Plex Mono, Roboto Mono, Ubuntu Mono, Space Mono, Inconsolata, Anonymous Pro, DM Mono, Red Hat Mono, Menlo, Consolas and SF Mono. Cascadia Code, Menlo, Consolas and SF Mono come from your device; if one is not installed, your device's own monospace font is used. Buttons, headings and the rest of the interface do not change. A sample line shows the font. The choice is saved with your other settings.
+
 ## Virtual displays
 
 A virtual display is a second, independent Android screen on a phone. It runs its own apps and does not mirror the phone's own screen. It shows up in ADBoard as one more phone, named like "Pixel (virtual 1)", and appears in Grid view too. It needs Android 13 or newer and scrcpy 3.0 or newer, and it has no audio yet. How to add one is in [Control](control.md#virtual-displays).
@@ -184,6 +189,7 @@ ADBoard saves your choices in the data folder on the ADBoard computer, so they f
 - Keyboard injection, Cursor mode and Touch diagnostics
 - Stream: quality (and the custom values), audio, screen off, the Size choice, Sync clipboard and Quiet mode
 - Stats on phones
+- The font for technical values
 - Grid arrangement and whether the grid bar is shown
 - Phone taskbar pins
 - The control mode and the Shell Automation run history

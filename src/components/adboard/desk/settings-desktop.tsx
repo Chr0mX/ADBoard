@@ -8,7 +8,7 @@ import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
 import { InstallOnIphone } from "@/components/adboard/desk/install-on-iphone";
 import { NotificationsCard } from "@/components/adboard/desk/notifications-card";
 import { VirtualDisplayCard } from "@/components/adboard/desk/virtual-display-card";
-import { AccountBody, ControlBody, GridBody, StreamBody, TaskbarBody, TaskbarReset } from "@/components/adboard/desk/settings-panel";
+import { AccountBody, AppearanceBody, ControlBody, GridBody, StreamBody, TaskbarBody, TaskbarReset } from "@/components/adboard/desk/settings-panel";
 import { pickCategory, type SettingsCategory } from "@/lib/ui/settings-categories";
 
 /*
@@ -41,6 +41,7 @@ export function SettingsDesktop() {
     { id: "control", label: "Control", group: "Controls", title: "Control", blurb: "Keyboard, touch, cursor and the edge tab.", body: <ControlBody /> },
     { id: "grid", label: "Grid view", group: "Controls", title: "Grid view", blurb: "How the phone tiles are arranged.", body: <GridBody /> },
     { id: "taskbar", label: "Phone taskbar", group: "Controls", title: "Phone taskbar", blurb: "Which tools sit beside Back, Home and Recent.", action: <TaskbarReset />, body: <TaskbarBody /> },
+    { id: "appearance", label: "Appearance", group: "Look", title: "Appearance", blurb: "The font used for technical values.", body: <AppearanceBody /> },
     { id: "notifications", label: "Notifications", group: "Alerts and account", title: "Discord notifications", blurb: "Send problems and finished macro runs to a Discord channel.", body: <NotificationsCard bare /> },
     ...(hasAccount
       ? [{ id: "account", label: "Account", group: "Alerts and account", title: "Account", blurb: "Password and sign-in.", body: <AccountBody /> } satisfies Entry]

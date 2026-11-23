@@ -67,6 +67,27 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Technical-value font (docs/typography.md, Settings → Appearance). The default is JetBrains Mono;
+   data-mono-font on <html> picks another. Bundled fonts set their own --font-* variable in layout.tsx. */
+:root {
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+html[data-mono-font="system"] { --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+html[data-mono-font="fira"] { --font-mono: var(--font-fira), ui-monospace, monospace; }
+html[data-mono-font="source-code"] { --font-mono: var(--font-source-code), ui-monospace, monospace; }
+html[data-mono-font="cascadia"] { --font-mono: "Cascadia Code", "Cascadia Mono", ui-monospace, monospace; }
+html[data-mono-font="plex"] { --font-mono: var(--font-plex), ui-monospace, monospace; }
+html[data-mono-font="roboto"] { --font-mono: var(--font-roboto), ui-monospace, monospace; }
+html[data-mono-font="ubuntu"] { --font-mono: var(--font-ubuntu), ui-monospace, monospace; }
+html[data-mono-font="space"] { --font-mono: var(--font-space), ui-monospace, monospace; }
+html[data-mono-font="inconsolata"] { --font-mono: var(--font-inconsolata), ui-monospace, monospace; }
+html[data-mono-font="anonymous"] { --font-mono: var(--font-anonymous), ui-monospace, monospace; }
+html[data-mono-font="dm"] { --font-mono: var(--font-dm), ui-monospace, monospace; }
+html[data-mono-font="red-hat"] { --font-mono: var(--font-red-hat), ui-monospace, monospace; }
+html[data-mono-font="menlo"] { --font-mono: Menlo, ui-monospace, monospace; }
+html[data-mono-font="consolas"] { --font-mono: Consolas, ui-monospace, monospace; }
+html[data-mono-font="sf-mono"] { --font-mono: "SF Mono", SFMono-Regular, ui-monospace, monospace; }
+
 :root {
   /* ADBoard palette — dark desk, teal signal */
   --pc-paper: #0e141b;
@@ -149,7 +170,8 @@
      - Geist: headings and titles.
      - Figtree: everything else, including every button, tab, summary, menu item
        and field. Buttons and fields inherit it (the reset sets font: inherit).
-     - JetBrains Mono: technical values only (.t-tech, code, pre, kbd, [data-mono]).
+     - The mono font (JetBrains Mono unless changed in Settings → Appearance): technical values
+       only (.t-tech, code, pre, kbd, [data-mono]).
      Sizes come from the --t-* tokens; a utility class on an element wins. */
   h1,
   h2 {

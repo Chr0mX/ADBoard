@@ -1,5 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Figtree, JetBrains_Mono } from "next/font/google";
+import {
+  Geist,
+  Figtree,
+  JetBrains_Mono,
+  Fira_Code,
+  Source_Code_Pro,
+  IBM_Plex_Mono,
+  Roboto_Mono,
+  Ubuntu_Mono,
+  Space_Mono,
+  Inconsolata,
+  Anonymous_Pro,
+  DM_Mono,
+  Red_Hat_Mono,
+} from "next/font/google";
+import { MonoFontSync } from "@/components/adboard/mono-font-sync";
+import { DEFAULT_MONO_FONT, MONO_FONT_KEY } from "@/lib/ui/mono-fonts";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
@@ -16,12 +32,91 @@ const figtree = Figtree({
   weight: ["400", "500", "600", "700"],
 });
 
+// Technical values (docs/typography.md): JetBrains Mono unless the person picks another in
+// Settings → Appearance. The others are declared but not preloaded, so the browser only
+// downloads the one in use. Each sets its own variable; globals.css maps the choice to --font-mono.
 const jetbrains = JetBrains_Mono({
-  variable: "--font-mono",
+  variable: "--font-jetbrains",
   subsets: ["latin"],
   weight: ["400", "500"],
 });
 
+const fira = Fira_Code({
+  variable: "--font-fira",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  preload: false,
+});
+
+const sourceCode = Source_Code_Pro({
+  variable: "--font-source-code",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  preload: false,
+});
+
+const plex = IBM_Plex_Mono({
+  variable: "--font-plex",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  preload: false,
+});
+
+const roboto = Roboto_Mono({
+  variable: "--font-roboto",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  preload: false,
+});
+
+const ubuntu = Ubuntu_Mono({
+  variable: "--font-ubuntu",
+  subsets: ["latin"],
+  weight: ["400"],
+  preload: false,
+});
+
+const space = Space_Mono({
+  variable: "--font-space",
+  subsets: ["latin"],
+  weight: ["400"],
+  preload: false,
+});
+
+const inconsolata = Inconsolata({
+  variable: "--font-inconsolata",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  preload: false,
+});
+
+const anonymous = Anonymous_Pro({
+  variable: "--font-anonymous",
+  subsets: ["latin"],
+  weight: ["400"],
+  preload: false,
+});
+
+const dm = DM_Mono({
+  variable: "--font-dm",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  preload: false,
+});
+
+const redHat = Red_Hat_Mono({
+  variable: "--font-red-hat",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  preload: false,
+});
+
+const MONO_CLASSES = [jetbrains, fira, sourceCode, plex, roboto, ubuntu, space, inconsolata, anonymous, dm, redHat]
+  .map((font) => font.variable)
+  .join(" ");
+
+// Applies the saved choice before the first paint (the same value the Appearance setting writes).
+const MONO_FONT_SCRIPT = `try{var f=localStorage.getItem(${JSON.stringify(MONO_FONT_KEY)});if(f&&/^[a-z0-9-]+$/.test(f)&&f!==${JSON.stringify(DEFAULT_MONO_FONT)})document.documentElement.dataset.monoFont=f}catch(e){}`;
 export const metadata: Metadata = {
   title: "ADBoard",
   description:
@@ -60,9 +155,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geist.variable} ${figtree.variable} ${jetbrains.variable} dark h-full antialiased`}
+      className={`${geist.variable} ${figtree.variable} ${MONO_CLASSES} dark h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: MONO_FONT_SCRIPT }} />
+      </head>
       <body className="flex min-h-dvh flex-col font-sans">
+        <MonoFontSync />
         <TooltipProvider>
           {children}
           <Toaster

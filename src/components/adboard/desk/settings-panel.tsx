@@ -4,6 +4,7 @@ import { useStoredFlag, useStoredString } from "@/hooks/use-stored-flag";
 import { useTaskbarPins } from "@/hooks/use-taskbar-pins";
 import { useTaskbarHidden } from "@/hooks/use-taskbar-hidden";
 import { useEdgeTabStyle } from "@/hooks/use-edge-tab-style";
+import { DEFAULT_MONO_FONT, MONO_FONTS, MONO_FONT_KEY, MONO_FONT_SAMPLE, parseMonoFont } from "@/lib/ui/mono-fonts";
 import { formatGridLayout, parseGridLayout } from "@/lib/ui/grid-layout";
 import { parseMobileStatsMode } from "@/lib/ui/mobile-stats-mode";
 import {
@@ -104,6 +105,47 @@ export function ControlBody() {
         onChange={(event) => setStatsRaw(event.target.checked ? "show" : "hide")}
         data-settings-stats
       />
+    </>
+  );
+}
+
+/** The font for technical values (serials, addresses, logs, sizes, fps). */
+export function AppearanceBody() {
+  const [raw, setRaw] = useStoredString(MONO_FONT_KEY);
+  const id = parseMonoFont(raw);
+  const current = MONO_FONTS.find((font) => font.id === id);
+  return (
+    <>
+      <div className="flex flex-col gap-1.5 py-1" data-settings-mono-font>
+        <div>
+          <p className="text-sm text-[var(--pc-ink)]">Font for technical values</p>
+          <p className="text-xs text-[var(--pc-muted)]">
+            Serials, addresses, logs, sizes and fps. Headings and the rest of the interface keep their fonts.
+          </p>
+        </div>
+        <select
+          value={id}
+          onChange={(event) => setRaw(event.target.value === DEFAULT_MONO_FONT ? null : event.target.value)}
+          aria-label="Font for technical values"
+          data-settings-mono-font-select
+          className="h-10 w-full max-w-xs rounded-lg border border-[var(--pc-line)] bg-[var(--pc-paper)] px-2 text-sm text-[var(--pc-ink)]"
+        >
+          {MONO_FONTS.map((font) => (
+            <option key={font.id} value={font.id}>
+              {font.label}
+              {font.id === DEFAULT_MONO_FONT ? " (default)" : ""}
+            </option>
+          ))}
+        </select>
+        <p className="t-tech truncate rounded-lg border border-[var(--pc-line)] bg-[var(--pc-paper)] px-3 py-2 text-[var(--pc-ink)]" data-settings-mono-font-sample>
+          {MONO_FONT_SAMPLE}
+        </p>
+        {current?.kind === "system" && (
+          <p className="text-xs text-[var(--pc-muted)]">
+            This font comes from the device. If it is not installed here, the device&apos;s own monospace font is used.
+          </p>
+        )}
+      </div>
     </>
   );
 }
@@ -280,6 +322,11 @@ export function SettingsPanel() {
             <TaskbarReset />
           </div>
           <TaskbarBody />
+        </section>
+
+        <section className={CARD} data-settings-appearance>
+          <h3 className={CARD_TITLE}>Appearance</h3>
+          <AppearanceBody />
         </section>
 
         <VirtualDisplayCard />
