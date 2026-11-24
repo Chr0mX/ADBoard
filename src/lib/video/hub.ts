@@ -368,8 +368,18 @@ class SharedStream {
           return;
         }
       }
-      if (this.state.decodeState === "decoding") this.askKeyframe();
+      // A still phone sends nothing new, and the usual keyframe ask can be throttled right after a
+      // connect or a layout switch (Grid on/off): ask again, a few times, until the view has a picture.
+      this.fillBlankView(view, 0);
     });
+  }
+
+  private fillBlankView(view: VideoView, attempt: number) {
+    if (this.closed || !this.views.has(view) || attempt >= 5) return;
+    const target = view.canvas();
+    if (!target || target.width > 0) return;
+    if (this.state.decodeState === "decoding" && !this.suspended) this.askKeyframe(true);
+    setTimeout(() => this.fillBlankView(view, attempt + 1), 1000);
   }
 
   removeView(view: VideoView) {
