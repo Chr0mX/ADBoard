@@ -3,7 +3,7 @@
  * the Display info overlay. Pure module: no browser APIs, runs under `node --test`.
  */
 
-import type { CloseKind, CloseRecord } from "./close-core";
+import type { CloseKind, CloseRecord, IntentionalClose } from "./close-core";
 
 const RING = 256;
 
@@ -26,22 +26,28 @@ export interface StreamPerf {
   reconnects: number;
   /** Reconnects because the socket went silent past its heartbeat. */
   staleReconnects: number;
-  /** Times the stream was suspended while nobody watched, and brought back. */
-  suspends: number;
-  resumes: number;
   decoderErrors: number;
   /** Decoded pictures not painted because the window is in the background at a reduced FPS. */
   backgroundSkipped: number;
-  /** Coming back to full speed: keyframes asked for, and connections started over, because no picture came. */
+  /** Keyframes asked for because no picture came (after returning to full speed, or frames arriving but not decoding). */
   recoveryAsks: number;
-  recoveryReconnects: number;
-  /** Sockets opened for this phone since the page loaded (a number far above `reconnects + suspends` means churn). */
+  /** Times the decoder was rebuilt because a keyframe did not bring a picture. The connection is never touched. */
+  decoderRecoveries: number;
+  /** Times the viewer went idle (the agent was told to stop sending) and came back. The socket stays open. */
+  idles: number;
+  idleResumes: number;
+  /** Sockets opened for this phone since the page loaded (a number far above `reconnects` means churn). */
   sockets: number;
   /** Sockets this page closed on purpose (suspend, stop, restart): not failures. */
   intentionalCloses: number;
   /** Sockets that ended without us closing them, by the layer that failed (see close-core). */
   closes: Record<CloseKind, number>;
   lastClose: CloseRecord | null;
+  /** The last connection this page closed on purpose, and why. */
+  lastIntentionalClose: IntentionalClose | null;
+  /** When (performance.now) the last heartbeat and the last video picture arrived; null before the first. */
+  lastHeartbeatAt: number | null;
+  lastFrameAt: number | null;
   /** Failed attempts since a connection last worked; 0 while connected. */
   retryAttempts: number;
   /** How long the last unexpected close took to turn into a picture again (ms), once it did. */
@@ -68,16 +74,19 @@ export function newStreamPerf(): StreamPerf {
     keyframeAsks: 0,
     reconnects: 0,
     staleReconnects: 0,
-    suspends: 0,
-    resumes: 0,
     decoderErrors: 0,
     backgroundSkipped: 0,
     recoveryAsks: 0,
-    recoveryReconnects: 0,
+    decoderRecoveries: 0,
+    idles: 0,
+    idleResumes: 0,
     sockets: 0,
     intentionalCloses: 0,
     closes: { normal: 0, device: 0, agent: 0, client: 0, transport: 0, stale: 0, other: 0 },
     lastClose: null,
+    lastIntentionalClose: null,
+    lastHeartbeatAt: null,
+    lastFrameAt: null,
     retryAttempts: 0,
     lastRecoveryMs: null,
     decoder: "",
@@ -138,6 +147,7 @@ export function snapshotPerf(perf: StreamPerf): StreamPerfSnapshot {
     // Copies: the report is read while the counters keep changing.
     closes: { ...counters.closes },
     lastClose: counters.lastClose ? { ...counters.lastClose } : null,
+    lastIntentionalClose: counters.lastIntentionalClose ? { ...counters.lastIntentionalClose } : null,
     messageMsP50: percentile(messageMs, 50),
     messageMsP95: percentile(messageMs, 95),
     inputMsP50: percentile(inputMs, 50),

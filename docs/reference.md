@@ -95,6 +95,10 @@ This is the main part of the surface, not all of it. Also in the router: `/api/b
 
 The UI decodes the frames with **WebCodecs** `VideoDecoder` and draws them on a canvas. Switching the active device only changes the video subscription, so agent sessions stay up.
 
+### An idle viewer
+
+A page whose viewer has nothing to show (window hidden, tile out of sight) sends `{"type":"viewer","active":false}` on the video socket. The agent then stops sending pictures on that socket; status frames, the 5 s heartbeat and WebSocket pings continue, so the connection is still watched. `{"type":"viewer","active":true}` brings the pictures back, starting with the cached SPS/PPS and keyframe and a request for a fresh one. An agent that does not know the message ignores it and the page drops the pictures itself. The connection is closed only when the viewer closes, the phone goes away, or the connection fails: no pictures, a still screen or an idle viewer never count as failure.
+
 ### How a video socket ends
 
 The agent closes a video socket with an application close code and a short reason whenever it ends it itself, so the page can tell which layer failed. A close with no code (1005, 1006) means the connection itself failed. The page keeps the last close, a count per kind, the number of sockets opened and how long the last recovery took in `window.__adboardPerf.snapshot()` (open the page with `?perf=1`).
@@ -103,13 +107,13 @@ The agent closes a video socket with an application close code and a short reaso
 |---|---|---|
 | 4004 | unknown device | the phone is not known to this agent |
 | 4005 | stream could not start | the phone's stream failed to start (the reason is in the status frame before it) |
-| 4008 | client stopped reading | this browser did not take data for 15 s (a frozen tab) |
+| 4008 | client stopped reading | this browser did not take data for 30 s (a frozen tab) |
 | 4009 | client sent nothing, not even a pong | this browser was silent for 70 s |
 | 4010 | remote agent video unreachable | the controller could not open the remote agent's video socket (8 s limit) |
 | 4011 | remote agent video link ended | the remote agent's video socket ended while the browser was connected |
 | 4012 | video channel shut down | the agent stopped the phone's video channel |
 
-The page itself closes a socket (suspend, stop, restart) without any of these. A socket that stops sending its heartbeat for 15 s is closed by the page and recorded as `stale` (code 0).
+The page itself closes a socket (the viewer closed, a refresh, a replaced connection) without any of these, and records why in `lastIntentionalClose`. A socket that stops sending its heartbeat for 15 s is closed by the page and recorded as `stale` (code 0). Each unexpected close is recorded with the phone, how long it was open, the code and reason, who ended it (`page`, `controller`, `remote-agent`, `network`, `server`), how long before it the last heartbeat and last picture arrived, whether the decoder had been rebuilt and that a reconnect follows. After 4004 (unknown phone) the page waits at least 10 s before asking again, and after 4005 at least 3 s. The agent logs the same facts when a video socket ends: seconds open, pictures sent, time since the last picture and heartbeat, whether the viewer was idle, and the close code the browser sent.
 
 Keyframes: scrcpy's `RESET_VIDEO` restarts the phone's encoder, so the agent spaces requests for one phone at least 0.8 s apart. The first goes out at once; the others inside that time are sent as one request afterwards, so each viewer still gets a keyframe made after it asked. A socket opened after a phone's stream stopped or restarted is not replayed the earlier stream's cached SPS/PPS or keyframe.
 

@@ -43,7 +43,22 @@ test("close diagnostics start empty and the snapshot is a copy, not the live cou
   assert.equal(perf.lastClose, null);
   assert.equal(perf.lastRecoveryMs, null);
   perf.closes.agent += 1;
-  perf.lastClose = { code: 4011, reason: "remote agent video link ended", wasClean: true, kind: "agent", at: 1, openForMs: 900, frames: 12 };
+  perf.lastClose = {
+    serial: "S1",
+    code: 4011,
+    reason: "remote agent video link ended",
+    wasClean: true,
+    kind: "agent",
+    initiator: "remote-agent",
+    intentional: false,
+    at: 1,
+    openForMs: 900,
+    frames: 12,
+    lastHeartbeatAgoMs: 2000,
+    lastFrameAgoMs: 40,
+    decoderRecovered: false,
+    reconnecting: true,
+  };
   const snap = snapshotPerf(perf);
   perf.closes.agent += 5;
   perf.lastClose.frames = 99;

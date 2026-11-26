@@ -31,13 +31,15 @@ import {
   readBackgroundPolicy,
   recoveryStep,
   shouldSuspend,
+  stallAction,
   streamMode,
+  viewerMessage,
   type BackgroundPolicy,
   type DecodeStallState,
   type StreamMode,
 } from "@/lib/video/stream-policy-core";
 import { createBackoff, isStale } from "@/lib/api/reconnect-core";
-import { closeKind, describeClose, shouldForgetToken, type CloseKind, type CloseRecord } from "@/lib/video/close-core";
+import { closeInitiator, closeKind, describeClose, retryDelayMs, shouldForgetToken, type CloseKind, type CloseRecord } from "@/lib/video/close-core";
 import {
   markInput,
   newStreamPerf,
@@ -289,9 +291,12 @@ class SharedStream {
   private lastMessageAt = 0;
   private accel = forcedAccel;
   private decoderErrors = createErrorWindow();
-  /** No view on screen for a while: socket and decoder are closed until one shows again. */
-  private suspended = false;
-  private suspendTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Nothing to show for a while: the agent was told to stop sending pictures and the decoder was freed. The
+   * socket stays connected, and its heartbeat is still watched, until the viewer closes or the connection fails.
+   */
+  private idle = false;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   /** What this stream should be doing now (see stream-policy-core). Kept current by `onVisibility`. */
   private mode: StreamMode = "full";
   /** Background rate limiting: when the last picture was painted / the last keyframe was decoded. */
@@ -310,6 +315,10 @@ class SharedStream {
   /** Access units seen on the socket, accepted or not (the stall watch needs to know frames are arriving). */
   private auSeen = 0;
   private stall: DecodeStallState = { seen: 0, decoded: 0, since: 0 };
+  /** Consecutive stall asks without a picture (the first asks for a keyframe, the next rebuilds the decoder). */
+  private stallAsks = 0;
+  /** The decoder was rebuilt on this connection (for the close record). */
+  private decoderRecovered = false;
   // The newest decoded frame, painted once per display refresh.
   private slot = createFrameSlot<VideoFrame>(
     (run) => requestAnimationFrame(run),
@@ -336,12 +345,12 @@ class SharedStream {
     this.generation += 1;
     if (this.lingerTimer) clearTimeout(this.lingerTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
-    if (this.suspendTimer) clearTimeout(this.suspendTimer);
+    if (this.idleTimer) clearTimeout(this.idleTimer);
     if (this.statsTimer) clearInterval(this.statsTimer);
     this.stopSampling();
     this.clearRecovery();
     document.removeEventListener("visibilitychange", this.onVisibility);
-    this.disconnect();
+    this.disconnect("viewer closed");
     publishStats(this.serial, null);
   }
 
@@ -349,11 +358,11 @@ class SharedStream {
   restart() {
     if (this.closed || !this.statsTimer) return;
     if (this.retryTimer) clearTimeout(this.retryTimer);
-    if (this.suspendTimer) clearTimeout(this.suspendTimer);
-    this.suspendTimer = null;
-    this.suspended = false;
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    this.idle = false;
     this.clearRecovery();
-    this.disconnect();
+    this.disconnect("refresh requested");
     this.refreshAsked = false;
     this.backoff.reset();
     this.setState({ frameSize: null, size: null });
@@ -366,7 +375,7 @@ class SharedStream {
       this.lingerTimer = null;
     }
     this.views.add(view);
-    this.onVisibility(); // a new view can bring a suspended stream back
+    this.onVisibility(); // a new view can bring an idle stream back
     // A new view would stay blank on a still screen until something moves:
     // copy the picture another view already shows, or ask for a keyframe.
     requestAnimationFrame(() => {
@@ -390,7 +399,7 @@ class SharedStream {
     if (this.closed || !this.views.has(view) || attempt >= 5) return;
     const target = view.canvas();
     if (!target || target.width > 0) return;
-    if (this.state.decodeState === "decoding" && !this.suspended) this.askKeyframe(true);
+    if (this.state.decodeState === "decoding" && !this.idle) this.askKeyframe(true);
     setTimeout(() => this.fillBlankView(view, attempt + 1), 1000);
   }
 
@@ -483,24 +492,30 @@ class SharedStream {
 
   private measure = () => {
     const now = performance.now();
-    // A socket whose agent promised a heartbeat and went silent is dead (a
-    // sleeping laptop, a dropped Wi-Fi link): reconnect instead of waiting.
-    if (this.socket && !this.suspended && isStale(this.lastMessageAt, now, this.heartbeatSeconds)) {
+    // Transport health: a socket whose agent promised a heartbeat and then went silent is dead (a sleeping
+    // laptop, a dropped Wi-Fi link): reconnect instead of waiting. Only the heartbeat counts. Missing pictures
+    // are not silence (a still screen and an idle viewer send none), and an idle viewer is still watched.
+    if (this.socket && isStale(this.lastMessageAt, now, this.heartbeatSeconds)) {
       this.perf.staleReconnects += 1;
       this.recordClose(0, `no message for ${Math.round((now - this.lastMessageAt) / 1000)} s`, false, "stale");
       this.disconnectIsFailure = true;
       this.reconnect();
     }
-    // Frames arrive but none decodes: the keyframe the decoder needs never reached it. Ask for one.
-    if (this.socket && !this.suspended && this.mode === "full" && !this.mse) {
-      const step = decodeStallStep(this.stall, { seen: this.auSeen, decoded: this.perf.decoded, at: now });
+    // Video activity, separate from the above: pictures arrive but none shows, so the keyframe the decoder
+    // needs never reached it. Ask for one; if that does not help, rebuild the decoder. Never the socket.
+    const progress = this.progress();
+    if (this.socket && !this.idle && this.mode === "full") {
+      if (progress !== this.stall.decoded) this.stallAsks = 0;
+      const step = decodeStallStep(this.stall, { seen: this.auSeen, decoded: progress, at: now });
       this.stall = step.state;
       if (step.ask) {
         this.perf.recoveryAsks += 1;
-        this.askKeyframe(true);
+        if (stallAction(this.stallAsks) === "rebuild-decoder") this.recoverDecoder();
+        else this.askKeyframe(true);
+        this.stallAsks += 1;
       }
     } else {
-      this.stall = { seen: this.auSeen, decoded: this.perf.decoded, since: now };
+      this.stall = { seen: this.auSeen, decoded: progress, since: now };
     }
     const sample = this.meter;
     const seconds = Math.max(0.001, (now - sample.t) / 1000);
@@ -543,7 +558,7 @@ class SharedStream {
       pageHidden: pageHidden(),
       anyViewVisible: anyViewVisible(this.views),
       policy: backgroundPolicy,
-      canThrottle: webCodecsSupported() && !this.mse,
+      canThrottle: webCodecsSupported(),
     });
   }
 
@@ -552,28 +567,23 @@ class SharedStream {
     const previous = this.mode;
     const next = this.computeMode();
     this.mode = next;
-    // A stream that keeps its socket in the background (thinned) is not suspended.
+    // A stream the agent keeps sending in the background (thinned here) is not idle.
     const shown = next === "full" || keepsSocketInBackground(next);
     if (previous !== next) this.modeChanged(previous, next);
-    const state = { suspended: this.suspended, armed: this.suspendTimer !== null };
+    const state = { suspended: this.idle, armed: this.idleTimer !== null };
     switch (onVisibilityChange(state, shown)) {
       case "arm":
-        this.suspendTimer = setTimeout(() => {
-          this.suspendTimer = null;
-          if (!this.closed && shouldSuspend({ suspended: this.suspended, armed: true }, this.mode === "full" || keepsSocketInBackground(this.mode))) this.suspend();
+        this.idleTimer = setTimeout(() => {
+          this.idleTimer = null;
+          if (!this.closed && shouldSuspend({ suspended: this.idle, armed: true }, this.mode === "full" || keepsSocketInBackground(this.mode))) this.goIdle();
         }, SUSPEND_GRACE_MS);
         break;
       case "disarm":
-        if (this.suspendTimer) clearTimeout(this.suspendTimer);
-        this.suspendTimer = null;
+        if (this.idleTimer) clearTimeout(this.idleTimer);
+        this.idleTimer = null;
         break;
       case "resume":
-        this.suspended = false;
-        this.perf.resumes += 1;
-        this.backoff.reset();
-        this.connect();
-        // A fresh connection must produce a picture; if it does not, ask and then start over.
-        if (next === "full") this.armRecovery();
+        this.leaveIdle(next);
         return;
       default:
         break;
@@ -595,7 +605,7 @@ class SharedStream {
       // Back at full speed (Alt-Tab back, the tile scrolled in): the decoder may have missed frames,
       // so wait for a keyframe (and ask for one), then check that a picture really arrives.
       if (needsKeyframeAfter(previous, next) && this.decoder) this.gate.dropping = true;
-      if (!this.suspended) {
+      if (!this.idle) {
         this.askKeyframe(true);
         this.armRecovery();
       }
@@ -626,44 +636,90 @@ class SharedStream {
     this.recoveryTimer = null;
   }
 
-  /** After returning to full speed: if no picture arrives, ask for a keyframe once, then start the connection over once. */
+  /** What shows a picture is arriving: decoded frames, or samples queued into the MSE player. */
+  private progress(): number {
+    return this.mse ? this.mse.appended : this.perf.decoded;
+  }
+
+  /**
+   * After returning to full speed: if no picture arrives, ask for a keyframe, then rebuild the decoder. Never the
+   * connection: a still screen sends nothing, and a decoder that missed its keyframe is not a dead socket.
+   */
   private armRecovery() {
     this.clearRecovery();
     this.recoveryAsked = false;
-    const framesBefore = this.perf.decoded;
+    let rebuilt = false;
+    const before = this.progress();
     const started = performance.now();
     const tick = () => {
       this.recoveryTimer = null;
-      if (this.closed || this.mode !== "full") return;
+      if (this.closed || this.mode !== "full" || this.idle) return;
       const step = recoveryStep({
         elapsedMs: performance.now() - started,
-        framesSince: this.perf.decoded - framesBefore,
+        framesSince: this.progress() - before,
         asked: this.recoveryAsked,
+        rebuilt,
       });
       if (step === "done") return;
       if (step === "ask-keyframe") {
         this.recoveryAsked = true;
         this.perf.recoveryAsks += 1;
         this.askKeyframe(true);
-      } else if (step === "reconnect") {
-        // One restart per return: the backoff in reconnect() spaces it, and it does not arm itself again.
-        this.perf.recoveryReconnects += 1;
-        this.reconnect();
-        return;
+      } else if (step === "rebuild-decoder") {
+        rebuilt = true;
+        this.recoverDecoder();
       }
       this.recoveryTimer = setTimeout(tick, 300);
     };
     this.recoveryTimer = setTimeout(tick, 300);
   }
 
-  /** Nobody has looked at this stream for a while: stop receiving it. Views stay attached. */
-  private suspend() {
-    if (this.retryTimer) clearTimeout(this.retryTimer);
-    this.retryTimer = null;
-    this.suspended = true;
-    this.perf.suspends += 1;
-    this.disconnect();
-    this.refreshAsked = false;
+  /** The decoder did not turn a keyframe into a picture: start it over. The socket is not touched. */
+  private recoverDecoder() {
+    this.perf.decoderRecoveries += 1;
+    this.decoderRecovered = true;
+    if (this.mse) {
+      this.rebuildMse();
+    } else {
+      this.waitingForKeyframeConfig = true;
+      this.teardownDecoder();
+    }
+    this.gate = newDecodeGate();
+    this.askKeyframe(true);
+  }
+
+  /** Nothing to show for a while: stop the pictures and free the decoder. The connection stays open. */
+  private goIdle() {
+    this.idle = true;
+    this.perf.idles += 1;
+    this.clearRecovery();
+    // The SPS/PPS description is kept: the next keyframe rebuilds the decoder from it.
+    this.teardownDecoder();
+    this.mse?.close();
+    this.mse = null;
+    this.sendViewerState(false);
+  }
+
+  /** Something shows again: have the agent send pictures (SPS/PPS and a keyframe first) and check they arrive. */
+  private leaveIdle(next: StreamMode) {
+    this.idle = false;
+    this.perf.idleResumes += 1;
+    if (!webCodecsSupported() && !this.mse && this.socket) this.mse = this.createMse(this.generation);
+    this.sendViewerState(true);
+    // An agent that does not know the message kept streaming delta frames, so ask for a keyframe as well.
+    this.askKeyframe(true);
+    if (next === "full") this.armRecovery();
+  }
+
+  /** Tell the agent whether this viewer wants pictures. Heartbeats and pings continue either way. */
+  private sendViewerState(active: boolean) {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    try {
+      socket.send(viewerMessage(active));
+    } catch {
+      // the socket is closing; its close handler takes it from here
+    }
   }
 
   /** Drop the socket and connect again after the backoff delay. */
@@ -693,7 +749,7 @@ class SharedStream {
     this.sawKeyframe = false;
   }
 
-  private disconnect() {
+  private disconnect(reason = "closed by this page") {
     this.generation += 1;
     this.teardownDecoder();
     this.mse?.close();
@@ -701,9 +757,17 @@ class SharedStream {
     const socket = this.socket;
     this.socket = null;
     if (socket) {
-      // Closed by this page on purpose (suspend, stop, restart): never reported as a failure.
+      // Closed by this page on purpose (the viewer closed, a refresh, a replaced connection): not a failure.
       if (this.disconnectIsFailure) this.disconnectIsFailure = false;
-      else this.perf.intentionalCloses += 1;
+      else {
+        this.perf.intentionalCloses += 1;
+        this.perf.lastIntentionalClose = {
+          serial: this.serial,
+          reason,
+          at: Date.now(),
+          openForMs: Math.round(performance.now() - this.socketOpenedAt),
+        };
+      }
       socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null;
       socket.close();
     }
@@ -713,21 +777,33 @@ class SharedStream {
   private recordClose(code: number, reason: string, wasClean: boolean, kindOverride?: CloseKind): CloseKind {
     const now = performance.now();
     const kind = kindOverride ?? closeKind(code);
+    const ago = (at: number | null) => (at === null ? null : Math.round(now - at));
     const record: CloseRecord = {
+      serial: this.serial,
       code,
       reason,
       wasClean,
       kind,
+      initiator: closeInitiator(code, kind),
+      intentional: false,
       at: Date.now(),
       openForMs: Math.round(now - this.socketOpenedAt),
       frames: this.perf.received - this.socketFramesAtOpen,
+      lastHeartbeatAgoMs: ago(this.perf.lastHeartbeatAt),
+      lastFrameAgoMs: ago(this.perf.lastFrameAt),
+      decoderRecovered: this.decoderRecovered,
+      reconnecting: !this.closed,
     };
+    this.decoderRecovered = false;
     this.perf.closes[kind] += 1;
     this.perf.lastClose = record;
     this.perf.retryAttempts += 1;
     this.closedAt = now;
     if (kind !== "normal") {
-      console.info(`[adboard video] ${this.serial}: ${describeClose(record)} after ${record.openForMs} ms and ${record.frames} frames; retry ${this.perf.retryAttempts}`);
+      console.info(
+        `[adboard video] ${this.serial}: ${describeClose(record)} (${record.initiator}) after ${record.openForMs} ms and ${record.frames} frames; ` +
+          `last heartbeat ${record.lastHeartbeatAgoMs ?? "never"} ms and last picture ${record.lastFrameAgoMs ?? "never"} ms before; retry ${this.perf.retryAttempts}`,
+      );
     }
     return kind;
   }
@@ -821,32 +897,39 @@ class SharedStream {
     }
   }
 
+  /** LAN http:// has no WebCodecs. MSE plays the same Annex-B access units. */
+  private createMse(generation: number): MseH264Player {
+    this.perf.decoder = "mse";
+    return new MseH264Player(
+      (source, width, height) => {
+        if (generation === this.generation) this.paint(source, width, height);
+      },
+      (size, source) => {
+        if (generation === this.generation) this.publishSize(size.width, size.height, source);
+      },
+      () => {
+        if (generation === this.generation) this.setState({ decodeState: "decoding", error: null });
+      },
+      (message) => {
+        if (generation === this.generation) this.setState({ decodeState: "error", error: message });
+      },
+    );
+  }
+
+  private rebuildMse() {
+    this.mse?.close();
+    this.mse = this.createMse(this.generation);
+  }
+
   private connect = () => {
-    if (this.closed || this.suspended) return;
+    if (this.closed) return;
     // One socket per phone: a second worker (a late retry timer, a resume racing a reconnect) closes the old one
     // first instead of leaving it open behind a newer generation.
-    if (this.socket) this.disconnect();
+    if (this.socket) this.disconnect("replaced by a newer connection");
     this.mode = this.computeMode();
     this.lastSampleAt = 0;
     const generation = ++this.generation;
-    if (!webCodecsSupported()) {
-      // LAN http:// has no WebCodecs. MSE plays the same Annex-B access units.
-      this.perf.decoder = "mse";
-      this.mse = new MseH264Player(
-        (source, width, height) => {
-          if (generation === this.generation) this.paint(source, width, height);
-        },
-        (size, source) => {
-          if (generation === this.generation) this.publishSize(size.width, size.height, source);
-        },
-        () => {
-          if (generation === this.generation) this.setState({ decodeState: "decoding", error: null });
-        },
-        (message) => {
-          if (generation === this.generation) this.setState({ decodeState: "error", error: message });
-        },
-      );
-    }
+    if (!webCodecsSupported() && !this.idle) this.mse = this.createMse(generation);
     this.setState({ decodeState: "connecting" });
     this.description = null;
     this.waitingForKeyframeConfig = false;
@@ -873,7 +956,10 @@ class SharedStream {
     const current = () => generation === this.generation && !this.closed;
 
     socket.onopen = () => {
-      if (current()) this.setState({ decodeState: "waiting" });
+      if (!current()) return;
+      this.setState({ decodeState: "waiting" });
+      // A viewer that went idle before this (re)connection must not be sent pictures.
+      if (this.idle) this.sendViewerState(false);
     };
     socket.onmessage = (event) => {
       if (!current()) return;
@@ -885,6 +971,8 @@ class SharedStream {
     };
     socket.onclose = (event) => {
       if (!current()) return;
+      // This socket is finished: the retry must not mistake it for a connection still to be replaced.
+      this.socket = null;
       // Not ours (we close through `disconnect`, which silences this handler): the agent, a proxy or
       // the network ended it. Say which, so a freeze can be traced to a layer.
       const kind = this.recordClose(event.code, event.reason ?? "", event.wasClean);
@@ -896,7 +984,7 @@ class SharedStream {
       // After a restart or a failed connection the agent may be a new process with a new token. When it
       // said why it closed, it is the same process and the token is fine.
       if (shouldForgetToken(kind)) forgetAgentToken();
-      this.retryTimer = setTimeout(this.connect, this.backoff.next());
+      this.retryTimer = setTimeout(this.connect, retryDelayMs(event.code, this.backoff.next()));
     };
     socket.onerror = () => socket.close();
   }
@@ -908,7 +996,10 @@ class SharedStream {
     } catch {
       return;
     }
-    if (typeof msg.heartbeat === "number" && msg.heartbeat > 0) this.heartbeatSeconds = msg.heartbeat;
+    if (typeof msg.heartbeat === "number" && msg.heartbeat > 0) {
+      this.heartbeatSeconds = msg.heartbeat;
+      this.perf.lastHeartbeatAt = performance.now();
+    }
     // The connection works: the next drop starts from the short retry delay.
     this.backoff.reset();
     this.perf.retryAttempts = 0;
@@ -945,6 +1036,7 @@ class SharedStream {
     this.meter.bytes += buf.byteLength;
     this.perf.received += 1;
     this.perf.bytes += buf.byteLength;
+    this.perf.lastFrameAt = performance.now();
 
     if (this.mse) {
       this.mse.push(buf);
@@ -953,7 +1045,7 @@ class SharedStream {
 
     // Nothing is shown (hidden page, or every view off screen): skip parsing
     // and decoding. The next keyframe is asked for when a view comes back.
-    if (this.decoder && this.mode === "hold-then-suspend") {
+    if (this.decoder && this.mode === "idle") {
       this.gate.dropping = true;
       this.gate.dropped += 1;
       this.perf.dropped += 1;
@@ -984,6 +1076,12 @@ class SharedStream {
     }
 
     if (!annexBHasVcl(nals)) return;
+    // Idle with no decoder (freed, or never needed): the SPS/PPS above is kept for the next keyframe, and
+    // nothing is decoded. An agent that has not been told to stop (an older one) is simply not listened to.
+    if (this.mode === "idle") {
+      this.perf.dropped += 1;
+      return;
+    }
     const isKey = annexBIsIdr(nals);
     if (this.mode === "sample-keyframes") {
       // 1 FPS in the background: decode a keyframe about once a second and nothing else.
@@ -1020,7 +1118,7 @@ class SharedStream {
     const verdict = admitFrame(this.gate, {
       isKey,
       queueSize: decoder.decodeQueueSize,
-      hidden: this.mode === "hold-then-suspend",
+      hidden: false, // an idle stream never gets here: it was dropped before parsing
     });
     recordQueue(this.perf, decoder.decodeQueueSize);
     if (verdict === "drop-ask-keyframe") this.askKeyframe();

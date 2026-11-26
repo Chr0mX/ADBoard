@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { closeKind, describeClose, newCloseCounts, shouldForgetToken, type CloseKind } from "./close-core.ts";
+import { closeInitiator, closeKind, describeClose, newCloseCounts, retryDelayMs, shouldForgetToken, type CloseKind } from "./close-core.ts";
 
 test("every code the agent sends maps to the layer that failed", () => {
   const expected: Record<number, CloseKind> = {
@@ -45,4 +45,21 @@ test("counts start at zero for every kind", () => {
 test("a socket given up on for a missing heartbeat is its own kind and gets a fresh token", () => {
   assert.equal(shouldForgetToken("stale"), true);
   assert.match(describeClose({ code: 0, reason: ": no message for 16 s", kind: "stale" }), /no heartbeat/);
+});
+
+test("each close is attributed to the side that ended it", () => {
+  assert.equal(closeInitiator(4011, "agent"), "remote-agent");
+  assert.equal(closeInitiator(4010, "agent"), "remote-agent");
+  assert.equal(closeInitiator(4004, "device"), "controller");
+  assert.equal(closeInitiator(4008, "client"), "controller");
+  assert.equal(closeInitiator(1006, "transport"), "network");
+  assert.equal(closeInitiator(1001, "normal"), "server");
+  assert.equal(closeInitiator(0, "stale"), "page", "the page gave up on a silent connection");
+});
+
+test("a phone the agent does not know is not asked for again at once", () => {
+  assert.equal(retryDelayMs(1006, 400), 400, "a lost connection uses the plain backoff");
+  assert.equal(retryDelayMs(4004, 400), 10_000);
+  assert.equal(retryDelayMs(4005, 400), 3_000);
+  assert.equal(retryDelayMs(4004, 20_000), 20_000, "never shorter than the backoff");
 });

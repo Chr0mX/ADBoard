@@ -29,6 +29,8 @@ export class MseH264Player {
   private codec = "avc1.42E01E";
   private picture: { width: number; height: number } | null = null;
   private sourceOpen = false;
+  /** Samples queued for playback since this player was made: it advances only while pictures really go in. */
+  private appendedCount = 0;
   private sawKey = false;
   private sequence = 1;
   private mediaTime = 0;
@@ -74,6 +76,10 @@ export class MseH264Player {
         if (!this.closed) this.onError("Browser blocked video playback");
       });
     });
+  }
+
+  get appended(): number {
+    return this.appendedCount;
   }
 
   push(au: Uint8Array) {
@@ -129,6 +135,7 @@ export class MseH264Player {
       this.sawKey = false;
       return;
     }
+    this.appendedCount += 1;
     this.pump();
     this.sequence += 1;
     this.mediaTime += duration;

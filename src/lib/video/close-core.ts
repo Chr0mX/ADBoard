@@ -50,17 +50,75 @@ export function closeKind(code: number): CloseKind {
   }
 }
 
+/** Which side ended a connection, as far as this page can tell. */
+export type CloseInitiator =
+  /** This page gave up on it (no heartbeat) or closed it on purpose. */
+  | "page"
+  /** The server the page is connected to: the controller, or an agent used directly. */
+  | "controller"
+  /** The remote agent behind the controller. */
+  | "remote-agent"
+  /** Nobody said anything: the network or a proxy dropped it. */
+  | "network"
+  /** The server closed cleanly (a restart or shutdown). */
+  | "server";
+
+export function closeInitiator(code: number, kind: CloseKind): CloseInitiator {
+  if (kind === "stale") return "page";
+  if (code === 4010 || code === 4011) return "remote-agent";
+  switch (kind) {
+    case "device":
+    case "client":
+      return "controller";
+    case "agent":
+      return "remote-agent";
+    case "transport":
+      return "network";
+    default:
+      return "server";
+  }
+}
+
 export interface CloseRecord {
+  serial: string;
   code: number;
   reason: string;
   wasClean: boolean;
   kind: CloseKind;
+  initiator: CloseInitiator;
+  /** Always false here: a close this page chose is an `IntentionalClose`, never a failure. */
+  intentional: false;
   /** When it happened (ms since the epoch). */
   at: number;
   /** How long that socket had been open (ms). */
   openForMs: number;
   /** Video access units it delivered. */
   frames: number;
+  /** How long before the close the last heartbeat and the last video picture arrived (null: none on this socket). */
+  lastHeartbeatAgoMs: number | null;
+  lastFrameAgoMs: number | null;
+  /** Whether the decoder had been rebuilt on this connection, and that a reconnect follows. */
+  decoderRecovered: boolean;
+  reconnecting: boolean;
+}
+
+/** A connection this page closed because the viewer closed, was refreshed or was replaced: not a failure. */
+export interface IntentionalClose {
+  serial: string;
+  reason: string;
+  at: number;
+  openForMs: number;
+}
+
+/**
+ * How long to wait before reconnecting after a close. The backoff alone is right for a lost connection. When
+ * the agent said the phone is unknown (4004) or its stream could not start (4005), asking again at once
+ * only repeats the answer, so wait longer.
+ */
+export function retryDelayMs(code: number, backoffMs: number): number {
+  if (code === 4004) return Math.max(backoffMs, 10_000);
+  if (code === 4005) return Math.max(backoffMs, 3_000);
+  return backoffMs;
 }
 
 export function describeClose(record: Pick<CloseRecord, "code" | "reason" | "kind">): string {

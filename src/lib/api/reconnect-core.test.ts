@@ -31,3 +31,21 @@ test("a socket is stale only after three missed heartbeats, and never without on
   assert.equal(isStale(0, 600_000, null), false);
   assert.equal(isStale(0, 600_000, 0), false);
 });
+
+test("a missing video picture is not a dead connection: only a missing heartbeat is", () => {
+  // The agent promised a heartbeat every 5 s. Heartbeats arrive, pictures do not (a still screen, an idle viewer).
+  const heartbeatSeconds = 5;
+  let lastMessageAt = 0;
+  for (let now = 0; now <= 600_000; now += 5_000) {
+    lastMessageAt = now; // the heartbeat itself is a message
+    assert.equal(isStale(lastMessageAt, now + 1_000, heartbeatSeconds), false, `at ${now} ms`);
+  }
+  // The heartbeats stop: three missed beats make the connection stale.
+  assert.equal(isStale(lastMessageAt, lastMessageAt + 14_000, heartbeatSeconds), false);
+  assert.equal(isStale(lastMessageAt, lastMessageAt + 16_000, heartbeatSeconds), true);
+});
+
+test("an agent that makes no heartbeat promise is never judged by silence", () => {
+  assert.equal(isStale(0, 3_600_000, null), false);
+  assert.equal(isStale(0, 3_600_000, 0), false);
+});

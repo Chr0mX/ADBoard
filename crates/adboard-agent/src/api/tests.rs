@@ -997,3 +997,229 @@ async fn a_remote_agent_going_away_leaves_the_local_phones_alone() {
     let after = ids(&state.list_devices().await);
     assert_eq!(after, local_before, "a remote failure must not touch local phones or their state");
 }
+
+// ---- a viewer's socket stays up: only its own failure or its own close ends it ----
+
+type Socket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// What arrived in `ms`: pictures (binary), text frames, and the close code if the server closed it.
+#[derive(Default, Debug)]
+struct Window {
+    pictures: usize,
+    texts: Vec<String>,
+    closed: Option<u16>,
+}
+
+async fn collect(socket: &mut Socket, ms: u64) -> Window {
+    let mut seen = Window::default();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
+    while let Ok(Some(message)) = tokio::time::timeout_at(deadline, socket.next()).await {
+        match message {
+            Ok(tokio_tungstenite::tungstenite::Message::Binary(_)) => seen.pictures += 1,
+            Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => seen.texts.push(text.to_string()),
+            Ok(tokio_tungstenite::tungstenite::Message::Close(frame)) => {
+                seen.closed = Some(frame.map(|f| u16::from(f.code)).unwrap_or(0));
+                break;
+            }
+            Ok(_) => {}
+            Err(_) => {
+                seen.closed = Some(1006);
+                break;
+            }
+        }
+    }
+    seen
+}
+
+/// Wait until `count` pictures have arrived (a live ffmpeg test pattern takes a moment to start).
+async fn until_pictures(socket: &mut Socket, count: usize) -> Window {
+    let mut total = Window::default();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    while total.pictures < count && total.closed.is_none() && tokio::time::Instant::now() < deadline {
+        let step = collect(socket, 300).await;
+        total.pictures += step.pictures;
+        total.texts.extend(step.texts);
+        total.closed = step.closed;
+    }
+    total
+}
+
+async fn open_video(addr: std::net::SocketAddr, serial: &str, token: &str) -> Socket {
+    let (socket, _) = tokio_tungstenite::connect_async(authed_ws(addr, &format!("/ws/devices/{serial}/video"), token))
+        .await
+        .unwrap();
+    socket
+}
+
+fn viewer(active: bool) -> tokio_tungstenite::tungstenite::Message {
+    tokio_tungstenite::tungstenite::Message::Text(format!(r#"{{"type":"viewer","active":{active}}}"#).into())
+}
+
+fn heartbeats(window: &Window) -> usize {
+    window.texts.iter().filter(|t| t.contains("\"heartbeat\"")).count()
+}
+
+#[tokio::test]
+async fn an_idle_viewer_gets_no_pictures_but_keeps_its_heartbeat_and_comes_back_on_request() {
+    let state = auth_state();
+    let serial = state.list_devices().await[0].serial.clone();
+    let (addr, token) = serve(state).await;
+    let mut socket = open_video(addr, &serial, &token).await;
+
+    let started = until_pictures(&mut socket, 5).await;
+    assert!(started.pictures >= 5, "a new viewer is sent pictures: {started:?}");
+    assert_eq!(started.closed, None);
+
+    // The page goes idle (hidden window): pictures stop. The connection and its heartbeat do not.
+    socket.send(viewer(false)).await.unwrap();
+    let _drain = collect(&mut socket, 400).await;
+    let idle = collect(&mut socket, 6500).await;
+    assert_eq!(idle.pictures, 0, "no pictures while idle: {idle:?}");
+    assert_eq!(idle.closed, None, "an idle viewer is not a dead one");
+    assert!(heartbeats(&idle) >= 1, "the heartbeat continues while idle: {idle:?}");
+
+    // Back in the foreground: pictures resume on the same socket, starting with a replayed keyframe.
+    socket.send(viewer(true)).await.unwrap();
+    let back = until_pictures(&mut socket, 3).await;
+    assert!(back.pictures >= 3, "pictures resume: {back:?}");
+    assert_eq!(back.closed, None);
+}
+
+#[tokio::test]
+async fn a_phone_that_sends_no_video_does_not_close_its_viewers_socket() {
+    let state = auth_state();
+    let serial = state.list_devices().await[0].serial.clone();
+    let (addr, token) = serve(state.clone()).await;
+    let mut socket = open_video(addr, &serial, &token).await;
+    assert!(until_pictures(&mut socket, 5).await.pictures >= 5);
+
+    // The phone's stream stops (a still, dark or stopped screen): no pictures at all for longer than a heartbeat.
+    state.inner.sessions.stop(&serial).await;
+    let _drain = collect(&mut socket, 500).await;
+    let quiet = collect(&mut socket, 6500).await;
+    assert_eq!(quiet.pictures, 0, "{quiet:?}");
+    assert_eq!(quiet.closed, None, "no video is not a reason to close the viewer: {quiet:?}");
+    assert!(heartbeats(&quiet) >= 1, "heartbeats go on: {quiet:?}");
+
+    // The stream comes back and reaches the same socket.
+    state.inner.sessions.start(&serial).await;
+    let again = until_pictures(&mut socket, 3).await;
+    assert!(again.pictures >= 3, "the same socket carries the new stream: {again:?}");
+    assert_eq!(again.closed, None);
+}
+
+#[tokio::test]
+async fn viewers_of_different_phones_are_independent() {
+    let state = auth_state();
+    let phones: Vec<String> = state.list_devices().await.iter().map(|d| d.serial.clone()).take(2).collect();
+    assert_eq!(phones.len(), 2);
+    let (addr, token) = serve(state.clone()).await;
+    let mut first = open_video(addr, &phones[0], &token).await;
+    let mut second = open_video(addr, &phones[1], &token).await;
+    assert!(until_pictures(&mut first, 5).await.pictures >= 5);
+    assert!(until_pictures(&mut second, 5).await.pictures >= 5);
+
+    // One phone's stream stops and its viewer goes idle; the other viewer carries on untouched.
+    state.inner.sessions.stop(&phones[0]).await;
+    first.send(viewer(false)).await.unwrap();
+    let other = collect(&mut second, 2500).await;
+    assert!(other.pictures > 10, "the other phone keeps streaming: {other:?}");
+    assert_eq!(other.closed, None);
+    let stopped = collect(&mut first, 500).await;
+    assert_eq!(stopped.closed, None, "and the stopped one is still connected");
+}
+
+#[tokio::test]
+async fn a_client_that_goes_completely_silent_is_still_closed() {
+    // Not reading (so no pongs) and sending nothing: the one case that must still end the socket.
+    let state = auth_state();
+    let serial = state.list_devices().await[0].serial.clone();
+    let (addr, token) = serve(state).await;
+    let mut socket = open_video(addr, &serial, &token).await;
+    // Say nothing and do not read for longer than the (test) silence limit plus one heartbeat tick.
+    tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+    let seen = collect(&mut socket, 3000).await;
+    // The close frame says 4009 when it reaches the client. The agent drops a connection that has unread data
+    // queued, which can reset it before the frame is read; either way the socket is closed by the agent.
+    assert!(
+        matches!(seen.closed, Some(4009) | Some(1006)),
+        "the agent closes a connection that shows no sign of life: {seen:?}"
+    );
+}
+
+#[tokio::test]
+async fn closing_the_viewer_releases_its_connection() {
+    let state = auth_state();
+    let serial = state.list_devices().await[0].serial.clone();
+    let (addr, token) = serve(state.clone()).await;
+    let mut socket = open_video(addr, &serial, &token).await;
+    assert!(until_pictures(&mut socket, 3).await.pictures >= 3);
+    socket.close(None).await.unwrap();
+    drop(socket);
+    // The subscriber is gone; the phone's session keeps running for the next viewer.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    assert_eq!(
+        state.inner.sessions.get_session(&serial).await.map(|s| s.stream),
+        Some(adboard_protocol::StreamState::Streaming)
+    );
+    let mut again = open_video(addr, &serial, &token).await;
+    assert!(until_pictures(&mut again, 3).await.pictures >= 3, "a new viewer connects cleanly");
+}
+
+#[tokio::test]
+async fn a_remote_agent_that_drops_mid_stream_is_reported_as_the_agent_and_its_viewer_recovers_when_it_returns() {
+    use tokio_tungstenite::tungstenite::Message as Wire;
+    // A stand-in for a remote agent's video socket: the first connection streams a little and drops, the
+    // second (the browser's retry) streams for as long as it is open.
+    let fake = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let fake_addr = fake.local_addr().unwrap();
+    tokio::spawn(async move {
+        for attempt in 0..2 {
+            let (stream, _) = fake.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let status = r#"{"serial":"LXC-PHONE","stream":"streaming","note":"fake","backend":"scrcpy","heartbeat":5}"#;
+            ws.send(Wire::Text(status.into())).await.unwrap();
+            ws.send(Wire::Binary(vec![0, 0, 0, 1, 0x65, 0x88].into())).await.unwrap();
+            if attempt == 0 {
+                // Dropped without a word: the controller sees the agent's socket end.
+                drop(ws);
+            } else {
+                for _ in 0..40 {
+                    ws.send(Wire::Binary(vec![0, 0, 0, 1, 0x41, 0x9a].into())).await.ok();
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+            }
+        }
+    });
+
+    let state = auth_state();
+    let mut phone = state.list_devices().await.remove(0);
+    phone.serial = "LXC-PHONE".into();
+    phone.id = "LXC-PHONE".into();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    state
+        .inner
+        .mesh
+        .register("lxc".into(), "lxc".into(), "linux".into(), tx, Some(format!("http://{fake_addr}")), Arc::new(tokio::sync::Notify::new()))
+        .await
+        .unwrap();
+    state.inner.mesh.set_devices("lxc", vec![phone]).await;
+    let local_before: Vec<String> = state.list_devices().await.iter().filter(|d| d.id != "LXC-PHONE").map(|d| d.id.clone()).collect();
+
+    let (addr, token) = serve(state.clone()).await;
+    // First attempt: the agent's socket drops; the viewer is told it was the remote agent, with code 4011.
+    let mut first = open_video(addr, "LXC-PHONE", &token).await;
+    let seen = collect(&mut first, 4000).await;
+    assert!(seen.pictures >= 1, "what the agent sent before it dropped is forwarded: {seen:?}");
+    assert_eq!(seen.closed, Some(4011), "an agent link that ends is reported as the remote agent: {seen:?}");
+
+    // The viewer's retry reaches the agent when it is back and streams on the same route.
+    let mut second = open_video(addr, "LXC-PHONE", &token).await;
+    let back = until_pictures(&mut second, 8).await;
+    assert!(back.pictures >= 8, "the stream recovers once the agent is reachable: {back:?}");
+    assert_eq!(back.closed, None);
+
+    // Meanwhile nothing local was touched.
+    let local_after: Vec<String> = state.list_devices().await.iter().filter(|d| d.id != "LXC-PHONE").map(|d| d.id.clone()).collect();
+    assert_eq!(local_after, local_before, "a remote agent's trouble leaves local phones alone");
+}

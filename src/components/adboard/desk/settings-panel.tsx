@@ -129,7 +129,7 @@ export function VideoBody() {
     <div className="flex flex-col gap-3 py-1" data-settings-video>
       <SwitchRow
         label="Pause video in background"
-        description="While this window is hidden, stop receiving the phones' video after a few seconds and bring it back when you return. This is how ADBoard has always behaved."
+        description="While this window is hidden, ADBoard asks the agent to stop sending pictures after a few seconds and brings them back when you return. The connection itself stays open."
         checked={pause}
         onChange={(event) => setPause(event.target.checked)}
         data-settings-video-pause
@@ -162,8 +162,9 @@ export function VideoBody() {
             : fps <= 1
               ? "In the background only keyframes are decoded, about one picture a second; the other frames are dropped before decoding."
               : `In the background about ${fps} pictures a second are painted. Every frame is still decoded, because each depends on the one before it.`}{" "}
-          The phones still send their full stream; the reduction happens in this browser. The picture you are looking at is never limited, and
-          controlling the phones is not affected. A phone scrolled out of sight is paused on its own, whatever this says.
+          While Pause is off the agent still sends the full stream; the reduction happens in this browser. The picture you are looking at is never
+          limited, and controlling the phones is not affected. A phone scrolled out of sight stops receiving pictures on its own, whatever this says.
+          The connection of an open phone is never closed for any of this.
         </p>
       </div>
     </div>

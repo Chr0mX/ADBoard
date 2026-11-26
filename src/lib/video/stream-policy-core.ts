@@ -1,20 +1,24 @@
 /**
- * When to suspend a stream nobody is looking at.
+ * When a stream has nothing to show, and what the page does about it.
  *
- * A hidden stream already skips decoding, but its socket kept receiving every
- * frame: bytes, wake-ups and memory spent on pictures that are thrown away,
- * which matters most on an iPhone with a dozen phones. After `graceMs` with no
- * visible view the stream is suspended (socket and decoder closed); it resumes
- * as soon as a view shows again. The grace period keeps a quick scroll or tab
- * switch from tearing the stream down and up.
+ * The WebSocket of an open viewer stays connected. Hiding the window, Alt-Tab, another tab, a tile scrolled
+ * out of sight or a screen that sends no frames never closes it: a connection is closed only when the
+ * viewer closes, the phone goes away, or the connection itself fails (see reconnect-core `isStale`: a
+ * missing heartbeat, not missing video).
  *
- * Touch and macro control do not go through the video socket, so a suspended
- * phone is still controlled.
+ * What changes is the work done for a viewer nobody is looking at. After `SUSPEND_GRACE_MS` with nothing
+ * to show the stream goes idle: the page drops frames before decoding, frees its decoder, and tells the
+ * agent to stop sending pictures (`viewerMessage`). Heartbeats and pings go on, so the connection is still
+ * watched. Showing again tells the agent to resume, which replays the SPS/PPS and a keyframe. The grace
+ * period keeps a quick scroll or tab switch from toggling it.
+ *
+ * Touch and macro control do not go through the video socket, so an idle phone is still controlled.
  *
  * Pure module: runs under `node --test`.
  */
 export const SUSPEND_GRACE_MS = 3000;
 
+/** What the idle timer should do: "arm" starts the grace period, "resume" leaves idle. */
 export type SuspendAction = "none" | "arm" | "disarm" | "resume";
 
 export interface SuspendState {
@@ -43,14 +47,15 @@ export function shouldSuspend(state: SuspendState, shown: boolean): boolean {
  *
  * Three different reasons a stream may have nothing to show, handled differently:
  *   1. The browser window or tab is hidden (Alt-Tab, another tab): the background
- *      setting decides. Pause (default) keeps the suspension above. Pause off keeps
- *      the socket and lowers the work to the chosen FPS.
+ *      setting decides. Pause (default) goes idle after the grace period (frames
+ *      stop). Pause off keeps frames coming and lowers the work to the chosen FPS.
+ *      The socket stays connected either way.
  *   2. ADBoard is visible but every view of THIS phone is off screen (a tile scrolled
- *      away, a collapsed panel): that phone alone is suspended after the grace period,
- *      as before. The background setting does not apply and no other phone is affected.
+ *      away, a collapsed panel): that phone alone goes idle after the grace period.
+ *      The background setting does not apply and no other phone is affected.
  *   3. A view is visible: full speed. Foreground FPS is never changed here.
  *
- * Where frames are dropped: the agent sends every access unit to every viewer and the
+ * Where frames are dropped: unless the viewer is idle the agent sends every access unit to every viewer and the
  * encoder (scrcpy `max_fps`) is a per-session launch option shared by all viewers, so
  * the rate cannot be lowered at the source for one hidden tab. The reduction happens in
  * the browser, as early as it is safe:
@@ -94,8 +99,8 @@ export function readBackgroundPolicy(pause: string | null | undefined, fps: stri
 export type StreamMode =
   /** Showing: decode and paint everything. */
   | "full"
-  /** Nothing to show: drop frames now and suspend the stream after the grace period. */
-  | "hold-then-suspend"
+  /** Nothing to show: drop frames now, and after the grace period tell the agent to stop sending. The socket stays. */
+  | "idle"
   /** Hidden window, not paused, 1 FPS: decode keyframes only. */
   | "sample-keyframes"
   /** Hidden window, not paused, above 1 FPS: decode everything, paint about FPS pictures per second. */
@@ -108,8 +113,8 @@ export function streamMode(input: {
   /** The decoder path can run in the background (WebCodecs; the MSE path cannot be thinned). */
   canThrottle: boolean;
 }): StreamMode {
-  if (!input.pageHidden) return input.anyViewVisible ? "full" : "hold-then-suspend";
-  if (input.policy.pause || !input.canThrottle) return "hold-then-suspend";
+  if (!input.pageHidden) return input.anyViewVisible ? "full" : "idle";
+  if (input.policy.pause || !input.canThrottle) return "idle";
   return input.policy.fps <= KEYFRAME_SAMPLE_MAX_FPS ? "sample-keyframes" : "throttle-paint";
 }
 
@@ -118,7 +123,7 @@ export function backgroundFrameDue(sinceLastMs: number, fps: number): boolean {
   return sinceLastMs >= 1000 / clampBackgroundFps(fps) - 2;
 }
 
-/** Streams that are allowed to hold a socket while the page is hidden. */
+/** Modes in which the agent keeps sending pictures while the page is hidden (thinned in the page). */
 export function keepsSocketInBackground(mode: StreamMode): boolean {
   return mode === "sample-keyframes" || mode === "throttle-paint";
 }
@@ -129,18 +134,22 @@ export function keepsSocketInBackground(mode: StreamMode): boolean {
  */
 export function needsKeyframeAfter(previous: StreamMode, next: StreamMode): boolean {
   if (next === "sample-keyframes") return false; // keyframes are self-contained
-  return previous === "sample-keyframes" || previous === "hold-then-suspend";
+  return previous === "sample-keyframes" || previous === "idle";
 }
 
-/** After returning to full speed: wait for a picture, ask for a keyframe, and only then start over. */
+/**
+ * After returning to full speed: wait for a picture, ask for a keyframe, then rebuild the decoder. Never the
+ * connection: a screen that sends nothing is not a dead socket, and a decoder that did not get its keyframe
+ * is not either. (Closing and reopening the socket here made every still screen reconnect every few seconds.)
+ */
 export const RECOVERY_ASK_AFTER_MS = 1200;
-export const RECOVERY_RECONNECT_AFTER_MS = 4000;
+export const RECOVERY_REBUILD_AFTER_MS = 3000;
 
-export type RecoveryStep = "wait" | "ask-keyframe" | "reconnect" | "done";
+export type RecoveryStep = "wait" | "ask-keyframe" | "rebuild-decoder" | "done";
 
-export function recoveryStep(input: { elapsedMs: number; framesSince: number; asked: boolean }): RecoveryStep {
+export function recoveryStep(input: { elapsedMs: number; framesSince: number; asked: boolean; rebuilt: boolean }): RecoveryStep {
   if (input.framesSince > 0) return "done";
-  if (input.elapsedMs >= RECOVERY_RECONNECT_AFTER_MS) return "reconnect";
+  if (input.elapsedMs >= RECOVERY_REBUILD_AFTER_MS && !input.rebuilt) return "rebuild-decoder";
   if (input.elapsedMs >= RECOVERY_ASK_AFTER_MS && !input.asked) return "ask-keyframe";
   return "wait";
 }
@@ -174,4 +183,18 @@ export function decodeStallStep(
     return { state: { seen: now.seen, decoded: now.decoded, since: now.at }, ask: true };
   }
   return { state: { ...state, seen: now.seen }, ask: false };
+}
+
+/** Frames arrive but nothing decodes: first ask for a keyframe, and if that does not help rebuild the decoder. */
+export function stallAction(consecutiveAsks: number): "ask-keyframe" | "rebuild-decoder" {
+  return consecutiveAsks < 1 ? "ask-keyframe" : "rebuild-decoder";
+}
+
+/**
+ * What a page tells the agent about its viewer. `active: false` stops the pictures (heartbeats and pings
+ * continue); `active: true` brings them back, starting with the SPS/PPS and a keyframe. An agent that does
+ * not know the message ignores it, and the page drops the frames itself.
+ */
+export function viewerMessage(active: boolean): string {
+  return JSON.stringify({ type: "viewer", active });
 }

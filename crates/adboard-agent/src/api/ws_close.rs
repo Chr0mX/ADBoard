@@ -9,17 +9,62 @@ use axum::extract::ws::CloseFrame;
 use std::time::{Duration, Instant};
 
 /// A frame, ping or heartbeat that cannot be written for this long means the peer stopped reading
-/// (a frozen tab, a half-open connection): free the subscriber instead of waiting for the OS.
-pub(super) const SEND_TIMEOUT: Duration = Duration::from_secs(15);
+/// (a frozen tab, a half-open connection): free the subscriber instead of waiting for the OS. Long enough
+/// for a Wi-Fi roam or a throttled background tab to catch up, short enough to free a dead peer.
+pub(super) const SEND_TIMEOUT: Duration = Duration::from_secs(30);
 /// Browsers answer pings on their own. Nothing at all from the peer for this long (the ping goes out
 /// every 25 s) means the connection is dead even if the OS has not noticed.
+#[cfg(not(test))]
 pub(super) const PEER_SILENT_AFTER: Duration = Duration::from_secs(70);
+/// Short in tests, so a client that goes silent can be shown to be closed without a minute's wait.
+#[cfg(test)]
+pub(super) const PEER_SILENT_AFTER: Duration = Duration::from_secs(2);
 /// A socket that has held back delta frames this long without a keyframe asks for one again.
 pub(super) const KEYFRAME_STALL: Duration = Duration::from_secs(2);
 /// A close frame is best effort: do not wait on it longer than this.
 pub(super) const CLOSE_WRITE_LIMIT: Duration = Duration::from_secs(2);
 /// Connecting to a remote agent's video socket may take this long before the stream is reported lost.
 pub(super) const PROXY_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// What a video socket has sent, for the log line that explains how it ended. Written by the sending
+/// task, read when the socket is done. Times are milliseconds since the socket opened (0: never).
+#[derive(Default)]
+pub(super) struct LinkStats {
+    pub(super) frames: std::sync::atomic::AtomicU64,
+    pub(super) last_frame_ms: std::sync::atomic::AtomicU64,
+    pub(super) last_heartbeat_ms: std::sync::atomic::AtomicU64,
+    /// The page told the agent this viewer is idle (no pictures wanted).
+    pub(super) idle: std::sync::atomic::AtomicBool,
+}
+
+impl LinkStats {
+    pub(super) fn note_frame(&self, since: Instant) {
+        self.frames.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.last_frame_ms
+            .store(since.elapsed().as_millis() as u64 + 1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub(super) fn note_heartbeat(&self, since: Instant) {
+        self.last_heartbeat_ms
+            .store(since.elapsed().as_millis() as u64 + 1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// How long before now the event stored in `at` happened, or `None` if it never did.
+    pub(super) fn ago_ms(&self, at: &std::sync::atomic::AtomicU64, since: Instant) -> Option<u64> {
+        let stored = at.load(std::sync::atomic::Ordering::Relaxed);
+        (stored > 0).then(|| (since.elapsed().as_millis() as u64).saturating_sub(stored - 1))
+    }
+}
+
+/// The page's message about its viewer: `{"type":"viewer","active":false}` stops the pictures and
+/// `active: true` brings them back. Anything else a page sends on the socket is ignored.
+pub(super) fn parse_viewer_message(text: &str) -> Option<bool> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    if value.get("type")?.as_str()? != "viewer" {
+        return None;
+    }
+    value.get("active")?.as_bool()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum CloseReason {
@@ -137,6 +182,32 @@ mod tests {
         assert!(all
             .iter()
             .all(|r| !r.text().is_empty() && r.text().len() < 120));
+    }
+
+    #[test]
+    fn the_viewer_message_is_read_strictly() {
+        assert_eq!(parse_viewer_message(r#"{"type":"viewer","active":false}"#), Some(false));
+        assert_eq!(parse_viewer_message(r#"{"type":"viewer","active":true}"#), Some(true));
+        // Anything else is not a viewer message and changes nothing.
+        assert_eq!(parse_viewer_message(r#"{"type":"viewer"}"#), None);
+        assert_eq!(parse_viewer_message(r#"{"type":"other","active":false}"#), None);
+        assert_eq!(parse_viewer_message(r#"{"active":false}"#), None);
+        assert_eq!(parse_viewer_message(r#"{"type":"viewer","active":"no"}"#), None);
+        assert_eq!(parse_viewer_message("not json"), None);
+        assert_eq!(parse_viewer_message(""), None);
+    }
+
+    #[test]
+    fn link_stats_report_when_things_last_happened_and_never_for_what_did_not() {
+        let stats = LinkStats::default();
+        let opened = Instant::now();
+        assert_eq!(stats.ago_ms(&stats.last_frame_ms, opened), None);
+        assert_eq!(stats.ago_ms(&stats.last_heartbeat_ms, opened), None);
+        stats.note_frame(opened);
+        stats.note_heartbeat(opened);
+        assert_eq!(stats.frames.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert!(stats.ago_ms(&stats.last_frame_ms, opened).unwrap() < 1000);
+        assert!(stats.ago_ms(&stats.last_heartbeat_ms, opened).unwrap() < 1000);
     }
 
     #[test]

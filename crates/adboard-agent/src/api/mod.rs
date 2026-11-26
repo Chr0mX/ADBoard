@@ -59,6 +59,10 @@ const HEADER_SUFFIXES: [&str; 8] = ["token", "mode", "targets", "filename", "des
 const WS_KEEPALIVE_SECS: u64 = 25;
 
 fn ws_keepalive() -> tokio::time::Interval {
+    // Tests shorten the silence limit (see ws_close), so a reading client must answer pings just as often.
+    #[cfg(test)]
+    let period = std::time::Duration::from_millis(500);
+    #[cfg(not(test))]
     let period = std::time::Duration::from_secs(WS_KEEPALIVE_SECS);
     let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

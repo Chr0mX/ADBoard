@@ -30,6 +30,8 @@ import {
   needsKeyframeAfter,
   readBackgroundPolicy,
   recoveryStep,
+  stallAction,
+  viewerMessage,
   streamMode,
 } from "./stream-policy-core.ts";
 
@@ -61,23 +63,23 @@ test("a visible window shows at full speed whatever the background setting says"
 });
 
 test("a phone scrolled off screen is suspended on its own; the background setting does not apply", () => {
-  for (const p of [policy(true, 5), policy(false, 5), policy(false, 1)]) assert.equal(mode(false, false, p), "hold-then-suspend");
+  for (const p of [policy(true, 5), policy(false, 5), policy(false, 1)]) assert.equal(mode(false, false, p), "idle");
 });
 
 test("a hidden window pauses by default and keeps the socket when Pause is off", () => {
-  assert.equal(mode(true, true), "hold-then-suspend");
-  assert.equal(mode(true, false), "hold-then-suspend");
+  assert.equal(mode(true, true), "idle");
+  assert.equal(mode(true, false), "idle");
   assert.equal(mode(true, true, policy(false, 1)), "sample-keyframes");
   assert.equal(mode(true, true, policy(false, 2)), "throttle-paint");
   assert.equal(mode(true, false, policy(false, 60)), "throttle-paint", "hidden window dominates a stream whose views are also off screen");
 });
 
 test("a decoder path that cannot be thinned falls back to pausing", () => {
-  assert.equal(mode(true, true, policy(false, 10), false), "hold-then-suspend");
+  assert.equal(mode(true, true, policy(false, 10), false), "idle");
 });
 
 test("only the thinned modes keep a socket while hidden", () => {
-  assert.deepEqual(["full", "hold-then-suspend", "sample-keyframes", "throttle-paint"].map((m) => keepsSocketInBackground(m as never)), [false, false, true, true]);
+  assert.deepEqual(["full", "idle", "sample-keyframes", "throttle-paint"].map((m) => keepsSocketInBackground(m as never)), [false, false, true, true]);
 });
 
 test("one picture is due per 1/FPS across the whole range", () => {
@@ -106,18 +108,20 @@ test("one picture is due per 1/FPS across the whole range", () => {
 
 test("returning from a thinned or suspended stream needs a fresh keyframe", () => {
   assert.equal(needsKeyframeAfter("sample-keyframes", "full"), true);
-  assert.equal(needsKeyframeAfter("hold-then-suspend", "full"), true);
+  assert.equal(needsKeyframeAfter("idle", "full"), true);
   assert.equal(needsKeyframeAfter("throttle-paint", "full"), false, "every frame was decoded: the chain is intact");
-  assert.equal(needsKeyframeAfter("hold-then-suspend", "sample-keyframes"), false);
+  assert.equal(needsKeyframeAfter("idle", "sample-keyframes"), false);
   assert.equal(needsKeyframeAfter("full", "throttle-paint"), false);
 });
 
 test("recovery waits for a picture, then asks once, then starts the connection over", () => {
-  assert.equal(recoveryStep({ elapsedMs: 300, framesSince: 0, asked: false }), "wait");
-  assert.equal(recoveryStep({ elapsedMs: 1300, framesSince: 0, asked: false }), "ask-keyframe");
-  assert.equal(recoveryStep({ elapsedMs: 1300, framesSince: 0, asked: true }), "wait");
-  assert.equal(recoveryStep({ elapsedMs: 4100, framesSince: 0, asked: true }), "reconnect");
-  assert.equal(recoveryStep({ elapsedMs: 4100, framesSince: 3, asked: true }), "done", "a picture arrived: nothing more to do");
+  const step = (elapsedMs: number, framesSince: number, asked: boolean, rebuilt = false) => recoveryStep({ elapsedMs, framesSince, asked, rebuilt });
+  assert.equal(step(300, 0, false), "wait");
+  assert.equal(step(1300, 0, false), "ask-keyframe");
+  assert.equal(step(1300, 0, true), "wait");
+  assert.equal(step(3100, 0, true), "rebuild-decoder");
+  assert.equal(step(3100, 0, true, true), "wait", "the decoder is rebuilt once");
+  assert.equal(step(4100, 3, true), "done", "a picture arrived: nothing more to do");
 });
 
 test("a decoder that gets frames but shows nothing is asked for a keyframe after two seconds", () => {
@@ -148,4 +152,53 @@ test("a still screen and a working stream never trigger the stall ask", () => {
     assert.equal(step.ask, false);
     state = step.state;
   }
+});
+
+// ---- persistent connection: what may and may not close a viewer's socket ----
+
+test("no step of the recovery ladder is a reconnect, however long nothing arrives", () => {
+  const seen = new Set<string>();
+  for (let elapsedMs = 0; elapsedMs <= 120_000; elapsedMs += 100) {
+    for (const asked of [false, true]) {
+      for (const rebuilt of [false, true]) seen.add(recoveryStep({ elapsedMs, framesSince: 0, asked, rebuilt }));
+    }
+  }
+  assert.deepEqual([...seen].sort(), ["ask-keyframe", "rebuild-decoder", "wait"], "a still screen is never a reason to reconnect");
+});
+
+test("hiding the window, Alt-Tab and a tile out of sight make a viewer idle, never a closed socket", () => {
+  // Every situation with nothing to show maps to "idle" or a thinned mode that keeps the socket.
+  for (const p of [policy(true, 5), policy(false, 5), policy(false, 1), policy(false, 60)]) {
+    for (const pageHidden of [false, true]) {
+      for (const anyViewVisible of [false, true]) {
+        for (const canThrottle of [false, true]) {
+          const m = mode(pageHidden, anyViewVisible, p, canThrottle);
+          assert.ok(["full", "idle", "sample-keyframes", "throttle-paint"].includes(m), m);
+        }
+      }
+    }
+  }
+  assert.equal(mode(true, true, policy(true, 5)), "idle", "hidden window with Pause on");
+  assert.equal(mode(false, false), "idle", "a tile out of sight");
+});
+
+test("the idle timer only goes idle after the grace period, and returning cancels it or resumes", () => {
+  // Hidden: arm. Back within the grace: disarm. Went idle: showing again resumes (tells the agent), nothing reconnects.
+  assert.equal(onVisibilityChange({ suspended: false, armed: false }, false), "arm");
+  assert.equal(onVisibilityChange({ suspended: false, armed: true }, true), "disarm");
+  assert.equal(onVisibilityChange({ suspended: true, armed: false }, true), "resume");
+  // A second hide while already idle changes nothing: no timers pile up.
+  assert.equal(onVisibilityChange({ suspended: true, armed: false }, false), "none");
+  assert.equal(onVisibilityChange({ suspended: false, armed: true }, false), "none");
+});
+
+test("a stalled decoder is first asked for a keyframe and only then rebuilt", () => {
+  assert.equal(stallAction(0), "ask-keyframe");
+  assert.equal(stallAction(1), "rebuild-decoder");
+  assert.equal(stallAction(5), "rebuild-decoder");
+});
+
+test("the viewer message is the plain control message the agent expects", () => {
+  assert.deepEqual(JSON.parse(viewerMessage(false)), { type: "viewer", active: false });
+  assert.deepEqual(JSON.parse(viewerMessage(true)), { type: "viewer", active: true });
 });

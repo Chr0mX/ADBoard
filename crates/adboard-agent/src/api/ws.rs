@@ -604,6 +604,12 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
     let connected_at = std::time::Instant::now();
     let last_heard_ms = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let heard = last_heard_ms.clone();
+    // Transport health and video activity are separate: what was sent, and when, for the closing log.
+    let link = Arc::new(LinkStats::default());
+    let link_send = link.clone();
+    // The page says whether this viewer wants pictures (it went idle: hidden, or out of sight). The socket,
+    // its pings and its heartbeats are unaffected; only the pictures stop, and start again with a keyframe.
+    let (viewer_tx, mut viewer_rx) = tokio::sync::watch::channel(true);
 
     let mut send_task = tokio::spawn(async move {
         // A write that cannot finish (the browser froze or the connection is half open) ends this
@@ -618,6 +624,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
         let outcome: Option<CloseReason> = 'session: {
             for au in replay {
                 put!('session, Message::Binary(au));
+                link_send.note_frame(connected_at);
             }
             // Scrcpy sockets always wait: the replayed IDR must not be followed by
             // later P-frames. The keyframe requested above ends the wait.
@@ -626,6 +633,8 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
             let mut waiting_since = scrcpy_live.then(std::time::Instant::now);
             let mut held_back = 0u32;
             let mut stall_asked_at: Option<std::time::Instant> = None;
+            let mut viewer_active = true;
+            let mut viewer_open = true;
             let mut stall_watch = tokio::time::interval(std::time::Duration::from_secs(1));
             stall_watch.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let mut keepalive = ws_keepalive();
@@ -662,6 +671,43 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                         // video, so the page needs this to tell "quiet" from "dead".
                         let frame = sessions_lag.video_status_frame(&serial_lag).await;
                         put!('session, Message::Text(status_with_heartbeat(&frame).into()));
+                        link_send.note_heartbeat(connected_at);
+                    }
+                    changed = viewer_rx.changed(), if viewer_open => {
+                        if changed.is_err() {
+                            // The reading half is gone; the select below ends this task.
+                            viewer_open = false;
+                            continue;
+                        }
+                        let wants = *viewer_rx.borrow_and_update();
+                        if wants == viewer_active {
+                            continue;
+                        }
+                        viewer_active = wants;
+                        link_send.idle.store(!wants, std::sync::atomic::Ordering::Relaxed);
+                        if !wants {
+                            info!(serial = %serial_log, "viewer idle: pictures paused, heartbeats continue");
+                            waiting_since = None;
+                            stall_asked_at = None;
+                            held_back = 0;
+                        } else {
+                            info!(serial = %serial_log, "viewer active again: sending the SPS/PPS and a keyframe");
+                            // Frames went by unsent, so the next picture must be a keyframe, as on a new socket.
+                            wait_for_key = scrcpy_live;
+                            waiting_since = scrcpy_live.then(std::time::Instant::now);
+                            stall_asked_at = None;
+                            for au in hub_lag.replay_access_units(&serial_lag).await {
+                                put!('session, Message::Binary(au));
+                                link_send.note_frame(connected_at);
+                            }
+                            if scrcpy_live {
+                                let sessions = sessions_lag.clone();
+                                let serial = serial_lag.clone();
+                                tokio::spawn(async move {
+                                    let _ = sessions.reset_video(&serial).await;
+                                });
+                            }
+                        }
                     }
                     packet = video_rx.recv() => {
                         match packet {
@@ -669,6 +715,10 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                 put!('session, Message::Text(serde_json::to_string(&frame).unwrap_or_default().into()));
                             }
                             Ok(crate::video::VideoPacket::AnnexB(bytes)) => {
+                                if !viewer_active {
+                                    // An idle viewer is not sent pictures. The packet is dropped here, not queued.
+                                    continue;
+                                }
                                 let was_waiting = wait_for_key;
                                 if !crate::video::keep_after_gap(&mut wait_for_key, &bytes) {
                                     held_back += 1;
@@ -682,9 +732,13 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                     stall_asked_at = None;
                                 }
                                 put!('session, Message::Binary(bytes));
+                                link_send.note_frame(connected_at);
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                                 debug!(lagged = n, "video subscriber lagged");
+                                if !viewer_active {
+                                    continue;
+                                }
                                 // This viewer fell behind: ask the phone for a keyframe now
                                 // instead of leaving it on the cached one until the next
                                 // natural keyframe, which can be seconds away.
@@ -729,7 +783,19 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
         };
         match outcome {
             Some(reason) => {
-                info!(serial = %serial_log, code = reason.code(), reason = reason.text(), "video websocket closed by the agent");
+                info!(
+                    serial = %serial_log,
+                    code = reason.code(),
+                    reason = reason.text(),
+                    initiator = "agent",
+                    intentional = false,
+                    open_secs = connected_at.elapsed().as_secs(),
+                    frames_sent = link_send.frames.load(std::sync::atomic::Ordering::Relaxed),
+                    last_frame_ago_ms = link_send.ago_ms(&link_send.last_frame_ms, connected_at),
+                    last_heartbeat_ago_ms = link_send.ago_ms(&link_send.last_heartbeat_ms, connected_at),
+                    viewer_idle = link_send.idle.load(std::sync::atomic::Ordering::Relaxed),
+                    "video websocket closed by the agent"
+                );
                 // Best effort: a peer that stopped reading will not take the close frame either.
                 let _ = write_within(&mut sender, reason.frame(), CLOSE_WRITE_LIMIT).await;
             }
@@ -746,9 +812,17 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                 connected_at.elapsed().as_millis() as u64,
                 std::sync::atomic::Ordering::Relaxed,
             );
-            if let Message::Close(frame) = message {
-                browser_close_set.store(frame.map(|f| u32::from(f.code)).unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
-                break;
+            match message {
+                Message::Close(frame) => {
+                    browser_close_set.store(frame.map(|f| u32::from(f.code)).unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+                Message::Text(text) => {
+                    if let Some(active) = parse_viewer_message(&text) {
+                        let _ = viewer_tx.send(active);
+                    }
+                }
+                _ => {}
             }
         }
     });
@@ -761,6 +835,10 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
         %serial,
         browser_close_code = browser_close.load(std::sync::atomic::Ordering::Relaxed),
         open_secs = connected_at.elapsed().as_secs(),
+        frames_sent = link.frames.load(std::sync::atomic::Ordering::Relaxed),
+        last_frame_ago_ms = link.ago_ms(&link.last_frame_ms, connected_at),
+        last_heartbeat_ago_ms = link.ago_ms(&link.last_heartbeat_ms, connected_at),
+        viewer_idle = link.idle.load(std::sync::atomic::Ordering::Relaxed),
         "video websocket disconnected (session left running)"
     );
 }
