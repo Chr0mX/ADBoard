@@ -160,6 +160,11 @@ impl VideoHub {
         }
     }
 
+    /// Has this phone's current stream produced a keyframe yet? Until it has, its capture may not be running.
+    pub async fn has_keyframe(&self, serial: &str) -> bool {
+        self.channels.read().await.get(serial).is_some_and(|ch| ch.last_keyframe.is_some())
+    }
+
     /// Forget the cached SPS/PPS, keyframe and status of a phone whose producer stopped. A socket
     /// opened after a restart or a reconnect must not be replayed the previous session's picture
     /// (it can have another size or rotation); it waits for the new session's first keyframe.

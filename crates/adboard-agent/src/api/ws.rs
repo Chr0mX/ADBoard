@@ -704,13 +704,17 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
         }
     });
 
+    // The code the browser closed with (0: it sent none, or the connection just ended).
+    let browser_close = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let browser_close_set = browser_close.clone();
     let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(_message)) = receiver.next().await {
+        while let Some(Ok(message)) = receiver.next().await {
             last_heard_ms.store(
                 connected_at.elapsed().as_millis() as u64,
                 std::sync::atomic::Ordering::Relaxed,
             );
-            if matches!(_message, Message::Close(_)) {
+            if let Message::Close(frame) = message {
+                browser_close_set.store(frame.map(|f| u32::from(f.code)).unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
                 break;
             }
         }
@@ -720,7 +724,12 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
         _ = &mut send_task => recv_task.abort(),
         _ = &mut recv_task => send_task.abort(),
     }
-    info!(%serial, "video websocket disconnected (session left running)");
+    info!(
+        %serial,
+        browser_close_code = browser_close.load(std::sync::atomic::Ordering::Relaxed),
+        open_secs = connected_at.elapsed().as_secs(),
+        "video websocket disconnected (session left running)"
+    );
 }
 
 pub(super) async fn handle_audio_socket(socket: WebSocket, state: AppState, serial: String) {

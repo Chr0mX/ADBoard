@@ -183,3 +183,107 @@ async fn shell_input_for_a_virtual_display_is_refused_until_its_id_is_known() {
     assert!(error.contains("not known"), "{error}");
     assert!(mgr.virtual_input_args("PHONE", &[]).await.is_err(), "a physical serial is not a virtual display");
 }
+
+/// A real loopback socket standing in for scrcpy-server's control socket: what the phone would receive.
+async fn session_with_control_socket(serial: &str) -> (Arc<SessionManager>, Arc<VideoHub>, tokio::net::TcpStream) {
+    let hub = VideoHub::new();
+    let mgr = SessionManager::new_with_source(None, None, hub.clone(), VideoSourceKind::Off);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let client = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let (phone_side, _) = listener.accept().await.unwrap();
+    let mut guard = mgr.sessions.write().await;
+    guard.insert(
+        serial.to_string(),
+        LiveSession {
+            info: SessionStatus {
+                serial: serial.to_string(),
+                stream: StreamState::Streaming,
+                note: String::new(),
+                backend: "scrcpy".into(),
+            },
+            child: None,
+            video: None,
+            forward_port: None,
+            server_log: None,
+            control: Some(ControlSender::spawn(client)),
+            audio_child: None,
+            audio_port: None,
+        },
+    );
+    drop(guard);
+    (mgr, hub, phone_side)
+}
+
+async fn bytes_within(socket: &mut tokio::net::TcpStream, ms: u64) -> Vec<u8> {
+    use tokio::io::AsyncReadExt;
+    let mut buf = [0u8; 64];
+    match tokio::time::timeout(std::time::Duration::from_millis(ms), socket.read(&mut buf)).await {
+        Ok(Ok(n)) => buf[..n].to_vec(),
+        _ => Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn no_keyframe_reset_reaches_a_stream_that_has_not_produced_its_first_frame() {
+    // scrcpy-server dies with a NullPointerException when RESET_VIDEO arrives before its capture runs;
+    // the log showed it 6 ms after the pump attached. The first frame is a keyframe anyway.
+    let (mgr, hub, mut phone) = session_with_control_socket("FRESH").await;
+    mgr.first_frame_grace_ms.store(400, std::sync::atomic::Ordering::Relaxed);
+    // The first frame arrives 100 ms after the ask: the ask is answered by it, and nothing is sent.
+    let late = hub.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        late.publish_annexb("FRESH", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
+    });
+    assert_eq!(mgr.reset_video("FRESH").await, Ok(()));
+    assert!(bytes_within(&mut phone, 300).await.is_empty(), "nothing is sent while the first frame is awaited");
+    hub.clear_cache("FRESH").await;
+
+    // Once the stream has produced a keyframe the capture is running and a reset is sent.
+    hub.publish_annexb("FRESH", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
+    assert_eq!(mgr.reset_video("FRESH").await, Ok(()));
+    assert_eq!(bytes_within(&mut phone, 1000).await, vec![17], "RESET_VIDEO (type 17)");
+}
+
+#[tokio::test]
+async fn a_restarted_stream_is_protected_again_until_its_new_first_frame() {
+    let (mgr, hub, mut phone) = session_with_control_socket("RESTARTED").await;
+    mgr.first_frame_grace_ms.store(2000, std::sync::atomic::Ordering::Relaxed);
+    hub.publish_annexb("RESTARTED", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
+    // The producer stopped (a crash, a restart): its keyframe no longer counts.
+    hub.clear_cache("RESTARTED").await;
+    let asking = {
+        let mgr = mgr.clone();
+        tokio::spawn(async move { mgr.reset_video("RESTARTED").await })
+    };
+    assert!(bytes_within(&mut phone, 300).await.is_empty(), "no reset while the new stream has no frame yet");
+    // The new stream's first frame arrives: it answers the ask, and nothing is sent to the phone.
+    hub.publish_annexb("RESTARTED", vec![0, 0, 0, 1, 0x65, 0x11, 0x22]).await;
+    assert_eq!(asking.await.unwrap(), Ok(()));
+    assert!(bytes_within(&mut phone, 300).await.is_empty());
+}
+
+#[tokio::test]
+async fn two_asks_at_connect_make_one_reset_and_without_a_control_socket_the_caller_hears_it() {
+    let (mgr, hub, mut phone) = session_with_control_socket("TWICE").await;
+    hub.publish_annexb("TWICE", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
+    // The agent's own connect-time ask and the page's ask arrive within milliseconds of each other.
+    assert_eq!(mgr.reset_video("TWICE").await, Ok(()));
+    assert_eq!(mgr.reset_video("TWICE").await, Ok(()));
+    let first = bytes_within(&mut phone, 600).await;
+    assert_eq!(first, vec![17], "one RESET_VIDEO, not two");
+    assert!(bytes_within(&mut phone, 1200).await.is_empty(), "and no second one afterwards");
+    // A phone with no control connection still reports it, so the connect-time retry loop keeps trying.
+    assert!(mgr.reset_video("NO-SUCH-PHONE").await.is_err());
+}
+
+#[tokio::test]
+async fn a_still_screen_that_never_sends_a_frame_still_gets_its_reset_after_the_grace() {
+    let (mgr, _hub, mut phone) = session_with_control_socket("STILL").await;
+    mgr.first_frame_grace_ms.store(150, std::sync::atomic::Ordering::Relaxed);
+    let started = std::time::Instant::now();
+    assert_eq!(mgr.reset_video("STILL").await, Ok(()));
+    assert!(started.elapsed() >= std::time::Duration::from_millis(150), "it waited for a first frame");
+    assert_eq!(bytes_within(&mut phone, 1000).await, vec![17], "then sent the reset so the encoder produces one");
+}

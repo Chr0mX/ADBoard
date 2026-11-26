@@ -116,6 +116,8 @@ pub struct SessionManager {
     clipboard_tx: broadcast::Sender<(String, String)>,
     /// One audio start or stop at a time, so a reload cannot launch a second server.
     audio_gates: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// How long a keyframe request waits for a new stream's first frame before it is sent anyway (see `reset_video`).
+    first_frame_grace_ms: std::sync::atomic::AtomicU64,
     /// Keyframe requests per phone are spaced out, whoever asks (see `reset_gate`).
     reset_gate: Arc<std::sync::Mutex<reset_gate::ResetGate>>,
     /// Settings of each virtual display, by `<serial>#vd<N>` key.
@@ -167,6 +169,7 @@ impl SessionManager {
             prefs: RwLock::new(ScrcpyPrefs::default()),
             clipboard_tx,
             audio_gates: std::sync::Mutex::new(HashMap::new()),
+            first_frame_grace_ms: std::sync::atomic::AtomicU64::new(5_000),
             reset_gate: Arc::new(std::sync::Mutex::new(reset_gate::ResetGate::new(reset_gate::RESET_GAP))),
             virtual_specs: RwLock::new(HashMap::new()),
         })
@@ -801,6 +804,30 @@ impl SessionManager {
         let Some(sender) = self.control_sender(serial).await else {
             return Err("scrcpy control is not connected".into());
         };
+        // A reset that reaches scrcpy-server before its capture is running throws a NullPointerException in
+        // the server's control thread (`CaptureControl.reset` on null) and kills the stream, which then has
+        // to restart. Until this stream has produced its first frame there is nothing to reset: that first
+        // frame is a keyframe anyway, so every viewer already gets one.
+        if !self.video_hub.has_keyframe(serial).await {
+            let grace = std::time::Duration::from_millis(self.first_frame_grace_ms.load(std::sync::atomic::Ordering::Relaxed));
+            let mut frames = self.video_hub.subscribe(serial).await;
+            let first = tokio::time::timeout(grace, async {
+                loop {
+                    match frames.recv().await {
+                        Ok(crate::video::VideoPacket::AnnexB(_)) => return true,
+                        Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => return false,
+                    }
+                }
+            })
+            .await
+            .unwrap_or(false);
+            if first {
+                return Ok(());
+            }
+            // Nothing arrived for a while (a still or dark screen sends nothing): the capture is running by
+            // now, so a reset is safe and is what makes the encoder produce a frame.
+        }
         let plan = self
             .reset_gate
             .lock()
