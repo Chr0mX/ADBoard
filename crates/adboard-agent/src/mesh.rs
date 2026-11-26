@@ -1,7 +1,7 @@
 //! Multi-host mesh: controller registry of remote agents + outbound agent client.
 
 use adboard_protocol::{
-    now_ms, ControlMode, ControllerToAgent, Device, HostInfo, HostStatus, MappedTap, NavActionType,
+    now_ms, ControlMode, ControllerToAgent, Device, DeviceStatus, HostInfo, HostStatus, MappedTap, NavActionType,
     NavTargetResult, NormalizedPoint, PointerPhase, Role, SessionAction, SessionStatus,
 };
 use std::collections::HashMap;
@@ -15,6 +15,21 @@ const AGENT_STALE_SECS: u64 = 15;
 /// An agent connection silent for this long is closed by the controller (heartbeats come every 5 s).
 pub const AGENT_DEAD_AFTER: Duration = Duration::from_secs(45);
 const PROXY_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// A silent agent's phones: what was online is only "stale" now. Offline and unauthorized phones stay as reported.
+fn devices_as_known(devices: &[Device], silent_for: Duration) -> Vec<Device> {
+    let stale = silent_for > Duration::from_secs(AGENT_STALE_SECS);
+    devices
+        .iter()
+        .cloned()
+        .map(|mut device| {
+            if stale && device.status == DeviceStatus::Online {
+                device.status = DeviceStatus::Stale;
+            }
+            device
+        })
+        .collect()
+}
 
 pub type CmdTx = mpsc::UnboundedSender<ControllerToAgent>;
 
@@ -193,11 +208,14 @@ impl MeshRegistry {
         }
     }
 
+    /// The phones of every registered agent. While an agent is silent its last report is old, so its
+    /// "online" phones are reported `stale` (nothing may treat them as ready) until it answers again
+    /// or its connection is dropped.
     pub async fn remote_devices(&self) -> Vec<Device> {
         let hosts = self.hosts.read().await;
         let mut out = Vec::new();
         for h in hosts.values() {
-            out.extend(h.devices.iter().cloned());
+            out.extend(devices_as_known(&h.devices, h.last_seen.elapsed()));
         }
         out
     }
@@ -555,6 +573,45 @@ mod tests {
             .await
             .unwrap();
         (conn, cancel)
+    }
+
+    fn phone(serial: &str, status: DeviceStatus) -> Device {
+        let mut device = crate::mock::mock_fleet_of("test", "test", 1).remove(0);
+        device.id = serial.into();
+        device.serial = serial.into();
+        device.status = status;
+        device
+    }
+
+    #[test]
+    fn a_silent_agents_online_phones_are_stale_and_the_rest_are_unchanged() {
+        let phones = vec![
+            phone("on", DeviceStatus::Online),
+            phone("off", DeviceStatus::Offline),
+            phone("auth", DeviceStatus::Unauthorized),
+        ];
+        let fresh = devices_as_known(&phones, Duration::from_secs(AGENT_STALE_SECS));
+        assert_eq!(fresh[0].status, DeviceStatus::Online, "an agent heard from just now");
+        let silent = devices_as_known(&phones, Duration::from_secs(AGENT_STALE_SECS + 1));
+        assert_eq!(silent[0].status, DeviceStatus::Stale);
+        assert_eq!(silent[1].status, DeviceStatus::Offline);
+        assert_eq!(silent[2].status, DeviceStatus::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn remote_phones_are_stale_while_the_agent_is_silent_and_online_again_when_it_speaks() {
+        let mesh = registry();
+        register(&mesh, "lxc").await;
+        mesh.set_devices("lxc", vec![phone("remote-1", DeviceStatus::Online)]).await;
+        assert_eq!(mesh.remote_devices().await[0].status, DeviceStatus::Online);
+
+        // The agent has not been heard from for longer than the stale limit.
+        mesh.hosts.write().await.get_mut("lxc").unwrap().last_seen = Instant::now() - Duration::from_secs(AGENT_STALE_SECS + 5);
+        assert_eq!(mesh.remote_devices().await[0].status, DeviceStatus::Stale);
+        assert_eq!(mesh.host_infos(0).await[1].status, HostStatus::Stale, "the host list says the same");
+
+        mesh.touch("lxc").await;
+        assert_eq!(mesh.remote_devices().await[0].status, DeviceStatus::Online);
     }
 
     #[tokio::test]

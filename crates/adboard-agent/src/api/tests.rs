@@ -878,3 +878,122 @@ fn the_heartbeat_status_frame_keeps_every_field_and_adds_the_beat() {
         assert_eq!(&beat[key], value, "{key}");
     }
 }
+
+// ---- video socket: how it ends, and why the browser is told ----
+
+async fn serve(state: AppState) -> (std::net::SocketAddr, String) {
+    let token = state.api_token().to_string();
+    let app = router_with_auth(state, WebAuth::new(None, false));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    (addr, token)
+}
+
+fn authed_ws(addr: std::net::SocketAddr, path: &str, token: &str) -> tokio_tungstenite::tungstenite::handshake::client::Request {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let mut request = format!("ws://{addr}{path}").into_client_request().unwrap();
+    request.headers_mut().insert(
+        "sec-websocket-protocol",
+        format!("adboard, adboard-token.{}", hex(token)).parse().unwrap(),
+    );
+    request
+}
+
+/// Read until the server closes: the status frames it sent, and the close code and reason.
+async fn read_until_close(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+) -> (Vec<String>, Option<(u16, String)>) {
+    let mut texts = Vec::new();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        while let Some(message) = socket.next().await {
+            match message {
+                Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => texts.push(text.to_string()),
+                Ok(tokio_tungstenite::tungstenite::Message::Close(frame)) => {
+                    return frame.map(|f| (u16::from(f.code), f.reason.to_string()));
+                }
+                Ok(_) => {}
+                Err(_) => return None,
+            }
+        }
+        None
+    })
+    .await
+    .expect("the server closed the socket");
+    (texts, result)
+}
+
+#[tokio::test]
+async fn an_unknown_phone_gets_an_error_frame_and_a_close_code_naming_the_reason() {
+    let (addr, token) = serve(auth_state()).await;
+    let (mut socket, _) = tokio_tungstenite::connect_async(authed_ws(addr, "/ws/devices/NO-SUCH-PHONE/video", &token))
+        .await
+        .unwrap();
+    let (texts, close) = read_until_close(&mut socket).await;
+    assert!(texts.iter().any(|t| t.contains("\"stream\":\"error\"")), "the page is told why: {texts:?}");
+    let (code, reason) = close.expect("a close frame with a code, not a bare TCP close");
+    assert_eq!(code, 4004);
+    assert_eq!(reason, "unknown device");
+}
+
+#[tokio::test]
+async fn a_remote_agent_whose_video_socket_cannot_be_opened_is_reported_as_the_agent() {
+    let state = auth_state();
+    // A phone that belongs to a remote host whose video port nothing listens on.
+    let mut phone = state.list_devices().await.remove(0);
+    phone.serial = "REMOTE-PHONE-1".into();
+    phone.id = "REMOTE-PHONE-1".into();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let cancel = Arc::new(tokio::sync::Notify::new());
+    state
+        .inner
+        .mesh
+        .register("lxc".into(), "lxc".into(), "linux".into(), tx, Some("http://127.0.0.1:1".into()), cancel)
+        .await
+        .unwrap();
+    state.inner.mesh.set_devices("lxc", vec![phone]).await;
+
+    let (addr, token) = serve(state).await;
+    let (mut socket, _) = tokio_tungstenite::connect_async(authed_ws(addr, "/ws/devices/REMOTE-PHONE-1/video", &token))
+        .await
+        .unwrap();
+    let (texts, close) = read_until_close(&mut socket).await;
+    assert!(texts.iter().any(|t| t.contains("video proxy connect failed")), "{texts:?}");
+    let (code, _) = close.expect("a close frame");
+    assert_eq!(code, 4010, "the agent's video could not be reached, which is not the phone's fault");
+}
+
+#[tokio::test]
+async fn a_remote_agent_going_away_leaves_the_local_phones_alone() {
+    let state = auth_state();
+    let ids = |devices: &[adboard_protocol::Device]| -> Vec<(String, adboard_protocol::DeviceStatus)> {
+        let mut out: Vec<_> = devices.iter().map(|d| (d.id.clone(), d.status)).collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    };
+    let local_before = ids(&state.list_devices().await);
+    assert!(!local_before.is_empty());
+
+    let mut remote = state.list_devices().await.remove(0);
+    remote.id = "lxc-phone".into();
+    remote.serial = "lxc-phone".into();
+    remote.status = adboard_protocol::DeviceStatus::Online;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let cancel = Arc::new(tokio::sync::Notify::new());
+    let conn = state
+        .inner
+        .mesh
+        .register("lxc".into(), "lxc".into(), "linux".into(), tx, None, cancel)
+        .await
+        .unwrap();
+    state.inner.mesh.set_devices("lxc", vec![remote]).await;
+    let with_remote = ids(&state.list_devices().await);
+    assert!(with_remote.iter().any(|(id, s)| id == "lxc-phone" && *s == adboard_protocol::DeviceStatus::Online));
+
+    // The agent drops: its phone leaves the list, and every local phone is exactly as it was.
+    assert!(state.inner.mesh.unregister_conn("lxc", conn).await);
+    let after = ids(&state.list_devices().await);
+    assert_eq!(after, local_before, "a remote failure must not touch local phones or their state");
+}

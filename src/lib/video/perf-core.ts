@@ -3,6 +3,8 @@
  * the Display info overlay. Pure module: no browser APIs, runs under `node --test`.
  */
 
+import type { CloseKind, CloseRecord } from "./close-core";
+
 const RING = 256;
 
 export interface StreamPerf {
@@ -33,6 +35,17 @@ export interface StreamPerf {
   /** Coming back to full speed: keyframes asked for, and connections started over, because no picture came. */
   recoveryAsks: number;
   recoveryReconnects: number;
+  /** Sockets opened for this phone since the page loaded (a number far above `reconnects + suspends` means churn). */
+  sockets: number;
+  /** Sockets this page closed on purpose (suspend, stop, restart): not failures. */
+  intentionalCloses: number;
+  /** Sockets that ended without us closing them, by the layer that failed (see close-core). */
+  closes: Record<CloseKind, number>;
+  lastClose: CloseRecord | null;
+  /** Failed attempts since a connection last worked; 0 while connected. */
+  retryAttempts: number;
+  /** How long the last unexpected close took to turn into a picture again (ms), once it did. */
+  lastRecoveryMs: number | null;
   /** "hardware" | "software" | "auto" | "mse" | "" (none yet). */
   decoder: string;
   /** Time spent handling one socket message, newest `RING` samples (ms). */
@@ -61,6 +74,12 @@ export function newStreamPerf(): StreamPerf {
     backgroundSkipped: 0,
     recoveryAsks: 0,
     recoveryReconnects: 0,
+    sockets: 0,
+    intentionalCloses: 0,
+    closes: { normal: 0, device: 0, agent: 0, client: 0, transport: 0, stale: 0, other: 0 },
+    lastClose: null,
+    retryAttempts: 0,
+    lastRecoveryMs: null,
     decoder: "",
     messageMs: [],
     inputMs: [],
@@ -116,6 +135,9 @@ export function snapshotPerf(perf: StreamPerf): StreamPerfSnapshot {
   void _marked;
   return {
     ...counters,
+    // Copies: the report is read while the counters keep changing.
+    closes: { ...counters.closes },
+    lastClose: counters.lastClose ? { ...counters.lastClose } : null,
     messageMsP50: percentile(messageMs, 50),
     messageMsP95: percentile(messageMs, 95),
     inputMsP50: percentile(inputMs, 50),

@@ -11,10 +11,12 @@ import {
   createSnapshotGate,
   initialFleet,
   unreachableMessage,
+  isUnconfirmed,
   withFreshness,
   type FleetState,
 } from "@/lib/devices/fleet-state";
 import { MOCK_DEVICES } from "@/lib/devices/mock-data";
+import { isAuthRefusal } from "@/lib/api/http-error";
 import type {
   ControlMode,
   Device,
@@ -172,7 +174,7 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
       const reason = err instanceof Error ? err.message : "request failed";
       if (demo) return false;
       console.error("[adboard] listDevices failed", err);
-      setFleet((prev) => applyFailure({ ...prev, lastOkAt: lastOkRef.current ?? prev.lastOkAt }, reason));
+      setFleet((prev) => applyFailure({ ...prev, lastOkAt: lastOkRef.current ?? prev.lastOkAt }, reason, isAuthRefusal(err)));
       return false;
     }
   }, [applyFleet, demo]);
@@ -220,7 +222,7 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
 
   // While the agent is unreachable keep asking, slowly and with jitter, so the page recovers on its own.
   useEffect(() => {
-    if (demo || fleet.connection !== "unreachable") return;
+    if (demo || !isUnconfirmed(fleet.connection)) return;
     let stop = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const backoff = createBackoff({ baseMs: 1000, maxMs: 10000 });
@@ -529,7 +531,47 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
     };
   }, [keyboardOn, keyboardScope]);
 
+  /**
+   * Type on the phones the stage controls (the phone app has no hardware keyboard to forward). Resolves to
+   * a sentence when nothing was typed, so the caller can show it next to the field; null when it went through.
+   */
+  const typeOnPhone = useCallback(
+    async (input: { text: string } | { keycode: number }): Promise<string | null> => {
+      const targets = targetsRef.current;
+      if (targets.length === 0) return "No phone is ready to type on.";
+      const mode = modeRef.current;
+      const run = async (): Promise<string | null> => {
+        try {
+          let result;
+          if ("text" in input) {
+            result = await devicesClient.sendText(mode, targets, input.text);
+          } else {
+            result = await devicesClient.sendKey(mode, targets, { action: "down", keycode: input.keycode, repeat: 0, metastate: 0 });
+            await devicesClient.sendKey(mode, targets, { action: "up", keycode: input.keycode, repeat: 0, metastate: 0 });
+          }
+          const failed = result.results.filter((row) => !row.ok);
+          if (failed.length === 0) return null;
+          const detail = failed[0]?.error;
+          return failed.length === result.results.length
+            ? (detail ?? "The phone did not take it.")
+            : `${failed.length} of ${result.results.length} phones did not take it${detail ? `: ${detail}` : ""}.`;
+        } catch (err) {
+          return err instanceof Error ? err.message : "Typing failed.";
+        }
+      };
+      // Same order as keys from a hardware keyboard.
+      const next = keyQueue.current.then(run, run);
+      keyQueue.current = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
+    },
+    [],
+  );
+
   return {
+    typeOnPhone,
     devices,
     loading,
     error,

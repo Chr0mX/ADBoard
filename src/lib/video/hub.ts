@@ -35,6 +35,7 @@ import {
   type StreamMode,
 } from "@/lib/video/stream-policy-core";
 import { createBackoff, isStale } from "@/lib/api/reconnect-core";
+import { closeKind, describeClose, shouldForgetToken, type CloseKind, type CloseRecord } from "@/lib/video/close-core";
 import {
   markInput,
   newStreamPerf,
@@ -298,6 +299,12 @@ class SharedStream {
   /** After coming back to full speed: watches that a picture really arrives. */
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   private recoveryAsked = false;
+  /** When the last unexpected close happened, until a picture shows again (for `lastRecoveryMs`). */
+  private closedAt: number | null = null;
+  private socketOpenedAt = 0;
+  private socketFramesAtOpen = 0;
+  /** The next `disconnect` ends a connection that failed, not one this page chose to close. */
+  private disconnectIsFailure = false;
   // The newest decoded frame, painted once per display refresh.
   private slot = createFrameSlot<VideoFrame>(
     (run) => requestAnimationFrame(run),
@@ -475,6 +482,8 @@ class SharedStream {
     // sleeping laptop, a dropped Wi-Fi link): reconnect instead of waiting.
     if (this.socket && !this.suspended && isStale(this.lastMessageAt, now, this.heartbeatSeconds)) {
       this.perf.staleReconnects += 1;
+      this.recordClose(0, `no message for ${Math.round((now - this.lastMessageAt) / 1000)} s`, false, "stale");
+      this.disconnectIsFailure = true;
       this.reconnect();
     }
     const sample = this.meter;
@@ -676,9 +685,42 @@ class SharedStream {
     const socket = this.socket;
     this.socket = null;
     if (socket) {
+      // Closed by this page on purpose (suspend, stop, restart): never reported as a failure.
+      if (this.disconnectIsFailure) this.disconnectIsFailure = false;
+      else this.perf.intentionalCloses += 1;
       socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null;
       socket.close();
     }
+  }
+
+  /** Note a connection that ended without this page closing it; returns which layer it blames. */
+  private recordClose(code: number, reason: string, wasClean: boolean, kindOverride?: CloseKind): CloseKind {
+    const now = performance.now();
+    const kind = kindOverride ?? closeKind(code);
+    const record: CloseRecord = {
+      code,
+      reason,
+      wasClean,
+      kind,
+      at: Date.now(),
+      openForMs: Math.round(now - this.socketOpenedAt),
+      frames: this.perf.received - this.socketFramesAtOpen,
+    };
+    this.perf.closes[kind] += 1;
+    this.perf.lastClose = record;
+    this.perf.retryAttempts += 1;
+    this.closedAt = now;
+    if (kind !== "normal") {
+      console.info(`[adboard video] ${this.serial}: ${describeClose(record)} after ${record.openForMs} ms and ${record.frames} frames; retry ${this.perf.retryAttempts}`);
+    }
+    return kind;
+  }
+
+  /** The first picture after an unexpected close: how long the stream was gone. */
+  private noteRecovered() {
+    if (this.closedAt === null) return;
+    this.perf.lastRecoveryMs = Math.round(performance.now() - this.closedAt);
+    this.closedAt = null;
   }
 
   private markBroken(reason: string) {
@@ -702,6 +744,7 @@ class SharedStream {
           return;
         }
         this.perf.decoded += 1;
+        this.noteRecovered();
         this.setState({ decodeState: "decoding", error: null });
         if (this.mode === "throttle-paint") {
           // Hidden window at a reduced rate: every picture had to be decoded, but only about
@@ -764,6 +807,9 @@ class SharedStream {
 
   private connect = () => {
     if (this.closed || this.suspended) return;
+    // One socket per phone: a second worker (a late retry timer, a resume racing a reconnect) closes the old one
+    // first instead of leaving it open behind a newer generation.
+    if (this.socket) this.disconnect();
     this.mode = this.computeMode();
     this.lastSampleAt = 0;
     const generation = ++this.generation;
@@ -805,6 +851,9 @@ class SharedStream {
     const socket = new WebSocket(url, agentWsProtocols());
     socket.binaryType = "arraybuffer";
     this.socket = socket;
+    this.perf.sockets += 1;
+    this.socketOpenedAt = performance.now();
+    this.socketFramesAtOpen = this.perf.received;
     const current = () => generation === this.generation && !this.closed;
 
     socket.onopen = () => {
@@ -818,15 +867,19 @@ class SharedStream {
       else this.onAccessUnit(new Uint8Array(event.data as ArrayBuffer));
       if (perfTiming) recordMessage(this.perf, performance.now() - started);
     };
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (!current()) return;
+      // Not ours (we close through `disconnect`, which silences this handler): the agent, a proxy or
+      // the network ended it. Say which, so a freeze can be traced to a layer.
+      const kind = this.recordClose(event.code, event.reason ?? "", event.wasClean);
       this.teardownDecoder();
       this.mse?.close();
       this.mse = null;
       this.description = null;
       this.perf.reconnects += 1;
-      // Usually the agent restarted, and with it the token: fetch it again.
-      forgetAgentToken();
+      // After a restart or a failed connection the agent may be a new process with a new token. When it
+      // said why it closed, it is the same process and the token is fine.
+      if (shouldForgetToken(kind)) forgetAgentToken();
       this.retryTimer = setTimeout(this.connect, this.backoff.next());
     };
     socket.onerror = () => socket.close();
@@ -842,6 +895,7 @@ class SharedStream {
     if (typeof msg.heartbeat === "number" && msg.heartbeat > 0) this.heartbeatSeconds = msg.heartbeat;
     // The connection works: the next drop starts from the short retry delay.
     this.backoff.reset();
+    this.perf.retryAttempts = 0;
     // The heartbeat repeats the same frame; only a real change reaches the views.
     if (!sameStatus(this.state.status, msg)) this.setState({ status: msg });
     if (msg.backend === "scrcpy" && !this.refreshAsked) {

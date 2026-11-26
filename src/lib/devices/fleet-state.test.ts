@@ -5,6 +5,7 @@ import {
   applySnapshot,
   createSnapshotGate,
   initialFleet,
+  isUnconfirmed,
   unreachableMessage,
   withFreshness,
 } from "./fleet-state.ts";
@@ -74,4 +75,38 @@ test("a list pushed by the agent makes every request still on its way stale", ()
   const after = gate.begin();
   assert.equal(gate.accept(after), true, "requests made after the push are fine");
   assert.equal(gate.accept(after), false, "and one answer is used once");
+});
+
+test("a refused request (401) is told apart from an unreachable agent, and recovers the same way", () => {
+  let state = applySnapshot(initialFleet(false), [phone("a"), phone("b", "offline")], 10);
+  state = applyFailure(state, "agent listDevices failed: 401", true);
+  assert.equal(state.connection, "unauthorized");
+  assert.equal(state.lastOkAt, 10);
+  assert.equal(isUnconfirmed(state.connection), true);
+  assert.deepEqual(
+    withFreshness(state.devices, state.connection).map((d: { status: string }) => d.status),
+    ["stale", "offline"],
+    "a refused page may not treat the old list as ready either",
+  );
+  assert.match(unreachableMessage(state)!, /refused this page/);
+  assert.doesNotMatch(unreachableMessage(state)!, /Cannot reach/);
+  // The agent answering again brings everything back.
+  state = applySnapshot(state, [phone("a")], 20);
+  assert.equal(state.connection, "live");
+  assert.equal(unreachableMessage(state), null);
+  // And a later outage is "unreachable" again, not "unauthorized".
+  assert.equal(applyFailure(state, "connection refused").connection, "unreachable");
+});
+
+test("only 401 and 403 count as a refusal", async () => {
+  const { HttpStatusError, isAuthRefusal } = await import("../api/http-error.ts");
+  assert.equal(isAuthRefusal(new HttpStatusError("no", 401)), true);
+  assert.equal(isAuthRefusal(new HttpStatusError("no", 403)), true);
+  assert.equal(isAuthRefusal(new HttpStatusError("no", 502)), false);
+  assert.equal(isAuthRefusal(new Error("connection refused")), false);
+});
+
+test("a stale phone from the controller stays stale and is never promoted by the page", () => {
+  const list = [phone("remote", "stale"), phone("local", "online")];
+  assert.deepEqual(withFreshness(list, "live").map((d: { status: string }) => d.status), ["stale", "online"]);
 });

@@ -87,6 +87,10 @@ Only the left mouse button is used. Taps and swipes are sent live while you drag
 
 Turn **Keyboard** off when you want to use your keyboard for the page only.
 
+On the phone app (`/m/`) there is no hardware keyboard to forward, so with **Keyboard** on a **Type on the phone** field sits under the screen: **Send** types the text, the two buttons beside it send Backspace and Enter. It types on the same phones the screen controls. If a phone does not take the text, the field keeps it and says why.
+
+When **All** or **Multi** is the control mode and more than one phone is controlled, the screen shows "Controlling N phones" in its corner, so a press there is never a surprise.
+
 ### Touch switch
 
 **Touch** is on by default. When it is off, clicking and dragging the picture does nothing, so you can look without touching. Starting **Record** turns Touch on for you.

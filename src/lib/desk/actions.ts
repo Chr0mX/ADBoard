@@ -79,6 +79,11 @@ export interface ActionDef {
   fields: FieldDef[];
   /** Restarts or powers off the phone: asks before running. */
   dangerous?: boolean;
+  /**
+   * Removes or changes something that cannot be undone from here: "always" asks before every run, "many" only
+   * when the run reaches more than one phone (a shell line is routine on one phone and a risk on twenty).
+   */
+  confirm?: "always" | "many";
   /** Made elsewhere (Record touches in Control), not from the library. */
   recordedOnly?: boolean;
   defaults: Partial<MacroStep>;
@@ -111,6 +116,7 @@ export const ACTIONS: ActionDef[] = [
     category: "App Control",
     mechanism: "shell",
     description: "Closes an app completely (am force-stop).",
+    confirm: "always",
     fields: [PACKAGE],
     defaults: { packageName: "" },
   },
@@ -120,6 +126,7 @@ export const ACTIONS: ActionDef[] = [
     category: "App Control",
     mechanism: "shell",
     description: "Wipes an app's data and cache, like a fresh install (pm clear). Logins inside the app are lost.",
+    confirm: "always",
     fields: [PACKAGE],
     defaults: { packageName: "" },
   },
@@ -138,6 +145,7 @@ export const ACTIONS: ActionDef[] = [
     category: "App Control",
     mechanism: "shell",
     description: "Removes an app for the phone's user (pm uninstall --user 0).",
+    confirm: "always",
     fields: [PACKAGE],
     defaults: { packageName: "" },
   },
@@ -213,6 +221,7 @@ export const ACTIONS: ActionDef[] = [
     category: "Device Control",
     mechanism: "shell",
     description: "Runs one adb shell command on the phone, e.g. input keyevent 26, settings put …, pm grant …. The output is shown in the run log.",
+    confirm: "many",
     fields: [{ key: "command", label: "Command", type: "text", placeholder: "settings put system screen_brightness 120", help: "One line. ${NAME} variables are filled in first." }],
     defaults: { command: "" },
   },
@@ -436,6 +445,7 @@ export const ACTIONS: ActionDef[] = [
     category: "Files",
     mechanism: "shell",
     description: "Deletes a file or folder on the phone (storage roots are refused).",
+    confirm: "always",
     fields: [{ key: "command", label: "Path on phone", type: "text", placeholder: "/sdcard/Download/old.apk" }],
     defaults: { command: "" },
   },
@@ -491,6 +501,34 @@ export const ACTIONS: ActionDef[] = [
 ];
 
 const BY_KIND = new Map(ACTIONS.map((action) => [action.kind, action]));
+
+/**
+ * What a run must ask about first. Restarting or powering off always asks; removing things (force stop, clear
+ * data, uninstall, delete a file) always asks; a shell line asks when it reaches more than one phone.
+ * Disabled steps do not count. `null` means run without asking.
+ */
+export function confirmationFor(
+  steps: ReadonlyArray<{ kind: MacroStepKind; enabled?: boolean }>,
+  phoneCount: number,
+  phones: string,
+): { title: string; body: string } | null {
+  const active = steps.filter((s) => s.enabled !== false);
+  const label = (kind: MacroStepKind) => actionOf(kind)?.label ?? kind;
+  const restart = active.filter((s) => actionOf(s.kind)?.dangerous).map((s) => label(s.kind));
+  const removes = active
+    .filter((s) => {
+      const confirm = actionOf(s.kind)?.confirm;
+      return confirm === "always" || (confirm === "many" && phoneCount > 1);
+    })
+    .map((s) => label(s.kind));
+  if (restart.length === 0 && removes.length === 0) return null;
+  const unique = (list: string[]) => [...new Set(list)].join(", ");
+  const parts: string[] = [];
+  if (restart.length > 0) parts.push(`${unique(restart)} restarts or powers off`);
+  if (removes.length > 0) parts.push(`${unique(removes)} changes or removes things on`);
+  const title = restart.length > 0 && removes.length === 0 ? "Restart or power off phones?" : removes.length > 0 && restart.length === 0 ? "Run steps that change or remove things?" : "Run steps that restart phones and remove things?";
+  return { title, body: `${parts.join(" and ")} ${phones}.` };
+}
 
 export function actionOf(kind: MacroStepKind): ActionDef | undefined {
   return BY_KIND.get(kind);

@@ -900,6 +900,7 @@ function ReferenceDensity({
 }) {
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   const dpi = tab.referenceDpi;
   const phones = devices.filter((d) => tab.targetIds.includes(d.id) && d.status === "online");
   const match = async () => {
@@ -942,7 +943,7 @@ function ReferenceDensity({
           type="button"
           className="pc-toggle pc-toggle-md"
           disabled={!dpi || phones.length === 0 || busy}
-          onClick={() => void match()}
+          onClick={() => setAsking(true)}
           title="Set this tab's phones to the reference resolution and density (wm size + wm density)"
           data-macro-match-screen
         >
@@ -956,6 +957,23 @@ function ReferenceDensity({
           : "Optional: the dpi of the screen the macro was made on (e.g. 320 for a 900×1600 emulator). 0 = not set."}
       </p>
       {note && <p className="font-mono text-meta text-[var(--pc-muted)]" data-macro-dpi-note>{note}</p>}
+      {asking && (
+        <ConfirmDialog
+          title="Change the screen size of these phones?"
+          body={
+            <>
+              {phones.map((d) => d.name).join(", ")} will be set to {tab.reference.width}×{tab.reference.height} @ {dpi} dpi. Everything on
+              their screens changes size until you reset it (Match screen size → Each phone, in the stream options).
+            </>
+          }
+          confirmLabel="Change screen size"
+          onCancel={() => setAsking(false)}
+          onConfirm={() => {
+            setAsking(false);
+            void match();
+          }}
+        />
+      )}
     </div>
   );
 }

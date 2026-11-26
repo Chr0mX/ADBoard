@@ -17,13 +17,22 @@ Findings from a read-only audit of the desktop app (`/`) and the phone app (`/m/
 | Sync clipboard pasted on the phones from any tab | Only on Control screens. |
 | Settings text said Stream and Quiet Mode act on the target phones | They say Screen size and Quiet Mode change every online phone. |
 
+## Fixed in the reliability round
+
+| Was | Now |
+|---|---|
+| The phones of a remote agent that went silent (15 to 45 s) stayed "online" | They show as `stale` (a new `stale` device status from the controller) until the agent answers or is dropped. Controls treat them as not ready. |
+| A 401 and an unreachable agent looked the same | The page says "ADBoard is running but refused this page. Sign in again." for 401/403; the last phones stay stale in both cases |
+| No typing on the phone app (`/m/`) | A **Type on the phone** field with Send, Backspace and Enter under the screen |
+| Control mode "All" was invisible on the stage | A "Controlling N phones" chip in the corner of the screen |
+| Shell Automation ran Uninstall, Clear data, Force stop and Delete file on any phones without a prompt; Shell steps ran on many phones without a prompt | It asks first. Shell steps ask only when they reach more than one phone. |
+| Macros "Match phones to W×H" changed resolution and density at once | It asks first and names the phones |
+
 ## Still open
 
 ### P0 (broken, misleading or unsafe)
-1. **No way to type on the phone app (`/m/`).** Keyboard injection listens to `window` key events only; the Keyboard tool and Settings switch promise it. Needs an on-screen text input (frontend).
-2. **Control mode "All" is a synced preference and nothing shows it.** A second browser starts in All, and Fill window hides the Devices panel that holds the mode. Needs a visible "controlling N phones" indicator and a thought about syncing it (frontend, maybe a pref change).
-3. **Shell Automation runs Uninstall, Clear data, Force stop, Delete file and Shell steps on all phones without a prompt** (only reboot and shutdown are flagged dangerous, `lib/desk/actions.ts`).
-4. **Macros "Match phones to W×H" changes resolution and density with no confirmation**, and the Size select, that button and virtual-display defaults are three unrelated controls for display size.
+1. **Control mode is a synced preference**, so a second browser can start in All. The stage now says so, but whether the mode should sync at all is still open.
+2. **Display size has three unrelated controls**: the Size select, the Macros "Match phones" button and the virtual-display defaults.
 
 ### P1
 - Reconnect / Restart ADB run on all targets with no confirmation (stage quick actions, `DeviceMenu`, `MultiDeviceToolbar`) under five different labels.

@@ -8,6 +8,7 @@
 //! - Touch, swipe, typing, and keycodes: scrcpy control-socket messages.
 //! - Nav keys: `adb shell input keyevent` when ADB is available; otherwise stub.
 
+mod reset_gate;
 mod virtual_displays;
 use crate::audio::AudioHub;
 use crate::scrcpy_control::ControlSender;
@@ -115,6 +116,8 @@ pub struct SessionManager {
     clipboard_tx: broadcast::Sender<(String, String)>,
     /// One audio start or stop at a time, so a reload cannot launch a second server.
     audio_gates: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Keyframe requests per phone are spaced out, whoever asks (see `reset_gate`).
+    reset_gate: Arc<std::sync::Mutex<reset_gate::ResetGate>>,
     /// Settings of each virtual display, by `<serial>#vd<N>` key.
     virtual_specs: RwLock<HashMap<String, VirtualDisplaySpec>>,
 }
@@ -164,6 +167,7 @@ impl SessionManager {
             prefs: RwLock::new(ScrcpyPrefs::default()),
             clipboard_tx,
             audio_gates: std::sync::Mutex::new(HashMap::new()),
+            reset_gate: Arc::new(std::sync::Mutex::new(reset_gate::ResetGate::new(reset_gate::RESET_GAP))),
             virtual_specs: RwLock::new(HashMap::new()),
         })
     }
@@ -576,6 +580,11 @@ impl SessionManager {
         if let Some(video) = video {
             video.stop().await;
         }
+        // Whatever the stopped stream left cached belongs to it, not to the one that starts next.
+        self.video_hub.clear_cache(serial).await;
+        if let Ok(mut gate) = self.reset_gate.lock() {
+            gate.forget(serial);
+        }
         if let Some(mut child) = child {
             let _ = child.kill().await;
             let _ = child.wait().await;
@@ -786,11 +795,33 @@ impl SessionManager {
             .await;
     }
 
+    /// Ask the phone's encoder for a fresh keyframe. Several viewers asking close together share one
+    /// request (see `reset_gate`): each still gets a keyframe produced after it asked.
     pub async fn reset_video(&self, serial: &str) -> Result<(), String> {
         let Some(sender) = self.control_sender(serial).await else {
             return Err("scrcpy control is not connected".into());
         };
-        sender.reset_video().await
+        let plan = self
+            .reset_gate
+            .lock()
+            .map(|mut gate| gate.request(serial, std::time::Instant::now()))
+            .unwrap_or(reset_gate::ResetPlan::Now);
+        match plan {
+            reset_gate::ResetPlan::Now => sender.reset_video().await,
+            reset_gate::ResetPlan::Covered => Ok(()),
+            reset_gate::ResetPlan::After(delay) => {
+                let gate = self.reset_gate.clone();
+                let serial = serial.to_string();
+                tokio::spawn(async move {
+                    tokio::time::sleep(delay).await;
+                    let _ = sender.reset_video().await;
+                    if let Ok(mut gate) = gate.lock() {
+                        gate.sent(&serial, std::time::Instant::now());
+                    }
+                });
+                Ok(())
+            }
+        }
     }
 
     pub async fn set_display_power(&self, serial: &str, on: bool) -> Result<(), String> {
@@ -1395,7 +1426,7 @@ impl SessionManager {
                     if live.info.stream == StreamState::Streaming {
                         live.info.stream = StreamState::Error;
                         live.info.note = session_failure_note(
-                            "video socket closed before H264 arrived",
+                            "the video stream ended (the scrcpy video socket closed)",
                             live.server_log.as_ref(),
                         );
                         changed.push(live.info.clone());
@@ -1407,6 +1438,9 @@ impl SessionManager {
             for (serial, port) in stale_forwards {
                 cleanup_forward(adb, &serial, port).await;
             }
+        }
+        for serial in &finished_video {
+            self.video_hub.clear_cache(serial).await;
         }
         for session in &changed {
             self.publish_video_status(session).await;

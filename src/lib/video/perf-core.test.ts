@@ -35,3 +35,18 @@ test("the queue high-water mark only rises", () => {
   recordQueue(perf, 1);
   assert.equal(snapshotPerf(perf).maxQueue, 2);
 });
+
+test("close diagnostics start empty and the snapshot is a copy, not the live counters", () => {
+  const perf = newStreamPerf();
+  assert.equal(perf.sockets, 0);
+  assert.equal(perf.retryAttempts, 0);
+  assert.equal(perf.lastClose, null);
+  assert.equal(perf.lastRecoveryMs, null);
+  perf.closes.agent += 1;
+  perf.lastClose = { code: 4011, reason: "remote agent video link ended", wasClean: true, kind: "agent", at: 1, openForMs: 900, frames: 12 };
+  const snap = snapshotPerf(perf);
+  perf.closes.agent += 5;
+  perf.lastClose.frames = 99;
+  assert.equal(snap.closes.agent, 1);
+  assert.equal(snap.lastClose?.frames, 12);
+});

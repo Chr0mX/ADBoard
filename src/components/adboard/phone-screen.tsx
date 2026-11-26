@@ -57,6 +57,7 @@ import { offlineOverlayCopy } from "@/lib/ui/connection-copy";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { useQuietMode } from "@/hooks/use-quiet-mode";
 import { usePictureInPicture } from "@/hooks/use-picture-in-picture";
+import { controlGroupLabel } from "@/lib/ui/control-group";
 import { useDocumentPip, type PipPointer } from "@/hooks/use-document-pip";
 import { useDeviceVideo } from "@/hooks/use-device-video";
 import { useMacroTouches } from "@/lib/macro/runs";
@@ -202,6 +203,7 @@ export function PhoneScreen({
     useDeviceVideo(gridView ? null : device?.serial, refreshToken);
 
   const offline = !device || device.status !== "online";
+  const controlGroup = controlGroupLabel(controlMode, broadcastTargets?.length ?? 0);
   const offlineCopy = offlineOverlayCopy(device);
   const captureTargets =
     desk?.targets?.length
@@ -1246,6 +1248,15 @@ export function PhoneScreen({
               sideControls && "gap-2",
             )}
           >
+          {controlGroup && (
+            <div
+              role="status"
+              data-control-group
+              className="pointer-events-none absolute left-2 top-2 z-10 rounded-full bg-[var(--pc-warn)] px-2.5 py-1 text-xs font-medium text-black shadow"
+            >
+              {controlGroup}
+            </div>
+          )}
           {sideControls && (
             <div
               data-side-volume

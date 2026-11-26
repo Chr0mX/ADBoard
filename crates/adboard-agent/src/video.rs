@@ -160,6 +160,17 @@ impl VideoHub {
         }
     }
 
+    /// Forget the cached SPS/PPS, keyframe and status of a phone whose producer stopped. A socket
+    /// opened after a restart or a reconnect must not be replayed the previous session's picture
+    /// (it can have another size or rotation); it waits for the new session's first keyframe.
+    pub async fn clear_cache(&self, serial: &str) {
+        if let Some(ch) = self.channels.write().await.get_mut(serial) {
+            ch.last_sps = None;
+            ch.last_keyframe = None;
+            ch.last_status = None;
+        }
+    }
+
     pub async fn publish_status(&self, serial: &str, frame: VideoStatusFrame) {
         self.publish(serial, VideoPacket::Status(frame)).await;
     }
@@ -1134,6 +1145,27 @@ mod tests {
         let combined = vec![0, 0, 0, 1, 0x67, 0x42, 0, 0, 0, 1, 0x65, 0x88];
         hub.publish_annexb("ONE", combined.clone()).await;
         assert_eq!(hub.replay_access_units("ONE").await, vec![combined]);
+    }
+
+    #[tokio::test]
+    async fn a_stopped_producer_leaves_no_keyframe_for_the_next_socket() {
+        let hub = VideoHub::new();
+        let mut live = hub.subscribe("SER").await;
+        hub.publish_annexb("SER", vec![0, 0, 0, 1, 0x67, 0x42, 0x00]).await;
+        hub.publish_annexb("SER", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
+        assert!(!hub.replay_access_units("SER").await.is_empty());
+
+        hub.clear_cache("SER").await;
+        assert!(hub.replay_access_units("SER").await.is_empty(), "no picture from the old session");
+        // Sockets that are already attached keep their channel; the new session's frames reach them,
+        // and the next socket is replayed the new session's keyframe, not the old one.
+        while live.try_recv().is_ok() {}
+        let fresh = vec![0, 0, 0, 1, 0x65, 0x11, 0x22];
+        hub.publish_annexb("SER", fresh.clone()).await;
+        assert!(matches!(live.recv().await, Ok(VideoPacket::AnnexB(b)) if b == fresh));
+        assert_eq!(hub.replay_access_units("SER").await, vec![fresh]);
+        // Clearing a phone that never streamed is harmless.
+        hub.clear_cache("NEVER").await;
     }
 
     #[tokio::test]

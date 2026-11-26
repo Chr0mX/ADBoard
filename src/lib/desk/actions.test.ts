@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ACTIONS, CATEGORIES, actionOf, newStep, summarizeStep, touchGeometry, touchStrokes, validateStep } from "./actions.ts";
+import { ACTIONS, CATEGORIES, actionOf, confirmationFor, newStep, summarizeStep, touchGeometry, touchStrokes, validateStep } from "./actions.ts";
 import type { MacroStep } from "./store.ts";
 
 const step = (s: Partial<MacroStep> & Pick<MacroStep, "kind">): MacroStep => ({ id: "s1", ...s });
@@ -85,5 +85,34 @@ describe("touch geometry and strokes", () => {
   it("summaries describe the settings", () => {
     assert.equal(summarizeStep(step({ kind: "tap", x: 12, y: 34 })), "at 12%, 34%");
     assert.equal(summarizeStep(step({ kind: "launch", packageName: "com.a.b" })), "com.a.b");
+  });
+});
+
+describe("confirmation before a run", () => {
+  const phones = "Pixel, Galaxy";
+  it("asks for restart and power-off, always", () => {
+    const ask = confirmationFor([step({ kind: "reboot" })], 1, "Pixel");
+    assert.equal(ask?.title, "Restart or power off phones?");
+    assert.match(ask!.body, /Pixel/);
+  });
+  it("asks for steps that remove things, even on one phone", () => {
+    for (const kind of ["forceStop", "clearData", "uninstall", "deleteFile"] as const) {
+      const ask = confirmationFor([step({ kind })], 1, "Pixel");
+      assert.ok(ask, kind);
+      assert.match(ask!.title, /change or remove/);
+    }
+  });
+  it("asks about a shell line only when it reaches more than one phone", () => {
+    assert.equal(confirmationFor([step({ kind: "shell" })], 1, "Pixel"), null);
+    assert.ok(confirmationFor([step({ kind: "shell" })], 2, phones));
+  });
+  it("does not ask for ordinary steps, or for steps that are switched off", () => {
+    assert.equal(confirmationFor([step({ kind: "tap" }), step({ kind: "launch" }), step({ kind: "wait" })], 5, phones), null);
+    assert.equal(confirmationFor([step({ kind: "uninstall", enabled: false }), step({ kind: "reboot", enabled: false })], 5, phones), null);
+  });
+  it("names every kind once when a run mixes them", () => {
+    const ask = confirmationFor([step({ kind: "reboot" }), step({ kind: "uninstall" }), step({ kind: "uninstall" })], 2, phones);
+    assert.match(ask!.title, /restart phones and remove/);
+    assert.equal((ask!.body.match(/Uninstall app/g) ?? []).length, 1);
   });
 });

@@ -7,6 +7,7 @@ import {
   CATEGORIES,
   MECHANISM_LABEL,
   actionOf,
+  confirmationFor,
   copyStep,
   newStep,
   summarizeStep,
@@ -248,29 +249,25 @@ function JobEditor({ macro, focusStepId }: { macro: SavedMacro; focusStepId: str
     });
   };
 
-  /** Ask first when the run restarts or powers off phones. */
-  const guarded = (runSteps: MacroStep[], names: string, run: () => void) => {
-    const dangerous = runSteps.filter((s) => s.enabled !== false && actionOf(s.kind)?.dangerous);
-    if (dangerous.length === 0) return run();
-    setConfirm({
-      title: "Restart or power off phones?",
-      body: `${dangerous.map((s) => actionOf(s.kind)?.label).join(", ")} will run on ${names}.`,
-      run,
-    });
+  /** Ask first when the run restarts, powers off or removes things on phones (see `confirmationFor`). */
+  const guarded = (runSteps: MacroStep[], phones: Device[], run: () => void) => {
+    const ask = confirmationFor(runSteps, phones.length, phones.map((d) => d.name).join(", "));
+    if (!ask) return run();
+    setConfirm({ ...ask, run });
   };
 
   const runAll = () => {
     setNotice(null);
     if (invalid > 0) return setNotice(`Fix ${invalid} step${invalid === 1 ? "" : "s"} marked in red first.`);
     if (targets.length === 0) return setNotice("Tick at least one phone.");
-    guarded(steps, targets.map((d) => d.name).join(", "), () => start({ devices: targets }));
+    guarded(steps, targets, () => start({ devices: targets }));
   };
   const testStep = (step: MacroStep) => {
     setNotice(null);
     if (!previewDevice) return setNotice("No phone to test on.");
     if (Object.keys(validateStep(step)).length > 0) return setNotice("Fix this step's fields first.");
     if (previewDevice.status !== "online") return setNotice(`${previewDevice.name} is offline.`);
-    guarded([step], previewDevice.name, () => start({ onlyStepId: step.id, devices: [previewDevice] }));
+    guarded([step], [previewDevice], () => start({ onlyStepId: step.id, devices: [previewDevice] }));
   };
 
   const previewProgress = previewDevice ? progress[previewDevice.id] : undefined;
@@ -714,7 +711,8 @@ function StepEditor({
           />
         </label>
       </div>
-      {action?.dangerous && <p className="text-xs text-[var(--pc-warn)]">Runs ask for confirmation before this step.</p>}
+      {(action?.dangerous || action?.confirm === "always") && <p className="text-xs text-[var(--pc-warn)]">Runs ask for confirmation before this step.</p>}
+      {action?.confirm === "many" && <p className="text-xs text-[var(--pc-muted)]">Runs on more than one phone ask for confirmation before this step.</p>}
     </div>
   );
 }

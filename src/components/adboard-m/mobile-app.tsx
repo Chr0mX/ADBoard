@@ -24,6 +24,7 @@ import { DESK_SECTIONS, DeskProvider, asSection, type DeskSection } from "@/comp
 import { BottomSheet } from "@/components/adboard-m/bottom-sheet";
 import { ConnectionBanner } from "@/components/adboard-m/connection-banner";
 import { UpdatePrompt } from "@/components/adboard-m/update-prompt";
+import { TypeOnPhone } from "@/components/adboard-m/type-on-phone";
 import { PhoneStrip } from "@/components/adboard-m/phone-strip";
 import { PhoneLabels } from "@/components/adboard-m/phone-labels";
 import { TaskbarSheet } from "@/components/adboard-m/taskbar-sheet";
@@ -74,6 +75,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     setControlMode,
     keyboardOn,
     setKeyboardOn,
+    typeOnPhone,
     mouseOn,
     setMouseOn,
     cursorMode,
@@ -191,7 +193,7 @@ export function MobileApp({ children }: { children?: ReactNode }) {
     <DeskProvider
       value={{ section, focusTool, devices, activeDevice, targets: broadcastTargets, sessions, lastSeen, open, selectDevice }}
     >
-      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v22">
+      <div className="pc-shell fixed flex flex-col overflow-hidden" data-m-app data-ui-build="adboard-m-v23">
         <div className="pc-atmosphere" aria-hidden />
         <div data-m-top-cap aria-hidden />
         {showHeader && (
@@ -322,6 +324,12 @@ export function MobileApp({ children }: { children?: ReactNode }) {
                   setStoredMacroDock(next ? "open" : "closed");
                 }}
               />
+              {keyboardOn && !gridView && (
+                <TypeOnPhone
+                  onType={typeOnPhone}
+                  disabled={!activeDevice || activeDevice.status !== "online" || broadcastTargets.length === 0}
+                />
+              )}
             </>
           )}
         </main>

@@ -483,6 +483,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                 framing: None,
             };
             let _ = send_json(&mut sender, &frame).await;
+            let _ = write_within(&mut sender, CloseReason::UnknownDevice.frame(), CLOSE_WRITE_LIMIT).await;
             return;
         }
     };
@@ -510,6 +511,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                     framing: None,
                 };
                 let _ = send_json(&mut sender, &frame).await;
+                let _ = write_within(&mut sender, CloseReason::AgentUnreachable.frame(), CLOSE_WRITE_LIMIT).await;
             }
         }
         return;
@@ -538,6 +540,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
             framing: None,
         };
         let _ = send_json(&mut sender, &frame).await;
+        let _ = write_within(&mut sender, CloseReason::StartFailed.frame(), CLOSE_WRITE_LIMIT).await;
         return;
     }
 
@@ -595,111 +598,120 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
     let mut events = state.subscribe();
     let serial_filter = serial.clone();
     let serial_lag = serial.clone();
+    let serial_log = serial.clone();
+
+    // Anything the browser sends, pongs included, proves it is alive.
+    let connected_at = std::time::Instant::now();
+    let last_heard_ms = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let heard = last_heard_ms.clone();
 
     let mut send_task = tokio::spawn(async move {
-        for au in replay {
-            if sender.send(Message::Binary(au)).await.is_err() {
-                return;
-            }
+        // A write that cannot finish (the browser froze or the connection is half open) ends this
+        // socket with a reason, instead of holding a subscriber until the OS gives up on the peer.
+        macro_rules! put {
+            ($label:lifetime, $message:expr) => {
+                if let Err(failure) = write_within(&mut sender, $message, SEND_TIMEOUT).await {
+                    break $label failure.reason();
+                }
+            };
         }
-        // Scrcpy sockets always wait: the replayed IDR must not be followed by
-        // later P-frames. The keyframe requested above ends the wait.
-        let mut wait_for_key = scrcpy_live;
-        let mut keepalive = ws_keepalive();
-        let mut heartbeat = video_heartbeat();
-        let mut last_lag_reset: Option<std::time::Instant> = None;
-        loop {
-            tokio::select! {
-                _ = keepalive.tick() => {
-                    if sender.send(ws_ping()).await.is_err() {
-                        break;
+        let outcome: Option<CloseReason> = 'session: {
+            for au in replay {
+                put!('session, Message::Binary(au));
+            }
+            // Scrcpy sockets always wait: the replayed IDR must not be followed by
+            // later P-frames. The keyframe requested above ends the wait.
+            let mut wait_for_key = scrcpy_live;
+            let mut keepalive = ws_keepalive();
+            let mut heartbeat = video_heartbeat();
+            let mut last_lag_reset: Option<std::time::Instant> = None;
+            loop {
+                tokio::select! {
+                    _ = keepalive.tick() => {
+                        put!('session, ws_ping());
                     }
-                }
-                _ = heartbeat.tick() => {
-                    // Browsers cannot see WebSocket pings. A still screen sends no
-                    // video, so the page needs this to tell "quiet" from "dead".
-                    let frame = sessions_lag.video_status_frame(&serial_lag).await;
-                    if sender.send(Message::Text(status_with_heartbeat(&frame).into())).await.is_err() {
-                        break;
+                    _ = heartbeat.tick() => {
+                        let last = connected_at + std::time::Duration::from_millis(heard.load(std::sync::atomic::Ordering::Relaxed));
+                        if peer_is_silent(last, std::time::Instant::now(), PEER_SILENT_AFTER) {
+                            break 'session Some(CloseReason::ClientSilent);
+                        }
+                        // Browsers cannot see WebSocket pings. A still screen sends no
+                        // video, so the page needs this to tell "quiet" from "dead".
+                        let frame = sessions_lag.video_status_frame(&serial_lag).await;
+                        put!('session, Message::Text(status_with_heartbeat(&frame).into()));
                     }
-                }
-                packet = video_rx.recv() => {
-                    match packet {
-                        Ok(crate::video::VideoPacket::Status(frame)) => {
-                            if send_json(&mut sender, &frame).await.is_err() {
-                                break;
+                    packet = video_rx.recv() => {
+                        match packet {
+                            Ok(crate::video::VideoPacket::Status(frame)) => {
+                                put!('session, Message::Text(serde_json::to_string(&frame).unwrap_or_default().into()));
                             }
-                        }
-                        Ok(crate::video::VideoPacket::AnnexB(bytes)) => {
-                            if !crate::video::keep_after_gap(&mut wait_for_key, &bytes) {
-                                continue;
-                            }
-                            if sender
-                                .send(Message::Binary(bytes))
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            debug!(lagged = n, "video subscriber lagged");
-                            let mut failed = false;
-                            // This viewer fell behind: ask the phone for a keyframe now
-                            // instead of leaving it on the cached one until the next
-                            // natural keyframe, which can be seconds away.
-                            if scrcpy_live && last_lag_reset.is_none_or(|at: std::time::Instant| at.elapsed() >= LAG_KEYFRAME_EVERY) {
-                                last_lag_reset = Some(std::time::Instant::now());
-                                let sessions = sessions_lag.clone();
-                                let serial = serial_lag.clone();
-                                tokio::spawn(async move {
-                                    let _ = sessions.reset_video(&serial).await;
-                                });
-                            }
-                            for au in hub_lag.replay_access_units(&serial_lag).await {
-                                if sender
-                                    .send(Message::Binary(au))
-                                    .await
-                                    .is_err()
-                                {
-                                    failed = true;
-                                    break;
+                            Ok(crate::video::VideoPacket::AnnexB(bytes)) => {
+                                if !crate::video::keep_after_gap(&mut wait_for_key, &bytes) {
+                                    continue;
                                 }
+                                put!('session, Message::Binary(bytes));
                             }
-                            if failed {
-                                break;
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                debug!(lagged = n, "video subscriber lagged");
+                                // This viewer fell behind: ask the phone for a keyframe now
+                                // instead of leaving it on the cached one until the next
+                                // natural keyframe, which can be seconds away.
+                                if scrcpy_live && last_lag_reset.is_none_or(|at: std::time::Instant| at.elapsed() >= LAG_KEYFRAME_EVERY) {
+                                    last_lag_reset = Some(std::time::Instant::now());
+                                    let sessions = sessions_lag.clone();
+                                    let serial = serial_lag.clone();
+                                    tokio::spawn(async move {
+                                        let _ = sessions.reset_video(&serial).await;
+                                    });
+                                }
+                                for au in hub_lag.replay_access_units(&serial_lag).await {
+                                    put!('session, Message::Binary(au));
+                                }
+                                wait_for_key = true;
                             }
-                            wait_for_key = true;
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                break 'session Some(CloseReason::StreamShutDown);
+                            }
                         }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
-                }
-                event = events.recv() => {
-                    match event {
-                        Ok(ServerEvent::SessionUpdated { session })
-                            if session.serial == serial_filter =>
-                        {
-                            // Status also arrives via video hub; this covers peers that
-                            // only publish ServerEvent.
-                            let frame = VideoStatusFrame::from_session(&session);
-                            if send_json(&mut sender, &frame).await.is_err() {
-                                break;
+                    event = events.recv() => {
+                        match event {
+                            Ok(ServerEvent::SessionUpdated { session })
+                                if session.serial == serial_filter =>
+                            {
+                                // Status also arrives via video hub; this covers peers that
+                                // only publish ServerEvent.
+                                let frame = VideoStatusFrame::from_session(&session);
+                                put!('session, Message::Text(serde_json::to_string(&frame).unwrap_or_default().into()));
+                            }
+                            Ok(_) => {}
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                break 'session Some(CloseReason::StreamShutDown);
                             }
                         }
-                        Ok(_) => {}
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
                 }
             }
+        };
+        match outcome {
+            Some(reason) => {
+                info!(serial = %serial_log, code = reason.code(), reason = reason.text(), "video websocket closed by the agent");
+                // Best effort: a peer that stopped reading will not take the close frame either.
+                let _ = write_within(&mut sender, reason.frame(), CLOSE_WRITE_LIMIT).await;
+            }
+            None => debug!(serial = %serial_log, "video websocket ended: the browser went away"),
         }
     });
 
     let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = receiver.next().await {
-            match msg {
-                Message::Close(_) => break,
-                Message::Ping(_) | Message::Pong(_) | Message::Text(_) | Message::Binary(_) => {}
+        while let Some(Ok(_message)) = receiver.next().await {
+            last_heard_ms.store(
+                connected_at.elapsed().as_millis() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            if matches!(_message, Message::Close(_)) {
+                break;
             }
         }
     });
@@ -803,13 +815,20 @@ pub(super) async fn proxy_remote_stream(
 ) {
     let ws_url = http_to_ws_device_url(agent_http_base, serial, channel);
     // Agents share ADBOARD_TOKEN with the controller; send it as a header.
+    // A host that is gone or unreachable must not hold the browser's socket for the OS's own timeout.
     let connected = match crate::mesh_client::ws_request_with_token(&ws_url, token) {
-        Ok(request) => tokio_tungstenite::connect_async(request).await,
-        Err(e) => Err(e),
+        Ok(request) => {
+            match tokio::time::timeout(PROXY_CONNECT_TIMEOUT, tokio_tungstenite::connect_async(request)).await {
+                Ok(result) => result.map_err(|e| e.to_string()),
+                Err(_) => Err(format!("no answer within {} s", PROXY_CONNECT_TIMEOUT.as_secs())),
+            }
+        }
+        Err(e) => Err(e.to_string()),
     };
     let (agent_ws, _) = match connected {
         Ok(pair) => pair,
         Err(e) => {
+            warn!(%serial, %channel, error = %e, "video proxy: could not open the agent's socket");
             let frame = VideoStatusFrame {
                 serial: serial.into(),
                 stream: adboard_protocol::StreamState::Error,
@@ -822,14 +841,27 @@ pub(super) async fn proxy_remote_stream(
                 framing: None,
             };
             let _ = send_json(&mut client_out, &frame).await;
+            let _ = write_within(&mut client_out, CloseReason::AgentUnreachable.frame(), CLOSE_WRITE_LIMIT).await;
             return;
         }
     };
 
     let (mut agent_out, mut agent_in) = agent_ws.split();
+    let serial_log = serial.to_string();
+    let channel_log = channel.to_string();
 
     let mut to_client = tokio::spawn(async move {
-        while let Some(Ok(msg)) = agent_in.next().await {
+        // Why the agent's side ended: it said so (a close frame), the stream failed, or it just ended.
+        let mut ended = String::from("the agent's socket ended");
+        let mut browser_gone = false;
+        while let Some(next) = agent_in.next().await {
+            let msg = match next {
+                Ok(msg) => msg,
+                Err(e) => {
+                    ended = format!("the agent's socket failed: {e}");
+                    break;
+                }
+            };
             let mapped = match msg {
                 tokio_tungstenite::tungstenite::Message::Text(t) => {
                     Message::Text(t.as_str().to_string().into())
@@ -843,12 +875,27 @@ pub(super) async fn proxy_remote_stream(
                 tokio_tungstenite::tungstenite::Message::Pong(p) => {
                     Message::Pong(p.to_vec().into())
                 }
-                tokio_tungstenite::tungstenite::Message::Close(_) => break,
+                tokio_tungstenite::tungstenite::Message::Close(frame) => {
+                    ended = match frame {
+                        Some(f) => format!("the agent closed its socket ({} {})", u16::from(f.code), f.reason),
+                        None => "the agent closed its socket".into(),
+                    };
+                    break;
+                }
                 tokio_tungstenite::tungstenite::Message::Frame(_) => continue,
             };
-            if client_out.send(mapped).await.is_err() {
+            // A browser that stopped reading must not hold the agent's stream open for the OS's sake.
+            if write_within(&mut client_out, mapped, SEND_TIMEOUT).await.is_err() {
+                browser_gone = true;
                 break;
             }
+        }
+        if browser_gone {
+            debug!(serial = %serial_log, channel = %channel_log, "video proxy: the browser stopped reading");
+        } else {
+            info!(serial = %serial_log, channel = %channel_log, %ended, "video proxy: the agent link ended");
+            // Tell the browser which side failed: the agent, not this controller or the phone.
+            let _ = write_within(&mut client_out, CloseReason::AgentLinkLost.frame(), CLOSE_WRITE_LIMIT).await;
         }
     });
 

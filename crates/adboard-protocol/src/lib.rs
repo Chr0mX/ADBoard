@@ -19,6 +19,9 @@ pub enum DeviceStatus {
     Online,
     Offline,
     Unauthorized,
+    /// The host that owns this phone has stopped answering, so its last report is old. Never
+    /// produced by the host that has the phone; the controller sets it on the phones of a silent agent.
+    Stale,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

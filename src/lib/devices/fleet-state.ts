@@ -12,7 +12,11 @@ import type { Device } from "@/lib/devices/types";
  * Pure module: runs under `node --test`.
  */
 
-export type FleetConnection = "live" | "unreachable" | "demo";
+/**
+ * live: the agent answered. unreachable: it did not (network, agent down, proxy). unauthorized: it answered
+ * and refused this page (signed out, wrong token): the agent is up, so "retry" alone will not fix it.
+ */
+export type FleetConnection = "live" | "unreachable" | "unauthorized" | "demo";
 
 export interface FleetState {
   devices: Device[];
@@ -36,23 +40,32 @@ export function applySnapshot(state: FleetState, devices: Device[], now: number)
 }
 
 /** A request to the agent failed: keep what is known, say why, and stop trusting "online". */
-export function applyFailure(state: FleetState, reason: string): FleetState {
+export function applyFailure(state: FleetState, reason: string, refused = false): FleetState {
   if (state.connection === "demo") return state;
-  return { ...state, connection: "unreachable", lastError: reason };
+  return { ...state, connection: refused ? "unauthorized" : "unreachable", lastError: reason };
+}
+
+/** Is the list unconfirmed right now (so nothing may be trusted as ready)? */
+export function isUnconfirmed(connection: FleetConnection): boolean {
+  return connection === "unreachable" || connection === "unauthorized";
 }
 
 /**
  * The phones as the rest of the page should see them: when the list is not confirmed
- * (agent unreachable), an "online" phone is "stale". Offline and unauthorized phones stay as they were.
+ * (agent unreachable or refusing), an "online" phone is "stale". Offline and unauthorized phones stay as they were.
  */
 export function withFreshness(devices: Device[], connection: FleetConnection): Device[] {
-  if (connection !== "unreachable") return devices;
+  if (!isUnconfirmed(connection)) return devices;
   if (!devices.some((d) => d.status === "online")) return devices;
   return devices.map((d) => (d.status === "online" ? { ...d, status: "stale" as const } : d));
 }
 
 /** The line shown when the agent cannot be reached. */
 export function unreachableMessage(state: FleetState): string | null {
+  if (state.connection === "unauthorized") {
+    const known = state.devices.length > 0;
+    return `ADBoard is running but refused this page${state.lastError ? ` (${state.lastError})` : ""}. Sign in again.${known ? " The last known phones are shown as stale; controls stay off until you are signed in." : ""}`;
+  }
   if (state.connection !== "unreachable") return null;
   const when = state.lastOkAt === null ? null : new Date(state.lastOkAt).toLocaleTimeString();
   const known = state.devices.length > 0;

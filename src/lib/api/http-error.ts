@@ -39,6 +39,23 @@ export function httpErrorMessage(status: number, body: string, fallback: string)
   }
 }
 
+/** An error for a non-OK response that still knows the HTTP status (for 401 versus "cannot reach"). */
+export class HttpStatusError extends Error {
+  readonly status: number;
+
+  // No parameter properties: the unit tests run TypeScript with types only stripped.
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "HttpStatusError";
+    this.status = status;
+  }
+}
+
+/** Did the agent answer, and refuse because this page is not signed in (or its token is wrong)? */
+export function isAuthRefusal(error: unknown): boolean {
+  return error instanceof HttpStatusError && (error.status === 401 || error.status === 403);
+}
+
 /** Error for a non-OK response, reading its body once. */
 export async function responseError(res: Response, fallback: string): Promise<Error> {
   let body = "";
@@ -47,5 +64,5 @@ export async function responseError(res: Response, fallback: string): Promise<Er
   } catch {
     // body unavailable
   }
-  return new Error(httpErrorMessage(res.status, body, `${fallback}: ${res.status}`));
+  return new HttpStatusError(httpErrorMessage(res.status, body, `${fallback}: ${res.status}`), res.status);
 }
