@@ -24,6 +24,7 @@ import {
   DEFAULT_BACKGROUND_POLICY,
   SUSPEND_GRACE_MS,
   backgroundFrameDue,
+  decodeStallStep,
   keepsSocketInBackground,
   needsKeyframeAfter,
   onVisibilityChange,
@@ -32,6 +33,7 @@ import {
   shouldSuspend,
   streamMode,
   type BackgroundPolicy,
+  type DecodeStallState,
   type StreamMode,
 } from "@/lib/video/stream-policy-core";
 import { createBackoff, isStale } from "@/lib/api/reconnect-core";
@@ -305,6 +307,9 @@ class SharedStream {
   private socketFramesAtOpen = 0;
   /** The next `disconnect` ends a connection that failed, not one this page chose to close. */
   private disconnectIsFailure = false;
+  /** Access units seen on the socket, accepted or not (the stall watch needs to know frames are arriving). */
+  private auSeen = 0;
+  private stall: DecodeStallState = { seen: 0, decoded: 0, since: 0 };
   // The newest decoded frame, painted once per display refresh.
   private slot = createFrameSlot<VideoFrame>(
     (run) => requestAnimationFrame(run),
@@ -485,6 +490,17 @@ class SharedStream {
       this.recordClose(0, `no message for ${Math.round((now - this.lastMessageAt) / 1000)} s`, false, "stale");
       this.disconnectIsFailure = true;
       this.reconnect();
+    }
+    // Frames arrive but none decodes: the keyframe the decoder needs never reached it. Ask for one.
+    if (this.socket && !this.suspended && this.mode === "full" && !this.mse) {
+      const step = decodeStallStep(this.stall, { seen: this.auSeen, decoded: this.perf.decoded, at: now });
+      this.stall = step.state;
+      if (step.ask) {
+        this.perf.recoveryAsks += 1;
+        this.askKeyframe(true);
+      }
+    } else {
+      this.stall = { seen: this.auSeen, decoded: this.perf.decoded, since: now };
     }
     const sample = this.meter;
     const seconds = Math.max(0.001, (now - sample.t) / 1000);
@@ -923,6 +939,7 @@ class SharedStream {
   }
 
   private onAccessUnit(buf: Uint8Array) {
+    if (buf.byteLength > 0) this.auSeen += 1;
     if (!this.acceptVideo || buf.byteLength === 0) return;
     this.meter.frames += 1;
     this.meter.bytes += buf.byteLength;

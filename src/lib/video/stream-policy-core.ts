@@ -144,3 +144,34 @@ export function recoveryStep(input: { elapsedMs: number; framesSince: number; as
   if (input.elapsedMs >= RECOVERY_ASK_AFTER_MS && !input.asked) return "ask-keyframe";
   return "wait";
 }
+
+/**
+ * Frames keep arriving but none is decoded: the keyframe the decoder needs never reached it (dropped
+ * before the page accepted video, lost on the way, or folded into another viewer's request). Waiting for
+ * the encoder's own next keyframe can take seconds, so ask. A still screen sends nothing at all, which is
+ * not a stall.
+ */
+export const DECODE_STALL_ASK_MS = 2000;
+
+export interface DecodeStallState {
+  /** Access units seen and pictures decoded at the last look, and since when nothing was decoded. */
+  seen: number;
+  decoded: number;
+  since: number;
+}
+
+export function decodeStallStep(
+  state: DecodeStallState,
+  now: { seen: number; decoded: number; at: number },
+): { state: DecodeStallState; ask: boolean } {
+  const progressed = now.decoded !== state.decoded;
+  const quiet = now.seen === state.seen;
+  if (progressed || quiet) {
+    // Pictures are showing, or nothing is arriving (a still screen): the clock starts over.
+    return { state: { seen: now.seen, decoded: now.decoded, since: now.at }, ask: false };
+  }
+  if (now.at - state.since >= DECODE_STALL_ASK_MS) {
+    return { state: { seen: now.seen, decoded: now.decoded, since: now.at }, ask: true };
+  }
+  return { state: { ...state, seen: now.seen }, ask: false };
+}

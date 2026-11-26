@@ -14,6 +14,8 @@ pub(super) const SEND_TIMEOUT: Duration = Duration::from_secs(15);
 /// Browsers answer pings on their own. Nothing at all from the peer for this long (the ping goes out
 /// every 25 s) means the connection is dead even if the OS has not noticed.
 pub(super) const PEER_SILENT_AFTER: Duration = Duration::from_secs(70);
+/// A socket that has held back delta frames this long without a keyframe asks for one again.
+pub(super) const KEYFRAME_STALL: Duration = Duration::from_secs(2);
 /// A close frame is best effort: do not wait on it longer than this.
 pub(super) const CLOSE_WRITE_LIMIT: Duration = Duration::from_secs(2);
 /// Connecting to a remote agent's video socket may take this long before the stream is reported lost.

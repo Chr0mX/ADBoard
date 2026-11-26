@@ -118,6 +118,8 @@ pub struct SessionManager {
     audio_gates: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
     /// How long a keyframe request waits for a new stream's first frame before it is sent anyway (see `reset_video`).
     first_frame_grace_ms: std::sync::atomic::AtomicU64,
+    /// Phones whose new stream is being watched for a first frame (one watcher each).
+    first_frame_watch: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
     /// Keyframe requests per phone are spaced out, whoever asks (see `reset_gate`).
     reset_gate: Arc<std::sync::Mutex<reset_gate::ResetGate>>,
     /// Settings of each virtual display, by `<serial>#vd<N>` key.
@@ -170,6 +172,7 @@ impl SessionManager {
             clipboard_tx,
             audio_gates: std::sync::Mutex::new(HashMap::new()),
             first_frame_grace_ms: std::sync::atomic::AtomicU64::new(5_000),
+            first_frame_watch: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
             reset_gate: Arc::new(std::sync::Mutex::new(reset_gate::ResetGate::new(reset_gate::RESET_GAP))),
             virtual_specs: RwLock::new(HashMap::new()),
         })
@@ -800,18 +803,65 @@ impl SessionManager {
 
     /// Ask the phone's encoder for a fresh keyframe. Several viewers asking close together share one
     /// request (see `reset_gate`): each still gets a keyframe produced after it asked.
+    ///
+    /// Returns at once, also for a stream that has not produced its first frame. A reset that reaches
+    /// scrcpy-server before its capture runs throws a NullPointerException in the server's control thread
+    /// (`CaptureControl.reset` on null) and kills the stream, so for a new stream the request is only
+    /// answered by the first frame (a keyframe anyway), and sent after a grace period if none comes (a still
+    /// or dark screen sends nothing). Waiting here instead would hold up the page, which ignores video until
+    /// this call returns.
     pub async fn reset_video(&self, serial: &str) -> Result<(), String> {
         let Some(sender) = self.control_sender(serial).await else {
             return Err("scrcpy control is not connected".into());
         };
-        // A reset that reaches scrcpy-server before its capture is running throws a NullPointerException in
-        // the server's control thread (`CaptureControl.reset` on null) and kills the stream, which then has
-        // to restart. Until this stream has produced its first frame there is nothing to reset: that first
-        // frame is a keyframe anyway, so every viewer already gets one.
         if !self.video_hub.has_keyframe(serial).await {
-            let grace = std::time::Duration::from_millis(self.first_frame_grace_ms.load(std::sync::atomic::Ordering::Relaxed));
-            let mut frames = self.video_hub.subscribe(serial).await;
-            let first = tokio::time::timeout(grace, async {
+            self.watch_for_first_frame(serial, sender);
+            return Ok(());
+        }
+        let keyframes = self.video_hub.keyframe_count(serial).await;
+        let plan = self
+            .reset_gate
+            .lock()
+            .map(|mut gate| gate.request(serial, std::time::Instant::now(), keyframes))
+            .unwrap_or(reset_gate::ResetPlan::Now);
+        match plan {
+            reset_gate::ResetPlan::Now => sender.reset_video().await,
+            reset_gate::ResetPlan::Covered => Ok(()),
+            reset_gate::ResetPlan::After(delay) => {
+                let gate = self.reset_gate.clone();
+                let hub = self.video_hub.clone();
+                let serial = serial.to_string();
+                tokio::spawn(async move {
+                    tokio::time::sleep(delay).await;
+                    let keyframes = hub.keyframe_count(&serial).await;
+                    let _ = sender.reset_video().await;
+                    if let Ok(mut gate) = gate.lock() {
+                        gate.sent(&serial, std::time::Instant::now(), keyframes);
+                    }
+                });
+                Ok(())
+            }
+        }
+    }
+
+    /// One watcher per phone: if its new stream shows no frame within the grace period, ask for one.
+    fn watch_for_first_frame(&self, serial: &str, sender: ControlSender) {
+        let first_watch = self
+            .first_frame_watch
+            .lock()
+            .map(|mut watching| watching.insert(serial.to_string()))
+            .unwrap_or(false);
+        if !first_watch {
+            return;
+        }
+        let watching = self.first_frame_watch.clone();
+        let gate = self.reset_gate.clone();
+        let hub = self.video_hub.clone();
+        let serial = serial.to_string();
+        let grace = std::time::Duration::from_millis(self.first_frame_grace_ms.load(std::sync::atomic::Ordering::Relaxed));
+        tokio::spawn(async move {
+            let mut frames = hub.subscribe(&serial).await;
+            let got_one = tokio::time::timeout(grace, async {
                 loop {
                     match frames.recv().await {
                         Ok(crate::video::VideoPacket::AnnexB(_)) => return true,
@@ -822,33 +872,18 @@ impl SessionManager {
             })
             .await
             .unwrap_or(false);
-            if first {
-                return Ok(());
+            if let Ok(mut watching) = watching.lock() {
+                watching.remove(&serial);
             }
-            // Nothing arrived for a while (a still or dark screen sends nothing): the capture is running by
-            // now, so a reset is safe and is what makes the encoder produce a frame.
-        }
-        let plan = self
-            .reset_gate
-            .lock()
-            .map(|mut gate| gate.request(serial, std::time::Instant::now()))
-            .unwrap_or(reset_gate::ResetPlan::Now);
-        match plan {
-            reset_gate::ResetPlan::Now => sender.reset_video().await,
-            reset_gate::ResetPlan::Covered => Ok(()),
-            reset_gate::ResetPlan::After(delay) => {
-                let gate = self.reset_gate.clone();
-                let serial = serial.to_string();
-                tokio::spawn(async move {
-                    tokio::time::sleep(delay).await;
-                    let _ = sender.reset_video().await;
-                    if let Ok(mut gate) = gate.lock() {
-                        gate.sent(&serial, std::time::Instant::now());
-                    }
-                });
-                Ok(())
+            if !got_one && !hub.has_keyframe(&serial).await {
+                // The capture is running by now: a reset is safe, and makes the encoder produce a frame.
+                let keyframes = hub.keyframe_count(&serial).await;
+                let _ = sender.reset_video().await;
+                if let Ok(mut gate) = gate.lock() {
+                    gate.sent(&serial, std::time::Instant::now(), keyframes);
+                }
             }
-        }
+        });
     }
 
     pub async fn set_display_power(&self, serial: &str, on: bool) -> Result<(), String> {

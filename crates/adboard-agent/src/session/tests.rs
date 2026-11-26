@@ -230,18 +230,16 @@ async fn no_keyframe_reset_reaches_a_stream_that_has_not_produced_its_first_fram
     // the log showed it 6 ms after the pump attached. The first frame is a keyframe anyway.
     let (mgr, hub, mut phone) = session_with_control_socket("FRESH").await;
     mgr.first_frame_grace_ms.store(400, std::sync::atomic::Ordering::Relaxed);
-    // The first frame arrives 100 ms after the ask: the ask is answered by it, and nothing is sent.
-    let late = hub.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        late.publish_annexb("FRESH", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
-    });
+    // The call returns at once: the page ignores video until it does.
+    let started = std::time::Instant::now();
     assert_eq!(mgr.reset_video("FRESH").await, Ok(()));
-    assert!(bytes_within(&mut phone, 300).await.is_empty(), "nothing is sent while the first frame is awaited");
-    hub.clear_cache("FRESH").await;
-
-    // Once the stream has produced a keyframe the capture is running and a reset is sent.
+    assert!(started.elapsed() < std::time::Duration::from_millis(100), "it must not wait for the first frame");
+    assert!(bytes_within(&mut phone, 150).await.is_empty(), "nothing is sent while the first frame is awaited");
+    // The first frame arrives inside the grace period: it answers the ask, and nothing is ever sent.
     hub.publish_annexb("FRESH", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
+    assert!(bytes_within(&mut phone, 700).await.is_empty(), "the first frame was the keyframe");
+
+    // Once the stream has a keyframe the capture is running and a reset is sent.
     assert_eq!(mgr.reset_video("FRESH").await, Ok(()));
     assert_eq!(bytes_within(&mut phone, 1000).await, vec![17], "RESET_VIDEO (type 17)");
 }
@@ -253,15 +251,11 @@ async fn a_restarted_stream_is_protected_again_until_its_new_first_frame() {
     hub.publish_annexb("RESTARTED", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
     // The producer stopped (a crash, a restart): its keyframe no longer counts.
     hub.clear_cache("RESTARTED").await;
-    let asking = {
-        let mgr = mgr.clone();
-        tokio::spawn(async move { mgr.reset_video("RESTARTED").await })
-    };
+    assert_eq!(mgr.reset_video("RESTARTED").await, Ok(()));
     assert!(bytes_within(&mut phone, 300).await.is_empty(), "no reset while the new stream has no frame yet");
-    // The new stream's first frame arrives: it answers the ask, and nothing is sent to the phone.
+    // The new stream's first frame arrives: nothing is sent to the phone.
     hub.publish_annexb("RESTARTED", vec![0, 0, 0, 1, 0x65, 0x11, 0x22]).await;
-    assert_eq!(asking.await.unwrap(), Ok(()));
-    assert!(bytes_within(&mut phone, 300).await.is_empty());
+    assert!(bytes_within(&mut phone, 400).await.is_empty());
 }
 
 #[tokio::test]
@@ -271,19 +265,32 @@ async fn two_asks_at_connect_make_one_reset_and_without_a_control_socket_the_cal
     // The agent's own connect-time ask and the page's ask arrive within milliseconds of each other.
     assert_eq!(mgr.reset_video("TWICE").await, Ok(()));
     assert_eq!(mgr.reset_video("TWICE").await, Ok(()));
-    let first = bytes_within(&mut phone, 600).await;
-    assert_eq!(first, vec![17], "one RESET_VIDEO, not two");
-    assert!(bytes_within(&mut phone, 1200).await.is_empty(), "and no second one afterwards");
+    assert_eq!(bytes_within(&mut phone, 600).await, vec![17], "one RESET_VIDEO, not two");
+    assert!(bytes_within(&mut phone, 600).await.is_empty(), "and no second one afterwards");
     // A phone with no control connection still reports it, so the connect-time retry loop keeps trying.
     assert!(mgr.reset_video("NO-SUCH-PHONE").await.is_err());
+}
+
+#[tokio::test]
+async fn a_viewer_that_joins_after_the_keyframe_went_out_gets_a_new_one() {
+    // The old 300 ms guess let a viewer 250 ms later "ride on" a keyframe that had already gone by, and its
+    // socket then waited for the encoder's next natural one. Now the keyframe count decides.
+    let (mgr, hub, mut phone) = session_with_control_socket("LATE").await;
+    hub.publish_annexb("LATE", vec![0, 0, 0, 1, 0x65, 0x01]).await;
+    assert_eq!(mgr.reset_video("LATE").await, Ok(()));
+    assert_eq!(bytes_within(&mut phone, 600).await, vec![17]);
+    // The keyframe that reset asked for comes out.
+    hub.publish_annexb("LATE", vec![0, 0, 0, 1, 0x65, 0x02]).await;
+    // A second viewer connects now and asks: it needs a keyframe made after it joined.
+    assert_eq!(mgr.reset_video("LATE").await, Ok(()));
+    assert_eq!(bytes_within(&mut phone, 1500).await, vec![17], "a second reset, after the gap");
 }
 
 #[tokio::test]
 async fn a_still_screen_that_never_sends_a_frame_still_gets_its_reset_after_the_grace() {
     let (mgr, _hub, mut phone) = session_with_control_socket("STILL").await;
     mgr.first_frame_grace_ms.store(150, std::sync::atomic::Ordering::Relaxed);
-    let started = std::time::Instant::now();
     assert_eq!(mgr.reset_video("STILL").await, Ok(()));
-    assert!(started.elapsed() >= std::time::Duration::from_millis(150), "it waited for a first frame");
-    assert_eq!(bytes_within(&mut phone, 1000).await, vec![17], "then sent the reset so the encoder produces one");
+    assert!(bytes_within(&mut phone, 60).await.is_empty(), "not before the grace");
+    assert_eq!(bytes_within(&mut phone, 1000).await, vec![17], "then the reset, so the encoder produces a frame");
 }

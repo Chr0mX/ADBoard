@@ -24,6 +24,8 @@ import {
   DEFAULT_BACKGROUND_POLICY,
   backgroundFrameDue,
   clampBackgroundFps,
+  decodeStallStep,
+  type DecodeStallState,
   keepsSocketInBackground,
   needsKeyframeAfter,
   readBackgroundPolicy,
@@ -116,4 +118,34 @@ test("recovery waits for a picture, then asks once, then starts the connection o
   assert.equal(recoveryStep({ elapsedMs: 1300, framesSince: 0, asked: true }), "wait");
   assert.equal(recoveryStep({ elapsedMs: 4100, framesSince: 0, asked: true }), "reconnect");
   assert.equal(recoveryStep({ elapsedMs: 4100, framesSince: 3, asked: true }), "done", "a picture arrived: nothing more to do");
+});
+
+test("a decoder that gets frames but shows nothing is asked for a keyframe after two seconds", () => {
+  let state: DecodeStallState = { seen: 0, decoded: 0, since: 0 };
+  const look = (seen: number, decoded: number, at: number) => {
+    const step = decodeStallStep(state, { seen, decoded, at });
+    state = step.state;
+    return step.ask;
+  };
+  assert.equal(look(5, 0, 500), false, "just started");
+  assert.equal(look(20, 0, 1500), false);
+  assert.equal(look(40, 0, 2600), true, "frames arrive, none decodes, 2 s on");
+  assert.equal(look(60, 0, 3100), false, "the clock starts again after asking");
+  assert.equal(look(80, 0, 4700), true, "and asks again if it still does not decode");
+});
+
+test("a still screen and a working stream never trigger the stall ask", () => {
+  let state: DecodeStallState = { seen: 10, decoded: 10, since: 0 };
+  // Nothing arrives for ten seconds: a still screen.
+  for (let at = 500; at <= 10_000; at += 500) {
+    const step = decodeStallStep(state, { seen: 10, decoded: 10, at });
+    assert.equal(step.ask, false);
+    state = step.state;
+  }
+  // Frames arrive and are decoded.
+  for (let i = 1; i <= 20; i++) {
+    const step = decodeStallStep(state, { seen: 10 + i * 5, decoded: 10 + i * 5, at: 10_000 + i * 500 });
+    assert.equal(step.ask, false);
+    state = step.state;
+  }
 });

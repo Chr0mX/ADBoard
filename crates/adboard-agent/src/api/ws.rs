@@ -622,6 +622,12 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
             // Scrcpy sockets always wait: the replayed IDR must not be followed by
             // later P-frames. The keyframe requested above ends the wait.
             let mut wait_for_key = scrcpy_live;
+            // While the socket holds back delta frames it shows nothing new: how long, and how many it dropped.
+            let mut waiting_since = scrcpy_live.then(std::time::Instant::now);
+            let mut held_back = 0u32;
+            let mut stall_asked_at: Option<std::time::Instant> = None;
+            let mut stall_watch = tokio::time::interval(std::time::Duration::from_secs(1));
+            stall_watch.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let mut keepalive = ws_keepalive();
             let mut heartbeat = video_heartbeat();
             let mut last_lag_reset: Option<std::time::Instant> = None;
@@ -629,6 +635,23 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                 tokio::select! {
                     _ = keepalive.tick() => {
                         put!('session, ws_ping());
+                    }
+                    _ = stall_watch.tick() => {
+                        // The keyframe this socket is waiting for can be missed (it came out before the socket
+                        // subscribed, or the request was folded into another). Ask again rather than showing
+                        // nothing until the encoder's next natural one, which can be seconds away.
+                        if let Some(since) = waiting_since {
+                            let due = stall_asked_at.is_none_or(|at| at.elapsed() >= KEYFRAME_STALL);
+                            if since.elapsed() >= KEYFRAME_STALL && due {
+                                stall_asked_at = Some(std::time::Instant::now());
+                                warn!(serial = %serial_log, waited_ms = since.elapsed().as_millis() as u64, held_back, "video socket is still waiting for a keyframe; asking again");
+                                let sessions = sessions_lag.clone();
+                                let serial = serial_lag.clone();
+                                tokio::spawn(async move {
+                                    let _ = sessions.reset_video(&serial).await;
+                                });
+                            }
+                        }
                     }
                     _ = heartbeat.tick() => {
                         let last = connected_at + std::time::Duration::from_millis(heard.load(std::sync::atomic::Ordering::Relaxed));
@@ -646,8 +669,17 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                 put!('session, Message::Text(serde_json::to_string(&frame).unwrap_or_default().into()));
                             }
                             Ok(crate::video::VideoPacket::AnnexB(bytes)) => {
+                                let was_waiting = wait_for_key;
                                 if !crate::video::keep_after_gap(&mut wait_for_key, &bytes) {
+                                    held_back += 1;
                                     continue;
+                                }
+                                if was_waiting && !wait_for_key {
+                                    if let Some(since) = waiting_since.take() {
+                                        info!(serial = %serial_log, waited_ms = since.elapsed().as_millis() as u64, held_back, "video socket released at a keyframe");
+                                    }
+                                    held_back = 0;
+                                    stall_asked_at = None;
                                 }
                                 put!('session, Message::Binary(bytes));
                             }
@@ -668,6 +700,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                     put!('session, Message::Binary(au));
                                 }
                                 wait_for_key = true;
+                                waiting_since.get_or_insert_with(std::time::Instant::now);
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                                 break 'session Some(CloseReason::StreamShutDown);

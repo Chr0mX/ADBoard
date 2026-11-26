@@ -80,6 +80,8 @@ struct SerialChannel {
     last_sps: Option<Bytes>,
     /// Latest IDR access unit. Late subscribers need this or they wait forever.
     last_keyframe: Option<Bytes>,
+    /// How many keyframes this phone's channel has carried. A keyframe request is answered when it moves.
+    keyframes: u64,
 }
 
 /// Fan-out hub: one producer per serial, many WS subscribers.
@@ -107,6 +109,7 @@ impl VideoHub {
                 last_status: None,
                 last_sps: None,
                 last_keyframe: None,
+                keyframes: 0,
             },
         );
         tx
@@ -127,6 +130,7 @@ impl VideoHub {
                     last_status: None,
                     last_sps: None,
                     last_keyframe: None,
+                    keyframes: 0,
                 },
             );
         }
@@ -139,6 +143,7 @@ impl VideoHub {
                 }
                 if annexb_is_keyframe(au) {
                     ch.last_keyframe = Some(au.clone());
+                    ch.keyframes += 1;
                 }
             }
         }
@@ -158,6 +163,11 @@ impl VideoHub {
             (Some(sps), None) => vec![sps.clone()],
             (None, None) => Vec::new(),
         }
+    }
+
+    /// Keyframes carried so far (never goes back, not even when the cache is cleared).
+    pub async fn keyframe_count(&self, serial: &str) -> u64 {
+        self.channels.read().await.get(serial).map_or(0, |ch| ch.keyframes)
     }
 
     /// Has this phone's current stream produced a keyframe yet? Until it has, its capture may not be running.
