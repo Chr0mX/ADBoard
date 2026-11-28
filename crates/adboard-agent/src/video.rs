@@ -85,6 +85,9 @@ struct SerialChannel {
     /// Access units carried so far, and when the last one came out of the producer (the phone's encoder).
     frames: u64,
     last_frame_at: Option<Instant>,
+    /// Keyframes already counted when their header arrived (`note_keyframe_started`) and not yet published:
+    /// publishing one of those must not count it again.
+    keyframes_announced: u32,
     /// When input (touch, key, text) was last sent to this phone. Input that changes the screen must be
     /// followed by pictures; when none come, the encoder is stuck (see `stream_watch`).
     last_input_at: Option<Instant>,
@@ -98,6 +101,7 @@ impl SerialChannel {
             last_sps: None,
             last_keyframe: None,
             keyframes: 0,
+            keyframes_announced: 0,
             frames: 0,
             last_frame_at: None,
             last_input_at: None,
@@ -165,7 +169,11 @@ impl VideoHub {
                 }
                 if annexb_is_keyframe(au) {
                     ch.last_keyframe = Some(au.clone());
-                    ch.keyframes += 1;
+                    if ch.keyframes_announced > 0 {
+                        ch.keyframes_announced -= 1;
+                    } else {
+                        ch.keyframes += 1;
+                    }
                 }
             }
         }
@@ -195,6 +203,17 @@ impl VideoHub {
     /// Keyframes carried so far (never goes back, not even when the cache is cleared).
     pub async fn keyframe_count(&self, serial: &str) -> u64 {
         self.channels.read().await.get(serial).map_or(0, |ch| ch.keyframes)
+    }
+
+    /// A keyframe has begun to arrive from the encoder (its IDR slice header was read; `starts_keyframe`). It is
+    /// counted now, so a keyframe request is known to be answered without waiting for the frame after it,
+    /// which is what completes the access unit (and on a still screen can take as long as the screen stays
+    /// still). The access unit itself is cached and sent only once it is complete.
+    pub async fn note_keyframe_started(&self, serial: &str) {
+        if let Some(ch) = self.channels.write().await.get_mut(serial) {
+            ch.keyframes += 1;
+            ch.keyframes_announced += 1;
+        }
     }
 
     /// Producer counters of one phone (all zero for a phone nobody has streamed).
@@ -242,6 +261,7 @@ impl VideoHub {
             ch.last_sps = None;
             ch.last_keyframe = None;
             ch.last_status = None;
+            ch.keyframes_announced = 0;
         }
     }
 
@@ -411,6 +431,8 @@ where
     let handle = tokio::spawn(async move {
         let mut buf = vec![0u8; 64 * 1024];
         let mut pending = Vec::with_capacity(128 * 1024);
+        // A keyframe whose header was seen in `pending` and counted, and that has not been published yet.
+        let mut announced = false;
         loop {
             match reader.read(&mut buf).await {
                 Ok(0) => {
@@ -447,7 +469,14 @@ where
                                 .await;
                             }
                         }
+                        if announced && annexb_is_keyframe(&au) {
+                            announced = false;
+                        }
                         hub.publish_annexb(&serial_pump, au).await;
+                    }
+                    if !announced && starts_keyframe(&pending) {
+                        announced = true;
+                        hub.note_keyframe_started(&serial_pump).await;
                     }
                 }
                 Err(e) => {
@@ -1050,6 +1079,35 @@ pub fn keep_after_gap(waiting_for_key: &mut bool, au: &[u8]) -> bool {
     false
 }
 
+/// Do these bytes, not yet complete enough to be sent, already hold the beginning of a keyframe? Only a
+/// well-formed IDR slice header counts: forbidden bit clear, `nal_ref_idc` non-zero (an IDR is always a
+/// reference picture), type 5, and a slice header that reads `first_mb_in_slice` 0 (the picture's first slice)
+/// and an I or SI `slice_type`. A header cut short, or anything else, is not counted.
+pub fn starts_keyframe(data: &[u8]) -> bool {
+    let starts = find_start_codes(data);
+    for (i, &start) in starts.iter().enumerate() {
+        let sc_len = if data.get(start..start + 4) == Some(&[0, 0, 0, 1]) { 4 } else { 3 };
+        let begin = start + sc_len;
+        let end = starts.get(i + 1).copied().unwrap_or(data.len());
+        if begin < end && idr_slice_begins(&data[begin..end.min(begin + 32)]) {
+            return true;
+        }
+    }
+    false
+}
+
+fn idr_slice_begins(nal: &[u8]) -> bool {
+    let Some(&header) = nal.first() else {
+        return false;
+    };
+    if header & 0x80 != 0 || (header >> 5) & 0x3 == 0 || header & 0x1f != 5 || nal.len() < 2 {
+        return false;
+    }
+    let rbsp = rbsp_from_nal(nal);
+    let mut reader = BitReader::new(&rbsp);
+    matches!((reader.ue(), reader.ue()), (Ok(0), Ok(2 | 4 | 7 | 9)))
+}
+
 /// True when an Annex-B AU contains an IDR (keyframe).
 pub fn annexb_is_keyframe(au: &[u8]) -> bool {
     for nal in split_annexb_nals(au) {
@@ -1240,6 +1298,58 @@ mod tests {
         assert_eq!(hub.replay_access_units("SER").await, vec![fresh]);
         // Clearing a phone that never streamed is harmless.
         hub.clear_cache("NEVER").await;
+    }
+
+    #[test]
+    fn a_keyframe_is_recognised_from_its_slice_header_alone() {
+        // SPS, PPS, then the first bytes of an IDR slice (first_mb 0, slice_type 7): the rest is still coming.
+        let start = [0u8, 0, 0, 1, 0x67, 0x42, 0x00, 0x1f, 0, 0, 0, 1, 0x68, 0xce, 0x3c, 0x80, 0, 0, 0, 1, 0x65, 0x88, 0x80];
+        assert!(starts_keyframe(&start));
+        assert!(starts_keyframe(&[0, 0, 1, 0x65, 0x88]), "three-byte start code");
+        // Not keyframes: a P slice, a non-reference IDR, a forbidden bit, a header with no slice header yet,
+        // a slice that is not the picture's first, a P slice type inside an IDR NAL.
+        assert!(!starts_keyframe(&[0, 0, 0, 1, 0x41, 0x9a]));
+        assert!(!starts_keyframe(&[0, 0, 0, 1, 0x05, 0x88, 0x80]));
+        assert!(!starts_keyframe(&[0, 0, 0, 1, 0xe5, 0x88, 0x80]));
+        assert!(!starts_keyframe(&[0, 0, 0, 1, 0x65]));
+        assert!(!starts_keyframe(&[0, 0, 0, 1, 0x65, 0x48, 0x80]), "first_mb_in_slice 1");
+        assert!(!starts_keyframe(&[0, 0, 0, 1, 0x65, 0xa0]), "slice_type 0 (P)");
+        assert!(!starts_keyframe(&[0, 0, 0, 1, 0x67, 0x42, 0x00, 0x1f]), "SPS alone");
+    }
+
+    #[tokio::test]
+    async fn the_reader_counts_a_keyframe_when_its_header_arrives_and_only_once() {
+        let hub = VideoHub::new();
+        let (mut writer, reader) = tokio::io::duplex(64 * 1024);
+        let _pump = start_annexb_reader_pump(hub.clone(), "KEY".into(), reader, AnnexBPumpMeta::scrcpy(0, 0, "avc1.42E01E")).await;
+        use tokio::io::AsyncWriteExt;
+        let idr = [0u8, 0, 0, 1, 0x67, 0x42, 0x00, 0x1f, 0, 0, 0, 1, 0x68, 0xce, 0x3c, 0x80, 0, 0, 0, 1, 0x65, 0x88, 0x80, 0x11, 0x22];
+        writer.write_all(&idr).await.unwrap();
+        let wait = || tokio::time::sleep(std::time::Duration::from_millis(80));
+        wait().await;
+        // No frame after it yet, so the access unit is incomplete and not sent; the keyframe already counts.
+        assert_eq!(hub.keyframe_count("KEY").await, 1, "counted at its header");
+        assert!(!hub.has_keyframe("KEY").await, "not cached before it is complete");
+        // The next frame completes it: cached and sent, not counted a second time.
+        writer.write_all(&[0, 0, 0, 1, 0x41, 0x9a, 0x01]).await.unwrap();
+        wait().await;
+        assert!(hub.has_keyframe("KEY").await);
+        assert_eq!(hub.keyframe_count("KEY").await, 1, "one keyframe, one count");
+        // A second keyframe, arriving in pieces: counted once, at the piece that holds its header.
+        writer.write_all(&[0, 0, 0, 1]).await.unwrap();
+        wait().await;
+        writer.write_all(&[0x65, 0x88, 0x80, 0x33]).await.unwrap();
+        wait().await;
+        writer.write_all(&[0x44, 0x55]).await.unwrap();
+        wait().await;
+        assert_eq!(hub.keyframe_count("KEY").await, 2);
+        writer.write_all(&[0, 0, 0, 1, 0x41, 0x9a, 0x02]).await.unwrap();
+        wait().await;
+        assert_eq!(hub.keyframe_count("KEY").await, 2);
+        // A stopped producer leaves no half-counted keyframe behind.
+        hub.clear_cache("KEY").await;
+        hub.publish_annexb("KEY", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
+        assert_eq!(hub.keyframe_count("KEY").await, 3);
     }
 
     #[tokio::test]

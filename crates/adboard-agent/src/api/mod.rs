@@ -97,6 +97,8 @@ pub(super) struct LinkReport {
     pub sent_frames: u64,
     pub held_back: u32,
     pub waiting_for_keyframe: bool,
+    /// This phone's keyframe resets: sent, merged, deadlines missed, restarts, the one outstanding, the last latency.
+    pub resets: crate::session::ResetStats,
 }
 
 fn status_with_link(frame: &VideoStatusFrame, link: Option<LinkReport>) -> String {
@@ -113,6 +115,17 @@ fn status_with_link(frame: &VideoStatusFrame, link: Option<LinkReport>) -> Strin
             map.insert("sentFrames".into(), serde_json::json!(link.sent_frames));
             map.insert("heldBack".into(), serde_json::json!(link.held_back));
             map.insert("waitingForKeyframe".into(), serde_json::json!(link.waiting_for_keyframe));
+            map.insert(
+                "resets".into(),
+                serde_json::json!({
+                    "sent": link.resets.sent,
+                    "merged": link.resets.merged,
+                    "expired": link.resets.expired,
+                    "escalated": link.resets.escalated,
+                    "outstandingAttempt": link.resets.outstanding_attempt,
+                    "lastLatencyMs": link.resets.last_latency_ms,
+                }),
+            );
         }
     }
     value.to_string()

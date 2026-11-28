@@ -188,6 +188,12 @@ async fn shell_input_for_a_virtual_display_is_refused_until_its_id_is_known() {
 async fn session_with_control_socket(serial: &str) -> (Arc<SessionManager>, Arc<VideoHub>, tokio::net::TcpStream) {
     let hub = VideoHub::new();
     let mgr = SessionManager::new_with_source(None, None, hub.clone(), VideoSourceKind::Off);
+    let phone_side = attach_control_socket(&mgr, serial).await;
+    (mgr, hub, phone_side)
+}
+
+/// Another streaming phone on the same manager, with its own control socket.
+async fn attach_control_socket(mgr: &Arc<SessionManager>, serial: &str) -> tokio::net::TcpStream {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let client = tokio::net::TcpStream::connect(addr).await.unwrap();
@@ -212,7 +218,7 @@ async fn session_with_control_socket(serial: &str) -> (Arc<SessionManager>, Arc<
         },
     );
     drop(guard);
-    (mgr, hub, phone_side)
+    phone_side
 }
 
 async fn bytes_within(socket: &mut tokio::net::TcpStream, ms: u64) -> Vec<u8> {
@@ -330,4 +336,120 @@ async fn a_failed_start_is_remembered_and_the_next_start_clears_a_leftover_serve
     assert_eq!(second_push, 2, "both starts reached the push: {calls}");
     assert!(calls[..kill_at].matches("push").count() == 1, "the cleanup came after the first push and before the second: {calls}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---- one outstanding reset per phone ----
+
+const IDR: [u8; 7] = [0, 0, 0, 1, 0x65, 0x88, 0x80];
+
+/// Every RESET_VIDEO (type 17) the phone receives in `ms`.
+async fn resets_within(socket: &mut tokio::net::TcpStream, ms: u64) -> usize {
+    use tokio::io::AsyncReadExt;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
+    let mut count = 0;
+    let mut buf = [0u8; 64];
+    while let Ok(Ok(n)) = tokio::time::timeout_at(deadline, socket.read(&mut buf)).await {
+        if n == 0 {
+            break;
+        }
+        count += buf[..n].iter().filter(|b| **b == 17).count();
+    }
+    count
+}
+
+fn set_deadline(mgr: &Arc<SessionManager>, ms: u64) {
+    mgr.reset_gate.lock().unwrap().set_deadline(std::time::Duration::from_millis(ms));
+}
+
+#[tokio::test]
+async fn a_reset_is_not_sent_again_while_it_waits_for_its_keyframe() {
+    let (mgr, hub, mut phone) = session_with_control_socket("WAIT").await;
+    set_deadline(&mgr, 2500);
+    hub.publish_annexb("WAIT", IDR.to_vec()).await;
+    // Two sockets open at once (each asks on connect), then the stall watch asks every second: one reset.
+    for reason in ["connect", "connect", "manual"] {
+        assert_eq!(mgr.reset_video_for("WAIT", reason).await, Ok(()));
+    }
+    for _ in 0..2 {
+        tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+        assert_eq!(mgr.reset_video_for("WAIT", "stall").await, Ok(()));
+    }
+    assert_eq!(resets_within(&mut phone, 300).await, 1, "one RESET_VIDEO, well past the old 800 ms");
+    let stats = mgr.reset_stats("WAIT");
+    assert_eq!((stats.sent, stats.merged, stats.outstanding_attempt), (1, 4, 1));
+}
+
+#[tokio::test]
+async fn a_keyframe_that_comes_late_answers_the_reset_without_another_one() {
+    let (mgr, hub, mut phone) = session_with_control_socket("SLOW").await;
+    set_deadline(&mgr, 3000);
+    hub.publish_annexb("SLOW", IDR.to_vec()).await;
+    mgr.reset_video_for("SLOW", "connect").await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    mgr.reset_video_for("SLOW", "stall").await.unwrap();
+    // The encoder took 1.6 s to restart: its keyframe header arrives.
+    hub.note_keyframe_started("SLOW").await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let stats = mgr.reset_stats("SLOW");
+    assert_eq!(stats.outstanding_attempt, 0, "answered");
+    assert!(stats.last_latency_ms.is_some_and(|ms| (1500..2000).contains(&ms)), "{stats:?}");
+    assert_eq!(resets_within(&mut phone, 3000).await, 1, "no second reset, before or after the deadline");
+    assert_eq!(mgr.reset_stats("SLOW").expired, 0);
+}
+
+#[tokio::test]
+async fn a_reset_that_is_never_answered_is_retried_once_then_the_stream_is_restarted() {
+    let (mgr, hub, mut phone) = session_with_control_socket("DEAD").await;
+    set_deadline(&mgr, 600);
+    hub.publish_annexb("DEAD", IDR.to_vec()).await;
+    mgr.reset_video_for("DEAD", "connect").await.unwrap();
+    // First reset, then one more at the deadline; then the control socket closes, because the stream restarts.
+    assert_eq!(resets_within(&mut phone, 2500).await, 2);
+    let stats = mgr.reset_stats("DEAD");
+    assert_eq!((stats.sent, stats.expired, stats.escalated, stats.outstanding_attempt), (2, 2, 1, 0), "{stats:?}");
+    let session = mgr.get_session("DEAD").await.unwrap();
+    assert_ne!(session.stream, StreamState::Streaming, "the controlled recovery restarted the stream: {session:?}");
+}
+
+#[tokio::test]
+async fn the_first_frame_watch_counts_like_any_reset_and_absorbs_asks() {
+    let (mgr, _hub, mut phone) = session_with_control_socket("NEW").await;
+    mgr.first_frame_grace_ms.store(150, std::sync::atomic::Ordering::Relaxed);
+    set_deadline(&mgr, 3000);
+    mgr.reset_video_for("NEW", "connect").await.unwrap();
+    assert_eq!(resets_within(&mut phone, 400).await, 1, "sent after the grace");
+    assert_eq!(mgr.reset_stats("NEW").sent, 1, "counted by the gate");
+    // The first frame (a keyframe) answers it; the next ask within the gap waits for the gap.
+    _hub.publish_annexb("NEW", IDR.to_vec()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    assert_eq!(mgr.reset_stats("NEW").outstanding_attempt, 0, "answered by the first frame");
+}
+
+#[tokio::test]
+async fn each_phone_keeps_its_own_reset_state() {
+    let (mgr, hub, mut a) = session_with_control_socket("PA").await;
+    let mut b = attach_control_socket(&mgr, "PB").await;
+    set_deadline(&mgr, 3000);
+    hub.publish_annexb("PA", IDR.to_vec()).await;
+    hub.publish_annexb("PB", IDR.to_vec()).await;
+    mgr.reset_video_for("PA", "connect").await.unwrap();
+    mgr.reset_video_for("PB", "connect").await.unwrap();
+    mgr.reset_video_for("PA", "stall").await.unwrap();
+    assert_eq!(resets_within(&mut a, 300).await, 1);
+    assert_eq!(resets_within(&mut b, 300).await, 1, "A's outstanding reset does not hold B back");
+    hub.note_keyframe_started("PB").await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert_eq!(mgr.reset_stats("PB").outstanding_attempt, 0);
+    assert_eq!(mgr.reset_stats("PA").outstanding_attempt, 1, "A still waits");
+}
+
+#[tokio::test]
+async fn manual_refresh_still_resets_once_the_previous_reset_was_answered() {
+    let (mgr, hub, mut phone) = session_with_control_socket("MAN").await;
+    hub.publish_annexb("MAN", IDR.to_vec()).await;
+    mgr.reset_video_for("MAN", "connect").await.unwrap();
+    hub.note_keyframe_started("MAN").await;
+    tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+    mgr.reset_video_for("MAN", "manual").await.unwrap();
+    assert_eq!(resets_within(&mut phone, 400).await, 2, "the connect reset and the manual one");
 }

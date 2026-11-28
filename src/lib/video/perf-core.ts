@@ -7,6 +7,16 @@ import type { CloseKind, CloseRecord, IntentionalClose } from "./close-core";
 
 const RING = 256;
 
+/** The agent's keyframe reset counters for one phone (heartbeat `resets`). */
+export interface AgentResetStats {
+  sent: number;
+  merged: number;
+  expired: number;
+  escalated: number;
+  outstandingAttempt: number;
+  lastLatencyMs: number | null;
+}
+
 export interface StreamPerf {
   /** Access units that arrived on the socket. */
   received: number;
@@ -24,8 +34,17 @@ export interface StreamPerf {
   maxQueue: number;
   /** Times the decoder fell behind (queue at its limit) and frames were dropped until a keyframe. */
   backlogEpisodes: number;
-  /** Connect-time keyframe requests that did not answer within 3 s (the page then accepts video anyway). */
-  connectRefreshTimeouts: number;
+  /** Keyframes taken in, and keyframes the decoder returned a picture for (WebCodecs path). */
+  keyframesReceived: number;
+  keyframesDecoded: number;
+  /** SPS/PPS that differed from the ones before; and of those, how many left the running decoder configured
+   * with the old ones (same picture size, so it was not rebuilt). */
+  paramSetChanges: number;
+  paramSetChangesKeptDecoder: number;
+  /** Decoders created (the first one and every rebuild). */
+  decoderBuilds: number;
+  /** The phone's keyframe resets, from the agent's last heartbeat (null before one arrived). */
+  agentResets: AgentResetStats | null;
   /** Times a stuck MSE video element was started again or moved to the newest picture. */
   mseNudges: number;
   keyframeAsks: number;
@@ -94,7 +113,12 @@ export function newStreamPerf(): StreamPerf {
     dropped: 0,
     maxQueue: 0,
     backlogEpisodes: 0,
-    connectRefreshTimeouts: 0,
+    keyframesReceived: 0,
+    keyframesDecoded: 0,
+    paramSetChanges: 0,
+    paramSetChangesKeptDecoder: 0,
+    decoderBuilds: 0,
+    agentResets: null,
     mseNudges: 0,
     keyframeAsks: 0,
     keyframeAsksBy: {},
@@ -184,6 +208,7 @@ export function snapshotPerf(perf: StreamPerf): StreamPerfSnapshot {
     closes: { ...counters.closes },
     keyframeAsksBy: { ...counters.keyframeAsksBy },
     healthRepairs: { ...counters.healthRepairs },
+    agentResets: counters.agentResets ? { ...counters.agentResets } : null,
     lastClose: counters.lastClose ? { ...counters.lastClose } : null,
     lastIntentionalClose: counters.lastIntentionalClose ? { ...counters.lastIntentionalClose } : null,
     messageMsP50: percentile(messageMs, 50),

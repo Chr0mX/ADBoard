@@ -684,6 +684,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                             sent_frames: link_send.frames.load(std::sync::atomic::Ordering::Relaxed),
                             held_back,
                             waiting_for_keyframe: wait_for_key && viewer_active,
+                            resets: sessions_lag.reset_stats(&serial_lag),
                         };
                         put!('session, Message::Text(super::status_with_link(&frame, Some(report)).into()));
                         link_send.note_heartbeat(connected_at);

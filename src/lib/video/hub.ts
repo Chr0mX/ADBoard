@@ -12,7 +12,7 @@ import {
   splitAnnexBNals,
 } from "@/lib/video/h264";
 import { MseH264Player, type MsePlaybackHealth } from "@/lib/video/mse-player";
-import { TimeoutError, withTimeout } from "@/lib/api/timeout";
+import { withTimeout } from "@/lib/api/timeout";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
 import { RESUME_QUEUE, admitFrame, newDecodeGate } from "@/lib/video/backpressure";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
@@ -69,6 +69,7 @@ import { closeInitiator, closeKind, describeClose, retryDelayMs, shouldForgetTok
 import {
   markInput,
   newStreamPerf,
+  type AgentResetStats,
   recordMessage,
   recordPaint,
   recordQueue,
@@ -86,6 +87,12 @@ import {
 
 export type VideoStreamState = "idle" | "starting" | "streaming" | "error";
 
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 export interface VideoStatusMessage {
   serial: string;
   stream: VideoStreamState;
@@ -100,6 +107,8 @@ export interface VideoStatusMessage {
   heartbeat?: number;
   /** The agent process (changes when it restarts). */
   instance?: string;
+  /** Heartbeats only: the phone's keyframe resets as the agent counts them (see agent reset_gate). */
+  resets?: AgentResetStats;
   /** Heartbeats only: frames the phone produced, how long ago the last one, and frames sent to this socket. */
   sourceFrames?: number;
   sourceIdleMs?: number | null;
@@ -144,8 +153,6 @@ export interface VideoView {
 }
 
 /** Keep a stream this long after its last view leaves (view switches, Strict Mode). */
-/** The longest the page ignores video while its first keyframe request is on its way. */
-const CONNECT_REFRESH_TIMEOUT_MS = 3000;
 /** A page reports each kind of video problem to the agent at most this often per phone. */
 const VIDEO_REPORT_EVERY_MS = 15_000;
 const LINGER_MS = 1500;
@@ -222,8 +229,6 @@ function contextOf(canvas: HTMLCanvasElement) {
   return context;
 }
 
-const canvasOwners = new WeakMap<HTMLCanvasElement, { sharpen(canvas: HTMLCanvasElement): void }>();
-
 // The size each canvas is shown at, in device pixels, kept current by one observer.
 const boxes = new WeakMap<Element, { width: number; height: number }>();
 const boxObserver =
@@ -236,11 +241,9 @@ const boxObserver =
           const box = device
             ? { width: device.inlineSize, height: device.blockSize }
             : { width: Math.round(entry.contentRect.width * ratio), height: Math.round(entry.contentRect.height * ratio) };
+          // A canvas that grew is redrawn at its new size by the next picture. It does not ask for a keyframe:
+          // that restarts the phone's encoder for every viewer, and a resize is no reason to.
           boxes.set(entry.target, box);
-          // The canvas was enlarged (Fill, a dragged panel edge): its picture is
-          // now too coarse. A still screen sends no new frame, so ask for one.
-          const canvas = entry.target as HTMLCanvasElement;
-          if (box.width > canvas.width * 1.1 && box.height > canvas.height * 1.1) canvasOwners.get(canvas)?.sharpen(canvas);
         }
       });
 function boxOf(canvas: HTMLCanvasElement) {
@@ -354,14 +357,15 @@ class SharedStream {
   private stallAsks = 0;
   /** The decoder fell behind and a keyframe is wanted, to be asked for once its queue has drained. */
   private backlogAskPending = false;
-  /** When the connect-time keyframe request went out, while it has not settled (the page ignores video meanwhile). */
-  private refreshPendingSince: number | null = null;
   /** When each kind of problem was last reported to the agent (at most one report per kind per 15 s). */
   private reportedAt = new Map<string, number>();
   /** The decoder was rebuilt on this connection (for the close record). */
   private decoderRecovered = false;
   /** Decoder rebuilds in a row that brought no picture (a hung decoder: the next kind is tried). */
   private emptyRebuilds = 0;
+  /** The SPS/PPS last seen, to count changes; and the timestamps of keyframes handed to the decoder. */
+  private lastParamSets: { sps: Uint8Array; pps: Uint8Array } | null = null;
+  private keyTimestamps = new Set<number>();
   /** Since when this stream has been waiting for the agent or its phone before opening a socket. */
   private gateSince: number | null = null;
   /** The agent process the current socket talks to, and when its last status frame arrived. */
@@ -496,7 +500,6 @@ class SharedStream {
     // (status bar icons included) reaches the screen. A size reported by
     // status or SPS can be smaller; the canvas is then stretched, which blurs
     // small text on a high-density display.
-    canvasOwners.set(canvas, this);
     // A picture-in-picture window can be larger than the canvas on the page.
     const needed = pipActive() ? { width, height } : fittedSize({ width, height }, boxOf(canvas));
     const next = nextCanvasSize(canvas, needed);
@@ -532,13 +535,6 @@ class SharedStream {
     if (width > 0 && height > 0) this.publishSize(width, height, "frame");
     this.paint(frame, width, height); // the frame slot closes it
   };
-
-  /** A canvas grew past its picture: get a fresh frame to redraw it at the new size. */
-  sharpen(canvas: HTMLCanvasElement) {
-    // Already at the phone's full resolution: there is nothing sharper to draw.
-    if (canvas.width >= (this.state.size?.width ?? 0)) return;
-    if (!this.closed && this.state.decodeState === "decoding") this.askKeyframe("sharpen");
-  }
 
   /**
    * Test hook (perf mode): break one stage the way it has broken in the field, to watch the health check
@@ -854,7 +850,12 @@ class SharedStream {
         decoderRecoveries: p.decoderRecoveries,
         reconnects: p.reconnects,
         staleReconnects: p.staleReconnects,
-        connectRefreshTimeouts: p.connectRefreshTimeouts,
+        keyframesReceived: p.keyframesReceived,
+        keyframesDecoded: p.keyframesDecoded,
+        paramSetChanges: p.paramSetChanges,
+        paramSetChangesKeptDecoder: p.paramSetChangesKeptDecoder,
+        decoderBuilds: p.decoderBuilds,
+        agentResets: p.agentResets,
         mseNudges: p.mseNudges,
         sockets: p.sockets,
       },
@@ -877,8 +878,6 @@ class SharedStream {
     return {
       socket: socketState,
       acceptingVideo: this.socketVideo.acceptVideo,
-      connectRefreshSent: this.socketVideo.connectRefreshSent,
-      connectRefreshPendingMs: this.refreshPendingSince === null ? null : Math.round(now - this.refreshPendingSince),
       lastMessageAgoMs: this.lastMessageAt > 0 ? Math.round(now - this.lastMessageAt) : null,
       heartbeatSeconds: this.heartbeatSeconds,
       path: this.mse ? "mse" : webCodecsSupported() ? "webcodecs" : "none",
@@ -1026,6 +1025,7 @@ class SharedStream {
       }
       this.decoder = null;
     }
+    this.keyTimestamps.clear();
     this.slot.clear();
     this.sawKeyframe = false;
   }
@@ -1108,6 +1108,7 @@ class SharedStream {
 
   private createDecoder(desc: Uint8Array, codec: string) {
     this.teardownDecoder();
+    this.perf.decoderBuilds += 1;
     this.waitingForKeyframeConfig = false;
     this.gate = newDecodeGate();
     const decoder = new VideoDecoder({
@@ -1118,6 +1119,7 @@ class SharedStream {
         }
         this.perf.decoded += 1;
         this.perf.lastDecodedAt = performance.now();
+        if (this.keyTimestamps.delete(frame.timestamp)) this.perf.keyframesDecoded += 1;
         this.emptyRebuilds = 0;
         this.noteRecovered();
         this.setState({ decodeState: "decoding", error: null });
@@ -1272,7 +1274,7 @@ class SharedStream {
       if (!current()) return;
       this.lastMessageAt = performance.now();
       const started = perfTiming ? this.lastMessageAt : 0;
-      if (typeof event.data === "string") this.onStatus(event.data, generation);
+      if (typeof event.data === "string") this.onStatus(event.data);
       else this.onAccessUnit(new Uint8Array(event.data as ArrayBuffer));
       if (perfTiming) recordMessage(this.perf, performance.now() - started);
     };
@@ -1299,7 +1301,7 @@ class SharedStream {
     socket.onerror = () => socket.close();
   }
 
-  private onStatus(text: string, generation: number) {
+  private onStatus(text: string) {
     let msg: VideoStatusMessage;
     try {
       msg = JSON.parse(text) as VideoStatusMessage;
@@ -1326,25 +1328,11 @@ class SharedStream {
     this.perf.retryAttempts = 0;
     // The heartbeat repeats the same frame; only a real change reaches the views.
     if (!sameStatus(this.state.status, msg)) this.setState({ status: msg });
-    const status = onStatusFrame(this.socketVideo, msg.backend);
-    // Accept video at once. The agent already holds back delta frames after the SPS/PPS and keyframe it replays
-    // to a new socket, until a fresh keyframe (keep_after_gap in agent video.rs).
-    this.socketVideo = status.state;
-    if (status.sendConnectRefresh) {
-      this.lastKeyframeAsk = Date.now();
-      this.perf.keyframeAsksBy.connect = (this.perf.keyframeAsksBy.connect ?? 0) + 1;
-      this.refreshPendingSince = performance.now();
-      void postVideoRefresh([this.serial], "connect", CONNECT_REFRESH_TIMEOUT_MS)
-        .catch((error: unknown) => {
-          if (error instanceof TimeoutError && generation === this.generation) {
-            this.perf.connectRefreshTimeouts += 1;
-            this.reportProblem("connect-refresh-timeout");
-          }
-        })
-        .finally(() => {
-          if (generation === this.generation) this.refreshPendingSince = null;
-        });
-    }
+    // Accept video at once. The agent holds back delta frames after the SPS/PPS and keyframe it replays to a
+    // new socket until a fresh keyframe, and asks the phone for that keyframe itself (agent ws.rs): the page
+    // does not ask too, so a new socket costs the phone's encoder one restart, not two.
+    this.socketVideo = onStatusFrame(this.socketVideo, msg.backend);
+    if (msg.resets) this.perf.agentResets = { ...msg.resets };
     if (msg.codecString) this.codecString = msg.codecString;
     if (msg.width && msg.height && msg.width > 0 && msg.height > 0) {
       this.publishSize(msg.width, msg.height, "status");
@@ -1386,7 +1374,9 @@ class SharedStream {
     // SPS/PPS often arrive in their own access unit, before the IDR.
     const paramSets = extractSpsPps(nals);
     if (paramSets) {
-      this.description = buildAvcDecoderConfig(paramSets.sps, paramSets.pps);
+      const changed = this.lastParamSets !== null && !(sameBytes(this.lastParamSets.sps, paramSets.sps) && sameBytes(this.lastParamSets.pps, paramSets.pps));
+      this.lastParamSets = paramSets;
+      if (changed) this.perf.paramSetChanges += 1;
       this.codecString = codecStringFromSps(paramSets.sps);
       const dims = spsDimensions(paramSets.sps);
       if (dims && dims.width > 0 && dims.height > 0) {
@@ -1400,8 +1390,13 @@ class SharedStream {
         if (sizeChanged) {
           this.waitingForKeyframeConfig = true;
           this.teardownDecoder();
+        } else if (changed && this.decoder) {
+          // New SPS/PPS at the same size (an encoder restart can send them): the running decoder still decodes
+          // with the ones it was configured with. Counted, so a freeze that follows can be traced to it.
+          this.perf.paramSetChangesKeptDecoder += 1;
         }
       }
+      this.description = buildAvcDecoderConfig(paramSets.sps, paramSets.pps);
     }
 
     if (!annexBHasVcl(nals)) return;
@@ -1412,6 +1407,7 @@ class SharedStream {
       return;
     }
     const isKey = annexBIsIdr(nals);
+    if (isKey) this.perf.keyframesReceived += 1;
     if (this.mode === "sample-keyframes") {
       // 1 FPS in the background: decode a keyframe about once a second and nothing else.
       // Keyframes decode on their own, so the dropped delta frames cost nothing later.
@@ -1472,6 +1468,11 @@ class SharedStream {
       decoder.decode(
         new EncodedVideoChunk({ type: isKey ? "key" : "delta", timestamp: this.timestampUs, data: avcc }),
       );
+      if (isKey) {
+        this.keyTimestamps.add(this.timestampUs);
+        // A decoder that never answers must not grow this without bound.
+        if (this.keyTimestamps.size > 64) this.keyTimestamps.delete(this.keyTimestamps.values().next().value as number);
+      }
       this.timestampUs += 100_000;
       this.perf.submitted += 1;
     } catch (err) {
@@ -1547,9 +1548,6 @@ export interface VideoPipelineState {
   socket: string;
   /** False only until the socket's first status frame; every picture is ignored meanwhile. */
   acceptingVideo: boolean;
-  /** The connect-time keyframe request went out on this socket. */
-  connectRefreshSent: boolean;
-  connectRefreshPendingMs: number | null;
   lastMessageAgoMs: number | null;
   heartbeatSeconds: number | null;
   path: "webcodecs" | "mse" | "none";

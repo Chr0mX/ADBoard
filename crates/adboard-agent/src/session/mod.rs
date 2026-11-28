@@ -9,6 +9,7 @@
 //! - Nav keys: `adb shell input keyevent` when ADB is available; otherwise stub.
 
 mod reset_gate;
+pub use reset_gate::ResetStats;
 mod retry;
 pub use retry::RetryBook;
 mod virtual_displays;
@@ -179,7 +180,10 @@ impl SessionManager {
             first_frame_grace_ms: std::sync::atomic::AtomicU64::new(5_000),
             start_failed: std::sync::Mutex::new(std::collections::HashSet::new()),
             first_frame_watch: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
-            reset_gate: Arc::new(std::sync::Mutex::new(reset_gate::ResetGate::new(reset_gate::RESET_GAP))),
+            reset_gate: Arc::new(std::sync::Mutex::new(reset_gate::ResetGate::with_deadline(
+                reset_gate::RESET_GAP,
+                reset_gate::deadline_from(crate::env::var("RESET_DEADLINE_MS").ok().as_deref()),
+            ))),
             virtual_specs: RwLock::new(HashMap::new()),
         })
     }
@@ -833,22 +837,25 @@ impl SessionManager {
             .await;
     }
 
-    /// Ask the phone's encoder for a fresh keyframe. Several viewers asking close together share one
-    /// request (see `reset_gate`): each still gets a keyframe produced after it asked.
+    /// Ask the phone's encoder for a fresh keyframe. At most one reset per phone is outstanding: asks while it
+    /// waits for its keyframe are merged into it (see `reset_gate`), and its watch (`watch_reset`) decides when
+    /// it has been answered, retried or has failed.
     ///
     /// Returns at once, also for a stream that has not produced its first frame. A reset that reaches
     /// scrcpy-server before its capture runs throws a NullPointerException in the server's control thread
     /// (`CaptureControl.reset` on null) and kills the stream, so for a new stream the request is only
     /// answered by the first frame (a keyframe anyway), and sent after a grace period if none comes (a still
-    /// or dark screen sends nothing). Waiting here instead would hold up the page, which ignores video until
-    /// this call returns.
-    pub async fn reset_video(&self, serial: &str) -> Result<(), String> {
+    /// or dark screen sends nothing).
+    ///
+    /// `Ok` means the request was taken (sent, scheduled or merged), never that the encoder recovered: only a
+    /// keyframe seen afterwards says that, and the watch logs it (`keyframe answered the reset`).
+    pub async fn reset_video(self: &Arc<Self>, serial: &str) -> Result<(), String> {
         self.reset_video_for(serial, "unspecified").await
     }
 
-    /// `reset_video`, saying who asks (`connect`, `lag`, `stall`, `decode-backlog`, ...): when keyframe requests
-    /// for one phone come too fast the gate slows them and the log names the askers.
-    pub async fn reset_video_for(&self, serial: &str, reason: &str) -> Result<(), String> {
+    /// `reset_video`, saying who asks (`connect`, `lag`, `stall`, `decode-backlog`, `manual`, ...): the log names
+    /// the askers merged into each reset, and the storm brake names them too.
+    pub async fn reset_video_for(self: &Arc<Self>, serial: &str, reason: &str) -> Result<(), String> {
         let Some(sender) = self.control_sender(serial).await else {
             return Err("scrcpy control is not connected".into());
         };
@@ -858,29 +865,43 @@ impl SessionManager {
         }
         let keyframes = self.video_hub.keyframe_count(serial).await;
         let now = std::time::Instant::now();
-        let (plan, storm) = match self.reset_gate.lock() {
+        let (plan, answer, storm) = match self.reset_gate.lock() {
             Ok(mut gate) => {
-                let plan = gate.request(serial, now, keyframes, reason);
-                (plan, gate.brake_report(serial, now))
+                let (plan, answer) = gate.request(serial, now, keyframes, reason);
+                (plan, answer, gate.brake_report(serial, now))
             }
-            Err(_) => (reset_gate::ResetPlan::Now, None),
+            Err(_) => return Err("keyframe gate unavailable".into()),
         };
+        if let Some(answer) = answer {
+            log_answer(serial, &answer);
+        }
         if let Some(report) = storm {
             warn!(serial, "keyframe request storm: {report}");
         }
         match plan {
-            reset_gate::ResetPlan::Now => sender.reset_video().await,
-            reset_gate::ResetPlan::Covered => Ok(()),
+            reset_gate::ResetPlan::Send { generation } => {
+                info!(serial, reason, keyframes_before = keyframes, "keyframe reset sent");
+                let sent = sender.reset_video().await;
+                // Watched even if the write failed: its deadline then retries, and escalates if the phone's
+                // control socket stays gone, instead of leaving the reset outstanding for good.
+                self.watch_reset(serial, sender, generation, keyframes);
+                sent
+            }
+            reset_gate::ResetPlan::Merged => {
+                debug!(serial, reason, "keyframe request merged into the reset already on its way");
+                Ok(())
+            }
             reset_gate::ResetPlan::After(delay) => {
-                let gate = self.reset_gate.clone();
-                let hub = self.video_hub.clone();
+                let me = self.clone();
                 let serial = serial.to_string();
                 tokio::spawn(async move {
                     tokio::time::sleep(delay).await;
-                    let keyframes = hub.keyframe_count(&serial).await;
-                    let _ = sender.reset_video().await;
-                    if let Ok(mut gate) = gate.lock() {
-                        gate.sent(&serial, std::time::Instant::now(), keyframes);
+                    let keyframes = me.video_hub.keyframe_count(&serial).await;
+                    let generation = me.reset_gate.lock().ok().and_then(|mut gate| gate.begin_delayed(&serial, std::time::Instant::now(), keyframes));
+                    if let Some(generation) = generation {
+                        info!(serial = %serial, keyframes_before = keyframes, delayed_ms = delay.as_millis() as u64, "keyframe reset sent");
+                        let _ = sender.reset_video().await;
+                        me.watch_reset(&serial, sender, generation, keyframes);
                     }
                 });
                 Ok(())
@@ -888,8 +909,75 @@ impl SessionManager {
         }
     }
 
-    /// One watcher per phone: if its new stream shows no frame within the grace period, ask for one.
-    fn watch_for_first_frame(&self, serial: &str, sender: ControlSender) {
+    /// Follow one outstanding reset until a keyframe answers it or its deadline passes. A missed deadline
+    /// sends the reset once more; a second one restarts the phone's stream (spaced out by the gate).
+    fn watch_reset(self: &Arc<Self>, serial: &str, sender: ControlSender, generation: u64, keyframes: u64) {
+        let me = self.clone();
+        let serial = serial.to_string();
+        tokio::spawn(async move {
+            let deadline = me.reset_gate.lock().map(|gate| gate.deadline()).unwrap_or(reset_gate::DEFAULT_DEADLINE);
+            let mut generation = generation;
+            let mut base = keyframes;
+            let mut sent_at = std::time::Instant::now();
+            loop {
+                tokio::time::sleep(RESET_WATCH_POLL).await;
+                let now = std::time::Instant::now();
+                let seen = me.video_hub.keyframe_count(&serial).await;
+                if seen > base {
+                    let answer = me.reset_gate.lock().ok().and_then(|mut gate| gate.answered(&serial, now, seen));
+                    if let Some(answer) = answer {
+                        log_answer(&serial, &answer);
+                    }
+                    return;
+                }
+                if now.saturating_duration_since(sent_at) < deadline {
+                    let current = me.reset_gate.lock().map(|gate| gate.is_outstanding(&serial, generation)).unwrap_or(false);
+                    if !current {
+                        return; // the stream was stopped or restarted meanwhile
+                    }
+                    continue;
+                }
+                let expiry = match me.reset_gate.lock() {
+                    Ok(mut gate) => gate.expired(&serial, now, seen, generation),
+                    Err(_) => return,
+                };
+                match expiry {
+                    reset_gate::Expiry::Answered(answer) => {
+                        log_answer(&serial, &answer);
+                        return;
+                    }
+                    reset_gate::Expiry::Stale => return,
+                    reset_gate::Expiry::Retry { generation: next, attempt } => {
+                        warn!(serial = %serial, attempt, deadline_ms = deadline.as_millis() as u64, keyframes = seen, "no keyframe within the reset deadline; sending the reset once more");
+                        let _ = sender.reset_video().await;
+                        generation = next;
+                        base = seen;
+                        sent_at = std::time::Instant::now();
+                    }
+                    reset_gate::Expiry::Escalate { escalations, reasons } => {
+                        warn!(serial = %serial, escalations, deadline_ms = deadline.as_millis() as u64, %reasons, "the encoder answered none of the resets: restarting the phone's stream");
+                        let _ = me.restart(&serial).await;
+                        crate::quiet_cycle::note_connected(&serial);
+                        return;
+                    }
+                    reset_gate::Expiry::GiveUp { retry_in } => {
+                        warn!(serial = %serial, retry_in_secs = retry_in.as_secs(), "the encoder answered none of the resets; its stream was restarted recently, so it is left until the next ask");
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    /// Reset counters of one phone (heartbeat and diagnostics).
+    pub fn reset_stats(&self, serial: &str) -> ResetStats {
+        self.reset_gate.lock().map(|gate| gate.stats(serial)).unwrap_or_default()
+    }
+
+    /// One watcher per phone: if its new stream shows no frame within the grace period, ask for one. The ask
+    /// goes through the gate like any other, so it is merged into a reset already on its way and counts toward
+    /// the brake.
+    fn watch_for_first_frame(self: &Arc<Self>, serial: &str, sender: ControlSender) {
         let first_watch = self
             .first_frame_watch
             .lock()
@@ -898,13 +986,11 @@ impl SessionManager {
         if !first_watch {
             return;
         }
-        let watching = self.first_frame_watch.clone();
-        let gate = self.reset_gate.clone();
-        let hub = self.video_hub.clone();
+        let me = self.clone();
         let serial = serial.to_string();
         let grace = std::time::Duration::from_millis(self.first_frame_grace_ms.load(std::sync::atomic::Ordering::Relaxed));
         tokio::spawn(async move {
-            let mut frames = hub.subscribe(&serial).await;
+            let mut frames = me.video_hub.subscribe(&serial).await;
             let got_one = tokio::time::timeout(grace, async {
                 loop {
                     match frames.recv().await {
@@ -916,15 +1002,18 @@ impl SessionManager {
             })
             .await
             .unwrap_or(false);
-            if let Ok(mut watching) = watching.lock() {
+            drop(frames);
+            if let Ok(mut watching) = me.first_frame_watch.lock() {
                 watching.remove(&serial);
             }
-            if !got_one && !hub.has_keyframe(&serial).await {
+            if !got_one && !me.video_hub.has_keyframe(&serial).await {
                 // The capture is running by now: a reset is safe, and makes the encoder produce a frame.
-                let keyframes = hub.keyframe_count(&serial).await;
-                let _ = sender.reset_video().await;
-                if let Ok(mut gate) = gate.lock() {
-                    gate.sent(&serial, std::time::Instant::now(), keyframes);
+                let keyframes = me.video_hub.keyframe_count(&serial).await;
+                let generation = me.reset_gate.lock().ok().and_then(|mut gate| gate.first_frame(&serial, std::time::Instant::now(), keyframes));
+                if let Some(generation) = generation {
+                    info!(serial = %serial, keyframes_before = keyframes, grace_ms = grace.as_millis() as u64, "keyframe reset sent (no first frame)");
+                    let _ = sender.reset_video().await;
+                    me.watch_reset(&serial, sender, generation, keyframes);
                 }
             }
         });
@@ -1570,6 +1659,21 @@ impl SessionManager {
         }
         changed
     }
+}
+
+/// How often an outstanding reset's watch looks at the keyframe count.
+const RESET_WATCH_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+
+fn log_answer(serial: &str, answer: &reset_gate::Answer) {
+    info!(
+        serial,
+        latency_ms = answer.latency.as_millis() as u64,
+        attempt = answer.attempt,
+        merged = answer.merged,
+        reasons = %answer.reasons,
+        keyframes_before = answer.keyframes_before,
+        "keyframe answered the reset"
+    );
 }
 
 fn opus_frame(serial: &str, stream: StreamState, note: impl Into<String>) -> AudioStatusFrame {

@@ -7,9 +7,12 @@
 //! pictures must follow it.
 //!
 //! When input was sent and no access unit came out for `NO_FRAMES_AFTER_INPUT`, the encoder is asked for a
-//! keyframe (scrcpy `RESET_VIDEO`, which also restarts it). If that brings nothing within
-//! `RESTART_AFTER_RESET`, the phone's stream is restarted, at most once per `RESTART_EVERY`. Each input is
-//! handled once: a phone that stays dark (locked, screen off) is not restarted again until new input comes.
+//! keyframe (scrcpy `RESET_VIDEO`, which also restarts it). That request goes through the session's reset
+//! gate like every other: it is merged into a reset already outstanding, and the gate decides when an
+//! unanswered reset is sent again and when the phone's stream is restarted (see `session::reset_gate`). This
+//! watch never restarts a stream itself, so there is one recovery path with one spacing, not two racing.
+//! Each input is handled once: a phone that stays dark (locked, screen off) is not asked again until new
+//! input comes.
 //!
 //! The decision is a pure function (`step`), tested below; `spawn` runs it once a second for every phone
 //! someone is watching.
@@ -130,14 +133,10 @@ pub fn spawn(state: crate::device_manager::AppState) {
                         });
                     }
                     WatchAction::RestartStream => {
-                        warn!(%serial, frames = stats.frames, last_frame_ago_ms = stats.idle.map(|d| d.as_millis() as u64), "video stopped while input still reaches the phone: restarting its stream");
-                        let state = state.clone();
-                        tokio::spawn(async move {
-                            match state.restart_session(&serial).await {
-                                Ok(session) => state.publish(adboard_protocol::ServerEvent::SessionUpdated { session }),
-                                Err(error) => warn!(%serial, %error, "could not restart the stalled stream"),
-                            }
-                        });
+                        // Still nothing since the keyframe request: the reset gate owns what happens next (it sends
+                        // the reset once more and then restarts the stream, spaced out). Say so in the log.
+                        let resets = state.inner.sessions.reset_stats(&serial);
+                        warn!(%serial, frames = stats.frames, last_frame_ago_ms = stats.idle.map(|d| d.as_millis() as u64), outstanding_attempt = resets.outstanding_attempt, escalated = resets.escalated, "video stopped while input still reaches the phone; the reset gate is recovering it");
                     }
                 }
             }

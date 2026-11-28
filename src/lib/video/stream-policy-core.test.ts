@@ -246,30 +246,23 @@ test("keyframe asks are rationed: routine ones every 5 s, forced ones no closer 
   assert.equal(asked, 3, "at 0, 5 and 10 s");
 });
 
-test("every new socket accepts video at its first status frame and asks scrcpy for one keyframe", () => {
-  let { state, sendConnectRefresh } = onStatusFrame(newSocketVideoState(), "scrcpy");
-  assert.equal(state.acceptVideo, true);
-  assert.equal(sendConnectRefresh, true);
-  // The heartbeat repeats the status: no second request.
-  ({ state, sendConnectRefresh } = onStatusFrame(state, "scrcpy"));
-  assert.equal(sendConnectRefresh, false);
+test("every new socket accepts video at its first status frame, and the page asks for no keyframe", () => {
+  let state = onStatusFrame(newSocketVideoState(), "scrcpy");
+  assert.deepEqual(state, { acceptVideo: true }, "nothing to ask: the agent owns the connect-time keyframe request");
+  // The heartbeat repeats the status: nothing changes.
+  state = onStatusFrame(state, "scrcpy");
   assert.equal(state.acceptVideo, true);
 });
 
 test("a socket opened after a close accepts video again (the freeze until reload)", () => {
-  // First socket: accepted and asked.
-  const first = onStatusFrame(newSocketVideoState(), "scrcpy").state;
-  assert.equal(first.connectRefreshSent, true);
+  const first = onStatusFrame(newSocketVideoState(), "scrcpy");
+  assert.equal(first.acceptVideo, true);
   // The connection drops and a new socket starts from a fresh state, whatever the old one did.
-  const second = onStatusFrame(newSocketVideoState(), "scrcpy");
-  assert.equal(second.state.acceptVideo, true);
-  assert.equal(second.sendConnectRefresh, true);
+  assert.equal(onStatusFrame(newSocketVideoState(), "scrcpy").acceptVideo, true);
 });
 
-test("a backend that is not scrcpy is accepted without a request, and no backend yet accepts nothing", () => {
-  const pattern = onStatusFrame(newSocketVideoState(), "testpattern");
-  assert.deepEqual(pattern, { state: { acceptVideo: true, connectRefreshSent: false }, sendConnectRefresh: false });
-  const unknown = onStatusFrame(newSocketVideoState(), "");
-  assert.equal(unknown.state.acceptVideo, false);
-  assert.equal(unknown.sendConnectRefresh, false);
+test("any named backend is accepted, and no backend yet accepts nothing", () => {
+  assert.deepEqual(onStatusFrame(newSocketVideoState(), "testpattern"), { acceptVideo: true });
+  assert.equal(onStatusFrame(newSocketVideoState(), "").acceptVideo, false);
+  assert.equal(onStatusFrame(newSocketVideoState(), undefined).acceptVideo, false);
 });
