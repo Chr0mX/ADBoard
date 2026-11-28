@@ -2,7 +2,7 @@
    Own cache prefix: never deletes or reads the desktop worker's caches, and
    never answers with the desktop shell. */
 const CACHE_PREFIX = "adboard-m-";
-const CACHE_VERSION = "adboard-m-v28";
+const CACHE_VERSION = "adboard-m-v29";
 const SCOPE = "/m/";
 const SCREENS = ["control", "devices", "macros", "more"].concat(
   ["manage", "apps", "files", "automate", "developer", "hosts", "events", "storage", "settings"].map((id) => "more/" + id),

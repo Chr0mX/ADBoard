@@ -9,13 +9,23 @@
  * The gate keeps at most `MAX_DECODE_QUEUE` frames waiting. Past that, or
  * while the page is hidden, it drops frames. A dropped delta frame breaks the
  * chain the next frames are predicted from, so once dropping starts it
- * continues until a keyframe — and asks the agent for one right away
- * (otherwise the next one may be seconds away).
+ * continues until a keyframe — which the page asks the agent for once the
+ * queue has drained to `RESUME_QUEUE` (otherwise the next one may be seconds
+ * away).
+ *
+ * The limit is an overload level, not a transient one. With a limit of 3, four
+ * phones decoding side by side hit it all the time: each hit threw away the rest
+ * of the GOP and cost a keyframe round trip, so the decoder sat idle between
+ * keyframes and the pictures looked frozen. A queue of a few frames is normal
+ * and is decoded.
  *
  * Pure module: no browser APIs, so it runs under `node --test`.
  */
 
-export const MAX_DECODE_QUEUE = 3;
+/** Frames the decoder may hold before the page drops frames (about 0.4 s at 30 fps). */
+export const MAX_DECODE_QUEUE = 12;
+/** After dropping, a keyframe is only taken once the queue is below this, and only then is one asked for. */
+export const RESUME_QUEUE = 6;
 
 export interface DecodeGate {
   /** Dropping until the next keyframe. */
@@ -48,7 +58,7 @@ export function admitFrame(gate: DecodeGate, frame: FrameInfo): GateVerdict {
     return "drop";
   }
   if (gate.dropping) {
-    if (frame.isKey && frame.queueSize < MAX_DECODE_QUEUE) {
+    if (frame.isKey && frame.queueSize < RESUME_QUEUE) {
       gate.dropping = false;
       return "decode";
     }

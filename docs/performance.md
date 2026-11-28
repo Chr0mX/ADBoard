@@ -25,6 +25,7 @@ So the copy into the canvas is the cost that matters, and the React and WebSocke
 | Memory | The MSE fallback's queues are bounded and played video is trimmed | `lib/video/mse-queue-core.ts`, `mse-player.ts` |
 | Device list | Bursts of device events make one list request plus one follow-up; late answers are dropped | `lib/api/refresh-core.ts` |
 | Macros | An identical poll is not parsed or announced; the run clock ticks once a second. Runs and schedules stay on the agent | `lib/macro/view-gate.ts`, `runs.ts` |
+| Decoder back-pressure | The page drops frames only when the decoder holds 12 (about 0.4 s at 30 fps); a keyframe is then asked for once the queue has drained to 6. With the earlier limit of 3, a few phones decoding side by side kept tripping it, threw away the rest of each GOP and cost a keyframe round trip each time, so pictures updated only when a keyframe landed. Measured on the mock fleet at 60 fps with the CPU throttled 4×: 19 to 43 pictures a second per phone (7.5 to 20 at 8×) | `lib/video/backpressure.ts`, `hub.ts` |
 | Hidden or unfocused | Nothing is reduced: every open stream stays connected and runs at full speed. An earlier idle mode (agent told to stop sending) and the Background FPS setting were removed because a stalled keyframe handshake looked like a frozen stream | `lib/video/hub.ts` |
 
 ## Measured here

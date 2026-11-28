@@ -22,6 +22,8 @@ export interface StreamPerf {
   /** Frames dropped before decoding (back-pressure, hidden). */
   dropped: number;
   maxQueue: number;
+  /** Times the decoder fell behind (queue at its limit) and frames were dropped until a keyframe. */
+  backlogEpisodes: number;
   keyframeAsks: number;
   /** The same asks by who made them (see `KeyframeReason`): shows what is asking when a phone gets too many. */
   keyframeAsksBy: Record<string, number>;
@@ -73,6 +75,7 @@ export function newStreamPerf(): StreamPerf {
     superseded: 0,
     dropped: 0,
     maxQueue: 0,
+    backlogEpisodes: 0,
     keyframeAsks: 0,
     keyframeAsksBy: {},
     reconnects: 0,

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_DECODE_QUEUE, admitFrame, anyViewVisible, newDecodeGate, type GateVerdict } from "./backpressure.ts";
+import { MAX_DECODE_QUEUE, RESUME_QUEUE, admitFrame, anyViewVisible, newDecodeGate, type GateVerdict } from "./backpressure.ts";
 
 const frame = (isKey: boolean, queueSize: number, hidden = false) => ({ isKey, queueSize, hidden });
 
@@ -82,11 +82,22 @@ describe("decode back-pressure", () => {
     assert.equal(gate.dropped, 3);
   });
 
-  it("does not resume on a keyframe while the queue is still full", () => {
+  it("does not resume on a keyframe until the queue has drained to the resume level", () => {
     const gate = newDecodeGate();
     admitFrame(gate, frame(false, MAX_DECODE_QUEUE));
     assert.equal(admitFrame(gate, frame(true, MAX_DECODE_QUEUE)), "drop");
-    assert.equal(admitFrame(gate, frame(true, 1)), "decode");
+    assert.equal(admitFrame(gate, frame(true, RESUME_QUEUE)), "drop");
+    assert.equal(admitFrame(gate, frame(true, RESUME_QUEUE - 1)), "decode");
+  });
+
+  it("decodes a backlog of a few frames instead of throwing away the rest of the GOP", () => {
+    // Four phones decoding side by side routinely hold 3 to 11 frames. That is not an overload.
+    const gate = newDecodeGate();
+    for (let queued = 0; queued < MAX_DECODE_QUEUE; queued += 1) {
+      assert.equal(admitFrame(gate, frame(false, queued)), "decode", `queue ${queued}`);
+    }
+    assert.equal(gate.dropped, 0);
+    assert.equal(gate.dropping, false);
   });
 
   it("asks for a keyframe once per dropping episode", () => {

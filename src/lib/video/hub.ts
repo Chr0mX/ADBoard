@@ -13,7 +13,7 @@ import {
 } from "@/lib/video/h264";
 import { MseH264Player } from "@/lib/video/mse-player";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
-import { admitFrame, newDecodeGate } from "@/lib/video/backpressure";
+import { RESUME_QUEUE, admitFrame, newDecodeGate } from "@/lib/video/backpressure";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { agentBaseUrl, agentWsUrl, agentWsProtocols, forgetAgentToken } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
@@ -313,6 +313,8 @@ class SharedStream {
   private stall: DecodeStallState = { seen: 0, decoded: 0, since: 0 };
   /** Consecutive stall asks without a picture (the first asks for a keyframe, the next rebuilds the decoder). */
   private stallAsks = 0;
+  /** The decoder fell behind and a keyframe is wanted, to be asked for once its queue has drained. */
+  private backlogAskPending = false;
   /** The decoder was rebuilt on this connection (for the close record). */
   private decoderRecovered = false;
   // The newest decoded frame, painted once per display refresh.
@@ -1121,7 +1123,16 @@ class SharedStream {
       hidden: false, // an idle stream never gets here: it was dropped before parsing
     });
     recordQueue(this.perf, decoder.decodeQueueSize);
-    if (verdict === "drop-ask-keyframe") this.askKeyframe("decode-backlog");
+    if (verdict === "drop-ask-keyframe") {
+      this.perf.backlogEpisodes += 1;
+      this.backlogAskPending = true;
+    }
+    // Ask only once the backlog has drained: a keyframe asked for while the decoder is still behind arrives into a
+    // full queue and is dropped too, which made the picture update only once per ask.
+    if (this.backlogAskPending && decoder.decodeQueueSize < RESUME_QUEUE) {
+      this.backlogAskPending = false;
+      this.askKeyframe("decode-backlog", true);
+    }
     if (verdict !== "decode") {
       this.perf.dropped += 1;
       return;
