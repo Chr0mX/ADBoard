@@ -26,6 +26,7 @@ import {
   backgroundFrameDue,
   decodeStallStep,
   keepsSocketInBackground,
+  keyframeAskDue,
   needsKeyframeAfter,
   onVisibilityChange,
   readBackgroundPolicy,
@@ -35,6 +36,7 @@ import {
   viewerMessage,
   type BackgroundPolicy,
   type DecodeStallState,
+  type KeyframeReason,
   type StreamMode,
 } from "@/lib/video/stream-policy-core";
 import { createBackoff, isStale } from "@/lib/api/reconnect-core";
@@ -109,7 +111,6 @@ export interface VideoView {
 /** Keep a stream this long after its last view leaves (view switches, Strict Mode). */
 const LINGER_MS = 1500;
 /** At most one keyframe request per stream in this window. */
-const KEYFRAME_ASK_MS = 2000;
 
 function webCodecsSupported(): boolean {
   return (
@@ -394,7 +395,7 @@ class SharedStream {
     if (this.closed || !this.views.has(view) || attempt >= 5) return;
     const target = view.canvas();
     if (!target || target.width > 0) return;
-    if (this.state.decodeState === "decoding" && !this.idle) this.askKeyframe(true);
+    if (this.state.decodeState === "decoding" && !this.idle) this.askKeyframe("blank-view", true);
     setTimeout(() => this.fillBlankView(view, attempt + 1), 1000);
   }
 
@@ -477,7 +478,7 @@ class SharedStream {
   sharpen(canvas: HTMLCanvasElement) {
     // Already at the phone's full resolution: there is nothing sharper to draw.
     if (canvas.width >= (this.state.size?.width ?? 0)) return;
-    if (!this.closed && this.state.decodeState === "decoding") this.askKeyframe();
+    if (!this.closed && this.state.decodeState === "decoding") this.askKeyframe("sharpen");
   }
 
   /** Benchmark hook: an input for this phone was sent now. */
@@ -506,7 +507,7 @@ class SharedStream {
       if (step.ask) {
         this.perf.recoveryAsks += 1;
         if (stallAction(this.stallAsks) === "rebuild-decoder") this.recoverDecoder();
-        else this.askKeyframe(true);
+        else this.askKeyframe("stall", true);
         this.stallAsks += 1;
       }
     } else {
@@ -536,15 +537,18 @@ class SharedStream {
     publishStats(this.serial, next);
   };
 
-  /** The agent's encoder sends the next keyframe now instead of seconds later. */
-  private askKeyframe(force = false) {
+  /**
+   * The agent's encoder sends the next keyframe now instead of seconds later. Every ask restarts the phone's
+   * encoder, so asks are rationed (`keyframeAskDue`) and counted by reason.
+   */
+  private askKeyframe(reason: KeyframeReason, force = false) {
     if (this.state.status?.backend !== "scrcpy") return;
     const now = Date.now();
-    // `force` (recovery, background sampling) only skips the long throttle, never asks twice within a second.
-    if (now - this.lastKeyframeAsk < (force ? 900 : KEYFRAME_ASK_MS)) return;
+    if (!keyframeAskDue(now, this.lastKeyframeAsk, force)) return;
     this.lastKeyframeAsk = now;
     this.perf.keyframeAsks += 1;
-    void postVideoRefresh([this.serial]).catch(() => {});
+    this.perf.keyframeAsksBy[reason] = (this.perf.keyframeAsksBy[reason] ?? 0) + 1;
+    void postVideoRefresh([this.serial], reason).catch(() => {});
   }
 
   /**
@@ -583,7 +587,7 @@ class SharedStream {
       default:
         break;
     }
-    if (next === "full" && this.gate.dropping) this.askKeyframe();
+    if (next === "full" && this.gate.dropping) this.askKeyframe("view-change");
   };
 
   /** The stream's mode changed (the window hid or showed, a view moved, or the setting changed). */
@@ -601,7 +605,7 @@ class SharedStream {
       // so wait for a keyframe (and ask for one), then check that a picture really arrives.
       if (needsKeyframeAfter(previous, next) && this.decoder) this.gate.dropping = true;
       if (!this.idle) {
-        this.askKeyframe(true);
+        this.askKeyframe("mode-change", true);
         this.armRecovery();
       }
     }
@@ -617,7 +621,7 @@ class SharedStream {
     if (this.sampleTimer) return;
     this.sampleTimer = setInterval(() => {
       if (this.closed || this.mode !== "sample-keyframes" || !this.socket || !this.acceptVideo) return;
-      this.askKeyframe(true);
+      this.askKeyframe("sample", true);
     }, 1000);
   }
 
@@ -659,7 +663,7 @@ class SharedStream {
       if (step === "ask-keyframe") {
         this.recoveryAsked = true;
         this.perf.recoveryAsks += 1;
-        this.askKeyframe(true);
+        this.askKeyframe("recover", true);
       } else if (step === "rebuild-decoder") {
         rebuilt = true;
         this.recoverDecoder();
@@ -680,7 +684,7 @@ class SharedStream {
       this.teardownDecoder();
     }
     this.gate = newDecodeGate();
-    this.askKeyframe(true);
+    this.askKeyframe("recover", true);
   }
 
   /** Nothing to show for a while: stop the pictures and free the decoder. The connection stays open. */
@@ -702,7 +706,7 @@ class SharedStream {
     if (!webCodecsSupported() && !this.mse && this.socket) this.mse = this.createMse(this.generation);
     this.sendViewerState(true);
     // An agent that does not know the message kept streaming delta frames, so ask for a keyframe as well.
-    this.askKeyframe(true);
+    this.askKeyframe("resume", true);
     if (next === "full") this.armRecovery();
   }
 
@@ -1003,7 +1007,8 @@ class SharedStream {
     if (msg.backend === "scrcpy" && !this.refreshAsked) {
       this.refreshAsked = true;
       this.lastKeyframeAsk = Date.now();
-      void postVideoRefresh([this.serial])
+      this.perf.keyframeAsksBy.connect = (this.perf.keyframeAsksBy.connect ?? 0) + 1;
+      void postVideoRefresh([this.serial], "connect")
         .catch(() => {})
         .finally(() => {
           if (generation === this.generation) this.acceptVideo = true;
@@ -1116,7 +1121,7 @@ class SharedStream {
       hidden: false, // an idle stream never gets here: it was dropped before parsing
     });
     recordQueue(this.perf, decoder.decodeQueueSize);
-    if (verdict === "drop-ask-keyframe") this.askKeyframe();
+    if (verdict === "drop-ask-keyframe") this.askKeyframe("decode-backlog");
     if (verdict !== "decode") {
       this.perf.dropped += 1;
       return;

@@ -295,6 +295,10 @@ pub struct GestureResult {
 pub struct VideoRefreshRequest {
     pub mode: ControlMode,
     pub target_ids: Vec<String>,
+    /// Who is asking (`connect`, `decode-backlog`, `stall`, ...), for the agent's log when requests come too
+    /// fast. Optional: older pages do not send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// POST /api/input/nav

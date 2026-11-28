@@ -209,3 +209,30 @@ export function stallAction(consecutiveAsks: number): "ask-keyframe" | "rebuild-
 export function viewerMessage(active: boolean): string {
   return JSON.stringify({ type: "viewer", active });
 }
+
+/**
+ * Asking the phone for a keyframe restarts its encoder and sends a large picture, so it is rationed. A routine
+ * ask waits `KEYFRAME_ASK_MS` since the last one; a forced one (a recovery, a return to the foreground) only
+ * `FORCED_KEYFRAME_ASK_MS`, so it is never lost but never repeated within a second either. The agent adds its
+ * own spacing and a storm brake on top.
+ */
+export const KEYFRAME_ASK_MS = 5000;
+export const FORCED_KEYFRAME_ASK_MS = 900;
+
+export function keyframeAskDue(now: number, lastAskAt: number, forced: boolean): boolean {
+  return now - lastAskAt >= (forced ? FORCED_KEYFRAME_ASK_MS : KEYFRAME_ASK_MS);
+}
+
+/** Who asked, for the agent's log and the page's `keyframeAsksBy` counts. */
+export type KeyframeReason =
+  | "connect"
+  | "blank-view"
+  | "sharpen"
+  | "view-change"
+  | "mode-change"
+  | "sample"
+  | "stall"
+  | "recover"
+  | "resume"
+  | "decode-backlog"
+  | "manual";

@@ -23,6 +23,8 @@ export interface StreamPerf {
   dropped: number;
   maxQueue: number;
   keyframeAsks: number;
+  /** The same asks by who made them (see `KeyframeReason`): shows what is asking when a phone gets too many. */
+  keyframeAsksBy: Record<string, number>;
   reconnects: number;
   /** Reconnects because the socket went silent past its heartbeat. */
   staleReconnects: number;
@@ -72,6 +74,7 @@ export function newStreamPerf(): StreamPerf {
     dropped: 0,
     maxQueue: 0,
     keyframeAsks: 0,
+    keyframeAsksBy: {},
     reconnects: 0,
     staleReconnects: 0,
     decoderErrors: 0,
@@ -146,6 +149,7 @@ export function snapshotPerf(perf: StreamPerf): StreamPerfSnapshot {
     ...counters,
     // Copies: the report is read while the counters keep changing.
     closes: { ...counters.closes },
+    keyframeAsksBy: { ...counters.keyframeAsksBy },
     lastClose: counters.lastClose ? { ...counters.lastClose } : null,
     lastIntentionalClose: counters.lastIntentionalClose ? { ...counters.lastIntentionalClose } : null,
     messageMsP50: percentile(messageMs, 50),

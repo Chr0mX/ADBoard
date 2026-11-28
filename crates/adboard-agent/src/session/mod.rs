@@ -9,6 +9,8 @@
 //! - Nav keys: `adb shell input keyevent` when ADB is available; otherwise stub.
 
 mod reset_gate;
+mod retry;
+pub use retry::RetryBook;
 mod virtual_displays;
 use crate::audio::AudioHub;
 use crate::scrcpy_control::ControlSender;
@@ -120,6 +122,9 @@ pub struct SessionManager {
     first_frame_grace_ms: std::sync::atomic::AtomicU64,
     /// Phones whose new stream is being watched for a first frame (one watcher each).
     first_frame_watch: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    /// Phones whose last scrcpy start failed and has not succeeded since: the reaper retries them while someone
+    /// watches (see `retry`), and the next start clears a leftover server first.
+    start_failed: std::sync::Mutex<std::collections::HashSet<String>>,
     /// Keyframe requests per phone are spaced out, whoever asks (see `reset_gate`).
     reset_gate: Arc<std::sync::Mutex<reset_gate::ResetGate>>,
     /// Settings of each virtual display, by `<serial>#vd<N>` key.
@@ -172,6 +177,7 @@ impl SessionManager {
             clipboard_tx,
             audio_gates: std::sync::Mutex::new(HashMap::new()),
             first_frame_grace_ms: std::sync::atomic::AtomicU64::new(5_000),
+            start_failed: std::sync::Mutex::new(std::collections::HashSet::new()),
             first_frame_watch: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
             reset_gate: Arc::new(std::sync::Mutex::new(reset_gate::ResetGate::new(reset_gate::RESET_GAP))),
             virtual_specs: RwLock::new(HashMap::new()),
@@ -307,6 +313,20 @@ impl SessionManager {
         self.start(serial).await
     }
 
+    /// Phones whose last start failed and has not succeeded since, with their stream state: `Error` means
+    /// waiting for a retry, anything else a retry (or the first start) is under way.
+    pub async fn pending_start_failures(&self) -> Vec<(String, StreamState)> {
+        let serials: Vec<String> = self.start_failed.lock().map(|failed| failed.iter().cloned().collect()).unwrap_or_default();
+        let guard = self.sessions.read().await;
+        serials
+            .into_iter()
+            .map(|serial| {
+                let stream = guard.get(&serial).map_or(StreamState::Idle, |live| live.info.stream);
+                (serial, stream)
+            })
+            .collect()
+    }
+
     pub async fn video_status_frame(&self, serial: &str) -> VideoStatusFrame {
         let session = self
             .get_session(serial)
@@ -406,6 +426,12 @@ impl SessionManager {
         let launch = prefs.launch();
         let virtual_spec = self.virtual_specs.read().await.get(serial).cloned();
         let is_virtual = virtual_spec.is_some();
+        // The last start of this phone failed: a server from an earlier run may still hold its socket.
+        let retrying = self.start_failed.lock().map(|failed| failed.contains(serial)).unwrap_or(false);
+        if retrying && !is_virtual {
+            crate::scrcpy_video::kill_leftover_server(&adb, serial).await;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
         match start_scrcpy_raw_capture(
             self.video_hub.clone(),
             adb.clone(),
@@ -418,6 +444,9 @@ impl SessionManager {
         .await
         {
             Ok(capture) => {
+                if let Ok(mut failed) = self.start_failed.lock() {
+                    failed.remove(serial);
+                }
                 let (pump, server_child, port, server_log, control) = capture.into_parts();
                 let mut note = "scrcpy-server raw H264 + control socket for touch".to_string();
                 if prefs.screen_off && !is_virtual {
@@ -448,6 +477,9 @@ impl SessionManager {
             }
             Err(e) => {
                 warn!(serial, error = %e, "scrcpy raw capture failed");
+                if let Ok(mut failed) = self.start_failed.lock() {
+                    failed.insert(serial.to_string());
+                }
                 self.set_status(
                     serial,
                     StreamState::Error,
@@ -811,6 +843,12 @@ impl SessionManager {
     /// or dark screen sends nothing). Waiting here instead would hold up the page, which ignores video until
     /// this call returns.
     pub async fn reset_video(&self, serial: &str) -> Result<(), String> {
+        self.reset_video_for(serial, "unspecified").await
+    }
+
+    /// `reset_video`, saying who asks (`connect`, `lag`, `stall`, `decode-backlog`, ...): when keyframe requests
+    /// for one phone come too fast the gate slows them and the log names the askers.
+    pub async fn reset_video_for(&self, serial: &str, reason: &str) -> Result<(), String> {
         let Some(sender) = self.control_sender(serial).await else {
             return Err("scrcpy control is not connected".into());
         };
@@ -819,11 +857,17 @@ impl SessionManager {
             return Ok(());
         }
         let keyframes = self.video_hub.keyframe_count(serial).await;
-        let plan = self
-            .reset_gate
-            .lock()
-            .map(|mut gate| gate.request(serial, std::time::Instant::now(), keyframes))
-            .unwrap_or(reset_gate::ResetPlan::Now);
+        let now = std::time::Instant::now();
+        let (plan, storm) = match self.reset_gate.lock() {
+            Ok(mut gate) => {
+                let plan = gate.request(serial, now, keyframes, reason);
+                (plan, gate.brake_report(serial, now))
+            }
+            Err(_) => (reset_gate::ResetPlan::Now, None),
+        };
+        if let Some(report) = storm {
+            warn!(serial, "keyframe request storm: {report}");
+        }
         match plan {
             reset_gate::ResetPlan::Now => sender.reset_video().await,
             reset_gate::ResetPlan::Covered => Ok(()),

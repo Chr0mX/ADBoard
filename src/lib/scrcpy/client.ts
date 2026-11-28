@@ -65,11 +65,12 @@ export async function postClipboard(
   return (await res.json()) as ClipboardResult;
 }
 
-export async function postVideoRefresh(targetIds: string[]): Promise<ClipboardResult> {
+export async function postVideoRefresh(targetIds: string[], reason?: string): Promise<ClipboardResult> {
   const res = await agentFetch(`${agentBase()}/api/input/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "selected", targetIds }),
+    // `reason` is only for the agent's log when requests come too fast.
+    body: JSON.stringify({ mode: "selected", targetIds, ...(reason ? { reason } : {}) }),
   });
   if (!res.ok) throw new Error(await readError(res, "video refresh failed"));
   return (await res.json()) as ClipboardResult;

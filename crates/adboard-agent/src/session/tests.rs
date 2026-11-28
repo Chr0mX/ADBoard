@@ -294,3 +294,40 @@ async fn a_still_screen_that_never_sends_a_frame_still_gets_its_reset_after_the_
     assert!(bytes_within(&mut phone, 60).await.is_empty(), "not before the grace");
     assert_eq!(bytes_within(&mut phone, 1000).await, vec![17], "then the reset, so the encoder produces a frame");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_start_is_remembered_and_the_next_start_clears_a_leftover_server_first() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("adboard-retry-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("adb.log");
+    let _ = std::fs::remove_file(&log);
+    // A stand-in adb that records every call and fails all of them: the start cannot succeed.
+    let adb = dir.join("adb");
+    std::fs::write(&adb, format!("#!/bin/sh\necho \"$@\" >> {}\nexit 1\n", log.display())).unwrap();
+    std::fs::set_permissions(&adb, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let jar = dir.join("scrcpy-server-v3.3.1");
+    std::fs::write(&jar, b"jar").unwrap();
+    // SAFETY of the global: only read by `scrcpy_server_jar` when a manager is built.
+    unsafe { std::env::set_var("SCRCPY_SERVER_PATH", &jar) };
+    let hub = VideoHub::new();
+    let mgr = SessionManager::new_with_source(Some(adb.clone()), None, hub, VideoSourceKind::Scrcpy);
+    unsafe { std::env::remove_var("SCRCPY_SERVER_PATH") };
+
+    let first = mgr.start("PH1").await;
+    assert_eq!(first.stream, StreamState::Error, "{first:?}");
+    assert_eq!(mgr.pending_start_failures().await, vec![("PH1".to_string(), StreamState::Error)]);
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert!(!calls.contains("pkill"), "a first start does not touch the phone's processes: {calls}");
+
+    // The retry clears what an earlier run may have left behind, before it pushes and forwards.
+    let second = mgr.start("PH1").await;
+    assert_eq!(second.stream, StreamState::Error);
+    let calls = std::fs::read_to_string(&log).unwrap();
+    let kill_at = calls.find("pkill -f com.genymobile.scrcpy.Server").expect("the retry ended a leftover server");
+    let second_push = calls.rmatches("push").count();
+    assert_eq!(second_push, 2, "both starts reached the push: {calls}");
+    assert!(calls[..kill_at].matches("push").count() == 1, "the cleanup came after the first push and before the second: {calls}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

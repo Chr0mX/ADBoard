@@ -479,7 +479,7 @@ export function PhoneScreen({
     if (refreshing) return;
     setRefreshing(true);
     try {
-      if (targetIds.length > 0) await postVideoRefresh(targetIds);
+      if (targetIds.length > 0) await postVideoRefresh(targetIds, "manual");
     } catch {
       // The player still drops its decoder and waits for the next keyframe.
     } finally {

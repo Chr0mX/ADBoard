@@ -165,6 +165,11 @@ impl VideoHub {
         }
     }
 
+    /// Pages (and watchers) subscribed to a phone's video right now. Zero means nobody is watching it.
+    pub async fn subscriber_count(&self, serial: &str) -> usize {
+        self.channels.read().await.get(serial).map_or(0, |ch| ch.tx.receiver_count())
+    }
+
     /// Keyframes carried so far (never goes back, not even when the cache is cleared).
     pub async fn keyframe_count(&self, serial: &str) -> u64 {
         self.channels.read().await.get(serial).map_or(0, |ch| ch.keyframes)

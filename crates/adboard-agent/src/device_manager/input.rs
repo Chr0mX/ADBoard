@@ -528,8 +528,10 @@ impl AppState {
     ) -> Result<ClipboardResponse, String> {
         let (local, by_remote) = self.split_targets(&body.target_ids).await?;
         let sessions = &self.inner.sessions;
+        let reason = body.reason.clone().unwrap_or_else(|| "page".into());
+        let reason = &reason;
         let local_run = fanout::fan_out(local, fanout::DEFAULT_LIMIT, |device| async move {
-            match sessions.reset_video(&device.serial).await {
+            match sessions.reset_video_for(&device.serial, reason).await {
                 Ok(()) => op_done(&device),
                 Err(e) => op_error(&device, e),
             }
@@ -540,6 +542,7 @@ impl AppState {
                 let forward = VideoRefreshRequest {
                     mode: ControlMode::Selected,
                     target_ids: group.iter().map(|d| d.id.clone()).collect(),
+                    reason: body.reason.clone(),
                 };
                 async move {
                     self.proxy_json::<VideoRefreshRequest, ClipboardResponse>(

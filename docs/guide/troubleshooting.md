@@ -18,6 +18,10 @@ The PC can't reach it: reconnect the cable or Wi-Fi, then **Reconnect**. For a W
 
 Press **Refresh** under the phone, or **Reconnect** in the Devices column. The stream restarts. If the picture never appears, check that your browser supports H.264 video (Chrome, Edge, Safari). Some headless or locked-down browsers can't show it.
 
+**A phone whose stream failed to start tries again by itself.** If the screen shows a stream error (the agent log says `scrcpy raw capture failed`), ADBoard retries the start while the phone is online and a page is showing it: after 3 s, then 6, 12 and 24 s, and every 30 s after that. Each retry first ends a scrcpy server an earlier run may have left on the phone, and the log says `retrying the start of a phone's stream` with the attempt number. You do not need to reload the page. If it never recovers, send the log lines around `scrcpy raw capture failed`.
+
+**Keyframe requests.** The agent log line `keyframe request storm` means one phone was asked for a new keyframe four or more times in ten seconds. Each request restarts that phone's encoder and sends a large picture, so the agent slows to one every 4 s and the line names who asked (for example `decode-backlog x5`: this computer's decoder cannot keep up, so lower the quality or the number of phones in the grid). The page shows the same counts in `__adboardPerf.snapshot()` as `keyframeAsksBy` when opened with `?perf=1`.
+
 ## Taps or typing don't reach the phone
 
 - Make sure **Touch** (and, for typing, **Keyboard**) is switched on under the phone.

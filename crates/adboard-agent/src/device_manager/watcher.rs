@@ -505,8 +505,11 @@ impl AppState {
         let state = self.clone();
         tokio::spawn(async move {
             let mut last_recovery: HashMap<String, std::time::Instant> = HashMap::new();
+            let mut retries = crate::session::RetryBook::new();
+            let retrying: Arc<std::sync::Mutex<std::collections::HashSet<String>>> = Arc::default();
             loop {
                 tokio::time::sleep(Duration::from_secs(SESSION_REAP_SECS)).await;
+                state.retry_failed_starts(&mut retries, &retrying).await;
                 let changed = state.inner.sessions.reap().await;
                 for session in changed {
                     if session.stream == StreamState::Error {
@@ -533,6 +536,55 @@ impl AppState {
                 }
             }
         });
+    }
+
+    /// A phone whose stream failed to start is tried again, slowly, while a page is watching it and the phone is
+    /// online. Before this nothing did: the session stayed in Error with the page's socket open and waiting.
+    async fn retry_failed_starts(
+        &self,
+        book: &mut crate::session::RetryBook,
+        in_flight: &Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    ) {
+        let pending = self.inner.sessions.pending_start_failures().await;
+        if pending.is_empty() {
+            book.due(&[], &[], std::time::Instant::now());
+            return;
+        }
+        let online: std::collections::HashSet<String> = self
+            .list_local_devices()
+            .await
+            .into_iter()
+            .filter(|d| d.status == DeviceStatus::Online)
+            .map(|d| d.serial)
+            .collect();
+        let hub = self.video_hub();
+        let mut failed = Vec::new();
+        let mut all = Vec::new();
+        for (serial, stream) in pending {
+            all.push(serial.clone());
+            let starting_now = in_flight.lock().map(|set| set.contains(&serial)).unwrap_or(false);
+            if stream == StreamState::Error && !starting_now && online.contains(&serial) && hub.subscriber_count(&serial).await > 0 {
+                failed.push(serial);
+            }
+        }
+        let now = std::time::Instant::now();
+        for (serial, attempt) in book.due(&failed, &all, now) {
+            let next_in = book.next_in(&serial, now).map(|d| d.as_secs()).unwrap_or(0);
+            info!(%serial, attempt, next_retry_in_secs = next_in, "retrying the start of a phone's stream");
+            if let Ok(mut set) = in_flight.lock() {
+                set.insert(serial.clone());
+            }
+            let state = self.clone();
+            let in_flight = in_flight.clone();
+            tokio::spawn(async move {
+                if let Ok(session) = state.restart_session(&serial).await {
+                    state.publish(ServerEvent::SessionUpdated { session });
+                }
+                if let Ok(mut set) = in_flight.lock() {
+                    set.remove(&serial);
+                }
+            });
+        }
     }
 
     pub(super) async fn apply_adb_snapshot(

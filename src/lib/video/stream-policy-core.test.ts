@@ -29,6 +29,7 @@ import {
   keepsSocketInBackground,
   needsKeyframeAfter,
   readBackgroundPolicy,
+  keyframeAskDue,
   recoveryStep,
   savesWhenHidden,
   stallAction,
@@ -223,4 +224,22 @@ test("a tile out of sight is idle on the desktop too, and the phone app keeps it
   assert.equal(streamMode({ pageHidden: true, hiddenSaves: true, anyViewVisible: true, policy: policy(true, 5), canThrottle: true }), "idle");
   assert.equal(streamMode({ pageHidden: true, hiddenSaves: true, anyViewVisible: true, policy: policy(false, 1), canThrottle: true }), "sample-keyframes");
   assert.equal(streamMode({ pageHidden: true, hiddenSaves: true, anyViewVisible: true, policy: policy(false, 30), canThrottle: true }), "throttle-paint");
+});
+
+test("keyframe asks are rationed: routine ones every 5 s, forced ones no closer than 0.9 s", () => {
+  assert.equal(keyframeAskDue(10_000, 0, false), true);
+  assert.equal(keyframeAskDue(4_999, 0, false), false, "a routine ask 5 s after the last");
+  assert.equal(keyframeAskDue(5_000, 0, false), true);
+  assert.equal(keyframeAskDue(899, 0, true), false, "even a forced ask is not repeated within a second");
+  assert.equal(keyframeAskDue(900, 0, true), true);
+  // Ten routine reasons in ten seconds make two asks, not five.
+  let last = -Infinity;
+  let asked = 0;
+  for (let t = 0; t <= 10_000; t += 1_000) {
+    if (keyframeAskDue(t, last, false)) {
+      asked += 1;
+      last = t;
+    }
+  }
+  assert.equal(asked, 3, "at 0, 5 and 10 s");
 });

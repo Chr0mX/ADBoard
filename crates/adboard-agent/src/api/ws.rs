@@ -578,7 +578,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
             }
             drop(first);
             for attempt in 0..8 {
-                match sessions.reset_video(&serial_reset).await {
+                match sessions.reset_video_for(&serial_reset, "connect").await {
                     Ok(()) => {
                         debug!(%serial_reset, "requested a fresh video keyframe");
                         break;
@@ -650,15 +650,24 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                         // subscribed, or the request was folded into another). Ask again rather than showing
                         // nothing until the encoder's next natural one, which can be seconds away.
                         if let Some(since) = waiting_since {
-                            let due = stall_asked_at.is_none_or(|at| at.elapsed() >= KEYFRAME_STALL);
-                            if since.elapsed() >= KEYFRAME_STALL && due {
-                                stall_asked_at = Some(std::time::Instant::now());
-                                warn!(serial = %serial_log, waited_ms = since.elapsed().as_millis() as u64, held_back, "video socket is still waiting for a keyframe; asking again");
-                                let sessions = sessions_lag.clone();
-                                let serial = serial_lag.clone();
-                                tokio::spawn(async move {
-                                    let _ = sessions.reset_video(&serial).await;
-                                });
+                            let session = sessions_lag.get_session(&serial_lag).await;
+                            let streaming = session.as_ref().is_some_and(|s| s.stream == adboard_protocol::StreamState::Streaming);
+                            match stall_step(streaming, since.elapsed(), stall_asked_at.map(|t| t.elapsed())) {
+                                StallStep::Nothing => {}
+                                StallStep::AskKeyframe => {
+                                    stall_asked_at = Some(std::time::Instant::now());
+                                    warn!(serial = %serial_log, waited_ms = since.elapsed().as_millis() as u64, held_back, "video socket is still waiting for a keyframe; asking again");
+                                    let sessions = sessions_lag.clone();
+                                    let serial = serial_lag.clone();
+                                    tokio::spawn(async move {
+                                        let _ = sessions.reset_video_for(&serial, "stall").await;
+                                    });
+                                }
+                                StallStep::Explain => {
+                                    stall_asked_at = Some(std::time::Instant::now());
+                                    let note = session.map(|s| s.note).unwrap_or_default();
+                                    info!(serial = %serial_log, waited_ms = since.elapsed().as_millis() as u64, "waiting for the stream to start: {note}");
+                                }
                             }
                         }
                     }
@@ -704,7 +713,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                 let sessions = sessions_lag.clone();
                                 let serial = serial_lag.clone();
                                 tokio::spawn(async move {
-                                    let _ = sessions.reset_video(&serial).await;
+                                    let _ = sessions.reset_video_for(&serial, "resume").await;
                                 });
                             }
                         }
@@ -747,7 +756,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                     let sessions = sessions_lag.clone();
                                     let serial = serial_lag.clone();
                                     tokio::spawn(async move {
-                                        let _ = sessions.reset_video(&serial).await;
+                                        let _ = sessions.reset_video_for(&serial, "lag").await;
                                     });
                                 }
                                 for au in hub_lag.replay_access_units(&serial_lag).await {

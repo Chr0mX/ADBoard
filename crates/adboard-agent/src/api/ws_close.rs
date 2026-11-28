@@ -21,6 +21,33 @@ pub(super) const PEER_SILENT_AFTER: Duration = Duration::from_secs(70);
 pub(super) const PEER_SILENT_AFTER: Duration = Duration::from_secs(2);
 /// A socket that has held back delta frames this long without a keyframe asks for one again.
 pub(super) const KEYFRAME_STALL: Duration = Duration::from_secs(2);
+/// While a phone's stream is still starting (or has failed), the socket says why this often instead of asking.
+pub(super) const START_EXPLAIN_EVERY: Duration = Duration::from_secs(10);
+
+/// What a socket that is holding back delta frames should do about the keyframe it waits for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StallStep {
+    Nothing,
+    /// The stream runs and a keyframe was missed: ask the encoder for one.
+    AskKeyframe,
+    /// The stream is not running (starting, failed): there is no encoder to ask. Say why, once in a while.
+    Explain,
+}
+
+pub(super) fn stall_step(streaming: bool, waited: Duration, since_last: Option<Duration>) -> StallStep {
+    if waited < KEYFRAME_STALL {
+        return StallStep::Nothing;
+    }
+    if streaming {
+        if since_last.is_none_or(|d| d >= KEYFRAME_STALL) {
+            return StallStep::AskKeyframe;
+        }
+    } else if since_last.is_none_or(|d| d >= START_EXPLAIN_EVERY) {
+        return StallStep::Explain;
+    }
+    StallStep::Nothing
+}
+
 /// A close frame is best effort: do not wait on it longer than this.
 pub(super) const CLOSE_WRITE_LIMIT: Duration = Duration::from_secs(2);
 /// Connecting to a remote agent's video socket may take this long before the stream is reported lost.
@@ -182,6 +209,20 @@ mod tests {
         assert!(all
             .iter()
             .all(|r| !r.text().is_empty() && r.text().len() < 120));
+    }
+
+    #[test]
+    fn a_running_stream_is_asked_for_a_keyframe_and_a_stream_that_is_not_running_is_only_explained() {
+        let secs = Duration::from_secs;
+        assert_eq!(stall_step(true, secs(1), None), StallStep::Nothing, "not stalled yet");
+        assert_eq!(stall_step(true, secs(2), None), StallStep::AskKeyframe);
+        assert_eq!(stall_step(true, secs(3), Some(secs(1))), StallStep::Nothing, "asked a second ago");
+        assert_eq!(stall_step(true, secs(4), Some(secs(2))), StallStep::AskKeyframe);
+        // A phone that failed to start has no encoder: no asking, one explanation every ten seconds.
+        assert_eq!(stall_step(false, secs(2), None), StallStep::Explain);
+        assert_eq!(stall_step(false, secs(4), Some(secs(2))), StallStep::Nothing);
+        assert_eq!(stall_step(false, secs(12), Some(secs(10))), StallStep::Explain);
+        assert_eq!(stall_step(false, secs(1), None), StallStep::Nothing);
     }
 
     #[test]

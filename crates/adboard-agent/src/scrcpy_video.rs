@@ -33,7 +33,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 const REMOTE_SERVER_PATH: &str = "/data/local/tmp/adboard-scrcpy-server.jar";
 const DEFAULT_MAX_SIZE: u32 = 1280;
@@ -454,6 +454,20 @@ async fn run_adb(adb: &Path, args: &[&str]) -> Result<String, String> {
             output.status,
             stderr.trim()
         ))
+    }
+}
+
+/// Best effort before a retry: end a scrcpy-server an earlier run left on the phone. It would still hold the
+/// socket the new one needs, and the new one's connection then closes at once ("early eof"). Not run on a
+/// first start, and never for a virtual display (its server is a different one).
+pub async fn kill_leftover_server(adb: &Path, serial: &str) {
+    if crate::virtual_display::parse_display_key(serial).is_some() {
+        return;
+    }
+    // `pkill` exits 1 when there was nothing to kill: that is the normal case, not an error.
+    match run_adb(adb, &["-s", serial, "shell", "pkill -f com.genymobile.scrcpy.Server"]).await {
+        Ok(_) => info!(%serial, "ended a scrcpy-server left on the phone before retrying"),
+        Err(e) => debug!(%serial, error = %e, "no leftover scrcpy-server to end"),
     }
 }
 

@@ -95,6 +95,10 @@ This is the main part of the surface, not all of it. Also in the router: `/api/b
 
 The UI decodes the frames with **WebCodecs** `VideoDecoder` and draws them on a canvas. Switching the active device only changes the video subscription, so agent sessions stay up.
 
+### Keyframe requests, retries and the storm brake
+
+`POST /api/input/refresh` takes an optional `reason` (`connect`, `decode-backlog`, `stall`, ...). The agent shares one scrcpy `RESET_VIDEO` between requests that arrive before its keyframe has come out, spaces resets of one phone at least 0.8 s apart, and answers a storm (four or more resets of one phone in ten seconds) by slowing that phone to one every 4 s and logging who asked. A reset is never sent before a new stream's first frame, because scrcpy-server dies on one. A socket still holding back delta frames after 2 s asks again only while the phone's session is `streaming`; while it is `starting` or `error` it logs why, at most every 10 s. A phone whose start failed is retried by the agent after 3, 6, 12 and 24 s and then every 30 s, only while it is online and has a viewer; each retry first runs `pkill -f com.genymobile.scrcpy.Server` on the phone.
+
 ### An idle viewer (not used by the current page)
 
 The agent still understands this message, but the current page never sends it. A page whose viewer wanted no pictures would send `{"type":"viewer","active":false}` on the video socket. The agent then stops sending pictures on that socket; status frames, the 5 s heartbeat and WebSocket pings continue, so the connection is still watched. `{"type":"viewer","active":true}` brings the pictures back, starting with the cached SPS/PPS and keyframe and a request for a fresh one. An agent that does not know the message ignores it and the page drops the pictures itself. The connection is closed only when the viewer closes, the phone goes away, or the connection fails: no pictures, a still screen or an idle viewer never count as failure.
