@@ -8,7 +8,7 @@ import { useAgentSessionInfo } from "@/components/adboard/sign-in-gate";
 import { InstallOnIphone } from "@/components/adboard/desk/install-on-iphone";
 import { NotificationsCard } from "@/components/adboard/desk/notifications-card";
 import { VirtualDisplayCard } from "@/components/adboard/desk/virtual-display-card";
-import { AccountBody, AppearanceBody, VideoBody, ControlBody, GridBody, StreamBody, TaskbarBody, TaskbarReset } from "@/components/adboard/desk/settings-panel";
+import { AccountBody, AppearanceBody, ControlBody, GridBody, StreamBody, TaskbarBody, TaskbarReset } from "@/components/adboard/desk/settings-panel";
 import { pickCategory, type SettingsCategory } from "@/lib/ui/settings-categories";
 
 /*
@@ -37,7 +37,6 @@ export function SettingsDesktop() {
 
   const entries: Entry[] = [
     { id: "stream", label: "Stream", group: "Phones", title: "Stream", blurb: "Quality, audio and screen-off for the target phones. Screen size and Quiet Mode change every online phone.", body: <StreamBody /> },
-    { id: "video", label: "Video / Performance", group: "Phones", title: "Video / Performance", blurb: "What the live video does while this window is in the background.", body: <VideoBody /> },
     { id: "virtual", label: "Virtual displays", group: "Phones", title: "Virtual displays", blurb: "Extra Android screens that run their own apps.", body: <VirtualDisplayCard bare /> },
     { id: "control", label: "Control", group: "Controls", title: "Control", blurb: "Keyboard, touch diagnostics, cursor, stats and the edge tab.", body: <ControlBody /> },
     { id: "grid", label: "Grid view", group: "Controls", title: "Grid view", blurb: "How the phone tiles are arranged.", body: <GridBody /> },

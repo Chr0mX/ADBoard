@@ -30,6 +30,7 @@ import {
   needsKeyframeAfter,
   readBackgroundPolicy,
   recoveryStep,
+  savesWhenHidden,
   stallAction,
   viewerMessage,
   streamMode,
@@ -37,7 +38,7 @@ import {
 
 const policy = (pause: boolean, fps: number) => ({ pause, fps });
 const mode = (pageHidden: boolean, anyViewVisible: boolean, p = DEFAULT_BACKGROUND_POLICY, canThrottle = true) =>
-  streamMode({ pageHidden, anyViewVisible, policy: p, canThrottle });
+  streamMode({ pageHidden, hiddenSaves: true, anyViewVisible, policy: p, canThrottle });
 
 test("the saved background settings default to the original suspension behaviour", () => {
   assert.deepEqual(readBackgroundPolicy(null, null), { pause: true, fps: 5 });
@@ -201,4 +202,25 @@ test("a stalled decoder is first asked for a keyframe and only then rebuilt", ()
 test("the viewer message is the plain control message the agent expects", () => {
   assert.deepEqual(JSON.parse(viewerMessage(false)), { type: "viewer", active: false });
   assert.deepEqual(JSON.parse(viewerMessage(true)), { type: "viewer", active: true });
+});
+
+test("only the phone app saves work while hidden", () => {
+  for (const path of ["/m", "/m/", "/m/control/", "/m/more/"]) assert.equal(savesWhenHidden(path), true, path);
+  for (const path of ["/", "/index.html", "/macros", "/me", "/mobile", "/manage"]) assert.equal(savesWhenHidden(path), false, path);
+});
+
+test("the desktop view runs at full speed hidden or not, whatever the background setting says", () => {
+  for (const p of [policy(true, 5), policy(false, 1), policy(false, 5), policy(false, 30), policy(false, 60)]) {
+    for (const canThrottle of [false, true]) {
+      assert.equal(streamMode({ pageHidden: true, hiddenSaves: false, anyViewVisible: true, policy: p, canThrottle }), "full");
+      assert.equal(streamMode({ pageHidden: false, hiddenSaves: false, anyViewVisible: true, policy: p, canThrottle }), "full");
+    }
+  }
+});
+
+test("a tile out of sight is idle on the desktop too, and the phone app keeps its hidden-window modes", () => {
+  assert.equal(streamMode({ pageHidden: true, hiddenSaves: false, anyViewVisible: false, policy: policy(true, 5), canThrottle: true }), "idle");
+  assert.equal(streamMode({ pageHidden: true, hiddenSaves: true, anyViewVisible: true, policy: policy(true, 5), canThrottle: true }), "idle");
+  assert.equal(streamMode({ pageHidden: true, hiddenSaves: true, anyViewVisible: true, policy: policy(false, 1), canThrottle: true }), "sample-keyframes");
+  assert.equal(streamMode({ pageHidden: true, hiddenSaves: true, anyViewVisible: true, policy: policy(false, 30), canThrottle: true }), "throttle-paint");
 });

@@ -106,14 +106,25 @@ export type StreamMode =
   /** Hidden window, not paused, above 1 FPS: decode everything, paint about FPS pictures per second. */
   | "throttle-paint";
 
+/**
+ * Does this page reduce work while its window is hidden? Only the phone app (`/m/`) does. The desktop view
+ * never does: a hidden window keeps decoding and painting at full speed, so returning to it has nothing to
+ * catch up on (no keyframe handshake, no rebuilt decoder).
+ */
+export function savesWhenHidden(pathname: string): boolean {
+  return pathname === "/m" || pathname.startsWith("/m/");
+}
+
 export function streamMode(input: {
   pageHidden: boolean;
+  /** `savesWhenHidden` for this page: when false the window's visibility is ignored. */
+  hiddenSaves: boolean;
   anyViewVisible: boolean;
   policy: BackgroundPolicy;
   /** The decoder path can run in the background (WebCodecs; the MSE path cannot be thinned). */
   canThrottle: boolean;
 }): StreamMode {
-  if (!input.pageHidden) return input.anyViewVisible ? "full" : "idle";
+  if (!input.pageHidden || !input.hiddenSaves) return input.anyViewVisible ? "full" : "idle";
   if (input.policy.pause || !input.canThrottle) return "idle";
   return input.policy.fps <= KEYFRAME_SAMPLE_MAX_FPS ? "sample-keyframes" : "throttle-paint";
 }

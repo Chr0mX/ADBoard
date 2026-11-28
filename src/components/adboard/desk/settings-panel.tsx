@@ -120,7 +120,7 @@ export function ControlBody() {
   );
 }
 
-/** Background video: what the live pictures do while this browser window is hidden (Alt-Tab, another tab). */
+/** Background video for the phone app: what the live pictures do while the app is hidden. The desktop view never reduces work. */
 export function VideoBody() {
   const [pause, setPause] = useStoredFlag(BG_PAUSE_KEY, true);
   const [fpsRaw, setFpsRaw] = useStoredString(BG_FPS_KEY);
@@ -468,6 +468,7 @@ export function SettingsPanel() {
 
         <section className={CARD} data-settings-video-card>
           <h3 className={CARD_TITLE}>Video / Performance</h3>
+          <p className="mb-2 text-xs text-[var(--pc-muted)]">For this app. The desktop page always runs at full speed, hidden or not.</p>
           <VideoBody />
         </section>
 

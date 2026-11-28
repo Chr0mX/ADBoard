@@ -30,6 +30,7 @@ import {
   onVisibilityChange,
   readBackgroundPolicy,
   recoveryStep,
+  savesWhenHidden,
   shouldSuspend,
   stallAction,
   streamMode,
@@ -556,6 +557,7 @@ class SharedStream {
   private computeMode(): StreamMode {
     return streamMode({
       pageHidden: pageHidden(),
+      hiddenSaves: savesWhenHidden(window.location.pathname),
       anyViewVisible: anyViewVisible(this.views),
       policy: backgroundPolicy,
       canThrottle: webCodecsSupported(),

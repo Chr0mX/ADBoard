@@ -112,7 +112,7 @@ You can pin up to 21 tools. When you reach the limit the remaining switches are 
 
 ## Video / Performance
 
-What the live video does while this browser window is hidden (Alt-Tab, another tab, a minimised window). It is saved for this browser.
+What the live video does while the phone app (`/m/`) is hidden. It is saved for this browser. The desktop page has no such setting: it always decodes and paints at full speed, whether its window is hidden, covered or unfocused, so coming back to it has nothing to catch up on.
 
 The video connection of a phone you have open stays connected: hiding the window, Alt-Tab, switching tabs, a phone scrolled out of sight or a screen that sends no new picture never closes it. It ends only when you close the phone, the phone goes away, or the connection really fails (the agent's heartbeat stops).
 
