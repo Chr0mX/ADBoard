@@ -19,6 +19,8 @@ set "ADBOARD_HOST_ID=windows-host"
 set "ADBOARD_VIDEO_SOURCE=auto"
 rem Data folder: the ADBoard folder in the repository root (two levels up from dist\windows).
 for %%I in ("%~dp0..\..\ADBoard") do set "ADBOARD_APP_DATA_DIR=%%~fI"
+rem Logs (adboard.log, event history, video-diagnostics snapshots): the logs folder in the repository root.
+if not defined ADBOARD_LOGS_DIR for %%I in ("%~dp0..\..\logs") do set "ADBOARD_LOGS_DIR=%%~fI"
 rem Remote access through a reverse proxy (Nginx Proxy Manager / Cloudflare) needs a password:
 rem set "ADBOARD_PASSWORD=choose-a-long-passphrase"
 rem Portable mode (keep data next to this script instead of %LOCALAPPDATA%\ADBoard):

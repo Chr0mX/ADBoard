@@ -95,3 +95,5 @@ site/guide/
 dist/windows/adboard-data/
 # Data folder in the repository root (Windows pack, D:\GitHub\Phone-farm\ADBoard).
 /ADBoard/
+# Logs folder in the repository root (the Windows scripts set ADBOARD_LOGS_DIR to it).
+/logs/

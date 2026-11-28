@@ -18,6 +18,7 @@ Older `PHONECONTROL_*` names are still read when the `ADBOARD_*` one is not set;
 | `ADBOARD_HTTP_BASE` | `http://127.0.0.1:$PORT` | Advertised for controller video proxy |
 | `ADBOARD_MOCK_PROFILE` | `all` (agent → `lxc`) | `all` / `windows` / `lxc` |
 | `ADBOARD_VIDEO_SOURCE` | `auto` | `auto`, `testpattern`, `scrcpy` or `off`. `auto` uses scrcpy when ADB and scrcpy-server are ready |
+| `ADBOARD_LOGS_DIR` | `logs` in the data folder | Folder for `adboard.log`, the event history and video snapshots. `run.bat` and `Start-ADBoard.ps1` set it to `logs` in the repository root |
 | `ADBOARD_RESET_DEADLINE_MS` | `3000` | How long a keyframe reset waits for its keyframe before it is sent once more (500 to 30000). The agent logs each reset's `latency_ms`; set this from those values |
 | `FFMPEG_PATH` | `which ffmpeg` | Live testsrc encoder for testpattern |
 | `ADB_PATH` | vendored `tools/…` / `vendor/…`, else `which adb` | Override ADB binary |

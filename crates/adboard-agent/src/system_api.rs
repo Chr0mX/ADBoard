@@ -23,7 +23,8 @@ fn folder(which: &str) -> Option<PathBuf> {
     let root = data_dir::root().path.clone();
     Some(match which {
         "root" => root,
-        "macros" | "shell_scripts" | "config" | "logs" | "backups" | "files" | "device" => root.join(which),
+        "logs" => data_dir::logs_dir(),
+        "macros" | "shell_scripts" | "config" | "backups" | "files" | "device" => root.join(which),
         _ => return None,
     })
 }

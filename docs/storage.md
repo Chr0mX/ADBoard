@@ -43,6 +43,7 @@ ADBoard\
 ├── logs\            adboard.log (rotated at 5 MB, 3 kept), shell_run_history.json
 │                    events.jsonl                 event history (Events tab), one event per line, bounded by its limits
 │                    .adboard-running             present while ADBoard runs; tells a crash from a clean stop
+│                    video-diagnostics-<time>-<trigger>.json   video freeze snapshots (newest 50 kept)
 ├── backups\         history\     the last 20 saved versions of each store (Macros → Versions)
 │                    deleted\     files of deleted or renamed macros and scripts
 │                    corrupt\     copies of files that could not be read
@@ -53,6 +54,12 @@ ADBoard\
 ├── files\           Files area: Screenshots, Recordings, APKs, Downloads
 └── temp\            staged uploads and installs (runtime only)
 ```
+
+**Logs in another folder.** When `ADBOARD_LOGS_DIR` is set, `adboard.log`, the event history, the running
+marker and the video snapshots go there instead of `logs\` in the data folder (`shell_run_history.json` stays
+with the data). The Windows scripts (`run.bat`, `Start-ADBoard.ps1`) set it to the `logs` folder in the
+repository root, for example `D:\GitHub\Phone-farm\logs`, unless you set it yourself. Logs from before that
+stay where they were; nothing is copied.
 
 ## What is saved, and how
 

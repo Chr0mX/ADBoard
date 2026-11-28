@@ -19,7 +19,8 @@
 //! macros/          one <Name>.json per touch macro, _workspace.json
 //! shell_scripts/   one <Name>.json per Shell Automation script, _library.json
 //! config/          user_config.json, browser_state.json, builder_state.json, …
-//! logs/            adboard.log, shell_run_history.json
+//! logs/            adboard.log, shell_run_history.json (adboard.log, the event history and video
+//!                  snapshots go to `ADBOARD_LOGS_DIR` instead when it is set)
 //! backups/         history/, deleted/, corrupt/, legacy-<date>/, backup-<date>/
 //! files/           the Files area (Screenshots, APKs, Recordings, Downloads)
 //! temp/            runtime scratch space (not copied when the folder moves)
@@ -250,8 +251,18 @@ pub fn shell_scripts_dir() -> PathBuf {
 pub fn config_dir() -> PathBuf {
     path("config")
 }
+/// The logs folder (adboard.log, the event history, video-diagnostics snapshots): `ADBOARD_LOGS_DIR` when set
+/// (the Windows scripts set it to `logs` in the repository folder), else `logs` in the data folder.
 pub fn logs_dir() -> PathBuf {
-    path("logs")
+    logs_dir_from(crate::env::var("LOGS_DIR").ok().as_deref(), &root().path)
+}
+
+/// `logs_dir` for a given override and data root (testable without touching the environment).
+pub fn logs_dir_from(override_dir: Option<&str>, root: &Path) -> PathBuf {
+    match override_dir.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(dir) => normalize_path(Path::new(dir)),
+        None => root.join("logs"),
+    }
 }
 pub fn backups_dir() -> PathBuf {
     path("backups")
@@ -439,6 +450,16 @@ pub fn unique_stem(stem: &str, taken: &std::collections::HashSet<String>) -> Str
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn logs_go_to_the_logs_folder_override_when_one_is_set() {
+        let root = Path::new("/data/ADBoard");
+        assert_eq!(logs_dir_from(None, root), root.join("logs"));
+        assert_eq!(logs_dir_from(Some("  "), root), root.join("logs"), "an empty value is no override");
+        // run.bat passes `<dist\windows>\..\..\logs`: the repository's own logs folder.
+        assert_eq!(logs_dir_from(Some("/repo/dist/windows/../../logs"), root), PathBuf::from("/repo/logs"));
+    }
+
     use super::*;
     use std::collections::HashMap;
 
