@@ -8,6 +8,7 @@ mod input;
 mod monitoring;
 mod ws;
 mod ws_close;
+mod video_diag;
 use auth::*;
 use input::*;
 use monitoring::*;
@@ -237,6 +238,10 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/macro/queue/{action}", post(macro_queue_action))
         .route("/api/macro/cron", get(macro_cron_preview))
         .route("/api/diagnostics/video", post(video_problem_report))
+        .route(
+            "/api/diagnostics/video-snapshot",
+            post(video_diag::video_snapshot).layer(DefaultBodyLimit::max(512 * 1024)),
+        )
         .route("/api/events", get(events_list))
         .route("/api/events/summary", get(events_summary))
         .route("/api/events/macros", get(events_macros))
@@ -484,6 +489,11 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 /// This process's id (random, new at every start) and when it started.
 static PROCESS: std::sync::LazyLock<(String, std::time::Instant)> =
     std::sync::LazyLock::new(|| (uuid::Uuid::new_v4().simple().to_string()[..12].to_string(), std::time::Instant::now()));
+
+/// Keep the per-phone history that video diagnostics snapshots include (see `video_diag`).
+pub fn spawn_video_history(state: AppState) {
+    video_diag::spawn_history(state);
+}
 
 /// Touch the process id at start, so uptime counts from the start and not from the first `/health`.
 pub fn note_process_start() {

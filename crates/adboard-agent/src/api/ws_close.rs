@@ -62,6 +62,11 @@ pub(super) struct LinkStats {
     pub(super) last_heartbeat_ms: std::sync::atomic::AtomicU64,
     /// The page told the agent this viewer is idle (no pictures wanted).
     pub(super) idle: std::sync::atomic::AtomicBool,
+    /// Holding back delta frames until a keyframe (and how many so far): for the video diagnostics snapshot.
+    pub(super) waiting: std::sync::atomic::AtomicBool,
+    pub(super) held_back: std::sync::atomic::AtomicU32,
+    /// Video access units that were broadcast to this socket but lost to a lag (`RecvError::Lagged`).
+    pub(super) lagged: std::sync::atomic::AtomicU64,
 }
 
 impl LinkStats {

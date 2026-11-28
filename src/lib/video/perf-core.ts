@@ -18,6 +18,9 @@ export interface AgentResetStats {
 }
 
 export interface StreamPerf {
+  /** Every socket message (status text and video), and their bytes: what the network delivered. */
+  messages: number;
+  wireBytes: number;
   /** Access units that arrived on the socket. */
   received: number;
   bytes: number;
@@ -104,6 +107,8 @@ export interface StreamPerf {
 
 export function newStreamPerf(): StreamPerf {
   return {
+    messages: 0,
+    wireBytes: 0,
     received: 0,
     bytes: 0,
     submitted: 0,

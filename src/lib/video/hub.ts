@@ -56,6 +56,7 @@ import {
   type LinkEvent,
 } from "@/lib/api/agent-link";
 import { GATE_MAX_WAIT_MS, mayConnect, reconnectSpreadMs } from "@/lib/api/agent-link-core";
+import { EVENT_RING, Ring, SAMPLE_RING, detectorStep, newDetector } from "@/lib/video/diagnostics-core";
 import {
   classify as classifyHealth,
   decide as decideHealth,
@@ -323,6 +324,11 @@ class SharedStream {
   private meter = { t: 0, frames: 0, bytes: 0 };
   private generation = 0;
   readonly perf = newStreamPerf();
+  /** Rolling diagnostics (diagnostics-core): a sample per 500 ms tick, and the events around it. */
+  readonly diagSamples = new Ring<Record<string, unknown>>(SAMPLE_RING);
+  readonly diagEvents = new Ring<Record<string, unknown>>(EVENT_RING);
+  /** The agent's last heartbeat said this socket holds frames back for a keyframe. */
+  private agentWaiting: boolean | null = null;
   private backoff = createBackoff();
   /** Heartbeat promised by the agent on this socket, and when anything last arrived. */
   private heartbeatSeconds: number | null = null;
@@ -547,6 +553,45 @@ class SharedStream {
     else if (kind === "hung-decoder") this.faultHungDecoder = this.decoder;
   }
 
+  /** Record an event for the diagnostics snapshot (never changes what the stream does). */
+  note(kind: string, detail: Record<string, unknown> = {}) {
+    this.diagEvents.push({ at: Date.now(), t: Math.round(performance.now()), kind, ...detail });
+  }
+
+  /** One diagnostics sample: every stage's counter and age, from the socket to the canvas. */
+  private sampleDiagnostics(now: number) {
+    const p = this.perf;
+    const ago = (at: number | null) => (at === null ? null : Math.round(now - at));
+    const socket = this.socket;
+    this.diagSamples.push({
+      at: Date.now(),
+      t: Math.round(now),
+      ws: !socket ? "none" : (["connecting", "open", "closing", "closed"][socket.readyState] ?? "unknown"),
+      msgs: p.messages,
+      bytes: p.wireBytes,
+      seen: this.auSeen,
+      rx: p.received,
+      kfRx: p.keyframesReceived,
+      dec: p.decoded,
+      kfDec: p.keyframesDecoded,
+      painted: p.painted,
+      queue: this.decoder ? this.decoder.decodeQueueSize : 0,
+      decoder: this.mse ? "mse" : this.decoder ? this.decoder.state : "none",
+      errors: p.decoderErrors,
+      frameAgo: ago(p.lastFrameAt),
+      decodedAgo: ago(p.lastDecodedAt),
+      paintedAgo: ago(p.lastPaintedAt),
+      heartbeatAgo: ago(p.lastHeartbeatAt),
+      health: this.healthState,
+      views: this.views.size,
+      srcFrames: p.agentSourceFrames,
+      srcIdleMs: p.agentSourceIdleMs,
+      sentFrames: p.agentSentFrames,
+      agentWaiting: this.agentWaiting,
+      resetOutstanding: p.agentResets?.outstandingAttempt ?? null,
+    });
+  }
+
   /** Benchmark hook: an input for this phone was sent now. */
   markInput() {
     markInput(this.perf, performance.now());
@@ -590,6 +635,7 @@ class SharedStream {
       this.stall = { seen: this.auSeen, decoded: progress, since: now };
     }
     this.checkHealth(now);
+    this.sampleDiagnostics(now);
     const sample = this.meter;
     const seconds = Math.max(0.001, (now - sample.t) / 1000);
     const size = this.state.size;
@@ -632,6 +678,7 @@ class SharedStream {
     const onScreen = typeof document !== "undefined" && document.visibilityState === "visible" && this.viewsOnScreen(now);
     const health = classifyHealth(this.health, { now, socketOpen, statusSeen: this.statusSeen, onScreen, idle: this.idle });
     if (health !== this.healthState) {
+      this.note("health", { from: this.healthState, to: health });
       const bad = health === "not-rendering" || health === "page-dropping" || health === "agent-holding" || health === "not-decoding";
       if (bad) console.info(`[adboard video] ${this.serial}: ${health} (was ${this.healthState})`);
       this.healthState = health;
@@ -641,6 +688,7 @@ class SharedStream {
     this.health = step.tracker;
     if (step.action === "none") return;
     this.perf.healthRepairs[health] = (this.perf.healthRepairs[health] ?? 0) + 1;
+    this.note("health-repair", { health, action: step.action });
     this.reportProblem(`health-${health}`);
     if (step.action === "repaint") {
       // Pictures are decoded and none reach the canvas: a paint that was scheduled and never ran, or a view
@@ -704,6 +752,7 @@ class SharedStream {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.backoff.reset();
     this.perf.linkReconnects += 1;
+    this.note("link-reconnect", { event });
     this.retryTimer = setTimeout(this.connect, reconnectSpreadMs(index));
   }
 
@@ -725,6 +774,7 @@ class SharedStream {
     if (!keyframeAskDue(now, this.lastKeyframeAsk, force)) return;
     this.lastKeyframeAsk = now;
     this.perf.keyframeAsks += 1;
+    this.note("keyframe-ask", { reason });
     this.perf.keyframeAsksBy[reason] = (this.perf.keyframeAsksBy[reason] ?? 0) + 1;
     void postVideoRefresh([this.serial], reason).catch(() => {});
   }
@@ -945,6 +995,7 @@ class SharedStream {
   /** The decoder did not turn a keyframe into a picture: start it over. The socket is not touched. */
   private recoverDecoder() {
     this.perf.decoderRecoveries += 1;
+    this.note("decoder-rebuild", { emptyRebuilds: this.emptyRebuilds });
     this.reportProblem("decoder-rebuilt");
     this.decoderRecovered = true;
     // A decoder that takes frames and never answers (a hung hardware decoder: no error, just nothing) is not
@@ -956,6 +1007,7 @@ class SharedStream {
         console.warn("[video] the decoder produces nothing; using the software decoder for", this.serial);
         this.accel = next;
         this.perf.decoderFallbacks += 1;
+        this.note("decoder-fallback", { accel: next });
         this.reportProblem("decoder-fallback", { accel: next });
       }
     }
@@ -1032,6 +1084,7 @@ class SharedStream {
 
   private disconnect(reason = "closed by this page") {
     this.generation += 1;
+    if (this.socket) this.note("socket-closed-by-page", { reason });
     this.teardownDecoder();
     this.mse?.close();
     this.mse = null;
@@ -1109,6 +1162,7 @@ class SharedStream {
   private createDecoder(desc: Uint8Array, codec: string) {
     this.teardownDecoder();
     this.perf.decoderBuilds += 1;
+    this.note("decoder-create", { codec, accel: this.accel });
     this.waitingForKeyframeConfig = false;
     this.gate = newDecodeGate();
     const decoder = new VideoDecoder({
@@ -1146,6 +1200,7 @@ class SharedStream {
       },
       error: (err) => {
         this.perf.decoderErrors += 1;
+        this.note("decoder-error", { message: err instanceof Error ? `${err.name}: ${err.message}` : String(err) });
         console.warn("[video] decoder error", err);
         if (this.decoder === decoder) {
           this.noteDecoderError();
@@ -1265,6 +1320,7 @@ class SharedStream {
     const current = () => generation === this.generation && !this.closed;
 
     socket.onopen = () => {
+      this.note("socket-open");
       if (!current()) return;
       this.setState({ decodeState: "waiting" });
       // A viewer that went idle before this (re)connection must not be sent pictures.
@@ -1272,6 +1328,8 @@ class SharedStream {
     };
     socket.onmessage = (event) => {
       if (!current()) return;
+      this.perf.messages += 1;
+      this.perf.wireBytes += typeof event.data === "string" ? event.data.length : (event.data as ArrayBuffer).byteLength;
       this.lastMessageAt = performance.now();
       const started = perfTiming ? this.lastMessageAt : 0;
       if (typeof event.data === "string") this.onStatus(event.data);
@@ -1285,6 +1343,7 @@ class SharedStream {
       // Not ours (we close through `disconnect`, which silences this handler): the agent, a proxy or
       // the network ended it. Say which, so a freeze can be traced to a layer.
       const kind = this.recordClose(event.code, event.reason ?? "", event.wasClean);
+      this.note("socket-close", { code: event.code, reason: event.reason ?? "", kind });
       if (kind !== "normal") this.reportProblem("socket-closed");
       this.teardownDecoder();
       this.mse?.close();
@@ -1327,7 +1386,11 @@ class SharedStream {
     this.backoff.reset();
     this.perf.retryAttempts = 0;
     // The heartbeat repeats the same frame; only a real change reaches the views.
-    if (!sameStatus(this.state.status, msg)) this.setState({ status: msg });
+    if (!sameStatus(this.state.status, msg)) {
+      this.note("status", { stream: msg.stream, backend: msg.backend, note: msg.note, width: msg.width, height: msg.height, instance: msg.instance });
+      this.setState({ status: msg });
+    }
+    if (typeof msg.waitingForKeyframe === "boolean") this.agentWaiting = msg.waitingForKeyframe;
     // Accept video at once. The agent holds back delta frames after the SPS/PPS and keyframe it replays to a
     // new socket until a fresh keyframe, and asks the phone for that keyframe itself (agent ws.rs): the page
     // does not ask too, so a new socket costs the phone's encoder one restart, not two.
@@ -1489,12 +1552,101 @@ class SharedStream {
  */
 let linkWired = false;
 
+/** Page-wide lifecycle events (visibility, focus, freeze), for diagnostics snapshots. */
+const pageEvents = new Ring<Record<string, unknown>>(EVENT_RING);
+function notePage(kind: string, detail: Record<string, unknown> = {}) {
+  pageEvents.push({
+    at: Date.now(),
+    t: Math.round(performance.now()),
+    kind,
+    visibility: document.visibilityState,
+    focused: document.hasFocus(),
+    ...detail,
+  });
+}
+
+let detector = newDetector();
+
+/**
+ * Save what every stream looked like for the last ~15 s (and the agent's side, which the agent adds) in the
+ * agent's `logs/video-diagnostics/`. Resolves to the file's path, or null if it could not be saved.
+ */
+export async function saveDiagnostics(trigger: string): Promise<string | null> {
+  const base = agentBaseUrl();
+  if (base === null) return null;
+  const now = performance.now();
+  const build = (keep: number) => ({
+    trigger,
+    triggeredAt: new Date().toISOString(),
+    page: {
+      url: location.href,
+      path: location.pathname,
+      secureContext: isSecureContext,
+      webCodecs: webCodecsSupported(),
+      visibility: document.visibilityState,
+      focused: document.hasFocus(),
+      userAgent: navigator.userAgent,
+      devicePixelRatio: window.devicePixelRatio,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      uptimeMs: Math.round(now),
+    },
+    link: agentLinkState(),
+    pageEvents: pageEvents.values().slice(-keep),
+    perf: videoPerfReport(),
+    streams: Object.fromEntries(
+      [...streams.entries()].map(([serial, stream]) => [
+        serial,
+        { samples: stream.diagSamples.values().slice(-keep), events: stream.diagEvents.values().slice(-keep) },
+      ]),
+    ),
+  });
+  let body = JSON.stringify(build(SAMPLE_RING + EVENT_RING));
+  // The agent takes at most 512 KB: with many phones, keep fewer entries rather than lose the snapshot.
+  if (body.length > 480 * 1024) body = JSON.stringify(build(12));
+  try {
+    const res = await withTimeout(
+      agentFetch(`${base}/api/diagnostics/video-snapshot`, { method: "POST", headers: { "Content-Type": "application/json" }, body }),
+      5000,
+    );
+    if (!res.ok) throw new Error(`the agent answered ${res.status}`);
+    const { path } = (await res.json()) as { path?: string };
+    console.info(`[adboard video] diagnostics saved (${trigger}): ${path ?? "?"}`);
+    return path ?? null;
+  } catch (error) {
+    console.warn("[adboard video] diagnostics could not be saved", error);
+    return null;
+  }
+}
+
+/** Every 500 ms: has every shown tile stopped painting at once? If so, save the history 5 s later. */
+function watchAllStalled() {
+  const now = performance.now();
+  const step = detectorStep(
+    detector,
+    [...streams.values()].map((stream) => ({ views: stream.views.size, lastPaintedAt: stream.perf.lastPaintedAt })),
+    now,
+  );
+  detector = step.state;
+  if (step.trigger) {
+    console.warn(`[adboard video] every tile stopped painting (${streams.size} streams); saving diagnostics in 5 s`);
+    notePage("all-stalled", { streams: streams.size });
+    for (const stream of streams.values()) stream.note("all-stalled");
+  }
+  if (step.save) void saveDiagnostics("all-stalled");
+}
+
 /** Listen to the agent watcher once: every stream reconnects at once when the agent is back. */
 function wireAgentLink() {
   if (linkWired) return;
   linkWired = true;
   startAgentLink();
+  for (const kind of ["visibilitychange", "freeze", "resume"]) document.addEventListener(kind, () => notePage(kind));
+  for (const kind of ["focus", "blur", "pageshow", "pagehide", "online", "offline"]) window.addEventListener(kind, () => notePage(kind));
+  notePage("start");
+  setInterval(watchAllStalled, 500);
+  (window as unknown as { __adboardVideoDiagnostics?: () => Promise<string | null> }).__adboardVideoDiagnostics = () => saveDiagnostics("manual");
   onAgentLink((event) => {
+    notePage(`link-${event}`);
     if (event === "down") return;
     let index = 0;
     for (const stream of streams.values()) stream.linkRecovered(event, index++);

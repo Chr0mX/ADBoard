@@ -99,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     state.spawn_adb_watcher();
     state.spawn_session_reaper();
     stream_watch::spawn(state.clone());
+    api::spawn_video_history(state.clone());
 
     if role == Role::Agent {
         let url = controller_ws_url().unwrap_or_else(|| "ws://127.0.0.1:3848/ws/agent".into());

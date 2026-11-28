@@ -606,6 +606,9 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
     let heard = last_heard_ms.clone();
     // Transport health and video activity are separate: what was sent, and when, for the closing log.
     let link = Arc::new(LinkStats::default());
+    link.waiting.store(scrcpy_live, std::sync::atomic::Ordering::Relaxed);
+    // Listed for the video diagnostics snapshot while it is open (the guard removes it).
+    let _diag = super::video_diag::register(&serial, "local", None, link.clone(), connected_at);
     let link_send = link.clone();
     // The page says whether this viewer wants pictures (it went idle: hidden, or out of sight). The socket,
     // its pings and its heartbeats are unaffected; only the pictures stop, and start again with a keyframe.
@@ -710,6 +713,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                             info!(serial = %serial_log, "viewer active again: sending the SPS/PPS and a keyframe");
                             // Frames went by unsent, so the next picture must be a keyframe, as on a new socket.
                             wait_for_key = scrcpy_live;
+                            link_send.waiting.store(scrcpy_live, std::sync::atomic::Ordering::Relaxed);
                             waiting_since = scrcpy_live.then(std::time::Instant::now);
                             stall_asked_at = None;
                             for au in hub_lag.replay_access_units(&serial_lag).await {
@@ -738,6 +742,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                 let was_waiting = wait_for_key;
                                 if !crate::video::keep_after_gap(&mut wait_for_key, &bytes) {
                                     held_back += 1;
+                                    link_send.held_back.store(held_back, std::sync::atomic::Ordering::Relaxed);
                                     continue;
                                 }
                                 if was_waiting && !wait_for_key {
@@ -746,12 +751,15 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                     }
                                     held_back = 0;
                                     stall_asked_at = None;
+                                    link_send.held_back.store(0, std::sync::atomic::Ordering::Relaxed);
+                                    link_send.waiting.store(false, std::sync::atomic::Ordering::Relaxed);
                                 }
                                 put!('session, Message::Binary(bytes));
                                 link_send.note_frame(connected_at);
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                                 debug!(lagged = n, "video subscriber lagged");
+                                link_send.lagged.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
                                 if !viewer_active {
                                     continue;
                                 }
@@ -770,6 +778,7 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                                     put!('session, Message::Binary(au));
                                 }
                                 wait_for_key = true;
+                                link_send.waiting.store(true, std::sync::atomic::Ordering::Relaxed);
                                 waiting_since.get_or_insert_with(std::time::Instant::now);
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -985,6 +994,11 @@ pub(super) async fn proxy_remote_stream(
     let (mut agent_out, mut agent_in) = agent_ws.split();
     let serial_log = serial.to_string();
     let channel_log = channel.to_string();
+    // Listed for the video diagnostics snapshot: what this relay forwarded, and when.
+    let relay = Arc::new(LinkStats::default());
+    let relay_opened = std::time::Instant::now();
+    let _diag = (channel == "video").then(|| super::video_diag::register(serial, "proxy", Some(agent_http_base.to_string()), relay.clone(), relay_opened));
+    let relay_count = relay.clone();
 
     let mut to_client = tokio::spawn(async move {
         // Why the agent's side ended: it said so (a close frame), the stream failed, or it just ended.
@@ -1000,9 +1014,11 @@ pub(super) async fn proxy_remote_stream(
             };
             let mapped = match msg {
                 tokio_tungstenite::tungstenite::Message::Text(t) => {
+                    relay_count.note_heartbeat(relay_opened);
                     Message::Text(t.as_str().to_string().into())
                 }
                 tokio_tungstenite::tungstenite::Message::Binary(b) => {
+                    relay_count.note_frame(relay_opened);
                     Message::Binary(b.to_vec().into())
                 }
                 tokio_tungstenite::tungstenite::Message::Ping(p) => {
