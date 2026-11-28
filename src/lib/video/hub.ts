@@ -11,7 +11,8 @@ import {
   spsDimensions,
   splitAnnexBNals,
 } from "@/lib/video/h264";
-import { MseH264Player } from "@/lib/video/mse-player";
+import { MseH264Player, type MsePlaybackHealth } from "@/lib/video/mse-player";
+import { TimeoutError } from "@/lib/api/timeout";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
 import { RESUME_QUEUE, admitFrame, newDecodeGate } from "@/lib/video/backpressure";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
@@ -109,6 +110,8 @@ export interface VideoView {
 }
 
 /** Keep a stream this long after its last view leaves (view switches, Strict Mode). */
+/** The longest the page ignores video while its first keyframe request is on its way. */
+const CONNECT_REFRESH_TIMEOUT_MS = 3000;
 const LINGER_MS = 1500;
 /** At most one keyframe request per stream in this window. */
 
@@ -315,6 +318,8 @@ class SharedStream {
   private stallAsks = 0;
   /** The decoder fell behind and a keyframe is wanted, to be asked for once its queue has drained. */
   private backlogAskPending = false;
+  /** When the connect-time keyframe request went out, while it has not settled (the page ignores video meanwhile). */
+  private refreshPendingSince: number | null = null;
   /** The decoder was rebuilt on this connection (for the close record). */
   private decoderRecovered = false;
   // The newest decoded frame, painted once per display refresh.
@@ -509,7 +514,11 @@ class SharedStream {
       if (step.ask) {
         this.perf.recoveryAsks += 1;
         if (stallAction(this.stallAsks) === "rebuild-decoder") this.recoverDecoder();
-        else this.askKeyframe("stall", true);
+        else {
+          // A stuck MSE element is often just paused or behind: start it before asking the phone for anything.
+          if (this.mse && this.mse.nudge() !== "nothing") this.perf.mseNudges += 1;
+          this.askKeyframe("stall", true);
+        }
         this.stallAsks += 1;
       }
     } else {
@@ -637,9 +646,35 @@ class SharedStream {
     this.recoveryTimer = null;
   }
 
+  /** Every gate between the socket and the screen, for the perf report: which one is holding the picture back. */
+  pipelineState(): VideoPipelineState {
+    const now = performance.now();
+    const socket = this.socket;
+    const socketState = !socket ? "none" : (["connecting", "open", "closing", "closed"][socket.readyState] ?? "unknown");
+    return {
+      socket: socketState,
+      acceptingVideo: this.acceptVideo,
+      connectRefreshPendingMs: this.refreshPendingSince === null ? null : Math.round(now - this.refreshPendingSince),
+      lastMessageAgoMs: this.lastMessageAt > 0 ? Math.round(now - this.lastMessageAt) : null,
+      heartbeatSeconds: this.heartbeatSeconds,
+      path: this.mse ? "mse" : webCodecsSupported() ? "webcodecs" : "none",
+      decoder: this.decoder ? this.decoder.state : "none",
+      decodeQueue: this.decoder ? this.decoder.decodeQueueSize : 0,
+      sawKeyframe: this.sawKeyframe,
+      waitingForKeyframeConfig: this.waitingForKeyframeConfig,
+      hasDescription: this.description !== null,
+      gateDropping: this.gate.dropping,
+      backlogAskPending: this.backlogAskPending,
+      stallAsks: this.stallAsks,
+      mode: this.mode,
+      idle: this.idle,
+      mse: this.mse ? this.mse.health() : null,
+    };
+  }
+
   /** What shows a picture is arriving: decoded frames, or samples queued into the MSE player. */
   private progress(): number {
-    return this.mse ? this.mse.appended : this.perf.decoded;
+    return this.mse ? this.mse.played : this.perf.decoded;
   }
 
   /**
@@ -1010,10 +1045,18 @@ class SharedStream {
       this.refreshAsked = true;
       this.lastKeyframeAsk = Date.now();
       this.perf.keyframeAsksBy.connect = (this.perf.keyframeAsksBy.connect ?? 0) + 1;
-      void postVideoRefresh([this.serial], "connect")
-        .catch(() => {})
+      this.refreshPendingSince = performance.now();
+      // The page ignores video until this settles, so it must settle: never more than CONNECT_REFRESH_TIMEOUT_MS.
+      // A request that hung (the browser's connections per host all busy at page load, an agent that did not
+      // answer) used to leave every phone frozen until the page was refreshed.
+      void postVideoRefresh([this.serial], "connect", CONNECT_REFRESH_TIMEOUT_MS)
+        .catch((error: unknown) => {
+          if (error instanceof TimeoutError && generation === this.generation) this.perf.connectRefreshTimeouts += 1;
+        })
         .finally(() => {
-          if (generation === this.generation) this.acceptVideo = true;
+          if (generation !== this.generation) return;
+          this.acceptVideo = true;
+          this.refreshPendingSince = null;
         });
     } else if (msg.backend && msg.backend !== "scrcpy") {
       this.acceptVideo = true;
@@ -1188,8 +1231,34 @@ export function restartVideo(serial: string) {
   streams.get(serial)?.restart();
 }
 
+/** Where each stream's picture can be held back, from the socket to the screen (see `pipelineState`). */
+export interface VideoPipelineState {
+  /** The video WebSocket: "none" between a close and the next connect. */
+  socket: string;
+  /** False until the first keyframe request settles (at most 3 s); every picture is ignored meanwhile. */
+  acceptingVideo: boolean;
+  connectRefreshPendingMs: number | null;
+  lastMessageAgoMs: number | null;
+  heartbeatSeconds: number | null;
+  path: "webcodecs" | "mse" | "none";
+  /** WebCodecs decoder state: "configured", "unconfigured", "closed", or "none". */
+  decoder: string;
+  decodeQueue: number;
+  sawKeyframe: boolean;
+  waitingForKeyframeConfig: boolean;
+  hasDescription: boolean;
+  /** Dropping frames until a keyframe because the decoder fell behind. */
+  gateDropping: boolean;
+  backlogAskPending: boolean;
+  stallAsks: number;
+  mode: StreamMode;
+  idle: boolean;
+  /** The hidden video element of the MSE path (LAN http:// pages), or null on WebCodecs. */
+  mse: MsePlaybackHealth | null;
+}
+
 export interface VideoPerfReport {
-  streams: Record<string, StreamPerfSnapshot & { views: number; state: VideoDecodeState }>;
+  streams: Record<string, StreamPerfSnapshot & { views: number; state: VideoDecodeState; pipeline: VideoPipelineState }>;
   /** Streams and stats listeners still held (leak check: 0 after every view left). */
   liveStreams: number;
   statsListeners: number;
@@ -1201,7 +1270,12 @@ export interface VideoPerfReport {
 export function videoPerfReport(): VideoPerfReport {
   const out: VideoPerfReport["streams"] = {};
   for (const [serial, stream] of streams) {
-    out[serial] = { ...snapshotPerf(stream.perf), views: stream.views.size, state: stream.state.decodeState };
+    out[serial] = {
+      ...snapshotPerf(stream.perf),
+      views: stream.views.size,
+      state: stream.state.decodeState,
+      pipeline: stream.pipelineState(),
+    };
   }
   let listeners = 0;
   for (const set of statsListeners.values()) listeners += set.size;

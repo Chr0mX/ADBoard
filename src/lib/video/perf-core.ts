@@ -24,6 +24,10 @@ export interface StreamPerf {
   maxQueue: number;
   /** Times the decoder fell behind (queue at its limit) and frames were dropped until a keyframe. */
   backlogEpisodes: number;
+  /** Connect-time keyframe requests that did not answer within 3 s (the page then accepts video anyway). */
+  connectRefreshTimeouts: number;
+  /** Times a stuck MSE video element was started again or moved to the newest picture. */
+  mseNudges: number;
   keyframeAsks: number;
   /** The same asks by who made them (see `KeyframeReason`): shows what is asking when a phone gets too many. */
   keyframeAsksBy: Record<string, number>;
@@ -76,6 +80,8 @@ export function newStreamPerf(): StreamPerf {
     dropped: 0,
     maxQueue: 0,
     backlogEpisodes: 0,
+    connectRefreshTimeouts: 0,
+    mseNudges: 0,
     keyframeAsks: 0,
     keyframeAsksBy: {},
     reconnects: 0,

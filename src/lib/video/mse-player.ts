@@ -16,6 +16,21 @@ const MAX_HELD = 120;
  * Plays Annex-B H264 with MediaSource. Used when the page is opened by LAN IP:
  * that origin is not a secure context, so WebCodecs is missing, but MSE is not.
  */
+export interface MsePlaybackHealth {
+  /** HTMLMediaElement readyState: 0 nothing, 1 metadata, 2 current frame, 3 future data, 4 enough data. */
+  readyState: number;
+  paused: boolean;
+  currentTime: number;
+  bufferedEnd: number;
+  /** How far playback is behind the newest buffered picture. */
+  behindMs: number;
+  /** MediaError code, or null. */
+  error: number | null;
+  sourceOpen: boolean;
+  appended: number;
+  played: number;
+}
+
 export class MseH264Player {
   private video: HTMLVideoElement;
   private media!: MediaSource;
@@ -80,6 +95,58 @@ export class MseH264Player {
 
   get appended(): number {
     return this.appendedCount;
+  }
+
+  /**
+   * Advances only while the video element really plays new pictures. `appended` counts what was queued, which
+   * keeps growing while a stalled element shows the same picture; the stall watch needs this one.
+   */
+  get played(): number {
+    // Playback position in ms. Not `getVideoPlaybackQuality().totalVideoFrames`: Chromium keeps counting decoded
+    // frames on a paused element, so a stalled picture would still look like progress.
+    return Math.round(this.video.currentTime * 1000);
+  }
+
+  /** What the hidden video element is doing, for the perf report. */
+  health(): MsePlaybackHealth {
+    const video = this.video;
+    const bufferedEnd = video.buffered.length > 0 ? video.buffered.end(video.buffered.length - 1) : 0;
+    return {
+      readyState: video.readyState,
+      paused: video.paused,
+      currentTime: Math.round(video.currentTime * 1000) / 1000,
+      bufferedEnd: Math.round(bufferedEnd * 1000) / 1000,
+      behindMs: Math.max(0, Math.round((bufferedEnd - video.currentTime) * 1000)),
+      error: video.error ? video.error.code : null,
+      sourceOpen: this.sourceOpen,
+      appended: this.appendedCount,
+      played: this.played,
+    };
+  }
+
+  /**
+   * Get a stuck element moving again without throwing the player away: play it if it paused (an autoplay refusal,
+   * a tab switch), and jump to the newest buffered picture if it fell more than a second behind.
+   */
+  nudge(): "played" | "jumped" | "nothing" {
+    const video = this.video;
+    if (this.closed) return "nothing";
+    if (video.paused) {
+      void video.play().catch(() => {});
+      return "played";
+    }
+    if (video.buffered.length > 0) {
+      const end = video.buffered.end(video.buffered.length - 1);
+      if (end - video.currentTime > 1) {
+        try {
+          video.currentTime = Math.max(video.currentTime, end - 0.1);
+          return "jumped";
+        } catch {
+          // seeking while the buffer updates; the next look tries again
+        }
+      }
+    }
+    return "nothing";
   }
 
   push(au: Uint8Array) {

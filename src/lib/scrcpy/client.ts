@@ -1,3 +1,4 @@
+import { withTimeout } from "@/lib/api/timeout";
 import { agentBaseUrl, agentFetch, agentWsUrl } from "@/lib/api/auth";
 import { httpErrorMessage } from "@/lib/api/http-error";
 
@@ -65,15 +66,24 @@ export async function postClipboard(
   return (await res.json()) as ClipboardResult;
 }
 
-export async function postVideoRefresh(targetIds: string[], reason?: string): Promise<ClipboardResult> {
-  const res = await agentFetch(`${agentBase()}/api/input/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // `reason` is only for the agent's log when requests come too fast.
-    body: JSON.stringify({ mode: "selected", targetIds, ...(reason ? { reason } : {}) }),
-  });
-  if (!res.ok) throw new Error(await readError(res, "video refresh failed"));
-  return (await res.json()) as ClipboardResult;
+/**
+ * Ask the agent for a fresh keyframe. Never waits longer than `timeoutMs` (default 5 s): the page ignores video
+ * until its first request of this kind settles, so a request that hangs would freeze the phone for good.
+ */
+export async function postVideoRefresh(targetIds: string[], reason?: string, timeoutMs = 5000): Promise<ClipboardResult> {
+  const abort = new AbortController();
+  const request = (async () => {
+    const res = await agentFetch(`${agentBase()}/api/input/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // `reason` is only for the agent's log when requests come too fast.
+      body: JSON.stringify({ mode: "selected", targetIds, ...(reason ? { reason } : {}) }),
+      signal: abort.signal,
+    });
+    if (!res.ok) throw new Error(await readError(res, "video refresh failed"));
+    return (await res.json()) as ClipboardResult;
+  })();
+  return withTimeout(request, timeoutMs, () => abort.abort());
 }
 
 export async function pullClipboard(targetIds: string[]): Promise<ClipboardResult> {
