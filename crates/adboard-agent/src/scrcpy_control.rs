@@ -50,9 +50,20 @@ const MAX_CLIPBOARD: usize = 256 * 1024;
 /// into a finger by scrcpy; a finger id is a touch, which is what a swipe is.
 const POINTER_ID_FINGER: u64 = u64::MAX - 1;
 
+/// A control message and when it was handed over, to measure how long it waited for the socket.
+type Queued = (std::time::Instant, Vec<u8>);
+
+/// A keyframe request that waits longer than this behind other control messages is logged: a picture that
+/// needs it stays frozen that long.
+const SLOW_CONTROL: Duration = Duration::from_millis(1000);
+
 #[derive(Clone)]
 pub struct ControlSender {
-    tx: mpsc::Sender<Vec<u8>>,
+    tx: mpsc::Sender<Queued>,
+    /// Keyframe requests go ahead of touches: a frozen picture must not wait behind a queue of finger moves.
+    priority: mpsc::Sender<Queued>,
+    /// Finger and mouse moves dropped because the socket was backed up (the next move supersedes them).
+    dropped_moves: Arc<AtomicU64>,
     /// `(generation, text)`. Generation bumps on every phone clipboard message.
     clipboard_rx: watch::Receiver<(u64, String)>,
     sequence: Arc<AtomicU64>,
@@ -60,16 +71,45 @@ pub struct ControlSender {
 
 impl ControlSender {
     pub fn spawn(stream: TcpStream) -> Self {
+        Self::spawn_named(stream, "?")
+    }
+
+    /// `serial` only names the phone in the log lines about a backed-up control socket.
+    pub fn spawn_named(stream: TcpStream, serial: &str) -> Self {
         let _ = stream.set_nodelay(true);
-        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(64);
+        let (tx, mut rx) = mpsc::channel::<Queued>(64);
+        let (priority, mut priority_rx) = mpsc::channel::<Queued>(8);
         let (read, mut write) = stream.into_split();
         let (clip_tx, clip_rx) = watch::channel((0u64, String::new()));
         let clip_reader = clip_tx.clone();
         tokio::spawn(async move {
             let _ = read_device_messages(read, clip_reader).await;
         });
+        let dropped_moves = Arc::new(AtomicU64::new(0));
+        let dropped = dropped_moves.clone();
+        let serial = serial.to_string();
         tokio::spawn(async move {
-            while let Some(msg) = rx.recv().await {
+            let mut last_warned: Option<std::time::Instant> = None;
+            loop {
+                // Keyframe requests first; otherwise in order.
+                let (queued_at, msg) = tokio::select! {
+                    biased;
+                    Some(item) = priority_rx.recv() => item,
+                    Some(item) = rx.recv() => item,
+                    else => break,
+                };
+                let waited = queued_at.elapsed();
+                if waited >= SLOW_CONTROL && last_warned.is_none_or(|t| t.elapsed() >= Duration::from_secs(10)) {
+                    last_warned = Some(std::time::Instant::now());
+                    tracing::warn!(
+                        %serial,
+                        waited_ms = waited.as_millis() as u64,
+                        queued = rx.len(),
+                        dropped_moves = dropped.load(Ordering::Relaxed),
+                        kind = msg.first().copied().unwrap_or(0),
+                        "scrcpy control socket is backed up: the phone is not reading touches and requests as fast as they come"
+                    );
+                }
                 if write.write_all(&msg).await.is_err() {
                     break;
                 }
@@ -77,9 +117,32 @@ impl ControlSender {
         });
         Self {
             tx,
+            priority,
+            dropped_moves,
             clipboard_rx: clip_rx,
             sequence: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Moves are superseded by the next one, so a move that finds the queue full is dropped instead of
+    /// waiting: a request that waited here held up the page's next touch and every message behind it.
+    async fn send_pointer(&self, phase: PointerPhase, msg: Vec<u8>) -> Result<(), String> {
+        if matches!(phase, PointerPhase::Move | PointerPhase::Hover) {
+            return match self.tx.try_send((std::time::Instant::now(), msg)) {
+                Ok(()) => Ok(()),
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    self.dropped_moves.fetch_add(1, Ordering::Relaxed);
+                    Ok(())
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => Err("scrcpy control socket closed".to_string()),
+            };
+        }
+        self.send_raw(msg).await
+    }
+
+    /// Moves dropped so far because the phone was behind (diagnostics, tests).
+    pub fn dropped_moves(&self) -> u64 {
+        self.dropped_moves.load(Ordering::Relaxed)
     }
 
     pub fn clipboard_receiver(&self) -> watch::Receiver<(u64, String)> {
@@ -88,7 +151,7 @@ impl ControlSender {
 
     async fn send_raw(&self, msg: Vec<u8>) -> Result<(), String> {
         self.tx
-            .send(msg)
+            .send((std::time::Instant::now(), msg))
             .await
             .map_err(|_| "scrcpy control socket closed".to_string())
     }
@@ -103,7 +166,7 @@ impl ControlSender {
         height: u32,
     ) -> Result<(), String> {
         let msg = encode_pointer(phase, tool, x, y, width, height)?.to_vec();
-        self.send_raw(msg).await
+        self.send_pointer(phase, msg).await
     }
 
     /// A finger on slot `slot` (0–9). Scrcpy tracks each id separately and
@@ -119,12 +182,15 @@ impl ControlSender {
         height: u32,
     ) -> Result<(), String> {
         let msg = encode_finger_slot(phase, slot, x, y, width, height)?.to_vec();
-        self.send_raw(msg).await
+        self.send_pointer(phase, msg).await
     }
 
     /// Scrcpy `RESET_VIDEO`. The server emits a new keyframe without exiting.
     pub async fn reset_video(&self) -> Result<(), String> {
-        self.send_raw(vec![RESET_VIDEO]).await
+        self.priority
+            .send((std::time::Instant::now(), vec![RESET_VIDEO]))
+            .await
+            .map_err(|_| "scrcpy control socket closed".to_string())
     }
 
     /// `on == false` is scrcpy's "turn device screen off" (mode 0). Mode 2 turns it back on.
@@ -684,5 +750,74 @@ mod tests {
         let mut next = [0u8; 1];
         stream.read_exact(&mut next).await.unwrap();
         assert_eq!(next, [0x6f]);
+    }
+
+    /// Parse what the phone received into message types, in order (text messages carry a length).
+    fn message_types(bytes: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        while at < bytes.len() {
+            let kind = bytes[at];
+            out.push(kind);
+            at += match kind {
+                INJECT_TEXT => 5 + u32::from_be_bytes(bytes[at + 1..at + 5].try_into().unwrap()) as usize,
+                RESET_VIDEO => 1,
+                INJECT_TOUCH_EVENT => 32,
+                other => panic!("unexpected message type {other}"),
+            };
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn a_phone_that_stops_reading_never_blocks_moves_and_a_keyframe_request_jumps_the_queue() {
+        use tokio::io::AsyncReadExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = TcpStream::connect(addr).await.unwrap();
+        let (mut phone, _) = listener.accept().await.unwrap();
+        let sender = ControlSender::spawn_named(client, "TEST");
+
+        // The phone stops reading. Fill the socket and then the queue with text messages.
+        let filler = {
+            let sender = sender.clone();
+            tokio::spawn(async move {
+                let text = "x".repeat(250);
+                for _ in 0..40_000 {
+                    if sender.inject_text(&text).await.is_err() {
+                        break;
+                    }
+                }
+            })
+        };
+        // Wait until the queue is full: a move then finds no room.
+        let started = std::time::Instant::now();
+        while sender.dropped_moves() == 0 && started.elapsed() < Duration::from_secs(20) {
+            sender.touch(PointerPhase::Move, PointerTool::Finger, 1, 1, 100, 100).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(sender.dropped_moves() > 0, "a move into a full queue is dropped, not waited on");
+        // Moves keep returning at once while the phone is behind.
+        let quick = std::time::Instant::now();
+        for _ in 0..200 {
+            sender.touch(PointerPhase::Move, PointerTool::Finger, 2, 2, 100, 100).await.unwrap();
+        }
+        assert!(quick.elapsed() < Duration::from_millis(500), "moves never block: {:?}", quick.elapsed());
+
+        // A keyframe request now goes ahead of everything still queued.
+        sender.reset_video().await.unwrap();
+        filler.abort();
+        let mut received = Vec::new();
+        let mut buf = vec![0u8; 1 << 16];
+        loop {
+            match tokio::time::timeout(Duration::from_millis(500), phone.read(&mut buf)).await {
+                Ok(Ok(n)) if n > 0 => received.extend_from_slice(&buf[..n]),
+                _ => break,
+            }
+        }
+        let kinds = message_types(&received);
+        let reset_at = kinds.iter().position(|k| *k == RESET_VIDEO).expect("the keyframe request arrived");
+        let after = kinds[reset_at + 1..].iter().filter(|k| **k == INJECT_TEXT).count();
+        assert!(after >= 32, "it overtook the queued messages instead of waiting behind them (only {after} came after it)");
     }
 }

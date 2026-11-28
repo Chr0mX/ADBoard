@@ -1223,3 +1223,26 @@ async fn a_remote_agent_that_drops_mid_stream_is_reported_as_the_agent_and_its_v
     let local_after: Vec<String> = state.list_devices().await.iter().filter(|d| d.id != "LXC-PHONE").map(|d| d.id.clone()).collect();
     assert_eq!(local_after, local_before, "a remote agent's trouble leaves local phones alone");
 }
+
+#[tokio::test]
+async fn a_page_video_report_is_accepted_with_the_token_and_kept_to_one_bounded_line() {
+    let state = auth_state();
+    let token = state.api_token().to_string();
+    let app = router_with_auth(state, WebAuth::new(None, false));
+    let body = serde_json::json!({ "serial": "R5CR50A96VZ\nfake line", "event": "stall", "pipeline": { "acceptingVideo": false }, "pad": "x".repeat(5000) });
+    let request = |token: Option<&str>| {
+        let mut builder = Request::builder().method("POST").uri("/api/diagnostics/video").header("content-type", "application/json");
+        if let Some(token) = token {
+            builder = builder.header(TOKEN_HEADER, token);
+        }
+        builder.body(Body::from(body.to_string())).unwrap()
+    };
+    assert_eq!(app.clone().oneshot(request(Some(&token))).await.unwrap().status(), StatusCode::NO_CONTENT);
+    assert_eq!(app.oneshot(request(None)).await.unwrap().status(), StatusCode::UNAUTHORIZED, "like every API route");
+
+    let (serial, event, detail) = video_report_line(&body);
+    assert_eq!(serial, "R5CR50A96VZfake line", "no line breaks from the page reach the log");
+    assert_eq!(event, "stall");
+    assert!(detail.len() <= 4000 + "…".len());
+    assert!(detail.starts_with("pipeline={\"acceptingVideo\":false}"), "where the picture is held comes first: {}", &detail[..80]);
+}

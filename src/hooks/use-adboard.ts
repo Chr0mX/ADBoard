@@ -5,6 +5,7 @@ import { reuseUnchanged } from "@/lib/devices/fleet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { devicesClient, isAgentConfigured } from "@/lib/api/client";
 import { createBackoff } from "@/lib/api/reconnect-core";
+import { createSerialQueue } from "@/lib/ui/pointer-flow";
 import {
   applyFailure,
   applySnapshot,
@@ -314,7 +315,8 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
     }
   }, [devices, controlMode, selectedIds, activeId]);
 
-  const pointerQueue = useRef<Promise<unknown>>(Promise.resolve());
+  // One request at a time, in order; queued moves give way to the newest (see createSerialQueue).
+  const pointerQueue = useRef(createSerialQueue());
 
   const handlePointer = useCallback(
     (
@@ -352,12 +354,8 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
           return null;
         }
       };
-      const next = pointerQueue.current.then(run, run);
-      pointerQueue.current = next.then(
-        () => undefined,
-        () => undefined,
-      );
-      return next;
+      const coalesce = phase === "move" || phase === "hover";
+      return pointerQueue.current.run(run, { coalesce }).then((result) => result ?? null);
     },
     [mouseOn, broadcastTargets, controlMode],
   );

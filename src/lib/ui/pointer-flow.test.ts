@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import test, { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createSerialQueue, shouldSendMove } from "./pointer-flow.ts";
 
@@ -53,4 +53,35 @@ describe("shouldSendMove", () => {
     assert.equal(shouldSendMove(last, 101, 100, 1016), true); // 16 ms later
     assert.equal(shouldSendMove(last, 100, 100, 1015), false);
   });
+});
+
+test("a fast drag sends only the newest queued move, and never loses the last move before a release", async () => {
+  const queue = createSerialQueue();
+  const sent: string[] = [];
+  let release: () => void = () => {};
+  const slow = new Promise<void>((resolve) => (release = resolve));
+  const send = (what: string, wait?: Promise<void>) => async () => {
+    if (wait) await wait;
+    sent.push(what);
+    return what;
+  };
+  // The first request is slow; meanwhile the drag goes on.
+  const down = queue.run(send("down", slow));
+  const m1 = queue.run(send("move1"), { coalesce: true });
+  const m2 = queue.run(send("move2"), { coalesce: true });
+  const m3 = queue.run(send("move3"), { coalesce: true });
+  const up = queue.run(send("up"));
+  const hover = queue.run(send("hover"), { coalesce: true });
+  release();
+  assert.deepEqual(await Promise.all([down, m1, m2, m3, up, hover]), ["down", undefined, undefined, "move3", "up", "hover"]);
+  assert.deepEqual(sent, ["down", "move3", "up", "hover"], "old moves are skipped, order is kept");
+});
+
+test("moves that are not overtaken are all sent", async () => {
+  const queue = createSerialQueue();
+  const sent: number[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    await queue.run(async () => sent.push(i), { coalesce: true });
+  }
+  assert.deepEqual(sent, [0, 1, 2, 3, 4]);
 });

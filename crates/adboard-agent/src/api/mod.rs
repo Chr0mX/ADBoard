@@ -197,6 +197,7 @@ pub fn router_with_auth(state: AppState, auth: WebAuth) -> Router {
         .route("/api/macro/devices/{device_id}/{action}", post(macro_device_action))
         .route("/api/macro/queue/{action}", post(macro_queue_action))
         .route("/api/macro/cron", get(macro_cron_preview))
+        .route("/api/diagnostics/video", post(video_problem_report))
         .route("/api/events", get(events_list))
         .route("/api/events/summary", get(events_summary))
         .route("/api/events/macros", get(events_macros))

@@ -12,11 +12,11 @@ import {
   splitAnnexBNals,
 } from "@/lib/video/h264";
 import { MseH264Player, type MsePlaybackHealth } from "@/lib/video/mse-player";
-import { TimeoutError } from "@/lib/api/timeout";
+import { TimeoutError, withTimeout } from "@/lib/api/timeout";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
 import { RESUME_QUEUE, admitFrame, newDecodeGate } from "@/lib/video/backpressure";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
-import { agentBaseUrl, agentWsUrl, agentWsProtocols, forgetAgentToken } from "@/lib/api/auth";
+import { agentBaseUrl, agentFetch, agentWsUrl, agentWsProtocols, forgetAgentToken } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
 import { createFrameSlot } from "@/lib/video/frame-slot-core";
 import { fittedSize, nextCanvasSize } from "@/lib/video/canvas-size-core";
@@ -112,6 +112,8 @@ export interface VideoView {
 /** Keep a stream this long after its last view leaves (view switches, Strict Mode). */
 /** The longest the page ignores video while its first keyframe request is on its way. */
 const CONNECT_REFRESH_TIMEOUT_MS = 3000;
+/** A page reports each kind of video problem to the agent at most this often per phone. */
+const VIDEO_REPORT_EVERY_MS = 15_000;
 const LINGER_MS = 1500;
 /** At most one keyframe request per stream in this window. */
 
@@ -320,6 +322,8 @@ class SharedStream {
   private backlogAskPending = false;
   /** When the connect-time keyframe request went out, while it has not settled (the page ignores video meanwhile). */
   private refreshPendingSince: number | null = null;
+  /** When each kind of problem was last reported to the agent (at most one report per kind per 15 s). */
+  private reportedAt = new Map<string, number>();
   /** The decoder was rebuilt on this connection (for the close record). */
   private decoderRecovered = false;
   // The newest decoded frame, painted once per display refresh.
@@ -500,6 +504,7 @@ class SharedStream {
     // are not silence (a still screen and an idle viewer send none), and an idle viewer is still watched.
     if (this.socket && isStale(this.lastMessageAt, now, this.heartbeatSeconds)) {
       this.perf.staleReconnects += 1;
+      this.reportProblem("no-heartbeat");
       this.recordClose(0, `no message for ${Math.round((now - this.lastMessageAt) / 1000)} s`, false, "stale");
       this.disconnectIsFailure = true;
       this.reconnect();
@@ -513,10 +518,15 @@ class SharedStream {
       this.stall = step.state;
       if (step.ask) {
         this.perf.recoveryAsks += 1;
+        this.reportProblem("pictures-arrive-none-shown", { stallAsks: this.stallAsks });
         if (stallAction(this.stallAsks) === "rebuild-decoder") this.recoverDecoder();
         else {
           // A stuck MSE element is often just paused or behind: start it before asking the phone for anything.
-          if (this.mse && this.mse.nudge() !== "nothing") this.perf.mseNudges += 1;
+          if (this.mse) {
+            const health = this.mse.health();
+            if (this.mse.nudge() !== "nothing") this.perf.mseNudges += 1;
+            this.reportProblem("mse-stalled", { mseBefore: health });
+          }
           this.askKeyframe("stall", true);
         }
         this.stallAsks += 1;
@@ -646,6 +656,53 @@ class SharedStream {
     this.recoveryTimer = null;
   }
 
+  /**
+   * Tell the agent what this page saw, so its log (the one people send) shows the browser side of a freeze:
+   * every stage's state and the counters. Fire and forget, never more than one report per kind per 15 s.
+   */
+  private reportProblem(event: string, extra: Record<string, unknown> = {}) {
+    const base = agentBaseUrl();
+    if (base === null) return;
+    const now = Date.now();
+    if (now - (this.reportedAt.get(event) ?? 0) < VIDEO_REPORT_EVERY_MS) return;
+    this.reportedAt.set(event, now);
+    const p = this.perf;
+    const body = {
+      serial: this.serial,
+      event,
+      page: typeof location !== "undefined" ? location.pathname : "",
+      secureContext: typeof isSecureContext !== "undefined" ? isSecureContext : null,
+      browser: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 140) : "",
+      views: this.views.size,
+      decodeState: this.state.decodeState,
+      pipeline: this.pipelineState(),
+      counters: {
+        received: p.received,
+        decoded: p.decoded,
+        painted: p.painted,
+        dropped: p.dropped,
+        backlogEpisodes: p.backlogEpisodes,
+        keyframeAsks: p.keyframeAsks,
+        keyframeAsksBy: p.keyframeAsksBy,
+        decoderErrors: p.decoderErrors,
+        decoderRecoveries: p.decoderRecoveries,
+        reconnects: p.reconnects,
+        staleReconnects: p.staleReconnects,
+        connectRefreshTimeouts: p.connectRefreshTimeouts,
+        mseNudges: p.mseNudges,
+        sockets: p.sockets,
+      },
+      lastClose: p.lastClose,
+      ...extra,
+    };
+    const request = agentFetch(`${base}/api/diagnostics/video`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    void withTimeout(request, 3000).catch(() => {});
+  }
+
   /** Every gate between the socket and the screen, for the perf report: which one is holding the picture back. */
   pipelineState(): VideoPipelineState {
     const now = performance.now();
@@ -713,6 +770,7 @@ class SharedStream {
   /** The decoder did not turn a keyframe into a picture: start it over. The socket is not touched. */
   private recoverDecoder() {
     this.perf.decoderRecoveries += 1;
+    this.reportProblem("decoder-rebuilt");
     this.decoderRecovered = true;
     if (this.mse) {
       this.rebuildMse();
@@ -1012,6 +1070,7 @@ class SharedStream {
       // Not ours (we close through `disconnect`, which silences this handler): the agent, a proxy or
       // the network ended it. Say which, so a freeze can be traced to a layer.
       const kind = this.recordClose(event.code, event.reason ?? "", event.wasClean);
+      if (kind !== "normal") this.reportProblem("socket-closed");
       this.teardownDecoder();
       this.mse?.close();
       this.mse = null;
@@ -1046,17 +1105,20 @@ class SharedStream {
       this.lastKeyframeAsk = Date.now();
       this.perf.keyframeAsksBy.connect = (this.perf.keyframeAsksBy.connect ?? 0) + 1;
       this.refreshPendingSince = performance.now();
-      // The page ignores video until this settles, so it must settle: never more than CONNECT_REFRESH_TIMEOUT_MS.
-      // A request that hung (the browser's connections per host all busy at page load, an agent that did not
-      // answer) used to leave every phone frozen until the page was refreshed.
+      // Accept video at once. The agent already holds back delta frames after the SPS/PPS and keyframe it replays
+      // to a new socket, until a fresh keyframe (keep_after_gap in agent video.rs). Waiting here for this request
+      // threw those replayed frames away, and a request that hung (all six connections per host busy at page load)
+      // left every phone frozen until the page was refreshed.
+      this.acceptVideo = true;
       void postVideoRefresh([this.serial], "connect", CONNECT_REFRESH_TIMEOUT_MS)
         .catch((error: unknown) => {
-          if (error instanceof TimeoutError && generation === this.generation) this.perf.connectRefreshTimeouts += 1;
+          if (error instanceof TimeoutError && generation === this.generation) {
+            this.perf.connectRefreshTimeouts += 1;
+            this.reportProblem("connect-refresh-timeout");
+          }
         })
         .finally(() => {
-          if (generation !== this.generation) return;
-          this.acceptVideo = true;
-          this.refreshPendingSince = null;
+          if (generation === this.generation) this.refreshPendingSince = null;
         });
     } else if (msg.backend && msg.backend !== "scrcpy") {
       this.acceptVideo = true;
@@ -1168,6 +1230,7 @@ class SharedStream {
     recordQueue(this.perf, decoder.decodeQueueSize);
     if (verdict === "drop-ask-keyframe") {
       this.perf.backlogEpisodes += 1;
+      this.reportProblem("decode-backlog", { decodeQueue: decoder.decodeQueueSize });
       this.backlogAskPending = true;
     }
     // Ask only once the backlog has drained: a keyframe asked for while the decoder is still behind arrives into a

@@ -599,7 +599,7 @@ pub async fn start_scrcpy_raw_capture(
             ));
         }
     };
-    let control = ControlSender::spawn(control_stream);
+    let control = ControlSender::spawn_named(control_stream, &serial);
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     if let Ok(Some(status)) = server.try_wait() {

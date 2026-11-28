@@ -130,3 +130,66 @@ pub(super) async fn notifications_test(
             .into_response(),
     }
 }
+
+/// Longest page report kept in one log line.
+const VIDEO_REPORT_MAX: usize = 4000;
+
+/// The part of a page report that goes in the log: one line, at most `VIDEO_REPORT_MAX` bytes, with the fields
+/// that say where a picture is held first (JSON objects come out in alphabetical order, which put the pipeline
+/// after the browser name and cut it off).
+pub(super) fn video_report_line(body: &serde_json::Value) -> (String, String, String) {
+    let field = |name: &str| -> String {
+        body.get(name)
+            .and_then(|v| v.as_str())
+            .unwrap_or("?")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(64)
+            .collect()
+    };
+    let part = |name: &str| body.get(name).map(|v| v.to_string()).unwrap_or_else(|| "null".into());
+    let mut detail = format!(
+        "pipeline={} counters={} decodeState={} lastClose={} views={} page={} secureContext={} extra={} browser={}",
+        part("pipeline"),
+        part("counters"),
+        part("decodeState"),
+        part("lastClose"),
+        part("views"),
+        part("page"),
+        part("secureContext"),
+        serde_json::Value::Object(
+            body.as_object()
+                .map(|o| {
+                    o.iter()
+                        .filter(|(k, _)| {
+                            !matches!(
+                                k.as_str(),
+                                "serial" | "event" | "pipeline" | "counters" | "decodeState" | "lastClose" | "views" | "page" | "secureContext" | "browser"
+                            )
+                        })
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect()
+                })
+                .unwrap_or_default()
+        ),
+        part("browser"),
+    );
+    if detail.len() > VIDEO_REPORT_MAX {
+        let mut cut = VIDEO_REPORT_MAX;
+        while !detail.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        detail.truncate(cut);
+        detail.push('…');
+    }
+    (field("serial"), field("event"), detail)
+}
+
+/// POST /api/diagnostics/video — the page saw a video problem (pictures arriving but none shown, a request that
+/// did not answer, a stalled player) and says what each stage looked like. Logged, so the agent log alone shows
+/// what the browser saw; nothing else is done with it.
+pub(super) async fn video_problem_report(Json(body): Json<serde_json::Value>) -> StatusCode {
+    let (serial, event, detail) = video_report_line(&body);
+    warn!(%serial, %event, "page reports a video problem: {detail}");
+    StatusCode::NO_CONTENT
+}

@@ -719,6 +719,8 @@ const TouchScreenTile = memo(function TouchScreenTile({
           size?.height ?? height,
           tool,
         ),
+        // A fast drag sends only the newest move; a down, up or cancel is always sent, in order.
+        { coalesce: phase === "move" || phase === "hover" },
       )
       .catch(() => {
         // Tile stays interactive; next pointer may succeed.
