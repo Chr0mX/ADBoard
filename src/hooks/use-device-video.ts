@@ -58,7 +58,12 @@ export function useDeviceVideo(
         typeof IntersectionObserver === "undefined"
           ? null
           : new IntersectionObserver((entries) => {
-              const now = entries[entries.length - 1]?.isIntersecting ?? true;
+              // Only the canvas watched now counts: when the canvas is replaced, an entry for the old one can
+              // still be queued, and taking it ("not intersecting") left a visible phone unpainted for good.
+              const mine = entries.filter((entry) => entry.target === observed);
+              const latest = mine[mine.length - 1];
+              if (!latest) return;
+              const now = latest.isIntersecting;
               if (now === visible) return;
               visible = now;
               notifyVideoVisibility(serial);
@@ -81,6 +86,13 @@ export function useDeviceVideo(
         visible: () => {
           watch(); // the canvas element can be replaced while subscribed
           return visible;
+        },
+        resetVisibility: () => {
+          // The hub measured this canvas on screen while we believed it was not: watch it afresh.
+          if (observer && observed) observer.unobserve(observed);
+          observed = null;
+          watch();
+          visible = true;
         },
       });
       return () => {

@@ -58,7 +58,7 @@ Testing only: `ADBOARD_MOCK_COUNT` (number of mock phones), `ADBOARD_MOCK_VITALS
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/health` | Role, host id, adb/scrcpy/inject, registered agent count; on an agent also `controllerLink` (`state` connecting / connected / retrying, `failures`, `connections`, `lastError`, `lastConnectedMs`, `nextAttemptMs`) |
+| GET | `/health` | Role, host id, adb/scrcpy/inject, registered agent count, `instance` (new at every start), `uptimeSecs`, `ready` (the first look at the phones is done); on an agent also `controllerLink` (`state` connecting / connected / retrying, `failures`, `connections`, `lastError`, `lastConnectedMs`, `nextAttemptMs`) |
 | GET | `/api/devices` | Merged fleet (local + agents) |
 | GET | `/api/hosts` | Local + registered agents |
 | GET | `/api/sessions` | Local + remote session snapshot |
@@ -103,7 +103,9 @@ The UI decodes the frames with **WebCodecs** `VideoDecoder` and draws them on a 
 
 Each phone's scrcpy control socket carries touches, keys, text, clipboard and keyframe requests. Keyframe requests go ahead of everything queued. A finger or mouse move that finds the queue full is dropped (the next one supersedes it); a down, up or cancel waits. A message that waited a second or more is logged once per 10 s as `scrcpy control socket is backed up`. The page also sends one request at a time and, while one is on its way, keeps only the newest move.
 
-`POST /api/diagnostics/video` takes a page's report of a video problem (`serial`, `event`, `pipeline`, `counters`, `lastClose`, ...). The agent logs it as one `WARN` line, `page reports a video problem`, at most 4000 bytes with the pipeline first, and does nothing else with it. Events: `pictures-arrive-none-shown`, `connect-refresh-timeout`, `decode-backlog`, `decoder-rebuilt`, `mse-stalled`, `no-heartbeat`, `socket-closed`; each at most once per phone every 15 s.
+`POST /api/diagnostics/video` takes a page's report of a video problem (`serial`, `event`, `pipeline`, `counters`, `lastClose`, ...). The agent logs it as one `WARN` line, `page reports a video problem`, at most 4000 bytes with the pipeline first, and does nothing else with it. Events: `pictures-arrive-none-shown`, `connect-refresh-timeout`, `decode-backlog`, `decoder-rebuilt`, `decoder-fallback`, `mse-stalled`, `no-heartbeat`, `socket-closed`, and `health-not-rendering`, `health-page-dropping`, `health-agent-holding` (the page's picture check found that stage stopped and repaired it); each at most once per phone every 15 s.
+
+The video heartbeat (a status frame every 5 s) also carries `instance` (the agent process), `sourceFrames` (pictures the phone has produced), `sourceIdleMs` (since the last one), `sentFrames` (pictures sent on this socket), `heldBack` and `waitingForKeyframe`. The page uses them to tell a still screen from an agent that holds a socket back.
 
 ### An idle viewer (not used by the current page)
 

@@ -274,6 +274,7 @@ impl AppState {
                     state.publish(ServerEvent::SessionUpdated { session });
                 }
                 state.publish_fleet().await;
+                super::mark_fleet_ready();
                 // Benchmarks: change one mock phone's vitals every 2 s, the way
                 // real phones' battery and CPU readings keep the fleet updating.
                 if crate::env::truthy("MOCK_VITALS") {
@@ -331,7 +332,10 @@ impl AppState {
                 } else {
                     Duration::from_secs(ADB_POLL_SECS)
                 };
-                match adb::list_adb_devices(&adb).await {
+                let listed = adb::list_adb_devices(&adb).await;
+                // Answered or failed, adb has been asked once: the phone list the agent serves is as good as it gets.
+                super::mark_fleet_ready();
+                match listed {
                     Ok(lines) => {
                         if let Some(message) = health.success() {
                             info!("adb devices answering again");

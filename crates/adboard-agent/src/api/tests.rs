@@ -1246,3 +1246,51 @@ async fn a_page_video_report_is_accepted_with_the_token_and_kept_to_one_bounded_
     assert!(detail.len() <= 4000 + "…".len());
     assert!(detail.starts_with("pipeline={\"acceptingVideo\":false}"), "where the picture is held comes first: {}", &detail[..80]);
 }
+
+// ---- restart detection and where pictures stop ----
+
+#[tokio::test]
+async fn health_names_this_process_so_a_page_can_tell_a_restart() {
+    let state = auth_state();
+    let (addr, _token) = serve(state).await;
+    let read = || async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut raw = String::new();
+        stream.read_to_string(&mut raw).await.unwrap();
+        let body = &raw[raw.find('{').expect("a JSON body")..raw.rfind('}').unwrap() + 1];
+        serde_json::from_str::<serde_json::Value>(body).unwrap()
+    };
+    let first = read().await;
+    let second = read().await;
+    let instance = first["instance"].as_str().unwrap_or_default().to_string();
+    assert_eq!(instance.len(), 12, "{first}");
+    assert_eq!(second["instance"], first["instance"], "the same process answers with the same id");
+    assert!(first["uptimeSecs"].is_u64(), "{first}");
+    assert!(first["ready"].is_boolean(), "{first}");
+}
+
+#[tokio::test]
+async fn a_video_heartbeat_says_what_the_phone_produced_and_what_this_socket_was_sent() {
+    let state = auth_state();
+    let serial = state.list_devices().await[0].serial.clone();
+    let (addr, token) = serve(state).await;
+    let mut socket = open_video(addr, &serial, &token).await;
+    let mut window = until_pictures(&mut socket, 3).await;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(8);
+    while !window.texts.iter().any(|t| t.contains("\"sentFrames\"")) && tokio::time::Instant::now() < deadline {
+        let more = collect(&mut socket, 500).await;
+        window.pictures += more.pictures;
+        window.texts.extend(more.texts);
+    }
+    let beat = window.texts.iter().rev().find(|t| t.contains("\"sentFrames\"")).expect("a heartbeat with link counters");
+    let beat: serde_json::Value = serde_json::from_str(beat).unwrap();
+    assert!(beat["sourceFrames"].as_u64().unwrap() >= 3, "{beat}");
+    assert!(beat["sentFrames"].as_u64().unwrap() >= 3, "{beat}");
+    assert!(beat["sourceIdleMs"].is_u64(), "{beat}");
+    assert_eq!(beat["instance"].as_str().map(str::len), Some(12), "{beat}");
+}

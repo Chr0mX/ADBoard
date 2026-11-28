@@ -967,6 +967,7 @@ impl SessionManager {
     }
 
     pub async fn inject_text(&self, serial: &str, text: &str) -> Result<(), String> {
+        self.video_hub.note_input(serial).await;
         let sender = self.control_sender(serial).await;
         let Some(sender) = sender else {
             return Err("scrcpy control is not connected".into());
@@ -982,6 +983,9 @@ impl SessionManager {
         repeat: u32,
         metastate: u32,
     ) -> Result<(), String> {
+        if action == 0 {
+            self.video_hub.note_input(serial).await;
+        }
         let sender = self.control_sender(serial).await;
         let Some(sender) = sender else {
             return Err("scrcpy control is not connected".into());
@@ -1149,6 +1153,7 @@ impl SessionManager {
     }
 
     pub async fn inject_tap(&self, serial: &str, tap: &MappedTap) -> InjectResult {
+        self.video_hub.note_input(serial).await;
         let _ = self.ensure_session(serial).await;
 
         let Some(adb) = self.adb_path.clone() else {
@@ -1241,6 +1246,9 @@ impl SessionManager {
         width: u32,
         height: u32,
     ) -> InjectResult {
+        if matches!(phase, PointerPhase::Down | PointerPhase::Up) {
+            self.video_hub.note_input(serial).await;
+        }
         let sender = {
             let guard = self.sessions.read().await;
             guard.get(serial).and_then(|live| live.control.clone())
@@ -1302,6 +1310,9 @@ impl SessionManager {
         width: u32,
         height: u32,
     ) -> InjectResult {
+        if matches!(phase, PointerPhase::Down | PointerPhase::Up) {
+            self.video_hub.note_input(serial).await;
+        }
         let sender = {
             let guard = self.sessions.read().await;
             guard.get(serial).and_then(|live| live.control.clone())
@@ -1414,6 +1425,7 @@ impl SessionManager {
 
     /// Inject nav via `adb shell input keyevent`.
     pub async fn inject_nav(&self, serial: &str, action: NavActionType) -> InjectResult {
+        self.video_hub.note_input(serial).await;
         let _ = self.ensure_session(serial).await;
         let keycode = nav_keycode(action);
 

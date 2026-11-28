@@ -5,6 +5,7 @@ import { reuseUnchanged } from "@/lib/devices/fleet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { devicesClient, isAgentConfigured } from "@/lib/api/client";
 import { createBackoff } from "@/lib/api/reconnect-core";
+import { agentLinkState, onAgentLink, reportFleetStatuses, startAgentLink } from "@/lib/api/agent-link";
 import { createSerialQueue } from "@/lib/ui/pointer-flow";
 import {
   applyFailure,
@@ -122,11 +123,19 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
     () => new Map(),
   );
 
+  const knownCountRef = useRef(0);
   const applyFleet = useCallback((next: Device[]) => {
+    // An agent that has just started and not yet heard from adb lists no phones. That is not news: keep the
+    // last known phones (shown as stale) until it has looked, instead of emptying the screen for a moment.
+    const link = agentLinkState();
+    if (link.phase === "up" && !link.ready && next.length === 0 && knownCountRef.current > 0) return;
+    knownCountRef.current = next.length;
     // Keep the previous objects for phones that did not change, so a fleet
     // update that changed nothing visible does not re-render the whole UI.
     const now = Date.now();
     lastOkRef.current = now;
+    // The video streams wait for their phone to be listed online before opening a socket.
+    reportFleetStatuses(next);
     setFleet((prev) => {
       const merged = reuseUnchanged(prev.devices, next);
       if (prev.connection === "live" && merged === prev.devices && prev.lastError === null) return prev;
@@ -180,23 +189,38 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
     }
   }, [applyFleet, demo]);
 
+  // The agent's sessions replace what the page holds: after a restart none of the old ones exist.
+  const reconcileSessions = useCallback(async (isCancelled: () => boolean) => {
+    if (!devicesClient.listSessions) return;
+    try {
+      const sess = await devicesClient.listSessions();
+      if (!isCancelled()) setSessions(new Map(sess.map((s) => [s.serial, s])));
+    } catch {
+      // sessions optional
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+    const isCancelled = () => cancelled;
 
     (async () => {
       setLoading(true);
       const ok = await fetchFleet();
       if (cancelled) return;
-      if (ok && devicesClient.listSessions) {
-        try {
-          const sess = await devicesClient.listSessions();
-          if (!cancelled) setSessions(new Map(sess.map((s) => [s.serial, s])));
-        } catch {
-          // sessions optional
-        }
-      }
+      if (ok) await reconcileSessions(isCancelled);
       if (!cancelled) setLoading(false);
     })();
+
+    // The agent came back, restarted, or finished listing its phones: read the list and the sessions again
+    // at once instead of waiting for the next retry.
+    startAgentLink();
+    const offLink = onAgentLink((event) => {
+      if (cancelled || event === "down") return;
+      void fetchFleet().then((ok) => {
+        if (ok && !cancelled) void reconcileSessions(isCancelled);
+      });
+    });
 
     const unsubscribe = devicesClient.subscribeDevices?.(
       (next) => {
@@ -217,9 +241,10 @@ export function useADBoard({ keyboardScope = true }: ADBoardOptions = {}) {
 
     return () => {
       cancelled = true;
+      offLink();
       unsubscribe?.();
     };
-  }, [applyFleet, applySession, fetchFleet]);
+  }, [applyFleet, applySession, fetchFleet, reconcileSessions]);
 
   // While the agent is unreachable keep asking, slowly and with jitter, so the page recovers on its own.
   useEffect(() => {

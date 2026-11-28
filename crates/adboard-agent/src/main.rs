@@ -25,6 +25,7 @@ mod quiet_cycle;
 mod scrcpy_control;
 mod scrcpy_video;
 mod session;
+mod stream_watch;
 mod macro_automation;
 mod macro_runner;
 mod shared_store;
@@ -92,10 +93,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host_id = crate::env::var("HOST_ID").unwrap_or_else(|_| host_name.clone());
     let bind_ip = parse_bind_ip();
 
+    api::note_process_start();
     let adb = adb_binary();
     let state = AppState::new(role, host_id.clone(), host_name.clone(), port, adb);
     state.spawn_adb_watcher();
     state.spawn_session_reaper();
+    stream_watch::spawn(state.clone());
 
     if role == Role::Agent {
         let url = controller_ws_url().unwrap_or_else(|| "ws://127.0.0.1:3848/ws/agent".into());

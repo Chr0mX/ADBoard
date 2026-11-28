@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
 use tokio::sync::{broadcast, RwLock};
@@ -82,6 +82,44 @@ struct SerialChannel {
     last_keyframe: Option<Bytes>,
     /// How many keyframes this phone's channel has carried. A keyframe request is answered when it moves.
     keyframes: u64,
+    /// Access units carried so far, and when the last one came out of the producer (the phone's encoder).
+    frames: u64,
+    last_frame_at: Option<Instant>,
+    /// When input (touch, key, text) was last sent to this phone. Input that changes the screen must be
+    /// followed by pictures; when none come, the encoder is stuck (see `stream_watch`).
+    last_input_at: Option<Instant>,
+}
+
+impl SerialChannel {
+    fn new(tx: broadcast::Sender<VideoPacket>) -> Self {
+        Self {
+            tx,
+            last_status: None,
+            last_sps: None,
+            last_keyframe: None,
+            keyframes: 0,
+            frames: 0,
+            last_frame_at: None,
+            last_input_at: None,
+        }
+    }
+}
+
+/// What the hub knows about one phone's producer, for the page's heartbeat and the stall watch.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SourceStats {
+    /// Access units produced so far (never goes back).
+    pub frames: u64,
+    pub keyframes: u64,
+    /// How long ago the last access unit was produced (None: none yet).
+    pub idle: Option<Duration>,
+    /// How long ago input was last sent to the phone (None: never).
+    pub input_ago: Option<Duration>,
+    /// Viewers subscribed right now.
+    pub subscribers: usize,
+    /// When the last access unit was produced, and when input was last sent (for `stream_watch`).
+    pub frame_at: Option<Instant>,
+    pub input_at: Option<Instant>,
 }
 
 /// Fan-out hub: one producer per serial, many WS subscribers.
@@ -102,16 +140,7 @@ impl VideoHub {
             return ch.tx.clone();
         }
         let (tx, _) = broadcast::channel(VIDEO_CHANNEL_CAP);
-        guard.insert(
-            serial.to_string(),
-            SerialChannel {
-                tx: tx.clone(),
-                last_status: None,
-                last_sps: None,
-                last_keyframe: None,
-                keyframes: 0,
-            },
-        );
+        guard.insert(serial.to_string(), SerialChannel::new(tx.clone()));
         tx
     }
 
@@ -123,21 +152,14 @@ impl VideoHub {
         let mut guard = self.channels.write().await;
         if !guard.contains_key(serial) {
             let (tx, _) = broadcast::channel(VIDEO_CHANNEL_CAP);
-            guard.insert(
-                serial.to_string(),
-                SerialChannel {
-                    tx,
-                    last_status: None,
-                    last_sps: None,
-                    last_keyframe: None,
-                    keyframes: 0,
-                },
-            );
+            guard.insert(serial.to_string(), SerialChannel::new(tx));
         }
         let ch = guard.get_mut(serial).expect("channel just inserted");
         match &packet {
             VideoPacket::Status(frame) => ch.last_status = Some(frame.clone()),
             VideoPacket::AnnexB(au) => {
+                ch.frames += 1;
+                ch.last_frame_at = Some(Instant::now());
                 if annexb_has_sps(au) {
                     ch.last_sps = Some(au.clone());
                 }
@@ -173,6 +195,38 @@ impl VideoHub {
     /// Keyframes carried so far (never goes back, not even when the cache is cleared).
     pub async fn keyframe_count(&self, serial: &str) -> u64 {
         self.channels.read().await.get(serial).map_or(0, |ch| ch.keyframes)
+    }
+
+    /// Producer counters of one phone (all zero for a phone nobody has streamed).
+    pub async fn source_stats(&self, serial: &str) -> SourceStats {
+        let now = Instant::now();
+        self.channels.read().await.get(serial).map_or_else(SourceStats::default, |ch| SourceStats {
+            frames: ch.frames,
+            keyframes: ch.keyframes,
+            idle: ch.last_frame_at.map(|t| now.saturating_duration_since(t)),
+            input_ago: ch.last_input_at.map(|t| now.saturating_duration_since(t)),
+            subscribers: ch.tx.receiver_count(),
+            frame_at: ch.last_frame_at,
+            input_at: ch.last_input_at,
+        })
+    }
+
+    /// Input was just sent to `serial`. Only phones that have a channel (someone streamed them) are noted.
+    pub async fn note_input(&self, serial: &str) {
+        if let Some(ch) = self.channels.write().await.get_mut(serial) {
+            ch.last_input_at = Some(Instant::now());
+        }
+    }
+
+    /// Phones with at least one viewer subscribed right now.
+    pub async fn watched_serials(&self) -> Vec<String> {
+        self.channels
+            .read()
+            .await
+            .iter()
+            .filter(|(_, ch)| ch.tx.receiver_count() > 0)
+            .map(|(serial, _)| serial.clone())
+            .collect()
     }
 
     /// Has this phone's current stream produced a keyframe yet? Until it has, its capture may not be running.
@@ -1186,6 +1240,25 @@ mod tests {
         assert_eq!(hub.replay_access_units("SER").await, vec![fresh]);
         // Clearing a phone that never streamed is harmless.
         hub.clear_cache("NEVER").await;
+    }
+
+    #[tokio::test]
+    async fn source_stats_count_frames_input_and_viewers() {
+        let hub = VideoHub::new();
+        assert_eq!(hub.source_stats("SER").await, SourceStats::default(), "a phone nobody streamed");
+        hub.note_input("SER").await;
+        assert!(hub.source_stats("SER").await.input_at.is_none(), "no channel yet: input is not recorded");
+        let _viewer = hub.subscribe("SER").await;
+        assert_eq!(hub.watched_serials().await, vec!["SER".to_string()]);
+        hub.note_input("SER").await;
+        hub.publish_annexb("SER", vec![0, 0, 0, 1, 0x65, 0x88, 0x80]).await;
+        hub.publish_annexb("SER", vec![0, 0, 0, 1, 0x41, 0x9a]).await;
+        let stats = hub.source_stats("SER").await;
+        assert_eq!((stats.frames, stats.keyframes, stats.subscribers), (2, 1, 1));
+        assert!(stats.frame_at >= stats.input_at && stats.input_at.is_some());
+        assert!(stats.idle.is_some());
+        drop(_viewer);
+        assert!(hub.watched_serials().await.is_empty());
     }
 
     #[tokio::test]

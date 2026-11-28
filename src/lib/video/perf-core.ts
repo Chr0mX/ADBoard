@@ -56,6 +56,20 @@ export interface StreamPerf {
   /** When (performance.now) the last heartbeat and the last video picture arrived; null before the first. */
   lastHeartbeatAt: number | null;
   lastFrameAt: number | null;
+  /** When (performance.now) the last picture came out of the decoder and was drawn; null before the first. */
+  lastDecodedAt: number | null;
+  lastPaintedAt: number | null;
+  /** Where the picture stands now (see video-health-core), and the repairs it led to, by kind. */
+  health: string;
+  healthRepairs: Record<string, number>;
+  /** The agent's counts from its last heartbeat: frames the phone produced, frames sent to this socket. */
+  agentSourceFrames: number | null;
+  agentSentFrames: number | null;
+  agentSourceIdleMs: number | null;
+  /** Reconnects started because the agent came back or restarted (not by this stream's own backoff). */
+  linkReconnects: number;
+  /** Decoders swapped for the software one because rebuilt decoders still produced nothing. */
+  decoderFallbacks: number;
   /** Failed attempts since a connection last worked; 0 while connected. */
   retryAttempts: number;
   /** How long the last unexpected close took to turn into a picture again (ms), once it did. */
@@ -99,6 +113,15 @@ export function newStreamPerf(): StreamPerf {
     lastIntentionalClose: null,
     lastHeartbeatAt: null,
     lastFrameAt: null,
+    lastDecodedAt: null,
+    lastPaintedAt: null,
+    health: "waiting",
+    healthRepairs: {},
+    agentSourceFrames: null,
+    agentSentFrames: null,
+    agentSourceIdleMs: null,
+    linkReconnects: 0,
+    decoderFallbacks: 0,
     retryAttempts: 0,
     lastRecoveryMs: null,
     decoder: "",
@@ -128,6 +151,7 @@ export function markInput(perf: StreamPerf, now: number) {
 
 export function recordPaint(perf: StreamPerf, now: number) {
   perf.painted += 1;
+  perf.lastPaintedAt = now;
   if (perf.inputMarkedAt !== null) {
     pushRing(perf.inputMs, now - perf.inputMarkedAt);
     perf.inputMarkedAt = null;
@@ -159,6 +183,7 @@ export function snapshotPerf(perf: StreamPerf): StreamPerfSnapshot {
     // Copies: the report is read while the counters keep changing.
     closes: { ...counters.closes },
     keyframeAsksBy: { ...counters.keyframeAsksBy },
+    healthRepairs: { ...counters.healthRepairs },
     lastClose: counters.lastClose ? { ...counters.lastClose } : null,
     lastIntentionalClose: counters.lastIntentionalClose ? { ...counters.lastIntentionalClose } : null,
     messageMsP50: percentile(messageMs, 50),

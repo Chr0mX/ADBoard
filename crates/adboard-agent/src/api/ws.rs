@@ -679,7 +679,13 @@ pub(super) async fn handle_video_socket(socket: WebSocket, state: AppState, id_o
                         // Browsers cannot see WebSocket pings. A still screen sends no
                         // video, so the page needs this to tell "quiet" from "dead".
                         let frame = sessions_lag.video_status_frame(&serial_lag).await;
-                        put!('session, Message::Text(status_with_heartbeat(&frame).into()));
+                        let report = super::LinkReport {
+                            source: hub_lag.source_stats(&serial_lag).await,
+                            sent_frames: link_send.frames.load(std::sync::atomic::Ordering::Relaxed),
+                            held_back,
+                            waiting_for_keyframe: wait_for_key && viewer_active,
+                        };
+                        put!('session, Message::Text(super::status_with_link(&frame, Some(report)).into()));
                         link_send.note_heartbeat(connected_at);
                     }
                     changed = viewer_rx.changed(), if viewer_open => {

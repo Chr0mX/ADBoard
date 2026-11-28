@@ -63,6 +63,19 @@ fn connect_display_size() -> Option<&'static str> {
     .as_deref()
 }
 
+/// Set once the first look at the phones (adb, or the mock fleet) is done. `/health` reports it, so a page
+/// reconnecting after a restart waits for the phone list instead of asking for streams of phones the agent
+/// has not seen yet.
+static FLEET_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn mark_fleet_ready() {
+    FLEET_READY.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn fleet_ready() -> bool {
+    FLEET_READY.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub inner: Arc<InnerState>,

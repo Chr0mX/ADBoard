@@ -28,6 +28,7 @@ import {
 } from "@/lib/api/auth";
 import { createCoalescedRefresh } from "@/lib/api/refresh-core";
 import { createBackoff } from "@/lib/api/reconnect-core";
+import { onAgentLink, reportAgentTrouble } from "@/lib/api/agent-link";
 
 /**
  * Thin client API shape for the control plane.
@@ -725,6 +726,8 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
 
       const connect = () => {
         if (closed) return;
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = null;
         void agentWsUrl("/ws")
           .then((wsUrl) => {
             if (closed) return;
@@ -753,11 +756,14 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
               backoff.reset();
               onLink?.(true);
             };
+            const opened = socket;
             socket.onclose = () => {
-              if (!closed) {
+              if (!closed && socket === opened) {
+                socket = null;
                 onLink?.(false);
                 // Usually the agent restarted, and with it the token: fetch it again.
                 forgetAgentToken();
+                reportAgentTrouble();
                 retryTimer = setTimeout(connect, backoff.next());
               }
             };
@@ -768,15 +774,33 @@ export function createAgentDevicesClient(baseUrl: string): DevicesClient {
           .catch(() => {
             if (!closed) {
               onLink?.(false);
+              reportAgentTrouble();
               retryTimer = setTimeout(connect, backoff.next());
             }
           });
       };
 
+      // The agent is back (or a new process): open the live socket now instead of after the backoff. A socket
+      // that is open, or opening, is left alone; after a restart one left open belongs to the old process.
+      const offLink = onAgentLink((event) => {
+        if (closed || event === "down") return;
+        if (event === "restarted" && socket && socket.readyState === WebSocket.OPEN) {
+          const stale = socket;
+          socket = null;
+          stale.onclose = null;
+          stale.close();
+        }
+        if (socket) return;
+        backoff.reset();
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = setTimeout(connect, Math.round(Math.random() * 150));
+      });
+
       void ensureAgentToken().finally(connect);
 
       return () => {
         closed = true;
+        offLink();
         refresh.dispose();
         if (retryTimer) clearTimeout(retryTimer);
         socket?.close();

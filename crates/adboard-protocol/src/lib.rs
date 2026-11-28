@@ -372,6 +372,15 @@ pub struct HealthResponse {
     /// On an agent: how its connection to the controller is doing (absent on a controller).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller_link: Option<ControllerLink>,
+    /// Changes every time the process starts: a page that sees a new value knows the agent restarted (new
+    /// token, new sessions) and reconnects everything at once.
+    #[serde(default)]
+    pub instance: String,
+    #[serde(default)]
+    pub uptime_secs: u64,
+    /// The first look at the phones is done (false for a moment after a start).
+    #[serde(default)]
+    pub ready: bool,
 }
 
 /// An agent's connection to its controller, for diagnostics (`GET /health`).

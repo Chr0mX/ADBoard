@@ -44,7 +44,7 @@ test("each mobile route has a page file; /m redirects", () => {
 
 test("mobile service worker: v3, shell covers screens, only its own caches", () => {
   const sw = readFileSync(path.join(root, "public/m/sw.js"), "utf8");
-  assert.match(sw, /const CACHE_VERSION = "adboard-m-v32";/);
+  assert.match(sw, /const CACHE_VERSION = "adboard-m-v33";/);
   assert.match(sw, /key\.startsWith\(CACHE_PREFIX\)/);
 });
 

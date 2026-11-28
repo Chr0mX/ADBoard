@@ -44,6 +44,27 @@ import {
   type StreamMode,
 } from "@/lib/video/stream-policy-core";
 import { createBackoff, isStale } from "@/lib/api/reconnect-core";
+import {
+  agentLinkState,
+  deviceReadiness,
+  onAgentLink,
+  onFleetStatuses,
+  registerStreamCensus,
+  reportAgentTrouble,
+  reportInstance,
+  startAgentLink,
+  type LinkEvent,
+} from "@/lib/api/agent-link";
+import { GATE_MAX_WAIT_MS, mayConnect, reconnectSpreadMs } from "@/lib/api/agent-link-core";
+import {
+  classify as classifyHealth,
+  decide as decideHealth,
+  newHealthTracker,
+  observe as observeHealth,
+  type HealthCounts,
+  type HealthTracker,
+  type VideoHealth,
+} from "@/lib/video/video-health-core";
 import { closeInitiator, closeKind, describeClose, retryDelayMs, shouldForgetToken, type CloseKind, type CloseRecord } from "@/lib/video/close-core";
 import {
   markInput,
@@ -77,6 +98,14 @@ export interface VideoStatusMessage {
   framing?: string;
   /** Seconds between repeats of this frame (newer agents). Silence for three beats means a dead socket. */
   heartbeat?: number;
+  /** The agent process (changes when it restarts). */
+  instance?: string;
+  /** Heartbeats only: frames the phone produced, how long ago the last one, and frames sent to this socket. */
+  sourceFrames?: number;
+  sourceIdleMs?: number | null;
+  sentFrames?: number;
+  heldBack?: number;
+  waitingForKeyframe?: boolean;
 }
 
 export type VideoDecodeState =
@@ -110,6 +139,8 @@ export interface VideoView {
   onState(state: VideoState): void;
   /** False while this view is scrolled out of sight or hidden. Absent means always shown. */
   visible?(): boolean;
+  /** Forget what the view believes about its visibility and look again (its observer can miss a change). */
+  resetVisibility?(): void;
 }
 
 /** Keep a stream this long after its last view leaves (view switches, Strict Mode). */
@@ -329,6 +360,21 @@ class SharedStream {
   private reportedAt = new Map<string, number>();
   /** The decoder was rebuilt on this connection (for the close record). */
   private decoderRecovered = false;
+  /** Decoder rebuilds in a row that brought no picture (a hung decoder: the next kind is tried). */
+  private emptyRebuilds = 0;
+  /** Since when this stream has been waiting for the agent or its phone before opening a socket. */
+  private gateSince: number | null = null;
+  /** The agent process the current socket talks to, and when its last status frame arrived. */
+  private socketInstance: string | null = null;
+  private statusSeen = false;
+  lastStatusAt = 0;
+  /** Where the picture stops (see video-health-core). */
+  private health: HealthTracker | null = null;
+  private healthState: VideoHealth = "waiting";
+  /** Test faults (perf mode only, `__adboardPerf.fault`): each makes one stage fail the way it has in the field. */
+  private faultHiddenViews = new Set<VideoView>();
+  private faultHungDecoder: VideoDecoder | null = null;
+  private faultDropSocket: WebSocket | null = null;
   // The newest decoded frame, painted once per display refresh.
   private slot = createFrameSlot<VideoFrame>(
     (run) => requestAnimationFrame(run),
@@ -470,7 +516,7 @@ class SharedStream {
     let drawn = false;
     for (const view of this.views) {
       // Nothing to gain from drawing into a canvas nobody can see.
-      if (view.visible && !view.visible()) continue;
+      if ((view.visible && !view.visible()) || this.faultHiddenViews.has(view)) continue;
       const canvas = view.canvas();
       if (canvas) {
         this.drawInto(canvas, source, width, height);
@@ -492,6 +538,17 @@ class SharedStream {
     // Already at the phone's full resolution: there is nothing sharper to draw.
     if (canvas.width >= (this.state.size?.width ?? 0)) return;
     if (!this.closed && this.state.decodeState === "decoding") this.askKeyframe("sharpen");
+  }
+
+  /**
+   * Test hook (perf mode): break one stage the way it has broken in the field, to watch the health check
+   * find and repair it. "unpainted": every view wrongly believes it is off screen. "dropped": the socket's
+   * pictures are thrown away. "hung-decoder": the decoder takes frames and never returns a picture.
+   */
+  injectFault(kind: "unpainted" | "dropped" | "hung-decoder") {
+    if (kind === "unpainted") for (const view of this.views) this.faultHiddenViews.add(view);
+    else if (kind === "dropped") this.faultDropSocket = this.socket;
+    else if (kind === "hung-decoder") this.faultHungDecoder = this.decoder;
   }
 
   /** Benchmark hook: an input for this phone was sent now. */
@@ -536,6 +593,7 @@ class SharedStream {
     } else {
       this.stall = { seen: this.auSeen, decoded: progress, since: now };
     }
+    this.checkHealth(now);
     const sample = this.meter;
     const seconds = Math.max(0.001, (now - sample.t) / 1000);
     const size = this.state.size;
@@ -559,6 +617,107 @@ class SharedStream {
     }
     publishStats(this.serial, next);
   };
+
+  /**
+   * Where does the picture stop, if it does? Separate from the socket's health (above): an open socket with
+   * heartbeats can still carry no pictures, and pictures can arrive and not be shown. See video-health-core.
+   */
+  private checkHealth(now: number) {
+    const socketOpen = this.socket !== null && this.socket.readyState === WebSocket.OPEN;
+    const counts: HealthCounts = {
+      seen: this.auSeen,
+      received: this.perf.received,
+      decoded: this.progress(),
+      painted: this.perf.painted,
+      agentSource: this.perf.agentSourceFrames,
+      agentSent: this.perf.agentSentFrames,
+    };
+    this.health = this.health ? observeHealth(this.health, counts, now) : newHealthTracker(now, counts);
+    const onScreen = typeof document !== "undefined" && document.visibilityState === "visible" && this.viewsOnScreen(now);
+    const health = classifyHealth(this.health, { now, socketOpen, statusSeen: this.statusSeen, onScreen, idle: this.idle });
+    if (health !== this.healthState) {
+      const bad = health === "not-rendering" || health === "page-dropping" || health === "agent-holding" || health === "not-decoding";
+      if (bad) console.info(`[adboard video] ${this.serial}: ${health} (was ${this.healthState})`);
+      this.healthState = health;
+      this.perf.health = health;
+    }
+    const step = decideHealth(this.health, health, now);
+    this.health = step.tracker;
+    if (step.action === "none") return;
+    this.perf.healthRepairs[health] = (this.perf.healthRepairs[health] ?? 0) + 1;
+    this.reportProblem(`health-${health}`);
+    if (step.action === "repaint") {
+      // Pictures are decoded and none reach the canvas: a paint that was scheduled and never ran, or a view
+      // that wrongly believes it is off screen. Start the painting over; the next decoded picture is drawn.
+      this.slot.clear();
+      for (const view of this.views) {
+        view.resetVisibility?.();
+        this.faultHiddenViews.delete(view);
+      }
+    } else {
+      // The socket is open and its heartbeat fine, but its pictures do not get through: a new socket starts
+      // clean on both sides (the agent replays SPS/PPS and a keyframe, the page accepts it at once).
+      this.disconnect(`no pictures got through (${health})`);
+      this.backoff.reset();
+      if (this.retryTimer) clearTimeout(this.retryTimer);
+      this.retryTimer = setTimeout(this.connect, 200);
+    }
+  }
+
+  private lastGeometryCheck = 0;
+  private lastOnScreen = true;
+
+  /**
+   * Is any view of this phone really on the screen? Measured from the canvas itself, at most every 2 s, since
+   * a view's own `visible()` comes from an IntersectionObserver that can miss a change (a canvas replaced
+   * while an old entry was still queued) and then keeps a visible tile from ever being painted again.
+   */
+  private viewsOnScreen(now: number): boolean {
+    if (typeof window === "undefined") return true;
+    if (now - this.lastGeometryCheck < 2000) return this.lastOnScreen;
+    this.lastGeometryCheck = now;
+    let any = false;
+    for (const view of this.views) {
+      const canvas = view.canvas();
+      if (!canvas || !canvas.isConnected) continue;
+      const box = canvas.getBoundingClientRect();
+      const shown = box.width > 0 && box.height > 0 && box.bottom > 0 && box.right > 0 && box.top < window.innerHeight && box.left < window.innerWidth;
+      if (!shown) continue;
+      any = true;
+      if (view.visible && !view.visible()) {
+        this.perf.healthRepairs.visibility = (this.perf.healthRepairs.visibility ?? 0) + 1;
+        view.resetVisibility?.();
+      }
+    }
+    this.lastOnScreen = any;
+    return any;
+  }
+
+  /** The agent answers again (or is a new process): reconnect now, instead of when this stream's backoff says. */
+  linkRecovered(event: LinkEvent, index: number) {
+    if (this.closed || !this.statsTimer) return;
+    const socket = this.socket;
+    if (socket) {
+      // A socket is open or opening. After a restart, keep it only if it already talks to the new process.
+      if (event !== "restarted") return;
+      const instance = agentLinkState().instance;
+      if (socket.readyState === WebSocket.OPEN && this.socketInstance === instance) return;
+      if (socket.readyState === WebSocket.CONNECTING) return;
+      this.disconnect("the agent restarted");
+    }
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.backoff.reset();
+    this.perf.linkReconnects += 1;
+    this.retryTimer = setTimeout(this.connect, reconnectSpreadMs(index));
+  }
+
+  /** The phone list changed: a stream waiting for its phone to be listed may go now. */
+  fleetChanged(index: number) {
+    if (this.closed || this.socket || this.gateSince === null) return;
+    if (deviceReadiness(this.serial) !== "online") return;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(this.connect, reconnectSpreadMs(index));
+  }
 
   /**
    * The agent's encoder sends the next keyframe now instead of seconds later. Every ask restarts the phone's
@@ -586,6 +745,11 @@ class SharedStream {
 
   private onVisibility = () => {
     if (this.closed) return;
+    // Back from the background: timers were throttled, so check the connection and the picture at once.
+    if (typeof document !== "undefined" && document.visibilityState === "visible" && this.statsTimer) {
+      this.lastGeometryCheck = 0;
+      queueMicrotask(this.measure);
+    }
     const previous = this.mode;
     const next = this.computeMode();
     this.mode = next;
@@ -729,6 +893,15 @@ class SharedStream {
       mode: this.mode,
       idle: this.idle,
       mse: this.mse ? this.mse.health() : null,
+      health: this.healthState,
+      waitingForAgentMs: this.gateSince === null ? null : Math.round(now - this.gateSince),
+      agentInstance: this.socketInstance,
+      agentSourceFrames: this.perf.agentSourceFrames,
+      agentSentFrames: this.perf.agentSentFrames,
+      agentSourceIdleMs: this.perf.agentSourceIdleMs,
+      lastDecodedAgoMs: this.perf.lastDecodedAt === null ? null : Math.round(now - this.perf.lastDecodedAt),
+      lastPaintedAgoMs: this.perf.lastPaintedAt === null ? null : Math.round(now - this.perf.lastPaintedAt),
+      lastFrameAgoMs: this.perf.lastFrameAt === null ? null : Math.round(now - this.perf.lastFrameAt),
     };
   }
 
@@ -775,6 +948,18 @@ class SharedStream {
     this.perf.decoderRecoveries += 1;
     this.reportProblem("decoder-rebuilt");
     this.decoderRecovered = true;
+    // A decoder that takes frames and never answers (a hung hardware decoder: no error, just nothing) is not
+    // helped by another of the same kind. After two empty rebuilds, try the next kind (software).
+    this.emptyRebuilds += 1;
+    if (!this.mse && this.emptyRebuilds >= 2) {
+      const next = fallbackMode(this.accel);
+      if (next !== this.accel) {
+        console.warn("[video] the decoder produces nothing; using the software decoder for", this.serial);
+        this.accel = next;
+        this.perf.decoderFallbacks += 1;
+        this.reportProblem("decoder-fallback", { accel: next });
+      }
+    }
     if (this.mse) {
       this.rebuildMse();
     } else {
@@ -927,11 +1112,13 @@ class SharedStream {
     this.gate = newDecodeGate();
     const decoder = new VideoDecoder({
       output: (frame) => {
-        if (this.closed || this.decoder !== decoder) {
+        if (this.closed || this.decoder !== decoder || this.faultHungDecoder === decoder) {
           frame.close();
           return;
         }
         this.perf.decoded += 1;
+        this.perf.lastDecodedAt = performance.now();
+        this.emptyRebuilds = 0;
         this.noteRecovered();
         this.setState({ decodeState: "decoding", error: null });
         if (this.mode === "throttle-paint") {
@@ -1019,6 +1206,22 @@ class SharedStream {
 
   private connect = () => {
     if (this.closed) return;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    // Wait for the agent, and for its phone, before knocking: a socket opened while the agent is away or the
+    // phone is not listed yet is refused, and its retry then waits 3 to 10 s. The agent watcher calls back
+    // (`linkRecovered`) the moment both are there; the timer is only a fallback.
+    if (!this.socket) {
+      const now = performance.now();
+      const waited = this.gateSince === null ? 0 : now - this.gateSince;
+      if (!mayConnect(agentLinkState().phase, deviceReadiness(this.serial), waited)) {
+        if (this.gateSince === null) this.gateSince = now;
+        this.setState({ decodeState: "connecting" });
+        this.retryTimer = setTimeout(this.connect, Math.max(250, Math.min(5000, GATE_MAX_WAIT_MS - waited + 50)));
+        return;
+      }
+    }
+    this.gateSince = null;
     // One socket per phone: a second worker (a late retry timer, a resume racing a reconnect) closes the old one
     // first instead of leaving it open behind a newer generation.
     if (this.socket) this.disconnect("replaced by a newer connection");
@@ -1031,6 +1234,12 @@ class SharedStream {
     this.waitingForKeyframeConfig = false;
     // A new socket owes nothing to the one before it.
     this.socketVideo = newSocketVideoState();
+    this.socketInstance = null;
+    this.statusSeen = false;
+    this.health = null;
+    this.perf.agentSourceFrames = null;
+    this.perf.agentSentFrames = null;
+    this.perf.agentSourceIdleMs = null;
     this.heartbeatSeconds = null;
     this.lastMessageAt = performance.now();
     void agentWsUrl(`/ws/devices/${encodeURIComponent(this.serial)}/video`)
@@ -1039,6 +1248,7 @@ class SharedStream {
       })
       .catch(() => {
         forgetAgentToken();
+        reportAgentTrouble();
         if (generation === this.generation) this.retryTimer = setTimeout(this.connect, this.backoff.next());
       });
   };
@@ -1082,6 +1292,8 @@ class SharedStream {
       // After a restart or a failed connection the agent may be a new process with a new token. When it
       // said why it closed, it is the same process and the token is fine.
       if (shouldForgetToken(kind)) forgetAgentToken();
+      // Is the agent itself gone? The watcher checks, and calls every stream back when it answers again.
+      if (kind === "transport" || kind === "normal" || kind === "other") reportAgentTrouble();
       this.retryTimer = setTimeout(this.connect, retryDelayMs(event.code, this.backoff.next()));
     };
     socket.onerror = () => socket.close();
@@ -1097,6 +1309,17 @@ class SharedStream {
     if (typeof msg.heartbeat === "number" && msg.heartbeat > 0) {
       this.heartbeatSeconds = msg.heartbeat;
       this.perf.lastHeartbeatAt = performance.now();
+    }
+    this.statusSeen = true;
+    this.lastStatusAt = performance.now();
+    if (msg.instance) {
+      this.socketInstance = msg.instance;
+      reportInstance(msg.instance);
+    }
+    if (typeof msg.sourceFrames === "number" && typeof msg.sentFrames === "number") {
+      this.perf.agentSourceFrames = msg.sourceFrames;
+      this.perf.agentSentFrames = msg.sentFrames;
+      this.perf.agentSourceIdleMs = typeof msg.sourceIdleMs === "number" ? msg.sourceIdleMs : null;
     }
     // The connection works: the next drop starts from the short retry delay.
     this.backoff.reset();
@@ -1137,7 +1360,7 @@ class SharedStream {
 
   private onAccessUnit(buf: Uint8Array) {
     if (buf.byteLength > 0) this.auSeen += 1;
-    if (!this.socketVideo.acceptVideo || buf.byteLength === 0) return;
+    if (!this.socketVideo.acceptVideo || buf.byteLength === 0 || (this.faultDropSocket !== null && this.faultDropSocket === this.socket)) return;
     this.meter.frames += 1;
     this.meter.bytes += buf.byteLength;
     this.perf.received += 1;
@@ -1263,9 +1486,34 @@ class SharedStream {
  * Show `serial`'s live screen in `view`. Returns the unsubscribe. The stream
  * starts with the first view and stops shortly after the last one leaves.
  */
+let linkWired = false;
+
+/** Listen to the agent watcher once: every stream reconnects at once when the agent is back. */
+function wireAgentLink() {
+  if (linkWired) return;
+  linkWired = true;
+  startAgentLink();
+  onAgentLink((event) => {
+    if (event === "down") return;
+    let index = 0;
+    for (const stream of streams.values()) stream.linkRecovered(event, index++);
+  });
+  onFleetStatuses(() => {
+    let index = 0;
+    for (const stream of streams.values()) stream.fleetChanged(index++);
+  });
+  registerStreamCensus(() => {
+    const since = agentLinkState().since;
+    let connected = 0;
+    for (const stream of streams.values()) if (stream.lastStatusAt >= since) connected += 1;
+    return { wanted: streams.size, connectedSinceUp: connected };
+  });
+}
+
 export function subscribeVideo(serial: string, view: VideoView): () => void {
   // "" is same-origin (packaged UI). Only null means the in-browser mock.
   if (agentBaseUrl() === null) return () => {};
+  wireAgentLink();
   let stream = streams.get(serial);
   if (!stream) {
     stream = new SharedStream(serial);
@@ -1319,6 +1567,17 @@ export interface VideoPipelineState {
   idle: boolean;
   /** The hidden video element of the MSE path (LAN http:// pages), or null on WebCodecs. */
   mse: MsePlaybackHealth | null;
+  /** Where the picture stops (video-health-core), independent of the socket. */
+  health: VideoHealth;
+  /** Waiting for the agent or the phone before opening a socket (ms), or null. */
+  waitingForAgentMs: number | null;
+  agentInstance: string | null;
+  agentSourceFrames: number | null;
+  agentSentFrames: number | null;
+  agentSourceIdleMs: number | null;
+  lastFrameAgoMs: number | null;
+  lastDecodedAgoMs: number | null;
+  lastPaintedAgoMs: number | null;
 }
 
 export interface VideoPerfReport {
@@ -1350,6 +1609,7 @@ if (perfTiming) {
   (window as unknown as { __adboardPerf?: unknown }).__adboardPerf = {
     snapshot: videoPerfReport,
     markInput: (serial: string) => streams.get(serial)?.markInput(),
+    fault: (serial: string, kind: "unpainted" | "dropped" | "hung-decoder") => streams.get(serial)?.injectFault(kind),
     renders: renderCountsSnapshot,
   };
 }

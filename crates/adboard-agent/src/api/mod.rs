@@ -85,9 +85,35 @@ fn video_heartbeat() -> tokio::time::Interval {
 /// page this agent repeats the frame on that beat, so silence for a few beats
 /// means a dead connection. Older pages ignore the field.
 fn status_with_heartbeat(frame: &VideoStatusFrame) -> String {
+    status_with_link(frame, None)
+}
+
+/// What one video socket has done, sent with its heartbeat so the page can tell where pictures stop: at the
+/// phone (`sourceFrames` still), in the agent (`sourceFrames` moves, `sentFrames` does not), or in the page
+/// (`sentFrames` moves, nothing arrives).
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct LinkReport {
+    pub source: crate::video::SourceStats,
+    pub sent_frames: u64,
+    pub held_back: u32,
+    pub waiting_for_keyframe: bool,
+}
+
+fn status_with_link(frame: &VideoStatusFrame, link: Option<LinkReport>) -> String {
     let mut value = serde_json::to_value(frame).unwrap_or_else(|_| serde_json::json!({}));
     if let Some(map) = value.as_object_mut() {
         map.insert("heartbeat".into(), serde_json::json!(VIDEO_HEARTBEAT_SECS));
+        map.insert("instance".into(), serde_json::json!(PROCESS.0));
+        if let Some(link) = link {
+            map.insert("sourceFrames".into(), serde_json::json!(link.source.frames));
+            map.insert(
+                "sourceIdleMs".into(),
+                link.source.idle.map_or(serde_json::Value::Null, |d| serde_json::json!(d.as_millis() as u64)),
+            );
+            map.insert("sentFrames".into(), serde_json::json!(link.sent_frames));
+            map.insert("heldBack".into(), serde_json::json!(link.held_back));
+            map.insert("waitingForKeyframe".into(), serde_json::json!(link.waiting_for_keyframe));
+        }
     }
     value.to_string()
 }
@@ -436,7 +462,19 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         port: state.inner.port,
         registered_hosts: registered,
         controller_link: (state.role() == Role::Agent).then(crate::mesh_client::link_status),
+        instance: PROCESS.0.clone(),
+        uptime_secs: PROCESS.1.elapsed().as_secs(),
+        ready: crate::device_manager::fleet_ready(),
     })
+}
+
+/// This process's id (random, new at every start) and when it started.
+static PROCESS: std::sync::LazyLock<(String, std::time::Instant)> =
+    std::sync::LazyLock::new(|| (uuid::Uuid::new_v4().simple().to_string()[..12].to_string(), std::time::Instant::now()));
+
+/// Touch the process id at start, so uptime counts from the start and not from the first `/health`.
+pub fn note_process_start() {
+    std::sync::LazyLock::force(&PROCESS);
 }
 
 async fn list_devices(State(state): State<AppState>) -> Json<Vec<adboard_protocol::Device>> {
