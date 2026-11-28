@@ -28,6 +28,8 @@ import {
   decodeStallStep,
   keepsSocketInBackground,
   keyframeAskDue,
+  newSocketVideoState,
+  onStatusFrame,
   needsKeyframeAfter,
   onVisibilityChange,
   readBackgroundPolicy,
@@ -38,6 +40,7 @@ import {
   type BackgroundPolicy,
   type DecodeStallState,
   type KeyframeReason,
+  type SocketVideoState,
   type StreamMode,
 } from "@/lib/video/stream-policy-core";
 import { createBackoff, isStale } from "@/lib/api/reconnect-core";
@@ -279,8 +282,8 @@ class SharedStream {
   private lastResetAt = 0;
   // Drop bytes that arrived before Refresh's keyframe. Those P-frames
   // decode against an older IDR and the canvas stays green.
-  private acceptVideo = false;
-  private refreshAsked = false;
+  /** What the current socket has done (accepting video, connect request sent); reset for every new socket. */
+  private socketVideo: SocketVideoState = newSocketVideoState();
   private gate = newDecodeGate();
   private lastKeyframeAsk = 0;
   private meter = { t: 0, frames: 0, bytes: 0 };
@@ -370,7 +373,6 @@ class SharedStream {
     this.idle = false;
     this.clearRecovery();
     this.disconnect("refresh requested");
-    this.refreshAsked = false;
     this.backoff.reset();
     this.setState({ frameSize: null, size: null });
     this.connect();
@@ -641,7 +643,7 @@ class SharedStream {
   private startSampling() {
     if (this.sampleTimer) return;
     this.sampleTimer = setInterval(() => {
-      if (this.closed || this.mode !== "sample-keyframes" || !this.socket || !this.acceptVideo) return;
+      if (this.closed || this.mode !== "sample-keyframes" || !this.socket || !this.socketVideo.acceptVideo) return;
       this.askKeyframe("sample", true);
     }, 1000);
   }
@@ -710,7 +712,8 @@ class SharedStream {
     const socketState = !socket ? "none" : (["connecting", "open", "closing", "closed"][socket.readyState] ?? "unknown");
     return {
       socket: socketState,
-      acceptingVideo: this.acceptVideo,
+      acceptingVideo: this.socketVideo.acceptVideo,
+      connectRefreshSent: this.socketVideo.connectRefreshSent,
       connectRefreshPendingMs: this.refreshPendingSince === null ? null : Math.round(now - this.refreshPendingSince),
       lastMessageAgoMs: this.lastMessageAt > 0 ? Math.round(now - this.lastMessageAt) : null,
       heartbeatSeconds: this.heartbeatSeconds,
@@ -820,7 +823,6 @@ class SharedStream {
   private reconnect() {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.disconnect();
-    this.refreshAsked = false;
     this.perf.reconnects += 1;
     this.retryTimer = setTimeout(this.connect, this.backoff.next());
   }
@@ -1027,7 +1029,8 @@ class SharedStream {
     this.setState({ decodeState: "connecting" });
     this.description = null;
     this.waitingForKeyframeConfig = false;
-    this.acceptVideo = false;
+    // A new socket owes nothing to the one before it.
+    this.socketVideo = newSocketVideoState();
     this.heartbeatSeconds = null;
     this.lastMessageAt = performance.now();
     void agentWsUrl(`/ws/devices/${encodeURIComponent(this.serial)}/video`)
@@ -1100,16 +1103,14 @@ class SharedStream {
     this.perf.retryAttempts = 0;
     // The heartbeat repeats the same frame; only a real change reaches the views.
     if (!sameStatus(this.state.status, msg)) this.setState({ status: msg });
-    if (msg.backend === "scrcpy" && !this.refreshAsked) {
-      this.refreshAsked = true;
+    const status = onStatusFrame(this.socketVideo, msg.backend);
+    // Accept video at once. The agent already holds back delta frames after the SPS/PPS and keyframe it replays
+    // to a new socket, until a fresh keyframe (keep_after_gap in agent video.rs).
+    this.socketVideo = status.state;
+    if (status.sendConnectRefresh) {
       this.lastKeyframeAsk = Date.now();
       this.perf.keyframeAsksBy.connect = (this.perf.keyframeAsksBy.connect ?? 0) + 1;
       this.refreshPendingSince = performance.now();
-      // Accept video at once. The agent already holds back delta frames after the SPS/PPS and keyframe it replays
-      // to a new socket, until a fresh keyframe (keep_after_gap in agent video.rs). Waiting here for this request
-      // threw those replayed frames away, and a request that hung (all six connections per host busy at page load)
-      // left every phone frozen until the page was refreshed.
-      this.acceptVideo = true;
       void postVideoRefresh([this.serial], "connect", CONNECT_REFRESH_TIMEOUT_MS)
         .catch((error: unknown) => {
           if (error instanceof TimeoutError && generation === this.generation) {
@@ -1120,8 +1121,6 @@ class SharedStream {
         .finally(() => {
           if (generation === this.generation) this.refreshPendingSince = null;
         });
-    } else if (msg.backend && msg.backend !== "scrcpy") {
-      this.acceptVideo = true;
     }
     if (msg.codecString) this.codecString = msg.codecString;
     if (msg.width && msg.height && msg.width > 0 && msg.height > 0) {
@@ -1138,7 +1137,7 @@ class SharedStream {
 
   private onAccessUnit(buf: Uint8Array) {
     if (buf.byteLength > 0) this.auSeen += 1;
-    if (!this.acceptVideo || buf.byteLength === 0) return;
+    if (!this.socketVideo.acceptVideo || buf.byteLength === 0) return;
     this.meter.frames += 1;
     this.meter.bytes += buf.byteLength;
     this.perf.received += 1;
@@ -1298,8 +1297,10 @@ export function restartVideo(serial: string) {
 export interface VideoPipelineState {
   /** The video WebSocket: "none" between a close and the next connect. */
   socket: string;
-  /** False until the first keyframe request settles (at most 3 s); every picture is ignored meanwhile. */
+  /** False only until the socket's first status frame; every picture is ignored meanwhile. */
   acceptingVideo: boolean;
+  /** The connect-time keyframe request went out on this socket. */
+  connectRefreshSent: boolean;
   connectRefreshPendingMs: number | null;
   lastMessageAgoMs: number | null;
   heartbeatSeconds: number | null;

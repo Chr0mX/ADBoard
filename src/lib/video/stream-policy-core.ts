@@ -236,3 +236,29 @@ export type KeyframeReason =
   | "resume"
   | "decode-backlog"
   | "manual";
+
+/**
+ * What one video socket has done so far. A new socket starts from `newSocketVideoState()`, so nothing a closed
+ * socket did can carry over: a reconnected socket once kept "connect request already sent" from the socket before
+ * it, never accepted video again, and the phone stayed frozen until the page was reloaded.
+ */
+export interface SocketVideoState {
+  /** Pictures are taken in (set by the first status frame that names a backend). */
+  acceptVideo: boolean;
+  /** The connect-time keyframe request went out on this socket. */
+  connectRefreshSent: boolean;
+}
+
+export function newSocketVideoState(): SocketVideoState {
+  return { acceptVideo: false, connectRefreshSent: false };
+}
+
+/** A status frame arrived on this socket: accept video once it names a backend; ask scrcpy for a keyframe once. */
+export function onStatusFrame(state: SocketVideoState, backend: string | null | undefined): { state: SocketVideoState; sendConnectRefresh: boolean } {
+  if (!backend) return { state, sendConnectRefresh: false };
+  const sendConnectRefresh = backend === "scrcpy" && !state.connectRefreshSent;
+  return {
+    state: { acceptVideo: true, connectRefreshSent: state.connectRefreshSent || sendConnectRefresh },
+    sendConnectRefresh,
+  };
+}
