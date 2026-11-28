@@ -63,6 +63,12 @@ test("D: decoded but not painted while on screen is repainted, rationed", () => 
   assert.notEqual(classify(tracker, { ...open, onScreen: false, now }), "not-rendering");
 });
 
+test("D: a paint stall counts only from when the phone came on screen (a tab back from hidden)", () => {
+  const { tracker, now } = run(6, { seen: 1, received: 1, decoded: 1, agentSource: 1, agentSent: 1 });
+  assert.notEqual(classify(tracker, { ...open, onScreenSince: now - 100, now }), "not-rendering", "just came back");
+  assert.equal(classify(tracker, { ...open, onScreenSince: now - 2500, now }), "not-rendering", "on screen 2.5 s, still no paint");
+});
+
 test("B: messages arriving but not taken in mean a page fault: reconnect", () => {
   const { tracker, now } = run(6, { seen: 1, agentSource: 1, agentSent: 1 });
   const health = classify(tracker, { ...open, now });

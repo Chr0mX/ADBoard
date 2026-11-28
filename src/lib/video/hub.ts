@@ -676,7 +676,16 @@ class SharedStream {
     };
     this.health = this.health ? observeHealth(this.health, counts, now) : newHealthTracker(now, counts);
     const onScreen = typeof document !== "undefined" && document.visibilityState === "visible" && this.viewsOnScreen(now);
-    const health = classifyHealth(this.health, { now, socketOpen, statusSeen: this.statusSeen, onScreen, idle: this.idle });
+    if (!onScreen) this.onScreenSince = null;
+    else if (this.onScreenSince === null) this.onScreenSince = now;
+    const health = classifyHealth(this.health, {
+      now,
+      socketOpen,
+      statusSeen: this.statusSeen,
+      onScreen,
+      onScreenSince: this.onScreenSince ?? undefined,
+      idle: this.idle,
+    });
     if (health !== this.healthState) {
       this.note("health", { from: this.healthState, to: health });
       const bad = health === "not-rendering" || health === "page-dropping" || health === "agent-holding" || health === "not-decoding";
@@ -710,6 +719,8 @@ class SharedStream {
 
   private lastGeometryCheck = 0;
   private lastOnScreen = true;
+  /** When the phone last came on screen (page visible and a view shown), or null while it is not. */
+  private onScreenSince: number | null = null;
 
   /**
    * Is any view of this phone really on the screen? Measured from the canvas itself, at most every 2 s, since
@@ -1566,6 +1577,8 @@ function notePage(kind: string, detail: Record<string, unknown> = {}) {
 }
 
 let detector = newDetector();
+/** When the page last became visible (performance.now), or null while it is hidden: a hidden page paints nothing. */
+let pageVisibleSince: number | null = null;
 
 /**
  * Save what every stream looked like for the last ~15 s (and the agent's side, which the agent adds) in the
@@ -1625,6 +1638,7 @@ function watchAllStalled() {
     detector,
     [...streams.values()].map((stream) => ({ views: stream.views.size, lastPaintedAt: stream.perf.lastPaintedAt })),
     now,
+    pageVisibleSince,
   );
   detector = step.state;
   if (step.trigger) {
@@ -1640,6 +1654,10 @@ function wireAgentLink() {
   if (linkWired) return;
   linkWired = true;
   startAgentLink();
+  pageVisibleSince = document.visibilityState === "visible" ? performance.now() : null;
+  document.addEventListener("visibilitychange", () => {
+    pageVisibleSince = document.visibilityState === "visible" ? performance.now() : null;
+  });
   for (const kind of ["visibilitychange", "freeze", "resume"]) document.addEventListener(kind, () => notePage(kind));
   for (const kind of ["focus", "blur", "pageshow", "pagehide", "online", "offline"]) window.addEventListener(kind, () => notePage(kind));
   notePage("start");

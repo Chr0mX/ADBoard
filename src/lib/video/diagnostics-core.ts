@@ -60,23 +60,35 @@ export function newDetector(): DetectorState {
   return { pendingSince: null, lastSnapshotAt: null };
 }
 
-/** Is every shown stream (two or more) stalled, each after painting recently? */
-export function allStalled(streams: readonly StreamPaint[], now: number): boolean {
+/**
+ * Is every shown stream (two or more) stalled, each after painting recently? `visibleSince`: when the page
+ * last became visible, or null while it is hidden. A hidden page paints nothing on purpose, so nothing is
+ * stalled then, and a stall counts only from when the page came back.
+ */
+export function allStalled(streams: readonly StreamPaint[], now: number, visibleSince: number | null): boolean {
+  if (visibleSince === null) return false;
   const shown = streams.filter((s) => s.views > 0);
   if (shown.length < 2) return false;
-  return shown.every((s) => s.lastPaintedAt !== null && now - s.lastPaintedAt >= STALL_MS && now - s.lastPaintedAt <= RECENT_MS);
+  return shown.every(
+    (s) => s.lastPaintedAt !== null && now - Math.max(s.lastPaintedAt, visibleSince) >= STALL_MS && now - s.lastPaintedAt <= RECENT_MS,
+  );
 }
 
 /**
  * One look, every tick. `trigger`: an episode just began (record it as an event); `save`: the episode's
  * after-window is over, save the snapshot now.
  */
-export function detectorStep(state: DetectorState, streams: readonly StreamPaint[], now: number): { state: DetectorState; trigger: boolean; save: boolean } {
+export function detectorStep(
+  state: DetectorState,
+  streams: readonly StreamPaint[],
+  now: number,
+  visibleSince: number | null,
+): { state: DetectorState; trigger: boolean; save: boolean } {
   if (state.pendingSince !== null) {
     if (now - state.pendingSince >= AFTER_MS) return { state: { pendingSince: null, lastSnapshotAt: now }, trigger: false, save: true };
     return { state, trigger: false, save: false };
   }
   if (state.lastSnapshotAt !== null && now - state.lastSnapshotAt < SNAPSHOT_EVERY_MS) return { state, trigger: false, save: false };
-  if (!allStalled(streams, now)) return { state, trigger: false, save: false };
+  if (!allStalled(streams, now, visibleSince)) return { state, trigger: false, save: false };
   return { state: { ...state, pendingSince: now }, trigger: true, save: false };
 }

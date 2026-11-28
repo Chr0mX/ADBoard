@@ -17,7 +17,7 @@
  *   "page-dropping"   B. pictures reach the page and the page throws them away: reconnect it.
  *   "not-decoding"    C. pictures are received, none decoded (the stall watch asks for a keyframe, then
  *                        rebuilds the decoder, then switches to the software decoder).
- *   "not-rendering"   D. pictures are decoded, none painted although the phone is on screen: repaint.
+ *   "not-rendering"   D. pictures are decoded, none painted for 2 s while the phone has been on screen: repaint.
  *   "ok"              pictures are painted.
  *
  * Pure module: runs under `node --test`.
@@ -87,6 +87,8 @@ export interface HealthInput {
   statusSeen: boolean;
   /** The page is visible and at least one view of the phone is really on screen. */
   onScreen: boolean;
+  /** When `onScreen` last turned true (ms). Unset: since tracking began. */
+  onScreenSince?: number;
   /** The viewer told the agent to stop sending (idle): no pictures are expected. */
   idle: boolean;
 }
@@ -97,8 +99,10 @@ export function classify(tracker: HealthTracker, input: HealthInput): VideoHealt
   const { now } = input;
   const at = tracker.movedAt;
   const ago = (key: keyof HealthCounts) => now - at[key];
-  // D: decoded keeps moving, painted does not, while someone can see the phone.
-  if (input.onScreen && ago("decoded") < RENDER_STALL_MS && at.decoded - at.painted >= RENDER_STALL_MS) return "not-rendering";
+  // D: decoded keeps moving, painted does not, while someone can see the phone. A paint stall counts only from
+  // when the phone came on screen: a hidden tab paints nothing on purpose, and its last paint is old on return.
+  const paintedFrom = Math.max(at.painted, input.onScreenSince ?? at.painted);
+  if (input.onScreen && ago("decoded") < RENDER_STALL_MS && at.decoded - paintedFrom >= RENDER_STALL_MS) return "not-rendering";
   // B: messages arrive and are not taken in.
   if (ago("seen") < DROP_STALL_MS && at.seen - at.received >= DROP_STALL_MS) return "page-dropping";
   // C: taken in, not decoded.
