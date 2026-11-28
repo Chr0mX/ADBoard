@@ -25,8 +25,7 @@ So the copy into the canvas is the cost that matters, and the React and WebSocke
 | Memory | The MSE fallback's queues are bounded and played video is trimmed | `lib/video/mse-queue-core.ts`, `mse-player.ts` |
 | Device list | Bursts of device events make one list request plus one follow-up; late answers are dropped | `lib/api/refresh-core.ts` |
 | Macros | An identical poll is not parsed or announced; the run clock ticks once a second. Runs and schedules stay on the agent | `lib/macro/view-gate.ts`, `runs.ts` |
-| Idle streams | A stream with no visible view for 3 s frees its decoder and tells the agent to stop sending pictures; the connection stays open and keeps its heartbeat. Touch and macros do not use the video socket, so control is unaffected | `lib/video/stream-policy-core.ts`, agent `api/ws.rs` |
-| Background video (phone app only; the desktop page never reduces work) | Settings → Video / Performance: pause hidden streams (default; the agent stops sending, the connection stays) or keep them at 1 to 60 FPS. 1 FPS decodes keyframes only (one keyframe asked for per second); above that all frames are decoded and about FPS pictures a second are painted. Bytes still arrive: scrcpy's `max_fps` is per session and shared, so it cannot be lowered for one hidden tab. Returning asks for a keyframe; if no picture comes a watchdog asks again and then rebuilds the decoder. It never reconnects for missing pictures (a still screen sends none): only a missing heartbeat does | `lib/video/stream-policy-core.ts`, `hub.ts`, `components/adboard/video-settings-sync.tsx` |
+| Hidden or unfocused | Nothing is reduced: every open stream stays connected and runs at full speed. An earlier idle mode (agent told to stop sending) and the Background FPS setting were removed because a stalled keyframe handshake looked like a frozen stream | `lib/video/hub.ts` |
 
 ## Measured here
 

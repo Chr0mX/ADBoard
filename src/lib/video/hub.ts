@@ -13,7 +13,7 @@ import {
 } from "@/lib/video/h264";
 import { MseH264Player } from "@/lib/video/mse-player";
 import { nextVideoSize, type TrackedVideoSize } from "@/lib/video/fit-box";
-import { admitFrame, anyViewVisible, newDecodeGate } from "@/lib/video/backpressure";
+import { admitFrame, newDecodeGate } from "@/lib/video/backpressure";
 import { postVideoRefresh } from "@/lib/scrcpy/client";
 import { agentBaseUrl, agentWsUrl, agentWsProtocols, forgetAgentToken } from "@/lib/api/auth";
 import type { StreamStats } from "@/lib/devices/types";
@@ -30,10 +30,8 @@ import {
   onVisibilityChange,
   readBackgroundPolicy,
   recoveryStep,
-  savesWhenHidden,
   shouldSuspend,
   stallAction,
-  streamMode,
   viewerMessage,
   type BackgroundPolicy,
   type DecodeStallState,
@@ -134,10 +132,6 @@ function pipActive() {
   if (document.pictureInPictureElement) return true;
   const docPip = (window as unknown as { documentPictureInPicture?: { window?: unknown } }).documentPictureInPicture;
   return Boolean(docPip?.window);
-}
-
-function pageHidden() {
-  return typeof document !== "undefined" && document.visibilityState === "hidden" && !pipActive();
 }
 
 /** Saved by Settings → Video / Performance (per browser); read here so the first stream already follows it. */
@@ -553,15 +547,14 @@ class SharedStream {
     void postVideoRefresh([this.serial]).catch(() => {});
   }
 
-  /** The situation of this stream: showing, nothing to show, or hidden window with a background rate. */
+  /**
+   * Every open stream runs at full speed, always. Nothing is paused or thinned for a hidden or unfocused window,
+   * a phone app in the background, or a tile out of sight: the agent keeps sending and the page keeps decoding,
+   * so there is no keyframe handshake to get wrong when the view comes back. (An idle mode that stopped the
+   * agent's pictures was removed because a viewer wrongly judged not visible looked exactly like a frozen stream.)
+   */
   private computeMode(): StreamMode {
-    return streamMode({
-      pageHidden: pageHidden(),
-      hiddenSaves: savesWhenHidden(window.location.pathname),
-      anyViewVisible: anyViewVisible(this.views),
-      policy: backgroundPolicy,
-      canThrottle: webCodecsSupported(),
-    });
+    return "full";
   }
 
   private onVisibility = () => {

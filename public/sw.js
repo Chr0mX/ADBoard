@@ -1,6 +1,6 @@
 /* ADBoard app-shell service worker. Version bump to refresh caches. */
 const CACHE_PREFIX = "pc-shell-";
-const CACHE_VERSION = "pc-shell-v95";
+const CACHE_VERSION = "pc-shell-v96";
 /* The mobile app (/m/) has its own worker and caches (public/m/sw.js). This
    worker never touches them and never answers for /m. */
 const MOBILE_PREFIX = "/m";

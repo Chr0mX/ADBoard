@@ -16,7 +16,7 @@ The **Settings** tab is one place for the choices that change how ADBoard looks 
 - [Control](#control)
 - [Grid view](#grid-view)
 - [Phone taskbar](#phone-taskbar)
-- [Video / Performance](#video--performance)
+- [Video](#video)
 - [Appearance](#appearance)
 - [Virtual displays](#virtual-displays)
 - [Discord notifications](#discord-notifications)
@@ -110,16 +110,9 @@ The row of pinned tools that sits beside **Back / Home / Recent** on phones. Eac
 
 You can pin up to 21 tools. When you reach the limit the remaining switches are greyed out until you turn one off. **Reset** removes all pins (it is greyed out when none are pinned). By default nothing is pinned and the taskbar only has Back, Home and Recent.
 
-## Video / Performance
+## Video
 
-What the live video does while the phone app (`/m/`) is hidden. It is saved for this browser. The desktop page has no such setting: it always decodes and paints at full speed, whether its window is hidden, covered or unfocused, so coming back to it has nothing to catch up on.
-
-The video connection of a phone you have open stays connected: hiding the window, Alt-Tab, switching tabs, a phone scrolled out of sight or a screen that sends no new picture never closes it. It ends only when you close the phone, the phone goes away, or the connection really fails (the agent's heartbeat stops).
-
-- **Pause video in background** (on by default): after 3 seconds hidden, ADBoard tells the agent to stop sending pictures and frees the decoder. The connection and its heartbeat go on. When you return, the agent sends the stream's header and a new keyframe. An agent that has not been updated keeps sending, and ADBoard discards the pictures.
-- **Background FPS** (1 to 60, one step at a time, value shown beside the slider): used when Pause is off. The agent keeps sending and ADBoard does less work with it. At 1 FPS only keyframes are decoded, about one picture a second, and the frames in between are dropped before decoding. Above 1 FPS every frame is still decoded, because each depends on the one before it, but only about that many pictures a second are drawn.
-
-With Pause off the phones keep sending their full stream, so network use is not reduced. The picture you are looking at is never limited. Touch, keys and macros do not use the video connection, so they work in both modes. A phone scrolled out of sight stops receiving pictures on its own, whatever these say, and the other phones are not affected. On return the picture is restored at full speed without a refresh; if no picture arrives within about a second, ADBoard asks the phone for a new keyframe and, if that does not help, rebuilds the decoder. It does not reconnect for that.
+There is no setting for the video while ADBoard is in the background, because nothing is reduced. Every phone you have open keeps its connection and is decoded and painted at full speed, whether the window is hidden, covered, unfocused or the phone is scrolled out of sight. Coming back to it has nothing to catch up on. The cost is that hidden pages keep using network and processor time; close a phone's view to stop that.
 
 ## Appearance
 

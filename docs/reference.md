@@ -95,9 +95,9 @@ This is the main part of the surface, not all of it. Also in the router: `/api/b
 
 The UI decodes the frames with **WebCodecs** `VideoDecoder` and draws them on a canvas. Switching the active device only changes the video subscription, so agent sessions stay up.
 
-### An idle viewer
+### An idle viewer (not used by the current page)
 
-A page whose viewer has nothing to show (window hidden, tile out of sight) sends `{"type":"viewer","active":false}` on the video socket. The agent then stops sending pictures on that socket; status frames, the 5 s heartbeat and WebSocket pings continue, so the connection is still watched. `{"type":"viewer","active":true}` brings the pictures back, starting with the cached SPS/PPS and keyframe and a request for a fresh one. An agent that does not know the message ignores it and the page drops the pictures itself. The connection is closed only when the viewer closes, the phone goes away, or the connection fails: no pictures, a still screen or an idle viewer never count as failure.
+The agent still understands this message, but the current page never sends it. A page whose viewer wanted no pictures would send `{"type":"viewer","active":false}` on the video socket. The agent then stops sending pictures on that socket; status frames, the 5 s heartbeat and WebSocket pings continue, so the connection is still watched. `{"type":"viewer","active":true}` brings the pictures back, starting with the cached SPS/PPS and keyframe and a request for a fresh one. An agent that does not know the message ignores it and the page drops the pictures itself. The connection is closed only when the viewer closes, the phone goes away, or the connection fails: no pictures, a still screen or an idle viewer never count as failure.
 
 ### How a video socket ends
 
