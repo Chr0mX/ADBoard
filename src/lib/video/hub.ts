@@ -1569,7 +1569,7 @@ let detector = newDetector();
 
 /**
  * Save what every stream looked like for the last ~15 s (and the agent's side, which the agent adds) in the
- * agent's `logs/video-diagnostics/`. Resolves to the file's path, or null if it could not be saved.
+ * agent's `logs/` folder (`video-diagnostics-*.json`, next to `adboard.log`). Resolves to the file's path, or null if it could not be saved.
  */
 export async function saveDiagnostics(trigger: string): Promise<string | null> {
   const base = agentBaseUrl();

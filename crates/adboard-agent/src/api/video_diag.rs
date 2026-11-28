@@ -9,8 +9,9 @@
 //! - per watched phone, a sample a second for the last 15 s: frames and keyframes the phone produced, how long
 //!   since the last one, viewers, the session's state and its keyframe resets;
 //!
-//! and writes the whole thing as one JSON file in `logs/video-diagnostics/` of the data folder (the newest
-//! `KEEP` are kept). Nothing here changes how video is handled: it only reads counters.
+//! and writes the whole thing as one JSON file, `video-diagnostics-<UTC>-<trigger>.json`, in the data folder's
+//! `logs/`, next to `adboard.log` (the newest `KEEP` are kept; no other file there is touched). Nothing here
+//! changes how video is handled: it only reads counters.
 use super::ws_close::LinkStats;
 use crate::device_manager::AppState;
 use axum::extract::State;
@@ -23,7 +24,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
-pub(super) const DIR_NAME: &str = "video-diagnostics";
+/// Every snapshot file name starts with this, so pruning never touches the other logs beside them.
+pub(super) const FILE_PREFIX: &str = "video-diagnostics-";
 /// Snapshot files kept; older ones are removed when a new one is written.
 pub(super) const KEEP: usize = 50;
 /// Agent samples kept per phone (one a second).
@@ -187,7 +189,7 @@ pub(super) fn safe_trigger(raw: &str) -> String {
 pub(super) fn write_snapshot(dir: &Path, trigger: &str, value: &serde_json::Value, keep: usize) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ");
-    let path = dir.join(format!("{stamp}-{}.json", safe_trigger(trigger)));
+    let path = dir.join(format!("{FILE_PREFIX}{stamp}-{}.json", safe_trigger(trigger)));
     std::fs::write(&path, serde_json::to_vec_pretty(value).unwrap_or_default())?;
     prune(dir, keep);
     Ok(path)
@@ -199,7 +201,10 @@ fn prune(dir: &Path, keep: usize) {
     };
     let mut files: Vec<PathBuf> = entries
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .filter(|p| {
+            p.extension().is_some_and(|x| x == "json")
+                && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(FILE_PREFIX))
+        })
         .collect();
     // Names start with a UTC time stamp, so the name order is the age order.
     files.sort();
@@ -226,7 +231,7 @@ pub(super) async fn video_snapshot(
         "agent": agent_side(&state, &serials).await,
         "page": page,
     });
-    let dir = crate::data_dir::logs_dir().join(DIR_NAME);
+    let dir = crate::data_dir::logs_dir();
     let written = tokio::task::spawn_blocking(move || write_snapshot(&dir, &trigger, &snapshot, KEEP))
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -250,18 +255,28 @@ mod tests {
     fn a_snapshot_is_written_and_only_the_newest_are_kept() {
         let dir = std::env::temp_dir().join(format!("adboard-video-diag-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // The other logs in the same folder are never touched.
+        std::fs::write(dir.join("adboard.log"), "log").unwrap();
+        std::fs::write(dir.join("shell_run_history.json"), "[]").unwrap();
         let mut paths = Vec::new();
         for i in 0..5 {
             let value = serde_json::json!({ "n": i });
             paths.push(write_snapshot(&dir, "all-stalled", &value, 3).unwrap());
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        let mut left: Vec<PathBuf> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
+        let mut left: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(FILE_PREFIX))
+            .collect();
         left.sort();
         assert_eq!(left, paths[2..].to_vec(), "the three newest stay");
+        assert!(dir.join("adboard.log").exists() && dir.join("shell_run_history.json").exists(), "other logs untouched");
         let body: serde_json::Value = serde_json::from_slice(&std::fs::read(&left[2]).unwrap()).unwrap();
         assert_eq!(body["n"], 4);
-        assert!(left[0].file_name().unwrap().to_string_lossy().ends_with("-all-stalled.json"));
+        let name = left[0].file_name().unwrap().to_string_lossy().to_string();
+        assert!(name.starts_with("video-diagnostics-") && name.ends_with("-all-stalled.json"), "{name}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
